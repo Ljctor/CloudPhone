@@ -39,9 +39,13 @@ npm ci
 npm run build
 ```
 
-The Python gateway is installed from `gateway/`. The application does not
-restart Android or Slayer Legend when a viewer connects, disconnects or
-refreshes the stream.
+The Python gateway is installed from `gateway/`. Its `setup.py` generates gRPC
+stubs from `emulator_controller.proto`, `rtc_service_v2.proto` and
+`ice_config.proto`, read from `$BAZEL_ROOT/hardware/google/aemu/protos/services/`;
+the pinned emulator ships these files in `emulator/lib/`.
+`packaging/build-release.sh` automates the whole build and packages the result.
+The application does not restart Android or Slayer Legend when a viewer
+connects, disconnects or refreshes the stream.
 
 ## Browser acceptance test
 

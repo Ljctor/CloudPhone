@@ -4,6 +4,21 @@ This repository is an ordered, resumable runbook for configuring a fresh server.
 It is written for an automation agent, but every command can also be run by a
 human operator.
 
+## Installable package
+
+To get only the cloud phone (the official Android Emulator with Google Play,
+its WebRTC streaming gateway and the mobile web page) on any Debian or Ubuntu
+host with KVM, without the server-hardening runbooks, use the release tarball:
+
+- [`docs/INSTALL.md`](docs/INSTALL.md) — install, configure, upgrade, back up;
+- [`docs/WIREGUARD.md`](docs/WIREGUARD.md) — reach the phone privately through
+  WireGuard;
+- `packaging/build-release.sh` builds
+  `dist/cloudphone-<version>-linux-x86_64.tar.gz` from this repository.
+
+The runbooks below describe the original reference server and remain the
+source of truth for it.
+
 ## Prerequisites
 
 The operator or agent already has:

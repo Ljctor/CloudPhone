@@ -49,6 +49,8 @@ logging.basicConfig(
 DISCOVERY_PROPS = {}
 EMULATOR_CHANNEL = None
 VIDEOBRIDGE_CHANNEL = None
+ADB_PATH = "/opt/android-sdk/platform-tools/adb"
+ADB_SERIAL = "emulator-5558"
 
 
 def parse_discovery_file(path):
@@ -198,8 +200,8 @@ async def handle_key(request):
             "AudioVolumeDown": "VOLUME_DOWN",
         }
         process = await asyncio.create_subprocess_exec(
-            "/opt/android-sdk/platform-tools/adb",
-            "-s", "emulator-5558", "shell", "input", "keyevent", keycodes[key],
+            ADB_PATH,
+            "-s", ADB_SERIAL, "shell", "input", "keyevent", keycodes[key],
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -407,6 +409,24 @@ async def main():
         "--port", type=int, default=8080, help="Port to run the gateway webserver on."
     )
     parser.add_argument(
+        "--host",
+        type=str,
+        default="0.0.0.0",
+        help="Address to bind the gateway webserver to.",
+    )
+    parser.add_argument(
+        "--adb",
+        type=str,
+        default="/opt/android-sdk/platform-tools/adb",
+        help="Path to the adb binary used for hardware key events.",
+    )
+    parser.add_argument(
+        "--adb_serial",
+        type=str,
+        default="emulator-5558",
+        help="adb serial of the emulator receiving hardware key events.",
+    )
+    parser.add_argument(
         "--videobridge",
         type=str,
         default="",
@@ -425,6 +445,10 @@ async def main():
         help="Path to the active emulator discovery config (.ini) file.",
     )
     args = parser.parse_args()
+
+    global ADB_PATH, ADB_SERIAL
+    ADB_PATH = args.adb
+    ADB_SERIAL = args.adb_serial
 
     # Parse discovery configuration properties
     global DISCOVERY_PROPS
@@ -455,10 +479,10 @@ async def main():
     app = init_app(bridge_token)
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", args.port)
+    site = web.TCPSite(runner, args.host, args.port)
     await site.start()
 
-    logging.info(f"Gateway Webserver listening on http://0.0.0.0:{args.port}")
+    logging.info(f"Gateway Webserver listening on http://{args.host}:{args.port}")
 
     # Run forever
     try:

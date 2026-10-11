@@ -1,0 +1,13 @@
+#!/bin/sh
+set -eu
+
+exec /opt/cloudphone/android-sdk/emulator/emulator \
+  -avd "${AVD_NAME:-cloudphone}" \
+  -port "${EMULATOR_PORT:-5558}" \
+  -grpc "${GRPC_PORT:-8554}" \
+  -grpc-use-token \
+  -grpc-allowlist /etc/cloudphone/emulator_access.json \
+  -no-window -no-audio -no-boot-anim -no-snapshot -no-metrics \
+  -gpu "${EMULATOR_GPU:-swiftshader_indirect}" \
+  -memory "${EMULATOR_MEMORY_MB:-4096}" \
+  -cores "${EMULATOR_CORES:-4}"

@@ -1,0 +1,21 @@
+[Unit]
+Description=Cloud Phone: WebRTC streaming gateway
+After=cloudphone-emulator.service
+Requires=cloudphone-emulator.service
+
+[Service]
+Type=simple
+User=cloudphone
+Group=cloudphone
+UMask=0077
+EnvironmentFile=/etc/cloudphone/cloudphone.conf
+ExecStart=/opt/cloudphone/current/libexec/cloudphone-gateway
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target

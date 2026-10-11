@@ -1,0 +1,25 @@
+[Unit]
+Description=Cloud Phone: mobile web control page
+After=network-online.target cloudphone-gateway.service
+Wants=network-online.target
+Requires=cloudphone-gateway.service
+
+[Service]
+Type=simple
+User=cloudphone
+Group=cloudphone
+EnvironmentFile=/etc/cloudphone/cloudphone.conf
+ExecStart=/opt/cloudphone/current/libexec/cloudphone-web
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+
+[Install]
+WantedBy=multi-user.target
