@@ -1,0 +1,528 @@
+diff --git a/gateway/src/videobridge_gateway/gateway_server.py b/gateway/src/videobridge_gateway/gateway_server.py
+index 9e345b9..b5b4d26 100644
+--- a/gateway/src/videobridge_gateway/gateway_server.py
++++ b/gateway/src/videobridge_gateway/gateway_server.py
+@@ -102,6 +102,10 @@ async def handle_status(request):
+ 
+         # Convert platformConfig map to a regular python dictionary
+         platform_config = dict(status_res.platformConfig)
++        # Current emulator builds may omit LCD dimensions from getStatus.
++        # The browser needs the real dimensions to scale touch coordinates.
++        platform_config.setdefault("hw.lcd.width", "540")
++        platform_config.setdefault("hw.lcd.height", "1170")
+ 
+         # Extract vmConfig details
+         vm_config = {
+@@ -174,6 +178,66 @@ async def handle_logcat(request):
+         return web.json_response({"error": str(e)}, status=500)
+ 
+ 
++async def handle_key(request):
++    """POST /api/v1/emulator/key forwards one Android hardware key."""
++    try:
++        data = await request.json()
++        key = data.get("key", "")
++        supported_keys = {
++            "GoBack", "GoHome", "AppSwitch", "Power",
++            "AudioVolumeUp", "AudioVolumeDown",
++        }
++        if key not in supported_keys:
++            return web.json_response({"error": "unsupported key"}, status=400)
++        keycodes = {
++            "GoBack": "BACK",
++            "GoHome": "HOME",
++            "AppSwitch": "APP_SWITCH",
++            "Power": "POWER",
++            "AudioVolumeUp": "VOLUME_UP",
++            "AudioVolumeDown": "VOLUME_DOWN",
++        }
++        process = await asyncio.create_subprocess_exec(
++            "/opt/android-sdk/platform-tools/adb",
++            "-s", "emulator-5558", "shell", "input", "keyevent", keycodes[key],
++            stdout=asyncio.subprocess.DEVNULL,
++            stderr=asyncio.subprocess.PIPE,
++        )
++        _, stderr = await process.communicate()
++        if process.returncode:
++            raise RuntimeError(stderr.decode(errors="replace").strip())
++        return web.json_response({"status": "success"})
++    except Exception as e:
++        logging.error(f"Error sending key: {e}")
++        return web.json_response({"error": str(e)}, status=500)
++
++
++async def handle_touch(request):
++    """POST /api/v1/emulator/touch forwards one touch contact update."""
++    try:
++        data = await request.json()
++        x = max(0, min(539, int(data.get("x", 0))))
++        y = max(0, min(1169, int(data.get("y", 0))))
++        pressed = bool(data.get("pressed", False))
++        contact = ec.Touch(
++            x=x,
++            y=y,
++            identifier=0,
++            pressure=1024 if pressed else 0,
++            touch_major=8 if pressed else 0,
++            touch_minor=8 if pressed else 0,
++        )
++        stub = ec_grpc.EmulatorControllerStub(EMULATOR_CHANNEL)
++        await stub.sendTouch(
++            ec.TouchEvent(touches=[contact], display=0),
++            metadata=get_emulator_metadata(),
++        )
++        return web.json_response({"status": "success"})
++    except Exception as e:
++        logging.error(f"Error sending touch: {e}")
++        return web.json_response({"error": str(e)}, status=500)
++
++
+ async def handle_websocket_jsep(request):
+     """
+     GET /api/v1/emulator/ws-jsep (WebSocket Upgrade)
+@@ -210,19 +274,9 @@ async def handle_websocket_jsep(request):
+             f"Initialized WebRTC stream session with Video Bridge. Connection ID: {guid}"
+         )
+ 
+-        # 3. Build and send the "start" message with ICE configuration
+-        ice_servers = []
+-        for server in ice_config.ice_servers:
+-            entry = {"urls": list(server.urls)}
+-            if server.username:
+-                entry["username"] = server.username
+-            if server.credential:
+-                entry["credential"] = server.credential
+-            ice_servers.append(entry)
+-
+-        start_msg = {"start": {"iceServers": ice_servers}}
+-        logging.info(f"Sending 'start' signal to client: {start_msg}")
+-        await ws.send_json(start_msg)
++        # The emulator sends the authoritative start message on its JSEP
++        # stream. Sending a second synthetic start creates two peer
++        # connections and breaks both video input and hardware controls.
+ 
+         # 3. Spawn background streaming reader to forward gRPC messages -> WebSocket
+         async def stream_to_client():
+@@ -319,6 +373,8 @@ def init_app(videobridge_token):
+     app.router.add_get("/api/v1/emulator/status", handle_status)
+     app.router.add_post("/api/v1/emulator/gps", handle_gps)
+     app.router.add_get("/api/v1/emulator/logcat", handle_logcat)
++    app.router.add_post("/api/v1/emulator/key", handle_key)
++    app.router.add_post("/api/v1/emulator/touch", handle_touch)
+     app.router.add_get("/api/v1/emulator/ws-jsep", handle_websocket_jsep)
+ 
+     return app
+@@ -374,7 +430,10 @@ async def main():
+         VIDEOBRIDGE_CHANNEL = EMULATOR_CHANNEL
+ 
+     # Start Aiohttp server
+-    app = init_app(args.videobridge_token)
++    # When the emulator itself provides the RTC bridge, reuse its discovery
++    # token. Passing the token on the command line would expose it via /proc.
++    bridge_token = args.videobridge_token or DISCOVERY_PROPS.get("grpc.token", "")
++    app = init_app(bridge_token)
+     runner = web.AppRunner(app)
+     await runner.setup()
+     site = web.TCPSite(runner, "0.0.0.0", args.port)
+diff --git a/js/example/src/App.tsx b/js/example/src/App.tsx
+index 052da42..57621d7 100644
+--- a/js/example/src/App.tsx
++++ b/js/example/src/App.tsx
+@@ -1,163 +1,206 @@
+-import React, { useState, useRef } from 'react';
++import React, { useEffect, useRef, useState } from 'react';
+ import { Emulator, logger } from '../../src';
+ 
+-logger.setLevel("debug");
++logger.setLevel('warn');
+ 
+-function App() {
+-  // Retrieve default connection URI from URL query parameters (e.g. ?url=localhost:8080 or ?uri=localhost:8080)
+-  const getInitialUri = () => {
+-    const params = new URLSearchParams(window.location.search);
+-    return params.get("url") || params.get("uri") || window.location.host;
+-  };
++const TOOLBAR_WIDTH = 42;
++const DEVICE_WIDTH = 540;
++const DEVICE_HEIGHT = 1170;
+ 
+-  const hasDefaultUri = () => {
+-    const params = new URLSearchParams(window.location.search);
+-    return params.has("url") || params.has("uri");
++function viewportSize() {
++  const viewport = window.visualViewport;
++  return {
++    width: Math.floor(viewport?.width || window.innerWidth),
++    height: Math.floor(viewport?.height || window.innerHeight),
+   };
++}
+ 
+-  const [uri, setUri] = useState(getInitialUri());
+-  const [connected, setConnected] = useState(hasDefaultUri());
+-  const [gps, setGps] = useState({ latitude: 37.4220, longitude: -122.0841 });
+-  const [inputGps, setInputGps] = useState({ lat: '37.4220', lng: '-122.0841' });
++function fittedScreen() {
++  const viewport = viewportSize();
++  const availableHeight = Math.max(1, viewport.height);
++  const availableWidth = Math.max(1, viewport.width - TOOLBAR_WIDTH);
++  const width = Math.floor(Math.min(availableWidth, availableHeight * DEVICE_WIDTH / DEVICE_HEIGHT));
++  return { width, height: Math.floor(width * DEVICE_HEIGHT / DEVICE_WIDTH) };
++}
++
++function App() {
+   const emulatorRef = useRef(null);
++  const pointerDown = useRef(false);
++  const touchQueue = useRef(Promise.resolve());
++  const [screen, setScreen] = useState(fittedScreen);
++  const [state, setState] = useState('connecting');
++  const [streamGeneration, setStreamGeneration] = useState(0);
++  const gateway = `${window.location.hostname}:8001`;
++  const gatewayUrl = `${window.location.protocol}//${gateway}`;
++
++  const reconnectStream = () => {
++    pointerDown.current = false;
++    setState('connecting');
++    setStreamGeneration((generation) => generation + 1);
++  };
+ 
+-  const handleConnect = (e) => {
+-    if (e) e.preventDefault();
+-    setConnected(true);
++  useEffect(() => {
++    const resize = () => setScreen(fittedScreen());
++    window.addEventListener('resize', resize);
++    window.visualViewport?.addEventListener('resize', resize);
++    return () => {
++      window.removeEventListener('resize', resize);
++      window.visualViewport?.removeEventListener('resize', resize);
++    };
++  }, []);
++
++  useEffect(() => {
++    let wasHidden = document.visibilityState === 'hidden';
++
++    const visibilityChanged = () => {
++      if (document.visibilityState === 'hidden') {
++        wasHidden = true;
++      } else if (wasHidden) {
++        wasHidden = false;
++        reconnectStream();
++      }
++    };
++
++    const pageShown = (event) => {
++      if (event.persisted) reconnectStream();
++    };
++
++    document.addEventListener('visibilitychange', visibilityChanged);
++    window.addEventListener('pageshow', pageShown);
++    return () => {
++      document.removeEventListener('visibilitychange', visibilityChanged);
++      window.removeEventListener('pageshow', pageShown);
++    };
++  }, []);
++
++  const post = (path, body) => fetch(`${gatewayUrl}${path}`, {
++    method: 'POST',
++    headers: { 'Content-Type': 'application/json' },
++    body: JSON.stringify(body),
++  }).then((response) => {
++    if (!response.ok) throw new Error(`${path}: HTTP ${response.status}`);
++  }).catch((error) => console.error('Android control:', error));
++
++  const sendKey = (key) => post('/api/v1/emulator/key', { key });
++
++  const touchCoordinates = (event) => {
++    const bounds = event.currentTarget.getBoundingClientRect();
++    return {
++      x: Math.max(0, Math.min(DEVICE_WIDTH - 1,
++        Math.round((event.clientX - bounds.left) * DEVICE_WIDTH / bounds.width))),
++      y: Math.max(0, Math.min(DEVICE_HEIGHT - 1,
++        Math.round((event.clientY - bounds.top) * DEVICE_HEIGHT / bounds.height))),
++    };
+   };
+ 
+-  const handleDisconnect = () => {
+-    setConnected(false);
++  const queueTouch = (coordinates, pressed) => {
++    touchQueue.current = touchQueue.current.then(() =>
++      post('/api/v1/emulator/touch', { ...coordinates, pressed }));
+   };
+ 
+-  const sendKey = (key) => {
+-    if (emulatorRef.current) {
+-      emulatorRef.current.sendKey(key);
+-    }
++  const startTouch = (event) => {
++    event.preventDefault();
++    pointerDown.current = true;
++    event.currentTarget.setPointerCapture(event.pointerId);
++    queueTouch(touchCoordinates(event), true);
+   };
+ 
+-  const handleGpsSubmit = (e) => {
+-    e.preventDefault();
+-    setGps({
+-      latitude: parseFloat(inputGps.lat),
+-      longitude: parseFloat(inputGps.lng),
+-    });
++  const moveTouch = (event) => {
++    if (!pointerDown.current) return;
++    event.preventDefault();
++    queueTouch(touchCoordinates(event), true);
++  };
++
++  const endTouch = (event) => {
++    if (!pointerDown.current) return;
++    event.preventDefault();
++    pointerDown.current = false;
++    queueTouch(touchCoordinates(event), false);
+   };
+ 
+   return (
+-    <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
+-      <h1>Android Emulator WebRTC Demo</h1>
+-
+-      {!connected ? (
+-        <form onSubmit={handleConnect} style={{ marginBottom: '20px', padding: '20px', background: '#fff', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+-          <div style={{ marginBottom: '15px' }}>
+-            <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Emulator Gateway URI:</label>
+-            <input
+-              type="text"
+-              value={uri}
+-              onChange={(e) => setUri(e.target.value)}
+-              style={{ width: '100%', padding: '8px', boxSizing: 'border-box', borderRadius: '4px', border: '1px solid #ccc' }}
+-              placeholder="e.g. localhost:8080"
+-              required
+-            />
+-          </div>
+-          <button type="submit" style={{ padding: '10px 20px', background: '#007bff', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+-            Connect to Emulator
+-          </button>
+-        </form>
+-      ) : (
+-        <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+-          {/* Emulator Display */}
+-          <div style={{ background: '#000', padding: '10px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', display: 'inline-block' }}>
+-            <Emulator
+-              ref={emulatorRef}
+-              uri={uri}
+-              width={360}
+-              height={640}
+-              gps={gps}
+-              onStateChange={(state) => console.log('Emulator State:', state)}
+-              onError={(err) => console.error('Emulator Error:', err)}
+-            />
+-          </div>
+-
+-          {/* Controls Panel */}
+-          <div style={{ flex: '1', minWidth: '300px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+-            {/* Connection Status */}
+-            <div style={{ padding: '20px', background: '#fff', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+-              <h3>Connection Info</h3>
+-              <p>Connected to: <strong>{uri}</strong></p>
+-              <button onClick={handleDisconnect} style={{ padding: '8px 16px', background: '#dc3545', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+-                Disconnect
+-              </button>
+-            </div>
+-
+-            {/* Hardware Keys */}
+-            <div style={{ padding: '20px', background: '#fff', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+-              <h3>Hardware Buttons</h3>
+-              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+-                <button onClick={() => sendKey('GoHome')} style={btnStyle}>Home</button>
+-                <button onClick={() => sendKey('GoBack')} style={btnStyle}>Back</button>
+-                <button onClick={() => sendKey('AppSwitch')} style={btnStyle}>App Switch</button>
+-                <button onClick={() => sendKey('Power')} style={btnStyle}>Power</button>
+-                <button onClick={() => sendKey('AudioVolumeUp')} style={btnStyle}>Vol +</button>
+-                <button onClick={() => sendKey('AudioVolumeDown')} style={btnStyle}>Vol -</button>
+-              </div>
+-            </div>
+-
+-            {/* GPS Controls */}
+-            <div style={{ padding: '20px', background: '#fff', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+-              <h3>Location Control (GPS)</h3>
+-              <form onSubmit={handleGpsSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+-                <div>
+-                  <label style={{ display: 'block', marginBottom: '2px' }}>Latitude:</label>
+-                  <input
+-                    type="text"
+-                    value={inputGps.lat}
+-                    onChange={(e) => setInputGps({ ...inputGps, lat: e.target.value })}
+-                    style={inputStyle}
+-                  />
+-                </div>
+-                <div>
+-                  <label style={{ display: 'block', marginBottom: '2px' }}>Longitude:</label>
+-                  <input
+-                    type="text"
+-                    value={inputGps.lng}
+-                    onChange={(e) => setInputGps({ ...inputGps, lng: e.target.value })}
+-                    style={inputStyle}
+-                  />
+-                </div>
+-                <button type="submit" style={{ ...btnStyle, background: '#28a745', color: '#fff', width: 'fit-content' }}>
+-                  Update Location
+-                </button>
+-              </form>
+-              <p style={{ fontSize: '0.9em', color: '#666', marginTop: '10px' }}>
+-                Current GPS: {gps.latitude}, {gps.longitude}
+-              </p>
+-            </div>
+-          </div>
++    <main style={styles.app}>
++      <section style={styles.screen} aria-label="Écran Android">
++        <div style={{ ...styles.device, width: screen.width, height: screen.height }}>
++          <Emulator
++            key={streamGeneration}
++            ref={emulatorRef}
++            uri={gateway}
++            width={screen.width}
++            height={screen.height}
++            muted
++            onStateChange={setState}
++            onError={(error) => console.error('Android stream:', error)}
++          />
++          <div
++            style={styles.touchLayer}
++            aria-label="Surface tactile Android"
++            onPointerDown={startTouch}
++            onPointerMove={moveTouch}
++            onPointerUp={endTouch}
++            onPointerCancel={endTouch}
++          />
++        </div>
++      </section>
++      <nav style={styles.toolbar} aria-label="Contrôles Android">
++        <div style={styles.webControls} aria-label="Contrôles du flux Web">
++          <button style={styles.button} onClick={reconnectStream} aria-label="Reconnecter la vidéo">↻</button>
++          <span
++            title={state}
++            aria-label={`Connexion ${state}`}
++            style={{ ...styles.status, background: state === 'connected' ? '#34c759' : '#ff9f0a' }}
++          />
+         </div>
+-      )}
+-    </div>
++        <div style={styles.separator} aria-hidden="true" />
++        <div style={styles.emulatorControls} aria-label="Contrôles Android">
++          <button style={styles.button} onClick={() => sendKey('GoBack')} aria-label="Retour">‹</button>
++          <button style={styles.button} onClick={() => sendKey('GoHome')} aria-label="Accueil">○</button>
++          <button style={styles.button} onClick={() => sendKey('AppSwitch')} aria-label="Applications récentes">□</button>
++          <button style={styles.button} onClick={() => sendKey('AudioVolumeDown')} aria-label="Baisser le volume">−</button>
++          <button style={styles.button} onClick={() => sendKey('AudioVolumeUp')} aria-label="Monter le volume">＋</button>
++          <button style={styles.button} onClick={() => sendKey('Power')} aria-label="Marche arrêt">⏻</button>
++        </div>
++      </nav>
++    </main>
+   );
+ }
+ 
+-const btnStyle = {
+-  padding: '8px 16px',
+-  background: '#e9ecef',
+-  color: '#495057',
+-  border: '1px solid #ced4da',
+-  borderRadius: '4px',
+-  cursor: 'pointer',
+-  fontWeight: 'bold',
+-  transition: 'background 0.2s',
+-};
+-
+-const inputStyle = {
+-  width: '100%',
+-  padding: '6px',
+-  boxSizing: 'border-box',
+-  borderRadius: '4px',
+-  border: '1px solid #ccc',
++const styles = {
++  app: {
++    position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column',
++    overflow: 'hidden', background: '#000', color: '#fff', touchAction: 'none',
++  },
++  screen: {
++    position: 'absolute', top: 0, bottom: 0, left: 0, right: `${TOOLBAR_WIDTH}px`,
++    display: 'flex', alignItems: 'center',
++    justifyContent: 'center', overflow: 'hidden', background: '#000',
++  },
++  device: { position: 'relative', flex: '0 0 auto' },
++  touchLayer: {
++    position: 'absolute', inset: 0, zIndex: 2, touchAction: 'none', cursor: 'default',
++  },
++  toolbar: {
++    position: 'fixed', top: 0, right: 0, bottom: 0,
++    height: '100%', width: `${TOOLBAR_WIDTH}px`,
++    boxSizing: 'border-box', display: 'flex', flexDirection: 'column', alignItems: 'center',
++    justifyContent: 'center', padding: '8px 3px',
++    background: '#171717', borderLeft: '1px solid #333', zIndex: 10,
++  },
++  webControls: {
++    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px',
++  },
++  separator: {
++    width: '26px', height: '1px', flex: '0 0 1px', margin: '12px 0', background: '#555',
++  },
++  emulatorControls: {
++    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px',
++  },
++  button: {
++    flex: '0 0 36px', width: '36px', height: '36px', minWidth: '36px', margin: 0, padding: 0,
++    border: '1px solid #444', borderRadius: '9px', background: '#292929', color: '#fff',
++    fontSize: '22px', lineHeight: 1, fontFamily: 'system-ui, sans-serif', touchAction: 'manipulation',
++  },
++  status: { width: '9px', height: '9px', flex: '0 0 9px', borderRadius: '50%' },
+ };
+ 
+ export default App;
+diff --git a/js/example/src/main.tsx b/js/example/src/main.tsx
+index c018515..4a0f2de 100644
+--- a/js/example/src/main.tsx
++++ b/js/example/src/main.tsx
+@@ -2,8 +2,4 @@ import React from 'react';
+ import ReactDOM from 'react-dom/client';
+ import App from './App';
+ 
+-ReactDOM.createRoot(document.getElementById('root')!).render(
+-  <React.StrictMode>
+-    <App />
+-  </React.StrictMode>,
+-);
++ReactDOM.createRoot(document.getElementById('root')!).render(<App />);
+diff --git a/js/example/vite.config.js b/js/example/vite.config.js
+index a822144..1ad2550 100644
+--- a/js/example/vite.config.js
++++ b/js/example/vite.config.js
+@@ -57,7 +57,7 @@ const customTerminalLoggingPlugin = () => {
+ // https://vitejs.dev/config/
+ export default defineConfig(({ command }) => {
+   return {
+-    base: '/android-emulator-webrtc/',
++    base: '/',
+     plugins: [
+       react(),
+       protoCommonjsPlugin(),
+diff --git a/js/src/components/emulator/net/ws_jsep_protocol_driver.ts b/js/src/components/emulator/net/ws_jsep_protocol_driver.ts
+index ac83e5e..1b7973e 100644
+--- a/js/src/components/emulator/net/ws_jsep_protocol_driver.ts
++++ b/js/src/components/emulator/net/ws_jsep_protocol_driver.ts
+@@ -307,17 +307,9 @@ export default class WsJsepProtocol {
+ 
+     this.connected = true;
+ 
+-    try {
+-      const offer = await this.peerConnection.createOffer();
+-      if (!this.peerConnection) return;
+-
+-      await this.peerConnection.setLocalDescription(offer);
+-      if (!this.peerConnection) return;
+-
+-      this._sendJsep({ sdp: offer });
+-    } catch (e) {
+-      logger.error("Failed to create or set local offer:", e);
+-    }
++    // The Android Emulator sends the authoritative SDP offer immediately after
++    // the start message. Waiting for it avoids offer glare (both peers having a
++    // local offer), which otherwise leaves Firefox with a black stream.
+   };
+ 
+   /**

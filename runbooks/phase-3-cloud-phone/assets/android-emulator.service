@@ -1,0 +1,29 @@
+[Unit]
+Description=Slayer cloud phone (official Android Emulator)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=master
+Group=master
+SupplementaryGroups=kvm
+UMask=0077
+Environment=ANDROID_HOME=/opt/android-sdk
+Environment=ANDROID_SDK_ROOT=/opt/android-sdk
+Environment=ANDROID_AVD_HOME=/opt/android-avd
+Environment=XDG_RUNTIME_DIR=/run/android-emulator
+RuntimeDirectory=android-emulator
+RuntimeDirectoryMode=0700
+ExecStart=/opt/android-sdk/emulator/emulator -avd slayer-google-test -port 5558 -grpc 8554 -grpc-use-token -grpc-allowlist /etc/android-emulator/emulator_access.json -no-window -no-audio -no-boot-anim -no-snapshot -no-metrics -gpu swiftshader_indirect -memory 4096 -cores 4
+Restart=on-failure
+RestartSec=10s
+TimeoutStopSec=45s
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/home/master/.android /opt/android-avd
+
+[Install]
+WantedBy=multi-user.target
