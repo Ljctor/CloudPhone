@@ -329,6 +329,16 @@ export default class WsJsepProtocol {
    * @param e The track event.
    */
   _handlePeerConnectionTrack = (e: RTCTrackEvent) => {
+    // Interactive use: play frames as soon as they arrive instead of letting
+    // the jitter buffer hold them (Chrome: jitterBufferTarget, older:
+    // playoutDelayHint; ignored where unsupported).
+    const receiver = e.receiver as any;
+    try {
+      if ("jitterBufferTarget" in receiver) receiver.jitterBufferTarget = 0;
+      else if ("playoutDelayHint" in receiver) receiver.playoutDelayHint = 0;
+    } catch (error) {
+      logger.debug("Low-latency playout not supported:", error);
+    }
     if (this.onConnected) {
       this.onConnected(e.track);
     }

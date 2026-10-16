@@ -21,5 +21,5 @@ keys. Agents: read `AGENTS.md`.
 | `docs/DEVELOPMENT.md` | build, test, iterate |
 
 The toolbar shows `ping` (ms), `srv` (frames/s received from the server) and
-`tél` (frames/s displayed). `↻` replaces the video session only; it never
+`phone` (frames/s displayed). `↻` replaces the video session only; it never
 restarts Android or the foreground app.
