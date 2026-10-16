@@ -1,4 +1,5 @@
 import { LANGUAGES, defaultLanguage, setLanguage, tr } from './i18n';
+import { AREA as EMERALD_AREA, findEmeraldMask } from './emeraldMask';
 import React, { useEffect, useRef, useState } from 'react';
 import { Emulator, logger } from '../../src';
 import {
@@ -236,6 +237,48 @@ function DisplaySettings({ gatewayUrl, displayState, refresh, rowStyle, labelSty
 
 // Polls the gateway's view of the server: emulator service, Android boot,
 // viewers, load. failures counts consecutive unanswered polls.
+// While enabled, reads the emerald counter's area of the video 4 times a
+// second and returns the rectangle that hides its last digits, or null.
+function useEmeraldMask(deviceRef, enabled) {
+  const [mask, setMask] = useState(null);
+  const [problem, setProblem] = useState(null);
+  useEffect(() => {
+    if (!enabled) {
+      setMask(null);
+      return undefined;
+    }
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    const timer = window.setInterval(() => {
+      const video = deviceRef.current?.querySelector('video');
+      if (!context) {
+        setProblem('canvas');
+        return;
+      }
+      if (!video?.videoWidth) {
+        setProblem('video');
+        return;
+      }
+      const scale = video.videoWidth / 360;
+      const width = Math.round(EMERALD_AREA.width * scale);
+      const height = Math.round(EMERALD_AREA.height * scale);
+      canvas.width = width;
+      canvas.height = height;
+      try {
+        context.drawImage(video, EMERALD_AREA.x * scale, EMERALD_AREA.y * scale, width, height, 0, 0, width, height);
+        const found = findEmeraldMask(context.getImageData(0, 0, width, height).data, width, height, scale);
+        setMask((current) => (JSON.stringify(current) === JSON.stringify(found) ? current : found));
+        setProblem(null);
+      } catch (error) {
+        setProblem(String(error?.name ?? error));
+        console.warn('Emerald mask:', error);
+      }
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [deviceRef, enabled]);
+  return [mask, problem];
+}
+
 function useServerState(gatewayUrl) {
   const [server, setServer] = useState({ value: null, failures: 0 });
   useEffect(() => {
@@ -355,7 +398,9 @@ function postHeaders() {
 
 // Per-viewer page settings, kept in this browser only.
 const SETTINGS_KEY = 'cloudphone.settings';
-const DEFAULT_SETTINGS = { touchMarker: true, autoFold: true, barDocked: false, language: null };
+const DEFAULT_SETTINGS = {
+  touchMarker: true, autoFold: true, barDocked: false, language: null, emeraldMask: false,
+};
 
 function loadSettings() {
   try {
@@ -647,6 +692,7 @@ function App() {
   const gateway = window.location.host;
   const gatewayUrl = `${window.location.protocol}//${gateway}`;
   const stats = useStreamStats(deviceRef, gatewayUrl);
+  const [emeraldMask, emeraldProblem] = useEmeraldMask(deviceRef, settings.emeraldMask);
   const [displayState, refreshDisplay] = useDisplayState(gatewayUrl);
   const server = useServerState(gatewayUrl);
   // Seconds the stream has been trying to connect, and consecutive failed
@@ -1145,10 +1191,23 @@ function App() {
                     </select>
                   </label>
                   {toggle('Point sous le doigt', 'touchMarker')}
+                  {toggle('Masquer les décimales des émeraudes (Slayer Legend)', 'emeraldMask')}
+                  {settings.emeraldMask && row2(tr('Compteur d’émeraudes'), emeraldMask ? tr('détecté')
+                    : emeraldProblem ? `${tr('non détecté')} (${emeraldProblem})` : tr('non détecté'))}
                   {toggle('Replier la barre 3 s après l’entrée en plein écran', 'autoFold')}
                 </>
               )}
             </div>
+          )}
+          {emeraldMask && (
+            <div aria-hidden="true" style={{
+              ...styles.emeraldMask,
+              left: emeraldMask.x * screen.width / 360,
+              top: emeraldMask.y * screen.width / 360,
+              width: emeraldMask.width * screen.width / 360,
+              height: emeraldMask.height * screen.width / 360,
+              background: emeraldMask.color,
+            }} />
           )}
           <div ref={touchMarker} style={styles.touchMarker} aria-hidden="true" />
           <div
@@ -1226,6 +1285,7 @@ const styles = {
   loadingText: {
     color: '#d8dde5', fontSize: '13px', fontFamily: 'system-ui, sans-serif',
   },
+  emeraldMask: { position: 'absolute', zIndex: 1, pointerEvents: 'none' },
   touchMarker: {
     position: 'absolute', left: '-14px', top: '-14px', width: '28px', height: '28px', zIndex: 2,
     borderRadius: '50%', background: 'rgba(77, 163, 255, 0.35)', border: '2px solid rgba(77, 163, 255, 0.8)',
