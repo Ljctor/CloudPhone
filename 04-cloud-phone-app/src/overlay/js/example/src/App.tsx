@@ -443,6 +443,56 @@ function App() {
     queueTouch(touchCoordinates(event), false);
   };
 
+  const keyButton = (key, label, icon) => (
+    <button className="tool-button" style={buttonStyle} onClick={() => sendKey(key)}
+      aria-label={label}><Icon name={icon} /></button>
+  );
+  const reloadButton = (
+    <button
+      className="tool-button"
+      style={{ ...buttonStyle, ...(reconnecting ? styles.buttonBusy : null) }}
+      onClick={manualReconnect}
+      aria-label="Reconnecter la vidéo"
+      aria-busy={reconnecting}
+    >
+      <Icon name="refresh" spinning={reconnecting} />
+    </button>
+  );
+  const fullscreenButton = (
+    <button className="tool-button" style={buttonStyle} onClick={toggleFullscreen}
+      aria-label="Plein écran"><Icon name="fullscreen" /></button>
+  );
+  const statusLed = (
+    <span
+      title={state}
+      aria-label={`Connexion ${state}`}
+      style={{ ...styles.status, background: state === 'connected' ? '#34c759' : '#ff9f0a' }}
+    />
+  );
+  // Vertical toolbar: ping and both frame rates. Horizontal bar: ping and
+  // the frame rate this device displays.
+  const statsBlock = (full) => (
+    <div
+      style={full ? styles.stats : styles.statsBelow}
+      aria-label="Statistiques du flux (toucher pour les détails de l'écran)"
+      role="button"
+      tabIndex={0}
+      onClick={() => setShowInfo((shown) => !shown)}
+    >
+      <span style={styles.statLabel}>ping</span>
+      <span style={{ ...styles.statValue, color: pingColor(stats.ping) }}
+        title="Aller-retour réseau jusqu'au serveur, en millisecondes">{formatValue(stats.ping)}</span>
+      {full && <span style={styles.statLabel}>srv</span>}
+      {full && (
+        <span style={styles.statValue}
+          title="Images par seconde envoyées par le serveur (≈0 quand l'écran Android ne bouge pas)">{formatValue(stats.server)}</span>
+      )}
+      <span style={styles.statLabel}>{full ? 'phone' : 'fps'}</span>
+      <span style={styles.statValue}
+        title="Images par seconde affichées par ce navigateur">{formatValue(stats.phone)}</span>
+    </div>
+  );
+
   return (
     <main style={{ ...styles.app, flexDirection: row ? 'row' : 'column' }}>
       <style>{`
@@ -501,55 +551,51 @@ function App() {
       )}
       <nav
         style={row ? styles.toolbar
-          : overlay ? { ...styles.toolbarBelow, ...styles.toolbarOverlay, display: toolbarShown ? 'flex' : 'none' }
-            : styles.toolbarBelow}
+          : overlay ? { ...styles.toolbarBar, ...styles.toolbarOverlay, display: toolbarShown ? 'grid' : 'none' }
+            : styles.toolbarBar}
         aria-label="Contrôles Android"
       >
-        <div
-          style={{ ...styles.stats, ...(row ? null : styles.statsBelow) }}
-          aria-label="Statistiques du flux (toucher pour les détails de l'écran)"
-          role="button"
-          tabIndex={0}
-          onClick={() => setShowInfo((shown) => !shown)}
-        >
-          <span style={styles.statLabel}>ping</span>
-          <span style={{ ...styles.statValue, color: pingColor(stats.ping) }}
-            title="Aller-retour réseau jusqu'au serveur, en millisecondes">{formatValue(stats.ping)}</span>
-          <span style={styles.statLabel}>srv</span>
-          <span style={styles.statValue}
-            title="Images par seconde envoyées par le serveur (≈0 quand l'écran Android ne bouge pas)">{formatValue(stats.server)}</span>
-          <span style={styles.statLabel}>phone</span>
-          <span style={styles.statValue}
-            title="Images par seconde affichées par ce navigateur">{formatValue(stats.phone)}</span>
-        </div>
-        <div style={row ? styles.separator : styles.separatorBelow} aria-hidden="true" />
-        <div style={{ ...styles.webControls, ...(row ? null : styles.groupBelow) }} aria-label="Contrôles du flux Web">
-          <button
-            className="tool-button"
-            style={{ ...buttonStyle, ...(reconnecting ? styles.buttonBusy : null) }}
-            onClick={manualReconnect}
-            aria-label="Reconnecter la vidéo"
-            aria-busy={reconnecting}
-          >
-            <Icon name="refresh" spinning={reconnecting} />
-          </button>
-          <button className="tool-button" style={buttonStyle} onClick={toggleFullscreen}
-            aria-label="Plein écran"><Icon name="fullscreen" /></button>
-          <span
-            title={state}
-            aria-label={`Connexion ${state}`}
-            style={{ ...styles.status, background: state === 'connected' ? '#34c759' : '#ff9f0a' }}
-          />
-        </div>
-        <div style={row ? styles.separator : styles.separatorBelow} aria-hidden="true" />
-        <div style={{ ...styles.emulatorControls, ...(row ? null : styles.groupBelow) }} aria-label="Contrôles Android">
-          <button className="tool-button" style={buttonStyle} onClick={() => sendKey('GoBack')} aria-label="Retour"><Icon name="back" /></button>
-          <button className="tool-button" style={buttonStyle} onClick={() => sendKey('GoHome')} aria-label="Accueil"><Icon name="home" /></button>
-          <button className="tool-button" style={buttonStyle} onClick={() => sendKey('AppSwitch')} aria-label="Applications récentes"><Icon name="recents" /></button>
-          <button className="tool-button" style={buttonStyle} onClick={() => sendKey('AudioVolumeDown')} aria-label="Baisser le volume"><Icon name="volumeDown" /></button>
-          <button className="tool-button" style={buttonStyle} onClick={() => sendKey('AudioVolumeUp')} aria-label="Monter le volume"><Icon name="volumeUp" /></button>
-          <button className="tool-button" style={buttonStyle} onClick={() => sendKey('Power')} aria-label="Marche arrêt"><Icon name="power" /></button>
-        </div>
+        {row ? (
+          <>
+            {statsBlock(true)}
+            <div style={styles.separator} aria-hidden="true" />
+            <div style={styles.webControls} aria-label="Contrôles du flux Web">
+              {reloadButton}
+              {fullscreenButton}
+              {statusLed}
+            </div>
+            <div style={styles.separator} aria-hidden="true" />
+            <div style={styles.emulatorControls} aria-label="Contrôles Android">
+              {keyButton('GoBack', 'Retour', 'back')}
+              {keyButton('GoHome', 'Accueil', 'home')}
+              {keyButton('AppSwitch', 'Applications récentes', 'recents')}
+              {keyButton('AudioVolumeDown', 'Baisser le volume', 'volumeDown')}
+              {keyButton('AudioVolumeUp', 'Monter le volume', 'volumeUp')}
+              {keyButton('Power', 'Marche arrêt', 'power')}
+            </div>
+          </>
+        ) : (
+          <>
+            {/* Like a phone: physical keys on the sides, Android's
+                navigation buttons centred (recents, home, back). */}
+            <div style={{ ...styles.barZone, justifyContent: 'flex-start' }}>
+              {keyButton('Power', 'Marche arrêt', 'power')}
+              {reloadButton}
+              {fullscreenButton}
+              {statusLed}
+            </div>
+            <div style={styles.barZone} aria-label="Navigation Android">
+              {keyButton('AppSwitch', 'Applications récentes', 'recents')}
+              {keyButton('GoHome', 'Accueil', 'home')}
+              {keyButton('GoBack', 'Retour', 'back')}
+            </div>
+            <div style={{ ...styles.barZone, justifyContent: 'flex-end' }}>
+              {statsBlock(false)}
+              {keyButton('AudioVolumeDown', 'Baisser le volume', 'volumeDown')}
+              {keyButton('AudioVolumeUp', 'Monter le volume', 'volumeUp')}
+            </div>
+          </>
+        )}
       </nav>
     </main>
   );
@@ -604,12 +650,15 @@ const styles = {
     borderRadius: '8px', background: 'rgba(27, 29, 34, 0.7)', color: '#d8dde5',
     fontSize: '14px', lineHeight: 1, touchAction: 'manipulation',
   },
-  toolbarBelow: {
+  // Horizontal bar: left, centre and right zones; the centre stays centred
+  // whatever the side zones hold.
+  toolbarBar: {
     flex: `0 0 ${TOOLBAR_WIDTH}px`, alignSelf: 'stretch', height: `${TOOLBAR_WIDTH}px`,
-    boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center',
-    justifyContent: 'center', padding: '2px 6px',
+    boxSizing: 'border-box', display: 'grid', gridTemplateColumns: '1fr auto 1fr',
+    alignItems: 'center', columnGap: '4px', padding: '2px 4px',
     background: '#1b1d22', borderTop: '1px solid #3b3f47', zIndex: 10,
   },
+  barZone: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px', minWidth: 0 },
   // Label above value, one column per statistic.
   statsBelow: {
     display: 'grid', gridAutoFlow: 'column', gridTemplateRows: 'auto auto',
@@ -618,9 +667,6 @@ const styles = {
   // Below the screen the buttons share the width and shrink on narrow phones.
   buttonBelow: {
     flex: '1 1 30px', width: 'auto', minWidth: '24px', maxWidth: '40px', height: '32px',
-  },
-  separatorBelow: {
-    width: '1px', height: '26px', flex: '0 0 1px', margin: '0 5px', background: '#555',
   },
   stats: {
     display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -636,7 +682,6 @@ const styles = {
   infoLabel: { color: '#8a919c' },
   statLabel: { fontSize: '9px', color: '#8a919c', marginTop: '3px' },
   statValue: { fontSize: '12px', fontWeight: 600, color: '#e8ebf0', minWidth: '3ch', textAlign: 'center' },
-  groupBelow: { flexDirection: 'row', flex: '1 1 auto', gap: '3px', justifyContent: 'center' },
   webControls: {
     display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px',
   },
