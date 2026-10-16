@@ -71,6 +71,13 @@ DISPLAY_LIMITS = {"width": (240, 1440), "height": (320, 3200), "density": (80, 6
 EMULATOR_UNIT = ""
 DISCOVERY_FILE = ""
 VIEWERS = {"count": 0}
+# Signalling sessions by viewer id (one per page load), and the viewers that
+# another one disconnected: refused for KICK_SECONDS, so that their page
+# does not simply reconnect.
+SESSIONS = {}
+KICKED = {}
+KICK_SECONDS = 600.0
+CLOSED_BY_OTHER_VIEWER = 4001
 STATE_CACHE = {"time": 0.0, "value": None}
 STATE_CACHE_SECONDS = 2.0
 # The gateway also serves the page, so page and API share one origin and no
@@ -219,10 +226,47 @@ def read_load():
         return None
 
 
+def viewer_of(request):
+    return request.query.get("viewer", "")[:64]
+
+
+def is_kicked(viewer):
+    now = time.monotonic()
+    for key in [key for key, since in KICKED.items() if now - since > KICK_SECONDS]:
+        del KICKED[key]
+    return bool(viewer) and viewer in KICKED
+
+
+async def handle_disconnect_others(request):
+    """
+    POST /api/v1/viewers/disconnect-others {viewer}: ends every signalling
+    session except the caller's, and refuses those viewers for a while.
+    """
+    try:
+        data = await request.json()
+        viewer = str(data.get("viewer", ""))[:64]
+    except (ValueError, TypeError):
+        return web.json_response({"error": "viewer is required"}, status=400)
+    if not viewer:
+        return web.json_response({"error": "viewer is required"}, status=400)
+    closed = 0
+    for ws, other in list(SESSIONS.items()):
+        if other == viewer:
+            continue
+        if other:
+            KICKED[other] = time.monotonic()
+        await ws.close(code=CLOSED_BY_OTHER_VIEWER, message=b"Disconnected by another viewer")
+        closed += 1
+    logging.info(f"Viewer {viewer} disconnected {closed} other session(s)")
+    STATE_CACHE["value"] = None
+    return web.json_response({"closed": closed})
+
+
 async def handle_state(request):
     """
     GET /api/v1/state: what the page needs to explain a problem to the user.
-    Cached for a couple of seconds, as every open page polls it.
+    Cached for a couple of seconds, as every open page polls it; "kicked"
+    is per viewer (?viewer=).
     """
     loop = asyncio.get_running_loop()
     if STATE_CACHE["value"] is None or loop.time() - STATE_CACHE["time"] > STATE_CACHE_SECONDS:
@@ -235,7 +279,8 @@ async def handle_state(request):
             "display": read_display_status(),
         }
         STATE_CACHE["time"] = loop.time()
-    return web.json_response(STATE_CACHE["value"], headers={"Cache-Control": "no-store"})
+    value = {**STATE_CACHE["value"], "kicked": is_kicked(viewer_of(request))}
+    return web.json_response(value, headers={"Cache-Control": "no-store"})
 
 
 async def watch_discovery_file():
@@ -496,6 +541,10 @@ async def handle_websocket_jsep(request):
     ws = web.WebSocketResponse()
     await ws.prepare(request)
     logging.info("WebSocket connection opened for JSEP signaling.")
+    viewer = viewer_of(request)
+    if is_kicked(viewer):
+        await ws.close(code=CLOSED_BY_OTHER_VIEWER, message=b"Disconnected by another viewer")
+        return ws
 
     if not VIDEOBRIDGE_CHANNEL:
         logging.error("No channel to Video Bridge.")
@@ -510,6 +559,7 @@ async def handle_websocket_jsep(request):
     stream_task = None
     bye_forwarded = False
     VIEWERS["count"] += 1
+    SESSIONS[ws] = viewer
 
     try:
         # 1. Build default ICE configuration using public STUN server
@@ -595,6 +645,7 @@ async def handle_websocket_jsep(request):
         logging.exception("Error in WebSocket session handler:")
     finally:
         VIEWERS["count"] -= 1
+        SESSIONS.pop(ws, None)
         logging.info(f"Closing signaling WebSocket session for ID: {guid}")
         # Browsers do not always get a chance to send a final WebSocket frame
         # when a tab is suspended or killed. Explicitly tear down the emulator
@@ -677,6 +728,7 @@ def init_app(videobridge_token):
     app.router.add_get("/api/v1/ping", handle_ping)
     app.router.add_get("/api/v1/display", handle_display)
     app.router.add_get("/api/v1/state", handle_state)
+    app.router.add_post("/api/v1/viewers/disconnect-others", handle_disconnect_others)
     app.router.add_post("/api/v1/display", handle_set_display)
     app.router.add_get("/api/v1/emulator/status", handle_status)
     app.router.add_post("/api/v1/emulator/gps", handle_gps)

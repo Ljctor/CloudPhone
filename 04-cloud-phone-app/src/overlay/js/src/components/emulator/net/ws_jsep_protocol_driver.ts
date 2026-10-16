@@ -21,6 +21,16 @@ import Proto from "../../../proto/emulator_controller_pb";
 let currentPeerConnection: RTCPeerConnection | null = null;
 // eslint-disable-next-line no-use-before-define
 let currentDriver: WsJsepProtocol | null = null;
+// Identifies this page to the gateway (sent as ?viewer= on the signalling
+// WebSocket), so one page can disconnect the others.
+let viewerId = "";
+
+export function setViewerId(id: string) {
+  viewerId = id;
+}
+
+/** WebSocket close code of a session ended by another viewer. */
+export const CLOSED_BY_OTHER_VIEWER = 4001;
 
 /** Returns the RTCPeerConnection of the active stream, if any. */
 export function activePeerConnection(): RTCPeerConnection | null {
@@ -171,7 +181,10 @@ export default class WsJsepProtocol {
       this.reconnectTimeoutId = null;
     }
 
-    this.ws = new WebSocket(this.wsUrl);
+    const url = viewerId
+      ? `${this.wsUrl}${this.wsUrl.includes("?") ? "&" : "?"}viewer=${encodeURIComponent(viewerId)}`
+      : this.wsUrl;
+    this.ws = new WebSocket(url);
     this.ws.onmessage = this._handleWsMessage;
     this.ws.onclose = this._handleWsClose;
     this.ws.onerror = this._handleWsError;
@@ -250,6 +263,11 @@ export default class WsJsepProtocol {
    */
   _handleWsClose = (event: CloseEvent) => {
     logger.debug("WebSocket closed:", event);
+    // Another viewer took over: reconnecting would only be refused.
+    if (event.code === CLOSED_BY_OTHER_VIEWER) {
+      this.disconnect();
+      return;
+    }
     if (this.connected) {
       this._queueReconnect();
     } else {

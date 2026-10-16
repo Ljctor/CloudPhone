@@ -1,7 +1,9 @@
 import { LANGUAGES, defaultLanguage, setLanguage, tr } from './i18n';
 import React, { useEffect, useRef, useState } from 'react';
 import { Emulator, logger } from '../../src';
-import { activePeerConnection, sendInputEvent } from '../../src/components/emulator/net/ws_jsep_protocol_driver';
+import {
+  activePeerConnection, sendInputEvent, setViewerId,
+} from '../../src/components/emulator/net/ws_jsep_protocol_driver';
 import Proto from '../../src/proto/emulator_controller_pb';
 
 logger.setLevel('warn');
@@ -241,7 +243,8 @@ function useServerState(gatewayUrl) {
     const load = () => {
       const controller = new AbortController();
       const timeout = window.setTimeout(() => controller.abort(), 4000);
-      fetch(`${gatewayUrl}/api/v1/state`, { cache: 'no-store', signal: controller.signal })
+      fetch(`${gatewayUrl}/api/v1/state?viewer=${encodeURIComponent(VIEWER_ID)}`,
+        { cache: 'no-store', signal: controller.signal })
         .then((response) => (response.ok ? response.json() : Promise.reject(new Error(String(response.status)))))
         .then((value) => { if (!cancelled) setServer({ value, failures: 0 }); })
         .catch(() => { if (!cancelled) setServer((current) => ({ ...current, failures: current.failures + 1 })); })
@@ -263,6 +266,12 @@ function diagnose({ server, stream, connectingFor, touchFailures }) {
     return {
       level: 'error', blocking: true, text: 'Serveur injoignable',
       detail: 'Vérifiez que le VPN (WireGuard) est connecté sur cet appareil.',
+    };
+  }
+  if (value?.kicked) {
+    return {
+      level: 'error', blocking: true, text: 'Un autre appareil a pris la main',
+      detail: 'Touchez ↻ pour la reprendre.',
     };
   }
   const display = value?.display?.state;
@@ -331,6 +340,11 @@ function describeUnit(unit) {
 }
 
 const LONG_PRESS_MS = 500;
+
+// One id per page load: lets this page disconnect the other viewers, and
+// the gateway refuse this page after another one disconnected it.
+const VIEWER_ID = window.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+setViewerId(VIEWER_ID);
 
 // The gateway writes a per-start token into the page; every POST carries it,
 // so a page from another origin cannot drive Android.
@@ -680,6 +694,11 @@ function App() {
   // Manual refresh: show that the click was taken into account until the new
   // stream displays its first frame.
   const manualReconnect = () => {
+    // Disconnected by another viewer: a new page load is a new viewer.
+    if (server.value?.kicked) {
+      window.location.reload();
+      return;
+    }
     setReconnecting(true);
     if (feedbackTimer.current !== null) window.clearTimeout(feedbackTimer.current);
     feedbackTimer.current = window.setTimeout(stopFeedback, RECONNECT_FEEDBACK_MS);
@@ -791,6 +810,12 @@ function App() {
 
   // Keys: the emulator's "keyboard" data channel when open (a keypress with
   // the DOM key name), otherwise the gateway, which uses adb.
+  const disconnectOthers = () => fetch(`${gatewayUrl}/api/v1/viewers/disconnect-others`, {
+    method: 'POST',
+    headers: postHeaders(),
+    body: JSON.stringify({ viewer: VIEWER_ID }),
+  }).catch((error) => console.error('Disconnect others:', error));
+
   const sendKey = (key) => {
     if (USE_DATA_CHANNEL) {
       const event = new Proto.KeyboardEvent();
@@ -1082,14 +1107,22 @@ function App() {
           )}
           {panel && (
             <div style={styles.info} role="dialog"
-              aria-label={panel === 'server' ? tr('Serveur') : tr('Cet appareil')}>
+              aria-label={panel === 'server' ? tr('Configuration serveur') : tr('Configuration client')}>
               <div style={styles.infoHeader}>
-                <strong>{panel === 'server' ? tr('Serveur') : tr('Cet appareil')}</strong>
+                <strong>{panel === 'server' ? tr('Configuration serveur') : tr('Configuration client')}</strong>
                 <button style={styles.infoClose} onClick={() => setPanel(null)} aria-label={tr('Fermer')}>✕</button>
               </div>
               {panel === 'server' ? (
                 <>
                   {sections(serverSections)}
+                  {server.value?.viewers > 1 && (
+                    <div style={styles.infoRow}>
+                      <span style={styles.infoLabel}>{tr('Autres appareils')}</span>
+                      <button style={styles.panelButton} onClick={disconnectOthers}>
+                        {tr('Déconnecter')}
+                      </button>
+                    </div>
+                  )}
                   <div style={styles.infoSection}>{tr('Écran d’Android')}</div>
                   <DisplaySettings
                     gatewayUrl={gatewayUrl}
@@ -1112,7 +1145,7 @@ function App() {
                     </select>
                   </label>
                   {toggle('Point sous le doigt', 'touchMarker')}
-                  {toggle('Replier la barre en plein écran', 'autoFold')}
+                  {toggle('Replier la barre 3 s après l’entrée en plein écran', 'autoFold')}
                 </>
               )}
             </div>
