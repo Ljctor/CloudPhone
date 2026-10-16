@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Emulator, logger } from '../../src';
-import { activePeerConnection } from '../../src/components/emulator/net/ws_jsep_protocol_driver';
+import { activePeerConnection, sendInputEvent } from '../../src/components/emulator/net/ws_jsep_protocol_driver';
+import Proto from '../../src/proto/emulator_controller_pb';
 
 logger.setLevel('warn');
 
@@ -213,6 +214,8 @@ function App() {
   // collapse into the latest one, so a drag never lags behind the finger.
   const touchSender = useRef({ inFlight: false, queue: [], pendingMove: null });
   const touchMarker = useRef(null);
+  // "data channel" or "HTTP": how the last touch reached Android.
+  const inputPath = useRef('–');
   const reconnectTimer = useRef(null);
   const [display, setDisplay] = useState(DEFAULT_DISPLAY);
   const [screen, setScreen] = useState(() => fittedScreen(DEFAULT_DISPLAY));
@@ -370,8 +373,31 @@ function App() {
     });
   };
 
+  // Preferred path: the stream's WebRTC data channel, straight to the
+  // emulator, no HTTP request and no gRPC hop through the gateway.
+  const sendOverChannel = (coordinates, pressed) => {
+    const touch = new Proto.Touch();
+    touch.setX(coordinates.x);
+    touch.setY(coordinates.y);
+    touch.setIdentifier(0);
+    touch.setPressure(pressed ? 1024 : 0);
+    touch.setTouchMajor(pressed ? 8 : 0);
+    touch.setTouchMinor(pressed ? 8 : 0);
+    const event = new Proto.TouchEvent();
+    event.setTouchesList([touch]);
+    event.setDisplay(0);
+    return sendInputEvent('touch', event);
+  };
+
   const queueTouch = (coordinates, pressed, move = false) => {
     const sender = touchSender.current;
+    // Use the channel only when no HTTP touch is pending, to keep the order.
+    const httpIdle = !sender.inFlight && sender.queue.length === 0 && !sender.pendingMove;
+    if (httpIdle && sendOverChannel(coordinates, pressed)) {
+      inputPath.current = 'data channel';
+      return;
+    }
+    inputPath.current = 'HTTP';
     if (move) {
       sender.pendingMove = { ...coordinates, pressed: true };
     } else {
@@ -447,7 +473,7 @@ function App() {
           )}
           {showInfo && (
             <div style={styles.info} onClick={() => setShowInfo(false)} role="dialog" aria-label="Écran">
-              {deviceInfo(screen, stats.video).map(([label, value]) => (
+              {[...deviceInfo(screen, stats.video), ['Touches via', inputPath.current]].map(([label, value]) => (
                 <div key={label} style={styles.infoRow}>
                   <span style={styles.infoLabel}>{label}</span>
                   <span>{value}</span>

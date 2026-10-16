@@ -19,10 +19,27 @@ import Proto from "../../../proto/emulator_controller_pb";
 // The peer connection of the stream currently on screen, for statistics
 // (frame rates, round-trip time). Only one stream is shown at a time.
 let currentPeerConnection: RTCPeerConnection | null = null;
+// eslint-disable-next-line no-use-before-define
+let currentDriver: WsJsepProtocol | null = null;
 
 /** Returns the RTCPeerConnection of the active stream, if any. */
 export function activePeerConnection(): RTCPeerConnection | null {
   return currentPeerConnection;
+}
+
+/**
+ * Sends an input event (label "touch", "mouse" or "keyboard") over the active
+ * stream's WebRTC data channel. Returns false, without sending, when no
+ * channel is open, so the caller can use another path.
+ */
+export function sendInputEvent(label: string, msg: any): boolean {
+  const driver = currentDriver;
+  const channel = driver?.event_forwarders["input"];
+  if (!driver || !driver.connected || !channel || channel.readyState !== "open") {
+    return false;
+  }
+  driver.send(label, msg);
+  return true;
 }
 
 export interface WsJsepConfig {
@@ -303,6 +320,7 @@ export default class WsJsepProtocol {
 
     this.peerConnection = new RTCPeerConnection(localOnlyConfig);
     currentPeerConnection = this.peerConnection;
+    currentDriver = this;
     this.peerConnection.ontrack = this._handlePeerConnectionTrack;
     this.peerConnection.onicecandidate = this._handlePeerIceCandidate;
     this.peerConnection.onconnectionstatechange = this._handlePeerConnectionStateChange;
@@ -551,6 +569,9 @@ export default class WsJsepProtocol {
       this.peerConnection.close();
       if (currentPeerConnection === this.peerConnection) {
         currentPeerConnection = null;
+      }
+      if (currentDriver === this) {
+        currentDriver = null;
       }
       this.peerConnection = null;
     }
