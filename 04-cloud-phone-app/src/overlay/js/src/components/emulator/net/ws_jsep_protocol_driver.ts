@@ -34,7 +34,7 @@ export function activePeerConnection(): RTCPeerConnection | null {
  */
 export function sendInputEvent(label: string, msg: any): boolean {
   const driver = currentDriver;
-  const channel = driver?.event_forwarders["input"];
+  const channel = driver?.event_forwarders[label] ?? driver?.event_forwarders["input"];
   if (!driver || !driver.connected || !channel || channel.readyState !== "open") {
     return false;
   }
@@ -507,6 +507,15 @@ export default class WsJsepProtocol {
    * @param msg The protobuf message instance.
    */
   send = (label: string, msg: any) => {
+    // Emulator 36.x opens one channel per kind of event ("mouse",
+    // "keyboard", "touch", plus "adb") and reads the raw message bytes on
+    // it; it never reads the browser-created "input" channel. Newer
+    // emulators read InputEvent wrappers on "input" instead.
+    const own = this.event_forwarders[label];
+    if (this.connected && own && own.readyState === "open") {
+      own.send(msg.serializeBinary());
+      return;
+    }
     let forwarder = this.event_forwarders["input"];
     if (this.connected && forwarder && forwarder.readyState === "open") {
       const inputEvent = new Proto.InputEvent();

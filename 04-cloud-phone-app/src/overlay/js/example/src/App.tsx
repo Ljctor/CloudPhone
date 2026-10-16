@@ -8,9 +8,10 @@ logger.setLevel('warn');
 
 const TOOLBAR_WIDTH = 40;
 const STATS_INTERVAL_MS = 1000;
-// Touches over the WebRTC data channel reach the channel but this emulator
-// build (36.6.11) does not apply them: keep the HTTP path until that works.
-const USE_DATA_CHANNEL = false;
+// Touches and keys go over the emulator's own WebRTC data channels ("touch",
+// "keyboard"): no HTTP request, no gRPC hop. HTTP through the gateway stays
+// as the fallback while no channel is open. See docs/DEVELOPMENT.md.
+const USE_DATA_CHANNEL = true;
 // Give up showing the reconnect feedback if no frame arrives in this time.
 const RECONNECT_FEEDBACK_MS = 15000;
 // Android's display size until the gateway reports the real one.
@@ -788,7 +789,17 @@ function App() {
     console.error('Android control:', error);
   });
 
-  const sendKey = (key) => post('/api/v1/emulator/key', { key });
+  // Keys: the emulator's "keyboard" data channel when open (a keypress with
+  // the DOM key name), otherwise the gateway, which uses adb.
+  const sendKey = (key) => {
+    if (USE_DATA_CHANNEL) {
+      const event = new Proto.KeyboardEvent();
+      event.setEventtype(Proto.KeyboardEvent.KeyEventType.KEYPRESS);
+      event.setKey(key);
+      if (sendInputEvent('keyboard', event)) return;
+    }
+    post('/api/v1/emulator/key', { key });
+  };
 
   const touchCoordinates = (event) => {
     const bounds = event.currentTarget.getBoundingClientRect();
@@ -954,7 +965,7 @@ function App() {
   // screen size, showing the ping. This device: display, input and page
   // options, showing the frames per second it displays.
   const panelBlock = (name, label, value, color) => (
-    <button className="tool-button" style={styles.metric} onClick={() => togglePanel(name)}
+    <button className="metric-link" style={styles.metric} onClick={() => togglePanel(name)}
       aria-label={label} aria-expanded={panel === name}>
       <span style={{ ...styles.metricLine, color }}>
         {value}
@@ -1028,6 +1039,7 @@ function App() {
           to { transform: rotate(360deg); }
         }
         .tool-button:active { background: #3a6ea5 !important; border-color: #4da3ff !important; }
+        .metric-link:active { opacity: 0.6; }
         /* A long press must reach Android, not open the browser's
            select/copy menu over the video. The panels stay selectable. */
         body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
@@ -1061,7 +1073,8 @@ function App() {
             </div>
           )}
           {problem && !problem.blocking && dismissed !== problem.text && (
-            <div style={{ ...styles.banner, borderColor: LEVEL_COLORS[problem.level] }} role="status">
+            <div style={{ ...styles.banner, ...styles.bannerWithClose, borderColor: LEVEL_COLORS[problem.level] }}
+              role="status">
               <span>{tr(problem.text)}{problem.detail && <><br /><small>{tr(problem.detail)}</small></>}</span>
               <button style={styles.bannerClose} onClick={() => setDismissed(problem.text)}
                 aria-label={tr('Fermer')}>✕</button>
@@ -1220,7 +1233,7 @@ const styles = {
   buttonBelow: { flex: '0 0 28px', width: '28px', minWidth: '28px', height: '28px' },
   metric: {
     flex: '0 0 auto', minWidth: '28px', minHeight: '28px', margin: 0, padding: '1px 2px',
-    border: '1px solid #444', borderRadius: '9px', background: '#292929', color: '#e8ebf0',
+    border: 'none', background: 'transparent', color: '#e8ebf0', cursor: 'pointer',
     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
     fontFamily: 'system-ui, sans-serif', fontVariantNumeric: 'tabular-nums', touchAction: 'manipulation',
   },
@@ -1260,11 +1273,14 @@ const styles = {
     position: 'absolute', left: '50%', top: '8px', transform: 'translateX(-50%)', zIndex: 3,
     padding: '10px 14px', borderRadius: '10px', background: 'rgba(20, 22, 27, 0.92)',
     border: '1px solid #3b3f47', color: '#e8ebf0', fontFamily: 'system-ui, sans-serif',
-    fontSize: '13px', textAlign: 'center', maxWidth: '80%',
-    display: 'flex', alignItems: 'flex-start', gap: '10px',
+    fontSize: '13px', textAlign: 'center', maxWidth: '80%', boxSizing: 'border-box',
   },
+  // In the corner, with the same padding on both sides: the text stays
+  // centred.
+  bannerWithClose: { padding: '10px 28px' },
   bannerClose: {
-    flex: '0 0 22px', width: '22px', height: '22px', padding: 0, border: 'none',
+    position: 'absolute', top: '4px', right: '4px',
+    width: '22px', height: '22px', padding: 0, border: 'none',
     background: 'transparent', color: '#8a919c', fontSize: '14px', lineHeight: 1,
   },
   info: {

@@ -36,14 +36,33 @@ Android keeps running. Close and reopen the browser tab to load the new page.
 
 ## Stream behaviour
 
-- Gray screen, spinner, orange dot: negotiating. Green dot: video playing.
-  Green dot on black: Android itself shows black (screen off: press power).
+- While the video is not playing, the screen shows a spinner with
+  "Connexion au flux…", or the reason when the page knows it (from
+  `GET /api/v1/state`): server unreachable, Android crashed/stopped/booting,
+  screen size change, video not connecting (UDP). The LED in the corner of
+  `↻` is green when all is well, orange while something is being fixed, red
+  when it needs action. Information (other viewers, heavy load, touches
+  failing) shows as a closable banner.
 - `↻` sends `bye`, closes the WebSocket and peer connection, waits 1 s for
   the emulator to drop the participant, then opens one new session; repeated
   clicks are ignored while it runs. Returning from background or from the
-  back-forward cache does the same.
-- `srv` falls to ~0 on a still Android screen: the emulator sends frames only
-  on change.
+  back-forward cache does the same, and so does Android coming back after a
+  crash or a restart.
+- Frame rates fall to ~0 on a still Android screen: the emulator sends
+  frames only on change.
+
+## Touch and keys
+
+Emulator 36.6.11 opens four data channels towards the browser: `mouse`,
+`keyboard`, `touch` and `adb`, and reads the raw `TouchEvent` /
+`KeyboardEvent` bytes on them. It never reads the `input` channel that the
+upstream driver creates (an `InputEvent` wrapper, for newer emulators): input
+sent there arrives and is silently dropped. The driver therefore writes to
+the channel named after the event and uses `input` only when that channel is
+missing. Checked on 2026-10-16 with a swipe that opened the notification
+shade and a volume key, with no HTTP request. While no channel is open,
+touches go to `POST /api/v1/emulator/touch` (moves coalesced, one request in
+flight) and keys to `POST /api/v1/emulator/key` (adb on the gateway).
 
 ## Browser acceptance test
 
