@@ -1,0 +1,9 @@
+[Unit]
+Description=Cloud Phone: watch for screen size requests from the web page
+
+[Path]
+PathExists=/var/lib/cloudphone/display-request
+Unit=cloudphone-display.service
+
+[Install]
+WantedBy=paths.target

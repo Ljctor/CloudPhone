@@ -8,7 +8,8 @@ Agents: read `AGENTS.md`. All-in-one install with part 04:
 |---|---|
 | `scripts/install.sh` | SDK, pinned emulator, system image, AVD, service; waits for boot |
 | `scripts/verify.sh` | read-only acceptance test (prints `PASS`) |
-| `scripts/set-resolution.sh` | change Android's screen size (reboots Android) |
+| `scripts/set-resolution.sh` | change Android's screen size (reboots Android); the web page can request it too |
+| `files/libexec/cloudphone-display-apply` | root side of size changes requested from the page: checks the request, runs `set-resolution.sh` (started by `cloudphone-display.path`) |
 | `files/cloudphone.conf` | default `/etc/cloudphone/cloudphone.conf` |
 | `files/emulator_access.json` | gRPC allowlist (token-authenticated, loopback) |
 | `files/libexec/cloudphone-emulator` | launcher, installed in `/opt/cloudphone/libexec` |

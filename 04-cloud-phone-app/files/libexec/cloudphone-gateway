@@ -14,4 +14,6 @@ exec /opt/cloudphone/current/venv/bin/videobridge-gateway \
   --port "$(( ${WEB_PORT:-8000} + 1 ))" \
   --adb /opt/cloudphone/android-sdk/platform-tools/adb \
   --adb_serial "emulator-${EMULATOR_PORT:-5558}" \
-  --discovery_file "$discovery"
+  --discovery_file "$discovery" \
+  --display_request /var/lib/cloudphone/display-request \
+  --display_status /run/cloudphone-display/status

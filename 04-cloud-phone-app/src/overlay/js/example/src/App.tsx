@@ -92,9 +92,139 @@ function formatValue(value) {
   return value === null || value === undefined ? '–' : String(Math.round(value));
 }
 
-function formatBitrate(kbps) {
-  if (kbps === null || kbps === undefined) return '–';
-  return kbps >= 1000 ? `${(kbps / 1000).toFixed(1)}M` : `${Math.round(kbps)}k`;
+// Android screen shapes (height / width, portrait) and resolutions offered
+// on the page. Density follows the width (160 dpi per 360 px), so Android's
+// layout looks the same at every resolution: "Haute" only adds pixels, for
+// sharp screenshots, at a higher CPU cost on the server.
+const DEVICE_SHAPES = [
+  { id: 's23', label: 'Téléphone 19,5:9 (Galaxy S23)', ratio: 2340 / 1080 },
+  { id: 'pixel', label: 'Téléphone 20:9 (Pixel 8)', ratio: 2400 / 1080 },
+  { id: 'classic', label: 'Téléphone 16:9', ratio: 16 / 9 },
+  { id: 'tablet', label: 'Tablette 16:10', ratio: 1.6 },
+  { id: 'fold', label: 'Pliable ouvert', ratio: 2176 / 1812 },
+  { id: 'window', label: 'Cette fenêtre', ratio: null },
+];
+// Auto is the lightest size, the most fluid on a server without a GPU.
+const RESOLUTIONS = [
+  { id: 'auto', label: 'Auto', width: 360 },
+  { id: '360', label: '360p', width: 360 },
+  { id: '480', label: '480p', width: 480 },
+  { id: '720', label: '720p', width: 720 },
+  { id: '1080', label: '1080p', width: 1080 },
+];
+
+function even(value) {
+  return Math.max(2, Math.round(value / 2) * 2);
+}
+
+function shapeRatio(shape) {
+  if (shape.ratio) return shape.ratio;
+  const ratio = window.innerHeight / Math.max(1, window.innerWidth);
+  return Math.min(2.4, Math.max(1, ratio));
+}
+
+function targetSize(shapeId, resolutionId) {
+  const shape = DEVICE_SHAPES.find((item) => item.id === shapeId) ?? DEVICE_SHAPES[0];
+  const resolution = RESOLUTIONS.find((item) => item.id === resolutionId) ?? RESOLUTIONS[0];
+  const width = resolution.width;
+  return {
+    width,
+    height: Math.min(3200, even(width * shapeRatio(shape))),
+    density: Math.round(width * 160 / 360),
+  };
+}
+
+// The presets closest to a configured size, for the selectors' start values.
+function matchPresets(size) {
+  if (!size?.width) return { shape: 's23', resolution: 'auto' };
+  const ratio = size.height / size.width;
+  const shape = DEVICE_SHAPES.find((item) => item.ratio && Math.abs(item.ratio - ratio) / ratio < 0.015);
+  const resolution = RESOLUTIONS.find((item) => item.width === size.width);
+  return { shape: shape?.id ?? 'window', resolution: resolution?.id ?? 'auto' };
+}
+
+function shortSide(size) {
+  return size?.width ? `${Math.min(size.width, size.height)}p` : '–';
+}
+
+// Polls the gateway for the screen size and the state of a size change:
+// often while one is in progress, rarely otherwise.
+function useDisplayState(gatewayUrl) {
+  const [displayState, setDisplayState] = useState(null);
+  const [nonce, setNonce] = useState(0);
+  const busy = ['pending', 'applying'].includes(displayState?.request?.state);
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => fetch(`${gatewayUrl}/api/v1/display`, { cache: 'no-store' })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((value) => { if (!cancelled && value) setDisplayState(value); })
+      .catch(() => {});
+    load();
+    const timer = window.setInterval(load, busy ? 2000 : 15000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [gatewayUrl, busy, nonce]);
+  return [displayState, () => setNonce((value) => value + 1)];
+}
+
+function DisplaySettings({ gatewayUrl, displayState, refresh, rowStyle, labelStyle, buttonStyle }) {
+  const configured = displayState?.configured;
+  const [choice, setChoice] = useState(() => matchPresets(configured));
+  const [error, setError] = useState(null);
+  const configuredKey = configured ? `${configured.width}x${configured.height}` : '';
+  useEffect(() => { setChoice(matchPresets(configured)); }, [configuredKey]);
+  const request = displayState?.request ?? { state: 'idle' };
+  const busy = request.state === 'pending' || request.state === 'applying';
+  const target = targetSize(choice.shape, choice.resolution);
+  const unchanged = configured && target.width === configured.width
+    && target.height === configured.height && target.density === configured.density;
+
+  const apply = async () => {
+    setError(null);
+    const message = `Android va redémarrer en ${target.width}×${target.height}.\n`
+      + 'Cela prend une à deux minutes. Les applications ouvertes se ferment ; les données sont conservées.';
+    if (!window.confirm(message)) return;
+    try {
+      const response = await fetch(`${gatewayUrl}/api/v1/display`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(target),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        setError(body.error ?? `Erreur ${response.status}`);
+      }
+    } catch {
+      setError('Passerelle injoignable');
+    }
+    refresh();
+  };
+
+  const select = (key, options) => (
+    <select value={choice[key]} disabled={busy}
+      onChange={(event) => setChoice((current) => ({ ...current, [key]: event.target.value }))}
+      style={styles.select}>
+      {options.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+    </select>
+  );
+
+  if (!displayState) return <div style={styles.infoNote}>Indisponible pour le moment.</div>;
+  if (!displayState.canChange) return <div style={styles.infoNote}>Non disponible sur ce serveur.</div>;
+  return (
+    <>
+      <label style={rowStyle}><span style={labelStyle}>Appareil</span>{select('shape', DEVICE_SHAPES)}</label>
+      <label style={rowStyle}><span style={labelStyle}>Résolution</span>{select('resolution', RESOLUTIONS)}</label>
+      <div style={rowStyle}>
+        <span style={labelStyle}>{target.width}×{target.height}</span>
+        <button style={buttonStyle} onClick={apply} disabled={busy || unchanged}>Appliquer</button>
+      </div>
+      {request.state === 'pending' && <div style={styles.infoNote}>Demande envoyée, en attente du serveur…</div>}
+      {request.state === 'applying' && (
+        <div style={styles.infoNote}>Android redémarre en {request.width}×{request.height}…</div>
+      )}
+      {request.state === 'failed' && <div style={styles.infoWarning}>Échec : {request.message}</div>}
+      {error && <div style={styles.infoWarning}>{error}</div>}
+    </>
+  );
 }
 
 // Per-viewer page settings, kept in this browser only.
@@ -367,6 +497,20 @@ function App() {
   const gateway = `${window.location.hostname}:${pagePort + 1}`;
   const gatewayUrl = `${window.location.protocol}//${gateway}`;
   const stats = useStreamStats(deviceRef, gatewayUrl);
+  const [displayState, refreshDisplay] = useDisplayState(gatewayUrl);
+  const displayChange = displayState?.request?.state;
+  // A size change ends with the gateway restarting on the new size: reload
+  // so that layout, touch mapping and the stream all start fresh.
+  const changeSeen = useRef(false);
+  useEffect(() => {
+    if (displayChange === 'pending' || displayChange === 'applying') changeSeen.current = true;
+    const running = displayState?.running;
+    const wanted = displayState?.request;
+    if (changeSeen.current && displayChange === 'done' && running
+      && running.width === wanted.width && running.height === wanted.height) {
+      window.location.reload();
+    }
+  }, [displayState]);
 
   // The gateway reads Android's display size from the running device, so
   // layout and touch mapping follow the AVD instead of a constant.
@@ -612,21 +756,12 @@ function App() {
       <span style={styles.metricLine}>{formatValue(stats.phone)}fps</span>
     </button>
   );
-  // Stream resolution and bitrate; tap for display details and settings.
+  // Stream resolution ("360p": the short side); tap for display details,
+  // Android's screen size and the page settings.
   const streamBlock = (
-    <button className="tool-button" style={{ ...styles.metric, ...(row ? null : styles.metricWide) }}
-      onClick={() => togglePanel('display')} aria-label="Écran, flux et réglages">
-      {row ? (
-        <>
-          <span style={styles.metricLine}>{stats.video?.width ?? display.width}</span>
-          <span style={styles.metricLine}>{stats.video?.height ?? display.height}</span>
-        </>
-      ) : (
-        <span style={styles.metricLine}>
-          {stats.video ? `${stats.video.width}×${stats.video.height}` : `${display.width}×${display.height}`}
-        </span>
-      )}
-      <span style={styles.metricLine}>{formatBitrate(stats.bitrate)}</span>
+    <button className="tool-button" style={styles.metric}
+      onClick={() => togglePanel('display')} aria-label="Écran, résolution et réglages">
+      <span style={styles.metricLine}>{shortSide(stats.video ?? display)}</span>
     </button>
   );
   const row2 = (label, value) => (
@@ -691,6 +826,11 @@ function App() {
               <span style={styles.loadingText}>{reconnecting ? 'Reconnexion…' : 'Connexion au flux…'}</span>
             </div>
           )}
+          {(displayChange === 'pending' || displayChange === 'applying') && (
+            <div style={styles.banner} role="status">
+              Changement de résolution : Android redémarre…
+            </div>
+          )}
           {panel && (
             <div style={styles.info} role="dialog"
               aria-label={panel === 'network' ? 'Réseau et connectivité' : 'Écran et réglages'}>
@@ -703,13 +843,18 @@ function App() {
                 : (
                   <>
                     {deviceInfo(screen, stats.video, display).map(([label, value]) => row2(label, value))}
+                    <div style={styles.infoSection}>Android</div>
+                    <DisplaySettings
+                      gatewayUrl={gatewayUrl}
+                      displayState={displayState}
+                      refresh={refreshDisplay}
+                      rowStyle={styles.infoRow}
+                      labelStyle={styles.infoLabel}
+                      buttonStyle={styles.panelButton}
+                    />
                     <div style={styles.infoSection}>Réglages de cette page</div>
                     {toggle('Point sous le doigt', 'touchMarker')}
                     {toggle('Replier la barre en plein écran', 'autoFold')}
-                    <div style={styles.infoNote}>
-                      La résolution d’Android se règle sur le serveur
-                      (03-android-emulator/scripts/set-resolution.sh) et redémarre Android.
-                    </div>
                   </>
                 )}
             </div>
@@ -835,7 +980,6 @@ const styles = {
     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', touchAction: 'manipulation',
   },
-  metricWide: { flex: '1 1 auto', minWidth: 0 },
   metricLine: { fontSize: '9px', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden' },
   withLed: { position: 'relative' },
   led: {
@@ -849,6 +993,21 @@ const styles = {
   },
   infoSection: { marginTop: '8px', color: '#d8dde5', fontWeight: 600 },
   infoNote: { marginTop: '4px', color: '#8a919c', fontSize: '11px', lineHeight: 1.35 },
+  infoWarning: { marginTop: '4px', color: '#ff9f0a', fontSize: '12px', lineHeight: 1.35 },
+  select: {
+    maxWidth: '60%', padding: '3px 4px', borderRadius: '6px', border: '1px solid #444',
+    background: '#292929', color: '#e8ebf0', fontSize: '12px',
+  },
+  panelButton: {
+    padding: '4px 10px', borderRadius: '7px', border: '1px solid #4da3ff',
+    background: '#2f5d8f', color: '#fff', fontSize: '12px',
+  },
+  banner: {
+    position: 'absolute', left: '50%', top: '40%', transform: 'translateX(-50%)', zIndex: 3,
+    padding: '10px 14px', borderRadius: '10px', background: 'rgba(20, 22, 27, 0.92)',
+    border: '1px solid #3b3f47', color: '#e8ebf0', fontFamily: 'system-ui, sans-serif',
+    fontSize: '13px', textAlign: 'center', maxWidth: '80%',
+  },
   info: {
     position: 'absolute', left: '8px', right: '8px', top: '8px', zIndex: 4,
     maxHeight: 'calc(100% - 16px)', overflowY: 'auto', touchAction: 'pan-y', boxSizing: 'border-box',

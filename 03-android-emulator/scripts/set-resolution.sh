@@ -6,7 +6,9 @@
 #
 # Updates the AVD's config.ini and SCREEN_* in cloudphone.conf (a backup of
 # both is kept), restarts cloudphone-emulator and, if installed, the gateway,
-# which reads the new size at start.
+# which reads the new size at start. The web page and the gateway stay up
+# meanwhile, so the page can show that Android is restarting. The web page
+# can request the same change: see files/libexec/cloudphone-display-apply.
 set -euo pipefail
 
 TREE=$(cd "$(dirname "$0")/../.." && pwd)
@@ -26,7 +28,6 @@ avd_config=$AVD_HOME/$AVD_NAME.avd/config.ini
 
 # Stop first: the emulator may rewrite config.ini when it shuts down.
 log "Stopping Android"
-systemctl stop cloudphone-web.service cloudphone-gateway.service 2>/dev/null || true
 systemctl stop cloudphone-emulator.service
 
 stamp=$(date +%Y%m%d%H%M%S)
@@ -50,6 +51,7 @@ until [ "$(adb_cmd shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" =
 done
 as_service_user "$SDK/platform-tools/adb" kill-server >/dev/null 2>&1 || true
 if systemctl is-enabled --quiet cloudphone-gateway.service 2>/dev/null; then
-  systemctl start cloudphone-gateway.service cloudphone-web.service
+  systemctl restart cloudphone-gateway.service
+  systemctl start cloudphone-web.service
 fi
 log "Done; reload the web page"

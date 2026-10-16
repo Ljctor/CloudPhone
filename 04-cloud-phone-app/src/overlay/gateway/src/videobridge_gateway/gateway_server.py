@@ -54,6 +54,13 @@ ADB_SERIAL = "emulator-5558"
 # Android display size in pixels, read from the running AVD's config.ini.
 DISPLAY_WIDTH = 540
 DISPLAY_HEIGHT = 1170
+AVD_DIR = None
+# Screen size changes requested from the page: the gateway writes
+# "WIDTH HEIGHT DENSITY" to DISPLAY_REQUEST and a root service applies it,
+# reporting progress in DISPLAY_STATUS. Empty paths disable the feature.
+DISPLAY_REQUEST = ""
+DISPLAY_STATUS = ""
+DISPLAY_LIMITS = {"width": (240, 1440), "height": (320, 3200), "density": (80, 640)}
 
 
 def parse_discovery_file(path):
@@ -95,6 +102,94 @@ def read_display_size(avd_dir):
     except (OSError, KeyError, ValueError) as e:
         logging.warning(f"Could not read the display size from {avd_dir}: {e}")
         return None
+
+
+def read_avd_config(avd_dir):
+    """Returns {width, height, density} from AVD_DIR/config.ini, or {}."""
+    if not avd_dir:
+        return {}
+    values = {}
+    try:
+        with open(os.path.join(avd_dir, "config.ini"), "r") as f:
+            for line in f:
+                key, sep, value = line.partition("=")
+                if sep:
+                    values[key.strip()] = value.strip()
+        return {
+            "width": int(values["hw.lcd.width"]),
+            "height": int(values["hw.lcd.height"]),
+            "density": int(values.get("hw.lcd.density", "0")),
+        }
+    except (OSError, KeyError, ValueError):
+        return {}
+
+
+def read_display_status():
+    """Returns the state of the last screen size request."""
+    if DISPLAY_REQUEST and os.path.exists(DISPLAY_REQUEST):
+        return {"state": "pending"}
+    try:
+        with open(DISPLAY_STATUS, "r") as f:
+            words = f.read(256).split()
+    except OSError:
+        return {"state": "idle"}
+    if not words:
+        return {"state": "idle"}
+    state = words[0] if words[0] in ("applying", "done", "failed") else "idle"
+    result = {"state": state}
+    if state in ("applying", "done") and len(words) == 4:
+        try:
+            result["width"], result["height"], result["density"] = map(int, words[1:])
+        except ValueError:
+            pass
+    if state == "failed":
+        result["message"] = " ".join(words[1:])
+    return result
+
+
+async def handle_display(request):
+    """
+    GET /api/v1/display: the Android screen size the gateway works with, the
+    one in config.ini (current even before the gateway restarts) and the
+    state of the last change request.
+    """
+    return web.json_response(
+        {
+            "running": {"width": DISPLAY_WIDTH, "height": DISPLAY_HEIGHT},
+            "configured": read_avd_config(AVD_DIR),
+            "request": read_display_status(),
+            "canChange": bool(DISPLAY_REQUEST),
+            "limits": DISPLAY_LIMITS,
+        },
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+async def handle_set_display(request):
+    """
+    POST /api/v1/display {width, height, density}: asks the root service to
+    change Android's screen size, which reboots Android (data is kept).
+    """
+    if not DISPLAY_REQUEST:
+        return web.json_response({"error": "Screen size changes are disabled"}, status=403)
+    try:
+        data = await request.json()
+        wanted = {key: int(data[key]) for key in DISPLAY_LIMITS}
+    except (ValueError, KeyError, TypeError):
+        return web.json_response({"error": "width, height and density are required"}, status=400)
+    for key, (low, high) in DISPLAY_LIMITS.items():
+        if not low <= wanted[key] <= high:
+            return web.json_response({"error": f"{key} must be between {low} and {high}"}, status=400)
+    if wanted["width"] % 2 or wanted["height"] % 2:
+        return web.json_response({"error": "width and height must be even"}, status=400)
+    if read_display_status()["state"] in ("pending", "applying"):
+        return web.json_response({"error": "A screen size change is already in progress"}, status=409)
+    temporary = f"{DISPLAY_REQUEST}.tmp"
+    with open(temporary, "w") as f:
+        f.write(f"{wanted['width']} {wanted['height']} {wanted['density']}\n")
+    os.replace(temporary, DISPLAY_REQUEST)
+    logging.info(f"Screen size requested: {wanted}")
+    return web.json_response({"status": "pending"}, status=202)
 
 
 def get_emulator_metadata():
@@ -425,6 +520,8 @@ def init_app(videobridge_token):
 
     # Register routes
     app.router.add_get("/api/v1/ping", handle_ping)
+    app.router.add_get("/api/v1/display", handle_display)
+    app.router.add_post("/api/v1/display", handle_set_display)
     app.router.add_get("/api/v1/emulator/status", handle_status)
     app.router.add_post("/api/v1/emulator/gps", handle_gps)
     app.router.add_get("/api/v1/emulator/logcat", handle_logcat)
@@ -478,18 +575,33 @@ async def main():
         required=True,
         help="Path to the active emulator discovery config (.ini) file.",
     )
+    parser.add_argument(
+        "--display_request",
+        type=str,
+        default="",
+        help="File where screen size requests from the page are written for a privileged service. Empty disables them.",
+    )
+    parser.add_argument(
+        "--display_status",
+        type=str,
+        default="",
+        help="File where that privileged service reports progress.",
+    )
     args = parser.parse_args()
 
-    global ADB_PATH, ADB_SERIAL
+    global ADB_PATH, ADB_SERIAL, DISPLAY_REQUEST, DISPLAY_STATUS
     ADB_PATH = args.adb
     ADB_SERIAL = args.adb_serial
+    DISPLAY_REQUEST = args.display_request
+    DISPLAY_STATUS = args.display_status
 
     # Parse discovery configuration properties
     global DISCOVERY_PROPS
     DISCOVERY_PROPS = parse_discovery_file(args.discovery_file)
 
-    global DISPLAY_WIDTH, DISPLAY_HEIGHT
-    size = read_display_size(DISCOVERY_PROPS.get("avd.dir"))
+    global DISPLAY_WIDTH, DISPLAY_HEIGHT, AVD_DIR
+    AVD_DIR = DISCOVERY_PROPS.get("avd.dir")
+    size = read_display_size(AVD_DIR)
     if size:
         DISPLAY_WIDTH, DISPLAY_HEIGHT = size
     logging.info(f"Android display: {DISPLAY_WIDTH}x{DISPLAY_HEIGHT}")

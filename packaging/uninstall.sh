@@ -47,6 +47,8 @@ if [ "$purge" = yes ] && [ "$assume_yes" = no ]; then
   [ "$answer" = erase ] || die "aborted"
 fi
 
+systemctl disable --now cloudphone-display.path 2>/dev/null || true
+rm -f /etc/systemd/system/cloudphone-display.path /etc/systemd/system/cloudphone-display.service
 for unit in "${UNITS[@]}"; do
   systemctl disable --now "$unit.service" 2>/dev/null || true
   rm -f "/etc/systemd/system/$unit.service"

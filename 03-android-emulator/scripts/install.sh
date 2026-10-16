@@ -279,8 +279,21 @@ install_unit() {
   install -m 644 "$PART/files/systemd/cloudphone-emulator.service" \
     /etc/systemd/system/cloudphone-emulator.service
   install -m 644 "$TREE/lib/versions.env" "$PREFIX/versions.env"
+  # Screen size changes requested from the web page: the gateway writes a
+  # request, this root service checks it and runs set-resolution.sh, which
+  # is installed with what it sources under $PREFIX/tools.
+  install -d -m 755 "$PREFIX/tools/lib" "$PREFIX/tools/03-android-emulator/scripts" \
+    "$PREFIX/tools/03-android-emulator/files"
+  install -m 644 "$TREE/VERSION" "$PREFIX/tools/VERSION"
+  install -m 644 "$TREE/lib/common.sh" "$TREE/lib/versions.env" "$PREFIX/tools/lib/"
+  install -m 644 "$PART/files/cloudphone.conf" "$PREFIX/tools/03-android-emulator/files/"
+  install -m 755 "$PART/scripts/set-resolution.sh" "$PREFIX/tools/03-android-emulator/scripts/"
+  install -m 755 "$PART/files/libexec/cloudphone-display-apply" "$PREFIX/libexec/"
+  install -m 644 "$PART/files/systemd/cloudphone-display.path" \
+    "$PART/files/systemd/cloudphone-display.service" /etc/systemd/system/
   systemctl daemon-reload
   systemctl enable cloudphone-emulator.service >/dev/null
+  systemctl enable --now cloudphone-display.path >/dev/null
 }
 
 start_emulator() {

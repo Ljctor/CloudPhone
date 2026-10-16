@@ -1,7 +1,9 @@
 [Unit]
 Description=Cloud Phone: WebRTC streaming gateway
+# Wants, not Requires: the gateway stays up while Android restarts, so the
+# page can tell the user what is happening.
 After=cloudphone-emulator.service
-Requires=cloudphone-emulator.service
+Wants=cloudphone-emulator.service
 
 [Service]
 Type=simple
