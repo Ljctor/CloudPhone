@@ -8,8 +8,8 @@ const TOOLBAR_WIDTH = 40;
 const STATS_INTERVAL_MS = 1000;
 // Give up showing the reconnect feedback if no frame arrives in this time.
 const RECONNECT_FEEDBACK_MS = 15000;
-const DEVICE_WIDTH = 540;
-const DEVICE_HEIGHT = 1170;
+// Android's display size until the gateway reports the real one.
+const DEFAULT_DISPLAY = { width: 540, height: 1170 };
 
 function viewportSize() {
   const viewport = window.visualViewport;
@@ -22,7 +22,9 @@ function viewportSize() {
 // Largest Android screen that fits, with the toolbar either beside it or
 // below it, whichever leaves the bigger screen. A phone whose shape matches
 // Android's (e.g. 19.5:9) gets the full width with the toolbar below.
-function fittedScreen() {
+function fittedScreen(display = DEFAULT_DISPLAY) {
+  const DEVICE_WIDTH = display.width;
+  const DEVICE_HEIGHT = display.height;
   const viewport = viewportSize();
   // Fullscreen: the screen takes the whole display and the toolbar floats
   // over it, so a phone shaped like Android uses every pixel.
@@ -212,7 +214,8 @@ function App() {
   const touchSender = useRef({ inFlight: false, queue: [], pendingMove: null });
   const touchMarker = useRef(null);
   const reconnectTimer = useRef(null);
-  const [screen, setScreen] = useState(fittedScreen);
+  const [display, setDisplay] = useState(DEFAULT_DISPLAY);
+  const [screen, setScreen] = useState(() => fittedScreen(DEFAULT_DISPLAY));
   const row = screen.toolbar === 'side';
   const overlay = screen.toolbar === 'overlay';
   const [toolbarShown, setToolbarShown] = useState(true);
@@ -233,6 +236,22 @@ function App() {
   const gateway = `${window.location.hostname}:${pagePort + 1}`;
   const gatewayUrl = `${window.location.protocol}//${gateway}`;
   const stats = useStreamStats(deviceRef, gatewayUrl);
+
+  // The gateway reads Android's display size from the running device, so
+  // layout and touch mapping follow the AVD instead of a constant.
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${gatewayUrl}/api/v1/emulator/status`, { cache: 'no-store' })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((status) => {
+        const config = status?.platformConfig ?? {};
+        const width = Number(config['hw.lcd.width']);
+        const height = Number(config['hw.lcd.height']);
+        if (!cancelled && width > 0 && height > 0) setDisplay({ width, height });
+      })
+      .catch((error) => console.warn('Android display size:', error));
+    return () => { cancelled = true; };
+  }, [gatewayUrl]);
 
   const stopFeedback = () => {
     setReconnecting(false);
@@ -271,7 +290,8 @@ function App() {
   };
 
   useEffect(() => {
-    const resize = () => setScreen(fittedScreen());
+    const resize = () => setScreen(fittedScreen(display));
+    resize();
     window.addEventListener('resize', resize);
     window.visualViewport?.addEventListener('resize', resize);
     document.addEventListener('fullscreenchange', resize);
@@ -280,7 +300,7 @@ function App() {
       window.visualViewport?.removeEventListener('resize', resize);
       document.removeEventListener('fullscreenchange', resize);
     };
-  }, []);
+  }, [display]);
 
   useEffect(() => {
     let wasHidden = document.visibilityState === 'hidden';
@@ -327,10 +347,10 @@ function App() {
   const touchCoordinates = (event) => {
     const bounds = event.currentTarget.getBoundingClientRect();
     return {
-      x: Math.max(0, Math.min(DEVICE_WIDTH - 1,
-        Math.round((event.clientX - bounds.left) * DEVICE_WIDTH / bounds.width))),
-      y: Math.max(0, Math.min(DEVICE_HEIGHT - 1,
-        Math.round((event.clientY - bounds.top) * DEVICE_HEIGHT / bounds.height))),
+      x: Math.max(0, Math.min(display.width - 1,
+        Math.round((event.clientX - bounds.left) * display.width / bounds.width))),
+      y: Math.max(0, Math.min(display.height - 1,
+        Math.round((event.clientY - bounds.top) * display.height / bounds.height))),
     };
   };
 

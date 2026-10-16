@@ -51,6 +51,9 @@ EMULATOR_CHANNEL = None
 VIDEOBRIDGE_CHANNEL = None
 ADB_PATH = "/opt/android-sdk/platform-tools/adb"
 ADB_SERIAL = "emulator-5558"
+# Android display size in pixels, read from the running AVD's config.ini.
+DISPLAY_WIDTH = 540
+DISPLAY_HEIGHT = 1170
 
 
 def parse_discovery_file(path):
@@ -71,6 +74,27 @@ def parse_discovery_file(path):
     except Exception as e:
         logging.error(f"Failed to read discovery file: {e}")
     return props
+
+
+def read_display_size(avd_dir):
+    """Returns (width, height) from AVD_DIR/config.ini, or None.
+
+    The emulator rewrites config.ini as "key = value", avdmanager writes
+    "key=value"; both are accepted.
+    """
+    if not avd_dir:
+        return None
+    values = {}
+    try:
+        with open(os.path.join(avd_dir, "config.ini"), "r") as f:
+            for line in f:
+                key, sep, value = line.partition("=")
+                if sep:
+                    values[key.strip()] = value.strip()
+        return int(values["hw.lcd.width"]), int(values["hw.lcd.height"])
+    except (OSError, KeyError, ValueError) as e:
+        logging.warning(f"Could not read the display size from {avd_dir}: {e}")
+        return None
 
 
 def get_emulator_metadata():
@@ -115,8 +139,8 @@ async def handle_status(request):
         platform_config = dict(status_res.platformConfig)
         # Current emulator builds may omit LCD dimensions from getStatus.
         # The browser needs the real dimensions to scale touch coordinates.
-        platform_config.setdefault("hw.lcd.width", "540")
-        platform_config.setdefault("hw.lcd.height", "1170")
+        platform_config.setdefault("hw.lcd.width", str(DISPLAY_WIDTH))
+        platform_config.setdefault("hw.lcd.height", str(DISPLAY_HEIGHT))
 
         # Extract vmConfig details
         vm_config = {
@@ -227,8 +251,8 @@ async def handle_touch(request):
     """POST /api/v1/emulator/touch forwards one touch contact update."""
     try:
         data = await request.json()
-        x = max(0, min(539, int(data.get("x", 0))))
-        y = max(0, min(1169, int(data.get("y", 0))))
+        x = max(0, min(DISPLAY_WIDTH - 1, int(data.get("x", 0))))
+        y = max(0, min(DISPLAY_HEIGHT - 1, int(data.get("y", 0))))
         pressed = bool(data.get("pressed", False))
         contact = ec.Touch(
             x=x,
@@ -463,6 +487,12 @@ async def main():
     # Parse discovery configuration properties
     global DISCOVERY_PROPS
     DISCOVERY_PROPS = parse_discovery_file(args.discovery_file)
+
+    global DISPLAY_WIDTH, DISPLAY_HEIGHT
+    size = read_display_size(DISCOVERY_PROPS.get("avd.dir"))
+    if size:
+        DISPLAY_WIDTH, DISPLAY_HEIGHT = size
+    logging.info(f"Android display: {DISPLAY_WIDTH}x{DISPLAY_HEIGHT}")
 
     emulator_port = DISCOVERY_PROPS.get("grpc.port")
     if not emulator_port:
