@@ -8,8 +8,10 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 PKG=$ROOT/packaging
-# shellcheck source=versions.env
-. "$PKG/versions.env"
+APP=$ROOT/04-cloud-phone-app
+CONSTRAINTS=$APP/constraints.txt
+# shellcheck source=../lib/versions.env
+. "$ROOT/lib/versions.env"
 VERSION=$(cat "$ROOT/VERSION")
 BUILD=$ROOT/build
 CACHE=$BUILD/cache
@@ -31,7 +33,7 @@ Usage: packaging/build-release.sh [--skip-tests] [--refresh-constraints]
 
   --skip-tests            Do not run the JavaScript unit tests.
   --refresh-constraints   Resolve the newest gateway dependencies and rewrite
-                          packaging/constraints.txt before packaging.
+                          04-cloud-phone-app/constraints.txt before packaging.
 EOF
 }
 
@@ -76,7 +78,7 @@ rm -rf "$UPSTREAM"
 git init -q "$UPSTREAM"
 git -C "$UPSTREAM" fetch -q --depth 1 "$UPSTREAM_REPO" "$UPSTREAM_COMMIT"
 git -C "$UPSTREAM" checkout -q FETCH_HEAD
-cp -R "$ROOT/apps/android-emulator-web/overlay/." "$UPSTREAM/"
+cp -R "$APP/src/overlay/." "$UPSTREAM/"
 
 log "Fetching protoc"
 protoc_zip=$(cached_fetch "$PROTOC_URL" "$PROTOC_SHA256" "${PROTOC_URL##*/}")
@@ -148,14 +150,14 @@ if [ "$refresh_constraints" = yes ]; then
     echo "# Runtime dependencies of the streaming gateway, as built and tested."
     echo "# Regenerate with packaging/build-release.sh --refresh-constraints."
     "$BUILD/venv-resolve/bin/pip" freeze --exclude goldfish-videobridge-gateway
-  } >"$PKG/constraints.txt"
+  } >"$CONSTRAINTS"
 fi
 
 log "Smoke-testing the gateway in a clean environment"
 rm -rf "$BUILD/venv-smoke"
 python3 -m venv "$BUILD/venv-smoke"
 "$BUILD/venv-smoke/bin/pip" install --quiet --disable-pip-version-check \
-  -c "$PKG/constraints.txt" "$wheel"
+  -c "$CONSTRAINTS" "$wheel"
 "$BUILD/venv-smoke/bin/python" -c 'import videobridge_gateway.gateway_server'
 "$BUILD/venv-smoke/bin/videobridge-gateway" --help >/dev/null
 
@@ -165,25 +167,33 @@ for py in "${TARGET_PYTHONS[@]}"; do
   "$BUILD/venv/bin/pip" download --quiet --disable-pip-version-check \
     --only-binary=:all: --platform manylinux2014_x86_64 --platform manylinux_2_28_x86_64 \
     --python-version "$py" --no-deps -d "$BUILD/wheel-check" \
-    -r <(grep -v '^#' "$PKG/constraints.txt") ||
+    -r <(grep -v '^#' "$CONSTRAINTS") ||
     die "a pinned gateway dependency has no wheel for Python $py"
 done
 
 log "Assembling $NAME"
+# The release has the layout of the repository, so every part's scripts and
+# runbooks work the same from a checkout and from the unpacked release.
 rm -rf "$BUILD/stage"
-mkdir -p "$STAGE"/{etc,libexec,systemd,share/wheels,docs,licenses}
+mkdir -p "$STAGE"/{docs,licenses}
 install -m 755 "$PKG/install.sh" "$PKG/uninstall.sh" "$STAGE/"
-install -m 644 "$PKG/versions.env" "$ROOT/VERSION" "$STAGE/"
-install -m 644 "$PKG/files/cloudphone.conf" "$STAGE/etc/"
-install -m 644 "$ROOT/runbooks/phase-3-cloud-phone/assets/emulator_access.json" "$STAGE/etc/"
-install -m 755 "$PKG"/files/libexec/* "$STAGE/libexec/"
-install -m 644 "$PKG"/files/systemd/*.service "$STAGE/systemd/"
-cp -R "$UPSTREAM/js/example/dist" "$STAGE/share/web"
-install -m 644 "$wheel" "$STAGE/share/wheels/"
-install -m 644 "$PKG/constraints.txt" "$STAGE/share/"
-install -m 644 "$ROOT/docs/INSTALL.md" "$ROOT/docs/WIREGUARD.md" "$STAGE/docs/"
+install -m 644 "$ROOT/VERSION" "$ROOT/README.md" "$ROOT/AGENTS.md" "$STAGE/"
+cp -R "$ROOT/lib" "$STAGE/lib"
+for part in 02-wireguard-server 03-android-emulator 04-cloud-phone-app; do
+  mkdir -p "$STAGE/$part"
+  for item in AGENTS.md README.md runbooks scripts files constraints.txt; do
+    [ ! -e "$ROOT/$part/$item" ] || cp -R "$ROOT/$part/$item" "$STAGE/$part/"
+  done
+done
+mkdir -p "$STAGE/04-cloud-phone-app/dist/wheels"
+cp -R "$UPSTREAM/js/example/dist" "$STAGE/04-cloud-phone-app/dist/web"
+install -m 644 "$wheel" "$STAGE/04-cloud-phone-app/dist/wheels/"
+install -m 644 "$ROOT/docs/INSTALL.md" "$ROOT/docs/METHOD.md" "$STAGE/docs/"
 install -m 644 "$UPSTREAM/LICENSE" "$STAGE/licenses/android-emulator-container-scripts-LICENSE"
-chmod -R u=rwX,go=rX "$STAGE/share" "$STAGE/docs" "$STAGE/licenses"
+chmod -R u=rwX,go=rX "$STAGE"
+chmod 755 "$STAGE"/install.sh "$STAGE"/uninstall.sh "$STAGE"/*/scripts/*.sh \
+  "$STAGE"/*/files/libexec/*
+chmod 644 "$STAGE"/02-wireguard-server/scripts/common.sh
 
 # Build machines leak their paths into bundles easily; a release must not.
 rm -rf "$BUILD/wheel-scan"

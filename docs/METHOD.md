@@ -9,17 +9,17 @@ the current state of any server.
 A future agent knows only:
 
 - the prerequisites in `README.md`;
-- the desired outcome encoded by the ordered runbooks;
+- the desired outcome encoded by the ordered runbooks of each part;
 - the target address supplied at execution time.
 
 The agent must not assume that a step is complete or incomplete based on a prior
 conversation, an earlier execution, the apparent age of the server, or this
-repository's history. Every execution starts at runbook 00.
+repository's history. Every execution of a part starts at its runbook 00.
 
 ## State discovery algorithm
 
-For each phase in `README.md`, run its runbooks in lexical order before moving
-to the next phase:
+For each part in `README.md` (01, 02, 03, 04), run its runbooks in lexical
+order before moving to the next part:
 
 1. Execute Check.
 2. If Check succeeds, make no change and continue.
@@ -60,9 +60,7 @@ result is still deterministically testable through the password-hash state.
 
 ## Completion
 
-The generic dedicated-server setup is complete only when
-`runbooks/phase-2-dedicated-server/01-final-verification.md` succeeds for the
-current target. When the optional cloud-phone phase is selected, that workload
-is complete only when its `06-final-verification.md` also succeeds and the
-human acceptance checks pass. A successful run says nothing about any other
-server. No persistent checklist or conversation copy is needed.
+A part is complete when its last runbook (final verification) succeeds for the
+current target, and its human checks, if any, pass. A successful run says
+nothing about any other server. No persistent checklist or conversation copy
+is needed.

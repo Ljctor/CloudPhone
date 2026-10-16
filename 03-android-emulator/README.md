@@ -1,0 +1,45 @@
+# 03 — Android Emulator
+
+Official Android Emulator with Google Play, headless, as a systemd service.
+Agents: read `AGENTS.md`. All-in-one install with part 04:
+[`../docs/INSTALL.md`](../docs/INSTALL.md).
+
+| Path | Content |
+|---|---|
+| `scripts/install.sh` | SDK, pinned emulator, system image, AVD, service; waits for boot |
+| `scripts/verify.sh` | read-only acceptance test (prints `PASS`) |
+| `files/cloudphone.conf` | default `/etc/cloudphone/cloudphone.conf` |
+| `files/emulator_access.json` | gRPC allowlist (token-authenticated, loopback) |
+| `files/libexec/cloudphone-emulator` | launcher, installed in `/opt/cloudphone/libexec` |
+| `files/systemd/cloudphone-emulator.service` | the service |
+| `../lib/versions.env` | pinned versions, URLs and checksums |
+
+Emulator 37.1.11 crashed with Google Play and WebRTC active, hence the pin.
+Google's files are downloaded on the server, never redistributed.
+
+## Several instances on one host
+
+Each instance needs free ports. Before installing the second one:
+
+```sh
+sudo install -d /etc/cloudphone
+sudo tee /etc/cloudphone/cloudphone.conf >/dev/null <<'CONF'
+LISTEN_ADDRESS=10.20.0.1
+WEB_PORT=8100
+AVD_NAME=cloudphone
+EMULATOR_MEMORY_MB=4096
+EMULATOR_CORES=2
+EMULATOR_GPU=swiftshader_indirect
+EMULATOR_PORT=5560
+GRPC_PORT=8556
+ANDROID_ADB_SERVER_PORT=5038
+SCREEN_WIDTH=540
+SCREEN_HEIGHT=1170
+SCREEN_DENSITY=240
+CONF
+```
+
+To give the other workload priority:
+`sudo systemctl edit cloudphone-emulator` → `[Service]` `CPUWeight=20`.
+
+Settings, upgrade, backup and uninstall: [`../docs/INSTALL.md`](../docs/INSTALL.md).

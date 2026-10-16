@@ -1,4 +1,8 @@
-# Installing Cloud Phone
+# Installing Cloud Phone by hand
+
+Parts 03 and 04 in one command, on any Debian or Ubuntu host with KVM. Agents
+and hardened servers follow the parts' `AGENTS.md` instead; the scripts are
+the same.
 
 Cloud Phone turns a Linux server into an Android phone you use from a browser.
 It installs three systemd services:
@@ -17,7 +21,7 @@ It installs three systemd services:
 
 > **The web page and the gateway have no login.** Anyone who can reach ports
 > 8000 and 8001 controls the phone and its Google account. Reach them only
-> through a VPN: follow [WIREGUARD.md](WIREGUARD.md) after installing.
+> through a VPN: set up [part 02](../02-wireguard-server/README.md) first.
 
 ## Requirements
 
@@ -218,7 +222,7 @@ sudo ./uninstall.sh --purge    # erases the phone permanently
 | Symptom | Cause and fix |
 |---|---|
 | `install.sh` stops at `/dev/kvm is missing` | Enable VT-x/AMD-V in the BIOS, or nested virtualization for a VM. Software emulation is far too slow to use. |
-| Spinner forever, gateway logs show ICE failures | WebRTC media cannot reach the phone: allow UDP 32768-60999 on the WireGuard interface (see [WIREGUARD.md](WIREGUARD.md)). |
+| Spinner forever, gateway logs show ICE failures | WebRTC media cannot reach the phone: allow UDP 32768-60999 on the WireGuard interface (see [part 02](../02-wireguard-server/README.md)). |
 | The page loads but the screen stays gray after Android was restarted | `sudo systemctl restart cloudphone-gateway` |
 | `cloudphone-emulator` keeps restarting | `journalctl -u cloudphone-emulator -n 100`; check free RAM against `EMULATOR_MEMORY_MB`. |
 | The page does not load at all | Check `LISTEN_ADDRESS`: with a WireGuard address, the tunnel must be up on the server (`wg show`). The services retry until it is. |
@@ -227,7 +231,8 @@ sudo ./uninstall.sh --purge    # erases the phone permanently
 
 | Path | Content | Removed by `uninstall.sh` |
 |---|---|---|
-| `/opt/cloudphone/current` | Active release: web page, gateway, launchers | yes |
+| `/opt/cloudphone/current` | Active app release: web page, gateway | yes |
+| `/opt/cloudphone/libexec` | Emulator launcher | yes |
 | `/opt/cloudphone/android-sdk` | Android SDK, pinned emulator, system image | yes |
 | `/var/lib/cloudphone/avd` | **Android's data** | only with `--purge` |
 | `/var/lib/cloudphone/.android` | adb key of the service account | only with `--purge` |
@@ -243,7 +248,7 @@ packaging/build-release.sh
 ```
 
 The script fetches Google's `android-emulator-container-scripts` at the commit
-pinned in `packaging/versions.env`, applies `apps/android-emulator-web/overlay`,
+pinned in `lib/versions.env`, applies `04-cloud-phone-app/src/overlay`,
 runs the JavaScript tests, builds the web page and the gateway wheel, checks
 that every Python dependency has a wheel for Python 3.10 to 3.13, and writes
 `dist/cloudphone-<version>-linux-x86_64.tar.gz` with its checksum. Downloads

@@ -1,26 +1,33 @@
-# Instructions for agents
+# Agent instructions
 
-Read these files before changing or running anything:
+This repository installs a cloud Android phone in four parts, in this order:
 
-1. `README.md` for prerequisites, ordering, and the convergence protocol;
-2. every file in `runbooks/phase-1-any-server/` in lexical order, then every
-   file in `runbooks/phase-2-dedicated-server/`, then
-   `runbooks/phase-3-cloud-phone/`, each in lexical order;
-3. `docs/METHOD.md` for the state-discovery model and safety rules.
+| Part | Read first |
+|---|---|
+| `01-server-system-setup/` | its `AGENTS.md` |
+| `02-wireguard-server/` | its `AGENTS.md` |
+| `03-android-emulator/` | its `AGENTS.md` |
+| `04-cloud-phone-app/` | its `AGENTS.md` |
 
-When configuring a server, do not infer completion from prior chat, notes, or an
-operator's memory. For each runbook, execute its Check, Apply only when needed,
-then execute the same Check again. Stop at the first failed post-Apply check.
+Each part's `AGENTS.md` is the installation procedure; development and
+reference docs are linked from there. Execution model and safety rules:
+`docs/METHOD.md`. `docs/legacy-reference-server/` describes the first server's
+older layout (account `master`, `/opt/android-sdk`): use it only to inspect
+that server, never for a new install.
 
-Keep all checks read-only and deterministic. Keep Apply sections idempotent.
-Never commit passwords, private keys, personal access tokens, host addresses,
-raw conversation transcripts, or claims about a target server's current state.
+## Changing this repository
 
-Changes to runbook behavior must update the corresponding final assertions in
-`scripts/verify-all.sh`. Before committing, run:
+- Never commit passwords, private keys, tokens, signed URLs, host addresses,
+  personal names or e-mail addresses, transcripts, or claims about a server's
+  current state.
+- Checks stay read-only and deterministic; Apply stays idempotent. A behaviour
+  change updates the part's `scripts/verify.sh` in the same commit.
+- One source of truth: runbooks call the part's scripts instead of copying
+  their commands; the release tarball has the repository's layout.
+- Before committing:
 
 ```sh
 git diff --check
-sh -n scripts/verify-all.sh
-sh -n scripts/verify-phase3.sh
+shellcheck -x -P SCRIPTDIR */scripts/*.sh packaging/*.sh lib/common.sh */files/libexec/*
+packaging/build-release.sh          # when parts 03/04 or packaging changed
 ```
