@@ -1,3 +1,4 @@
+import { LANGUAGES, defaultLanguage, setLanguage, tr } from './i18n';
 import React, { useEffect, useRef, useState } from 'react';
 import { Emulator, logger } from '../../src';
 import { activePeerConnection, sendInputEvent } from '../../src/components/emulator/net/ws_jsep_protocol_driver';
@@ -183,8 +184,8 @@ function DisplaySettings({ gatewayUrl, displayState, refresh, rowStyle, labelSty
 
   const apply = async () => {
     setError(null);
-    const message = `Android va redémarrer en ${target.width}×${target.height}.\n`
-      + 'Cela prend une à deux minutes. Les applications ouvertes se ferment ; les données sont conservées.';
+    const message = `${tr('Android va redémarrer en {size}.', { size: `${target.width}×${target.height}` })}\n`
+      + tr('Cela prend une à deux minutes. Les applications ouvertes se ferment ; les données sont conservées.');
     if (!window.confirm(message)) return;
     try {
       const response = await fetch(`${gatewayUrl}/api/v1/display`, {
@@ -194,10 +195,10 @@ function DisplaySettings({ gatewayUrl, displayState, refresh, rowStyle, labelSty
       });
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
-        setError(body.error ?? `Erreur ${response.status}`);
+        setError(body.error ?? tr('Erreur {status}', { status: response.status }));
       }
     } catch {
-      setError('Passerelle injoignable');
+      setError(tr('Passerelle injoignable'));
     }
     refresh();
   };
@@ -206,25 +207,25 @@ function DisplaySettings({ gatewayUrl, displayState, refresh, rowStyle, labelSty
     <select value={choice[key]} disabled={busy}
       onChange={(event) => setChoice((current) => ({ ...current, [key]: event.target.value }))}
       style={styles.select}>
-      {options.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+      {options.map((item) => <option key={item.id} value={item.id}>{tr(item.label)}</option>)}
     </select>
   );
 
-  if (!displayState) return <div style={styles.infoNote}>Indisponible pour le moment.</div>;
-  if (!displayState.canChange) return <div style={styles.infoNote}>Non disponible sur ce serveur.</div>;
+  if (!displayState) return <div style={styles.infoNote}>{tr('Indisponible pour le moment.')}</div>;
+  if (!displayState.canChange) return <div style={styles.infoNote}>{tr('Non disponible sur ce serveur.')}</div>;
   return (
     <>
-      <label style={rowStyle}><span style={labelStyle}>Appareil</span>{select('shape', DEVICE_SHAPES)}</label>
-      <label style={rowStyle}><span style={labelStyle}>Résolution</span>{select('resolution', RESOLUTIONS)}</label>
+      <label style={rowStyle}><span style={labelStyle}>{tr('Appareil')}</span>{select('shape', DEVICE_SHAPES)}</label>
+      <label style={rowStyle}><span style={labelStyle}>{tr('Résolution')}</span>{select('resolution', RESOLUTIONS)}</label>
       <div style={rowStyle}>
         <span style={labelStyle}>{target.width}×{target.height}</span>
-        <button style={buttonStyle} onClick={apply} disabled={busy || unchanged}>Appliquer</button>
+        <button style={buttonStyle} onClick={apply} disabled={busy || unchanged}>{tr('Appliquer')}</button>
       </div>
-      {request.state === 'pending' && <div style={styles.infoNote}>Demande envoyée, en attente du serveur…</div>}
+      {request.state === 'pending' && <div style={styles.infoNote}>{tr('Demande envoyée, en attente du serveur…')}</div>}
       {request.state === 'applying' && (
-        <div style={styles.infoNote}>Android redémarre en {request.width}×{request.height}…</div>
+        <div style={styles.infoNote}>{tr('Android redémarre en {size}…', { size: `${request.width}×${request.height}` })}</div>
       )}
-      {request.state === 'failed' && <div style={styles.infoWarning}>Échec : {request.message}</div>}
+      {request.state === 'failed' && <div style={styles.infoWarning}>{tr('Échec : {message}', { message: request.message })}</div>}
       {error && <div style={styles.infoWarning}>{error}</div>}
     </>
   );
@@ -308,7 +309,8 @@ function diagnose({ server, stream, connectingFor, touchFailures }) {
     const others = value.viewers - 1;
     return {
       level: 'info', blocking: false,
-      text: others === 1 ? 'Un autre appareil regarde ce téléphone' : `${others} autres appareils regardent ce téléphone`,
+      text: others === 1 ? tr('Un autre appareil regarde ce téléphone')
+        : tr('{n} autres appareils regardent ce téléphone', { n: others }),
       detail: 'L’image peut être plus lente.',
     };
   }
@@ -322,7 +324,8 @@ const LEVEL_COLORS = { error: '#ff453a', wait: '#ff9f0a', info: '#ffd60a' };
 
 function describeUnit(unit) {
   if (!unit) return '–';
-  const restarts = unit.restarts ? `, ${unit.restarts} redémarrage${unit.restarts > 1 ? 's' : ''}` : '';
+  const restarts = unit.restarts
+    ? `, ${tr(unit.restarts > 1 ? '{n} redémarrages' : '{n} redémarrage', { n: unit.restarts })}` : '';
   return `${unit.active} (${unit.sub})${restarts}`;
 }
 
@@ -337,7 +340,7 @@ function postHeaders() {
 
 // Per-viewer page settings, kept in this browser only.
 const SETTINGS_KEY = 'cloudphone.settings';
-const DEFAULT_SETTINGS = { touchMarker: true, autoFold: true, barDocked: false };
+const DEFAULT_SETTINGS = { touchMarker: true, autoFold: true, barDocked: false, language: null };
 
 function loadSettings() {
   try {
@@ -506,6 +509,7 @@ function useStreamStats(deviceRef, gatewayUrl) {
 // does not move is a click.
 function FloatingHandle({ position, onMove, onClick, children, label }) {
   const drag = useRef(null);
+  const dragged = useRef(false);
   const size = 36;
   const clamp = (x, y) => ({
     x: Math.max(0, Math.min(window.innerWidth - size, x)),
@@ -534,11 +538,20 @@ function FloatingHandle({ position, onMove, onClick, children, label }) {
       onPointerUp={() => {
         const current = drag.current;
         drag.current = null;
-        if (!current) return;
-        if (current.moved) onMove(place, true);
-        else onClick();
+        dragged.current = Boolean(current?.moved);
+        if (current?.moved) onMove(place, true);
       }}
       onPointerCancel={() => { drag.current = null; }}
+      // Unfold on the click itself, not on pointerup: removing the handle at
+      // pointerup sent the tap's click to the fold button now under the
+      // finger, which folded the bar again at once.
+      onClick={() => {
+        if (dragged.current) {
+          dragged.current = false;
+          return;
+        }
+        onClick();
+      }}
     >
       {children}
     </button>
@@ -555,6 +568,8 @@ function App() {
   const [panel, setPanel] = useState(null);
   const foldPress = useRef({ timer: null, long: false });
   const [settings, setSettings] = useState(loadSettings);
+  // Before any tr() of this render: null means the browser's language.
+  setLanguage(settings.language ?? defaultLanguage());
   const updateSettings = (change) => setSettings((current) => {
     const next = { ...current, ...change };
     saveSettings(next);
@@ -573,6 +588,8 @@ function App() {
   // Folded: the bar is hidden and the screen uses the whole window; a small
   // handle unfolds it. Entering fullscreen folds it after 3 s.
   const [barFolded, setBarFolded] = useState(false);
+  // Folding exists only in fullscreen: outside it the bar always shows.
+  const [fullscreen, setFullscreen] = useState(Boolean(document.fullscreenElement));
   // The unfold handle appears where the fold button was, at every fold; a
   // drag moves it until the bar is unfolded.
   const foldButtonRef = useRef(null);
@@ -597,6 +614,7 @@ function App() {
     let cancel = null;
     const changed = () => {
       cancel?.();
+      setFullscreen(Boolean(document.fullscreenElement));
       setBarFolded(false);
       cancel = folder() ?? null;
     };
@@ -697,6 +715,11 @@ function App() {
   }, [state, streamGeneration]);
 
   const problem = diagnose({ server, stream: state, connectingFor, touchFailures });
+  // A closed warning stays hidden until it goes away and comes back.
+  const [dismissed, setDismissed] = useState(null);
+  useEffect(() => {
+    if (dismissed !== null && problem?.text !== dismissed) setDismissed(null);
+  }, [problem?.text]);
   // Android is usable again (after a crash, a restart or a lost stream):
   // reconnect the video without waiting for the user.
   const serverHealthy = server.failures < 2 && server.value?.android?.booted === true
@@ -875,13 +898,13 @@ function App() {
       className="tool-button"
       style={{ ...buttonStyle, ...styles.withLed, ...(reconnecting ? styles.buttonBusy : null) }}
       onClick={manualReconnect}
-      aria-label="Reconnecter la vidéo"
+      aria-label={tr('Reconnecter la vidéo')}
       aria-busy={reconnecting}
     >
       <Icon name="refresh" spinning={reconnecting} />
       <span
         title={state}
-        aria-label={`Connexion ${state}`}
+        aria-label={tr('Connexion {state}', { state })}
         style={{
           ...styles.led,
           background: problem && problem.level !== 'info' ? LEVEL_COLORS[problem.level]
@@ -892,7 +915,7 @@ function App() {
   );
   const fullscreenButton = (
     <button className="tool-button" style={buttonStyle} onClick={toggleFullscreen}
-      aria-label="Plein écran"><Icon name="fullscreen" /></button>
+      aria-label={tr('Plein écran')}><Icon name="fullscreen" /></button>
   );
   // Tap: fold the bar away. Long press: dock it, so it keeps its own space
   // instead of floating over the screen; a tap then makes it float again.
@@ -901,8 +924,8 @@ function App() {
       ref={foldButtonRef}
       className="tool-button"
       style={{ ...buttonStyle, ...(settings.barDocked ? styles.buttonDocked : null) }}
-      aria-label={settings.barDocked ? 'Barre fixe : toucher pour la rendre flottante'
-        : 'Replier la barre (appui long : barre fixe)'}
+      aria-label={settings.barDocked ? tr('Barre fixe : toucher pour la rendre flottante')
+        : tr('Replier la barre (appui long : barre fixe)')}
       aria-pressed={settings.barDocked}
       onContextMenu={(event) => event.preventDefault()}
       onPointerDown={() => {
@@ -939,9 +962,9 @@ function App() {
       </span>
     </button>
   );
-  const serverBlock = panelBlock('server', 'Serveur, réseau et Android',
+  const serverBlock = panelBlock('server', tr('Serveur, réseau et Android'),
     `${formatValue(stats.ping)}ms`, pingColor(stats.ping));
-  const clientBlock = panelBlock('client', 'Cet appareil, affichage et options',
+  const clientBlock = panelBlock('client', tr('Cet appareil, affichage et options'),
     `${formatValue(stats.phone)}fps`, '#e8ebf0');
   const row2 = (label, value) => (
     <div key={label} style={styles.infoRow}>
@@ -953,12 +976,12 @@ function App() {
   const load = server.value?.load;
   const serverSections = [
     ['État', [
-      ['Serveur', server.failures >= 2 ? 'injoignable' : server.value ? 'joignable' : '…'],
+      ['Serveur', server.failures >= 2 ? tr('injoignable') : server.value ? tr('joignable') : '…'],
       ['Service Android', describeUnit(server.value?.emulator)],
-      ['Android démarré', server.value?.android?.booted === true ? 'oui'
-        : server.value?.android?.booted === false ? 'en cours' : 'sans réponse'],
+      ['Android démarré', server.value?.android?.booted === true ? tr('oui')
+        : server.value?.android?.booted === false ? tr('en cours') : tr('sans réponse')],
       ['Appareils connectés', formatValue(server.value?.viewers)],
-      ['Charge du serveur', load ? `${load.one.toFixed(1)} / ${load.cpus} cœurs` : '–'],
+      ['Charge du serveur', load ? tr('{load} / {cpus} cœurs', { load: load.one.toFixed(1), cpus: load.cpus }) : '–'],
     ]],
     ['Réseau', [
       ['Ping', stats.ping === null ? '–' : `${Math.round(stats.ping)} ms (${stats.pingSource})`],
@@ -986,13 +1009,13 @@ function App() {
   ];
   const sections = (list) => list.map(([title, rows]) => (
     <div key={title}>
-      <div style={styles.infoSection}>{title}</div>
-      {rows.map(([label, value]) => row2(label, value))}
+      <div style={styles.infoSection}>{tr(title)}</div>
+      {rows.map(([label, value]) => row2(tr(label), value))}
     </div>
   ));
   const toggle = (label, key) => (
     <label key={key} style={styles.infoRow}>
-      <span style={styles.infoLabel}>{label}</span>
+      <span style={styles.infoLabel}>{tr(label)}</span>
       <input type="checkbox" checked={settings[key]}
         onChange={(event) => updateSettings({ [key]: event.target.checked })} />
     </label>
@@ -1011,7 +1034,7 @@ function App() {
           -webkit-tap-highlight-color: transparent; }
         [role="dialog"] { -webkit-user-select: text; user-select: text; }
       `}</style>
-      <section style={styles.screen} aria-label="Écran Android"
+      <section style={styles.screen} aria-label={tr('Écran Android')}
         onContextMenu={(event) => event.preventDefault()}>
         <div ref={deviceRef} style={{ ...styles.device, width: screen.width, height: screen.height }}>
           {streamMounted && (
@@ -1032,27 +1055,29 @@ function App() {
                 ? <span style={{ ...styles.problemMark, color: LEVEL_COLORS.error }} aria-hidden="true">!</span>
                 : <span style={styles.spinner} aria-hidden="true" />}
               <span style={styles.loadingText}>
-                {problem?.blocking ? problem.text : reconnecting ? 'Reconnexion…' : 'Connexion au flux…'}
+                {problem?.blocking ? tr(problem.text) : reconnecting ? tr('Reconnexion…') : tr('Connexion au flux…')}
               </span>
-              {problem?.blocking && problem.detail && <span style={styles.loadingDetail}>{problem.detail}</span>}
+              {problem?.blocking && problem.detail && <span style={styles.loadingDetail}>{tr(problem.detail)}</span>}
             </div>
           )}
-          {problem && !problem.blocking && (
+          {problem && !problem.blocking && dismissed !== problem.text && (
             <div style={{ ...styles.banner, borderColor: LEVEL_COLORS[problem.level] }} role="status">
-              {problem.text}{problem.detail && <><br /><small>{problem.detail}</small></>}
+              <span>{tr(problem.text)}{problem.detail && <><br /><small>{tr(problem.detail)}</small></>}</span>
+              <button style={styles.bannerClose} onClick={() => setDismissed(problem.text)}
+                aria-label={tr('Fermer')}>✕</button>
             </div>
           )}
           {panel && (
             <div style={styles.info} role="dialog"
-              aria-label={panel === 'server' ? 'Serveur' : 'Cet appareil'}>
+              aria-label={panel === 'server' ? tr('Serveur') : tr('Cet appareil')}>
               <div style={styles.infoHeader}>
-                <strong>{panel === 'server' ? 'Serveur' : 'Cet appareil'}</strong>
-                <button style={styles.infoClose} onClick={() => setPanel(null)} aria-label="Fermer">✕</button>
+                <strong>{panel === 'server' ? tr('Serveur') : tr('Cet appareil')}</strong>
+                <button style={styles.infoClose} onClick={() => setPanel(null)} aria-label={tr('Fermer')}>✕</button>
               </div>
               {panel === 'server' ? (
                 <>
                   {sections(serverSections)}
-                  <div style={styles.infoSection}>Écran d’Android</div>
+                  <div style={styles.infoSection}>{tr('Écran d’Android')}</div>
                   <DisplaySettings
                     gatewayUrl={gatewayUrl}
                     displayState={displayState}
@@ -1065,7 +1090,14 @@ function App() {
               ) : (
                 <>
                   {sections(clientSections)}
-                  <div style={styles.infoSection}>Options</div>
+                  <div style={styles.infoSection}>{tr('Options')}</div>
+                  <label style={styles.infoRow}>
+                    <span style={styles.infoLabel}>{tr('Langue')}</span>
+                    <select value={settings.language ?? defaultLanguage()} style={styles.select}
+                      onChange={(event) => updateSettings({ language: event.target.value })}>
+                      {LANGUAGES.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+                    </select>
+                  </label>
                   {toggle('Point sous le doigt', 'touchMarker')}
                   {toggle('Replier la barre en plein écran', 'autoFold')}
                 </>
@@ -1075,7 +1107,7 @@ function App() {
           <div ref={touchMarker} style={styles.touchMarker} aria-hidden="true" />
           <div
             style={styles.touchLayer}
-            aria-label="Surface tactile Android"
+            aria-label={tr('Surface tactile Android')}
             onPointerDown={startTouch}
             onPointerMove={moveTouch}
             onPointerUp={endTouch}
@@ -1083,9 +1115,9 @@ function App() {
           />
         </div>
       </section>
-      {barFolded && (
+      {fullscreen && barFolded && (
         <FloatingHandle
-          label="Afficher la barre (glisser pour déplacer)"
+          label={tr('Afficher la barre (glisser pour déplacer)')}
           position={handlePosition}
           onMove={(position) => setHandlePosition(position)}
           onClick={() => setBarFolded(false)}
@@ -1095,28 +1127,28 @@ function App() {
         style={row ? styles.toolbar
           : overlay ? { ...styles.toolbarBar, ...styles.toolbarOverlay, display: barFolded ? 'none' : 'grid' }
             : styles.toolbarBar}
-        aria-label="Contrôles Android"
+        aria-label={tr('Contrôles Android')}
       >
         {/* Same order beside the screen (top to bottom) and below it (left to
             right): the phone's physical keys and the network metrics,
             Android's recents, home and back centred, then the stream
             information and the page's own buttons. */}
         <div style={{ ...zoneStyle, justifyContent: 'flex-start' }}>
-          {keyButton('Power', 'Marche arrêt', 'power')}
-          {keyButton('AudioVolumeDown', 'Baisser le volume', 'volumeDown')}
-          {keyButton('AudioVolumeUp', 'Monter le volume', 'volumeUp')}
+          {keyButton('Power', tr('Marche arrêt'), 'power')}
+          {keyButton('AudioVolumeDown', tr('Baisser le volume'), 'volumeDown')}
+          {keyButton('AudioVolumeUp', tr('Monter le volume'), 'volumeUp')}
           {serverBlock}
         </div>
-        <div style={zoneStyle} aria-label="Navigation Android">
-          {keyButton('AppSwitch', 'Applications récentes', 'recents')}
-          {keyButton('GoHome', 'Accueil', 'home')}
-          {keyButton('GoBack', 'Retour', 'back')}
+        <div style={zoneStyle} aria-label={tr('Navigation Android')}>
+          {keyButton('AppSwitch', tr('Applications récentes'), 'recents')}
+          {keyButton('GoHome', tr('Accueil'), 'home')}
+          {keyButton('GoBack', tr('Retour'), 'back')}
         </div>
         <div style={{ ...zoneStyle, justifyContent: 'flex-end' }}>
           {clientBlock}
           {reloadButton}
           {fullscreenButton}
-          {foldButton}
+          {fullscreen && foldButton}
         </div>
       </nav>
     </main>
@@ -1229,6 +1261,11 @@ const styles = {
     padding: '10px 14px', borderRadius: '10px', background: 'rgba(20, 22, 27, 0.92)',
     border: '1px solid #3b3f47', color: '#e8ebf0', fontFamily: 'system-ui, sans-serif',
     fontSize: '13px', textAlign: 'center', maxWidth: '80%',
+    display: 'flex', alignItems: 'flex-start', gap: '10px',
+  },
+  bannerClose: {
+    flex: '0 0 22px', width: '22px', height: '22px', padding: 0, border: 'none',
+    background: 'transparent', color: '#8a919c', fontSize: '14px', lineHeight: 1,
   },
   info: {
     position: 'absolute', left: '8px', right: '8px', top: '8px', zIndex: 4,
