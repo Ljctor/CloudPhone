@@ -80,8 +80,8 @@ wg show wg0
 The firewall must:
 
 - accept **UDP 51820** from the internet (WireGuard);
-- accept **TCP 8000-8001** and **UDP 32768-60999** (the WebRTC video) only on
-  the `wg0` interface;
+- accept **TCP 8000-8001** (`WEB_PORT` and `WEB_PORT` + 1) and **UDP
+  32768-60999** (the WebRTC video) only on the `wg0` interface;
 - keep your SSH port open, or you will lock yourself out.
 
 > Keep a second SSH session open while you change the firewall, and check the

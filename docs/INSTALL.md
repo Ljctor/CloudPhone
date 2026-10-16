@@ -6,7 +6,7 @@ It installs three systemd services:
 | Service | What it does | Listens on |
 |---|---|---|
 | `cloudphone-emulator` | Google's official Android Emulator running Android 16 with Google Play, headless | `127.0.0.1:5558` (adb), `127.0.0.1:8554` (gRPC) |
-| `cloudphone-gateway` | Streams the screen over WebRTC and forwards touch and keys | `LISTEN_ADDRESS:8001`, WebRTC media on UDP 32768-60999 |
+| `cloudphone-gateway` | Streams the screen over WebRTC and forwards touch and keys | `LISTEN_ADDRESS:8001` (always `WEB_PORT` + 1), WebRTC media on UDP 32768-60999 |
 | `cloudphone-web` | Mobile control page (540×1170 screen with a toolbar) | `LISTEN_ADDRESS:8000` |
 
 ```text
@@ -121,17 +121,51 @@ Settings live in `/etc/cloudphone/cloudphone.conf`; upgrades keep your edits.
 | Setting | Default | Meaning |
 |---|---|---|
 | `LISTEN_ADDRESS` | `0.0.0.0` | Address of the web page and the gateway |
-| `WEB_PORT` | `8000` | Port of the web page (the gateway always uses 8001) |
+| `WEB_PORT` | `8000` | Port of the web page; the gateway uses `WEB_PORT` + 1 |
 | `AVD_NAME` | `cloudphone` | Android device to run |
 | `EMULATOR_MEMORY_MB` | `4096` | RAM given to Android |
 | `EMULATOR_CORES` | `4` | CPU cores given to Android |
 | `EMULATOR_GPU` | `swiftshader_indirect` | Software rendering, works without a GPU |
-| `EMULATOR_PORT` / `GRPC_PORT` | `5558` / `8554` | Loopback ports of the emulator |
+| `EMULATOR_PORT` / `GRPC_PORT` | `5558` / `8554` | Loopback ports of the emulator (it also uses `EMULATOR_PORT` + 1) |
+| `ANDROID_ADB_SERVER_PORT` | `5037` | adb server of this instance |
 | `SCREEN_WIDTH` / `SCREEN_HEIGHT` / `SCREEN_DENSITY` | `540` / `1170` / `240` | Screen of a newly created device |
 
 Apply a change with `sudo systemctl restart cloudphone-emulator` (this reboots
 Android) or, for `LISTEN_ADDRESS` and `WEB_PORT` only,
 `sudo systemctl restart cloudphone-gateway cloudphone-web`.
+
+### Running next to another Android emulator
+
+The installer refuses to start when one of its ports is used by another
+program. To run Cloud Phone on a host that already runs an emulator or an adb
+server, write the configuration before installing, with free ports:
+
+```sh
+sudo install -d /etc/cloudphone
+sudo tee /etc/cloudphone/cloudphone.conf >/dev/null <<'CONF'
+LISTEN_ADDRESS=10.20.0.1
+WEB_PORT=8100
+AVD_NAME=cloudphone
+EMULATOR_MEMORY_MB=4096
+EMULATOR_CORES=2
+EMULATOR_GPU=swiftshader_indirect
+EMULATOR_PORT=5560
+GRPC_PORT=8556
+ANDROID_ADB_SERVER_PORT=5038
+SCREEN_WIDTH=540
+SCREEN_HEIGHT=1170
+SCREEN_DENSITY=240
+CONF
+sudo ./install.sh
+```
+
+The page is then on port 8100 and the gateway on 8101. With software
+rendering, each emulator keeps several CPU cores busy; to give another
+workload priority, lower this instance's CPU share:
+
+```sh
+sudo systemctl edit cloudphone-emulator   # add: [Service] CPUWeight=20
+```
 
 ## Day-to-day operations
 

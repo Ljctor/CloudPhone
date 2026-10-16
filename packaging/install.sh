@@ -76,7 +76,8 @@ done
 [ "$(id -u)" -eq 0 ] || die "run as root: sudo $0"
 
 as_service_user() {
-  runuser -u "$SERVICE_USER" -- env HOME="$STATE" "$@"
+  runuser -u "$SERVICE_USER" -- env HOME="$STATE" \
+    ANDROID_ADB_SERVER_PORT="$ANDROID_ADB_SERVER_PORT" "$@"
 }
 
 adb_cmd() {
@@ -110,6 +111,8 @@ load_conf() {
   # shellcheck source=files/cloudphone.conf
   . "$src"
   [[ $AVD_NAME =~ ^[A-Za-z0-9._-]+$ ]] || die "invalid AVD_NAME: $AVD_NAME"
+  ANDROID_ADB_SERVER_PORT=${ANDROID_ADB_SERVER_PORT:-5037}
+  GATEWAY_PORT=$((WEB_PORT + 1))
 }
 
 preflight() {
@@ -358,8 +361,28 @@ install_units() {
   systemctl enable "${UNITS[@]/%/.service}" >/dev/null
 }
 
+# Another program on one of our ports would make the page drive the wrong
+# phone, so refuse to start rather than share them.
+check_ports_free() {
+  local unit
+  for unit in "${UNITS[@]}"; do
+    systemctl is-active --quiet "$unit.service" && return 0
+  done
+  local listening port busy=()
+  listening=$(ss -Hltn | awk '{ sub(/.*:/, "", $4); print $4 }')
+  for port in "$WEB_PORT" "$GATEWAY_PORT" "$EMULATOR_PORT" "$((EMULATOR_PORT + 1))" \
+    "$GRPC_PORT" "$ANDROID_ADB_SERVER_PORT"; do
+    if grep -qx "$port" <<<"$listening"; then
+      busy+=("$port")
+    fi
+  done
+  [ ${#busy[@]} -eq 0 ] ||
+    die "TCP port(s) ${busy[*]} already in use by another program: choose free ports in $CONF (WEB_PORT, EMULATOR_PORT, GRPC_PORT, ANDROID_ADB_SERVER_PORT)"
+}
+
 start_services() {
   [ "$start" = yes ] || return 0
+  check_ports_free
   if systemctl is-active --quiet cloudphone-emulator.service && [ "$emulator_changed" = no ]; then
     log "Restarting the streaming services (Android keeps running)"
     systemctl restart cloudphone-gateway.service cloudphone-web.service

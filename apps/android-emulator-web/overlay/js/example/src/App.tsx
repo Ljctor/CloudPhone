@@ -32,7 +32,10 @@ function App() {
   const [state, setState] = useState('connecting');
   const [streamMounted, setStreamMounted] = useState(true);
   const [streamGeneration, setStreamGeneration] = useState(0);
-  const gateway = `${window.location.hostname}:8001`;
+  // The gateway listens on the port right after the page's own (8000 → 8001),
+  // so several instances can share a host.
+  const pagePort = Number(window.location.port) || (window.location.protocol === 'https:' ? 443 : 80);
+  const gateway = `${window.location.hostname}:${pagePort + 1}`;
   const gatewayUrl = `${window.location.protocol}//${gateway}`;
 
   const reconnectStream = () => {
