@@ -7,6 +7,9 @@ logger.setLevel('warn');
 
 const TOOLBAR_WIDTH = 40;
 const STATS_INTERVAL_MS = 1000;
+// Touches over the WebRTC data channel reach the channel but this emulator
+// build (36.6.11) does not apply them: keep the HTTP path until that works.
+const USE_DATA_CHANNEL = false;
 // Give up showing the reconnect feedback if no frame arrives in this time.
 const RECONNECT_FEEDBACK_MS = 15000;
 // Android's display size until the gateway reports the real one.
@@ -393,7 +396,7 @@ function App() {
     const sender = touchSender.current;
     // Use the channel only when no HTTP touch is pending, to keep the order.
     const httpIdle = !sender.inFlight && sender.queue.length === 0 && !sender.pendingMove;
-    if (httpIdle && sendOverChannel(coordinates, pressed)) {
+    if (USE_DATA_CHANNEL && httpIdle && sendOverChannel(coordinates, pressed)) {
       inputPath.current = 'data channel';
       return;
     }
@@ -469,11 +472,11 @@ function App() {
       style={{ ...styles.status, background: state === 'connected' ? '#34c759' : '#ff9f0a' }}
     />
   );
-  // Vertical toolbar: ping and both frame rates. Horizontal bar: ping and
-  // the frame rate this device displays.
-  const statsBlock = (full) => (
+  // Ping and the frame rate this device displays.
+  const zoneStyle = row ? { ...styles.barZone, ...styles.barZoneColumn } : styles.barZone;
+  const statsBlock = (vertical) => (
     <div
-      style={full ? styles.stats : styles.statsBelow}
+      style={vertical ? styles.stats : styles.statsBelow}
       aria-label="Statistiques du flux (toucher pour les détails de l'écran)"
       role="button"
       tabIndex={0}
@@ -482,12 +485,7 @@ function App() {
       <span style={styles.statLabel}>ping</span>
       <span style={{ ...styles.statValue, color: pingColor(stats.ping) }}
         title="Aller-retour réseau jusqu'au serveur, en millisecondes">{formatValue(stats.ping)}</span>
-      {full && <span style={styles.statLabel}>srv</span>}
-      {full && (
-        <span style={styles.statValue}
-          title="Images par seconde envoyées par le serveur (≈0 quand l'écran Android ne bouge pas)">{formatValue(stats.server)}</span>
-      )}
-      <span style={styles.statLabel}>{full ? 'phone' : 'fps'}</span>
+      <span style={styles.statLabel}>fps</span>
       <span style={styles.statValue}
         title="Images par seconde affichées par ce navigateur">{formatValue(stats.phone)}</span>
     </div>
@@ -555,47 +553,25 @@ function App() {
             : styles.toolbarBar}
         aria-label="Contrôles Android"
       >
-        {row ? (
-          <>
-            {statsBlock(true)}
-            <div style={styles.separator} aria-hidden="true" />
-            <div style={styles.webControls} aria-label="Contrôles du flux Web">
-              {reloadButton}
-              {fullscreenButton}
-              {statusLed}
-            </div>
-            <div style={styles.separator} aria-hidden="true" />
-            <div style={styles.emulatorControls} aria-label="Contrôles Android">
-              {keyButton('GoBack', 'Retour', 'back')}
-              {keyButton('GoHome', 'Accueil', 'home')}
-              {keyButton('AppSwitch', 'Applications récentes', 'recents')}
-              {keyButton('AudioVolumeDown', 'Baisser le volume', 'volumeDown')}
-              {keyButton('AudioVolumeUp', 'Monter le volume', 'volumeUp')}
-              {keyButton('Power', 'Marche arrêt', 'power')}
-            </div>
-          </>
-        ) : (
-          <>
-            {/* Like a phone: physical keys on the sides, Android's
-                navigation buttons centred (recents, home, back). */}
-            <div style={{ ...styles.barZone, justifyContent: 'flex-start' }}>
-              {keyButton('Power', 'Marche arrêt', 'power')}
-              {reloadButton}
-              {fullscreenButton}
-              {statusLed}
-            </div>
-            <div style={styles.barZone} aria-label="Navigation Android">
-              {keyButton('AppSwitch', 'Applications récentes', 'recents')}
-              {keyButton('GoHome', 'Accueil', 'home')}
-              {keyButton('GoBack', 'Retour', 'back')}
-            </div>
-            <div style={{ ...styles.barZone, justifyContent: 'flex-end' }}>
-              {statsBlock(false)}
-              {keyButton('AudioVolumeDown', 'Baisser le volume', 'volumeDown')}
-              {keyButton('AudioVolumeUp', 'Monter le volume', 'volumeUp')}
-            </div>
-          </>
-        )}
+        {/* Like a phone, in the same order whether the bar is beside the
+            screen (top to bottom) or below it (left to right): physical
+            keys at the ends, Android's recents, home and back centred. */}
+        <div style={{ ...zoneStyle, justifyContent: 'flex-start' }}>
+          {keyButton('Power', 'Marche arrêt', 'power')}
+          {reloadButton}
+          {fullscreenButton}
+          {statusLed}
+        </div>
+        <div style={zoneStyle} aria-label="Navigation Android">
+          {keyButton('AppSwitch', 'Applications récentes', 'recents')}
+          {keyButton('GoHome', 'Accueil', 'home')}
+          {keyButton('GoBack', 'Retour', 'back')}
+        </div>
+        <div style={{ ...zoneStyle, justifyContent: 'flex-end' }}>
+          {statsBlock(row)}
+          {keyButton('AudioVolumeDown', 'Baisser le volume', 'volumeDown')}
+          {keyButton('AudioVolumeUp', 'Monter le volume', 'volumeUp')}
+        </div>
       </nav>
     </main>
   );
@@ -636,8 +612,8 @@ const styles = {
   },
   toolbar: {
     flex: `0 0 ${TOOLBAR_WIDTH}px`, alignSelf: 'stretch', width: `${TOOLBAR_WIDTH}px`,
-    boxSizing: 'border-box', display: 'flex', flexDirection: 'column', alignItems: 'center',
-    justifyContent: 'center', padding: '6px 2px',
+    boxSizing: 'border-box', display: 'grid', gridTemplateRows: '1fr auto 1fr',
+    justifyItems: 'center', rowGap: '8px', padding: '6px 2px',
     background: '#1b1d22', borderLeft: '1px solid #3b3f47', zIndex: 10,
   },
   toolbarOverlay: {
@@ -659,6 +635,7 @@ const styles = {
     background: '#1b1d22', borderTop: '1px solid #3b3f47', zIndex: 10,
   },
   barZone: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px', minWidth: 0 },
+  barZoneColumn: { flexDirection: 'column', gap: '6px', minHeight: 0 },
   // Label above value, one column per statistic.
   statsBelow: {
     display: 'grid', gridAutoFlow: 'column', gridTemplateRows: 'auto auto',
