@@ -26,13 +26,14 @@ function viewportSize() {
 // Largest Android screen that fits, with the toolbar either beside it or
 // below it, whichever leaves the bigger screen. A phone whose shape matches
 // Android's (e.g. 19.5:9) gets the full width with the toolbar below.
-function fittedScreen(display = DEFAULT_DISPLAY, folded = false) {
+function fittedScreen(display = DEFAULT_DISPLAY, folded = false, docked = false) {
   const DEVICE_WIDTH = display.width;
   const DEVICE_HEIGHT = display.height;
   const viewport = viewportSize();
   // Fullscreen or folded bar: the screen takes the whole window and the bar
-  // floats over it, so a phone shaped like Android uses every pixel.
-  if (document.fullscreenElement || folded) {
+  // floats over it, so a phone shaped like Android uses every pixel. A
+  // docked bar keeps its own space, even in fullscreen.
+  if ((document.fullscreenElement && !docked) || folded) {
     const width = Math.max(1, Math.floor(Math.min(viewport.width,
       viewport.height * DEVICE_WIDTH / DEVICE_HEIGHT)));
     return { width, height: Math.floor(width * DEVICE_HEIGHT / DEVICE_WIDTH), toolbar: 'overlay' };
@@ -99,9 +100,9 @@ function formatValue(value) {
 // layout looks the same at every resolution: "Haute" only adds pixels, for
 // sharp screenshots, at a higher CPU cost on the server.
 const DEVICE_SHAPES = [
-  { id: 's23', label: 'Téléphone 19,5:9 (Galaxy S23)', ratio: 2340 / 1080 },
-  { id: 'pixel', label: 'Téléphone 20:9 (Pixel 8)', ratio: 2400 / 1080 },
-  { id: 'classic', label: 'Téléphone 16:9', ratio: 16 / 9 },
+  { id: 's23', label: '19,5:9 (Galaxy S23)', ratio: 2340 / 1080 },
+  { id: 'pixel', label: '20:9 (Pixel 8)', ratio: 2400 / 1080 },
+  { id: 'classic', label: '16:9', ratio: 16 / 9 },
   { id: 'tablet', label: 'Tablette 16:10', ratio: 1.6 },
   { id: 'fold', label: 'Pliable ouvert', ratio: 2176 / 1812 },
   { id: 'window', label: 'Cette fenêtre', ratio: null },
@@ -325,9 +326,11 @@ function describeUnit(unit) {
   return `${unit.active} (${unit.sub})${restarts}`;
 }
 
+const LONG_PRESS_MS = 500;
+
 // Per-viewer page settings, kept in this browser only.
 const SETTINGS_KEY = 'cloudphone.settings';
-const DEFAULT_SETTINGS = { touchMarker: true, autoFold: true, handle: null };
+const DEFAULT_SETTINGS = { touchMarker: true, autoFold: true, barDocked: false };
 
 function loadSettings() {
   try {
@@ -543,6 +546,7 @@ function App() {
   // Open panel over the screen: 'server' (from the ping block) or 'client'
   // (from the fps block).
   const [panel, setPanel] = useState(null);
+  const foldPress = useRef({ timer: null, long: false });
   const [settings, setSettings] = useState(loadSettings);
   const updateSettings = (change) => setSettings((current) => {
     const next = { ...current, ...change };
@@ -562,13 +566,25 @@ function App() {
   // Folded: the bar is hidden and the screen uses the whole window; a small
   // handle unfolds it. Entering fullscreen folds it after 3 s.
   const [barFolded, setBarFolded] = useState(false);
+  // The unfold handle appears where the fold button was, at every fold; a
+  // drag moves it until the bar is unfolded.
+  const foldButtonRef = useRef(null);
+  const [handlePosition, setHandlePosition] = useState(null);
+  const foldBar = useRef(null);
+  foldBar.current = () => {
+    const bounds = foldButtonRef.current?.getBoundingClientRect();
+    setHandlePosition(bounds && bounds.width > 0
+      ? { x: bounds.left + bounds.width / 2 - 18, y: bounds.top + bounds.height / 2 - 18 } : null);
+    setBarFolded(true);
+  };
   const [screen, setScreen] = useState(() => fittedScreen(DEFAULT_DISPLAY));
   const row = screen.toolbar === 'side';
   const overlay = screen.toolbar === 'overlay';
   useEffect(() => {
     const folder = () => {
-      if (!document.fullscreenElement || !loadSettings().autoFold) return;
-      const timer = window.setTimeout(() => setBarFolded(true), 3000);
+      const current = loadSettings();
+      if (!document.fullscreenElement || !current.autoFold || current.barDocked) return;
+      const timer = window.setTimeout(() => foldBar.current(), 3000);
       return () => window.clearTimeout(timer);
     };
     let cancel = null;
@@ -688,7 +704,7 @@ function App() {
   }, [serverHealthy, state, connectingFor >= 20]);
 
   useEffect(() => {
-    const resize = () => setScreen(fittedScreen(display, barFolded));
+    const resize = () => setScreen(fittedScreen(display, barFolded, settings.barDocked));
     resize();
     window.addEventListener('resize', resize);
     window.visualViewport?.addEventListener('resize', resize);
@@ -698,7 +714,7 @@ function App() {
       window.visualViewport?.removeEventListener('resize', resize);
       document.removeEventListener('fullscreenchange', resize);
     };
-  }, [display, barFolded]);
+  }, [display, barFolded, settings.barDocked]);
 
   useEffect(() => {
     let wasHidden = document.visibilityState === 'hidden';
@@ -873,9 +889,35 @@ function App() {
     <button className="tool-button" style={buttonStyle} onClick={toggleFullscreen}
       aria-label="Plein écran"><Icon name="fullscreen" /></button>
   );
+  // Tap: fold the bar away. Long press: dock it, so it keeps its own space
+  // instead of floating over the screen; a tap then makes it float again.
   const foldButton = (
-    <button className="tool-button" style={buttonStyle} onClick={() => setBarFolded(true)}
-      aria-label="Replier la barre"><Icon name={row ? 'foldSide' : 'fold'} /></button>
+    <button
+      ref={foldButtonRef}
+      className="tool-button"
+      style={{ ...buttonStyle, ...(settings.barDocked ? styles.buttonDocked : null) }}
+      aria-label={settings.barDocked ? 'Barre fixe : toucher pour la rendre flottante'
+        : 'Replier la barre (appui long : barre fixe)'}
+      aria-pressed={settings.barDocked}
+      onContextMenu={(event) => event.preventDefault()}
+      onPointerDown={() => {
+        foldPress.current.long = false;
+        window.clearTimeout(foldPress.current.timer);
+        foldPress.current.timer = window.setTimeout(() => {
+          foldPress.current.long = true;
+          navigator.vibrate?.(20);
+          updateSettings({ barDocked: true });
+        }, LONG_PRESS_MS);
+      }}
+      onPointerUp={() => window.clearTimeout(foldPress.current.timer)}
+      onPointerCancel={() => window.clearTimeout(foldPress.current.timer)}
+      onPointerLeave={() => window.clearTimeout(foldPress.current.timer)}
+      onClick={() => {
+        if (foldPress.current.long) return;
+        if (settings.barDocked) updateSettings({ barDocked: false });
+        else foldBar.current();
+      }}
+    ><Icon name={row ? 'foldSide' : 'fold'} /></button>
   );
   const togglePanel = (name) => setPanel((open) => (open === name ? null : name));
   const zoneStyle = row ? { ...styles.barZone, ...styles.barZoneColumn } : styles.barZone;
@@ -1039,9 +1081,8 @@ function App() {
       {barFolded && (
         <FloatingHandle
           label="Afficher la barre (glisser pour déplacer)"
-          position={settings.handle}
-          onMove={(position, done) => (done ? updateSettings({ handle: position })
-            : setSettings((current) => ({ ...current, handle: position })))}
+          position={handlePosition}
+          onMove={(position) => setHandlePosition(position)}
           onClick={() => setBarFolded(false)}
         ><Icon name="unfold" /></FloatingHandle>
       )}
@@ -1199,6 +1240,7 @@ const styles = {
     display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', lineHeight: 1, fontFamily: 'system-ui, sans-serif', touchAction: 'manipulation',
   },
   buttonBusy: { background: '#2f5d8f', borderColor: '#4da3ff' },
+  buttonDocked: { borderColor: '#4da3ff' },
   icon: { display: 'block', margin: 'auto' },
   // A steady rotation of the centred icon, slow enough to read as "working".
   spinningIcon: {
