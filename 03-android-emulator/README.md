@@ -8,6 +8,7 @@ Agents: read `AGENTS.md`. All-in-one install with part 04:
 |---|---|
 | `scripts/install.sh` | SDK, pinned emulator, system image, AVD, service; waits for boot |
 | `scripts/verify.sh` | read-only acceptance test (prints `PASS`) |
+| `scripts/set-resolution.sh` | change Android's screen size (reboots Android) |
 | `files/cloudphone.conf` | default `/etc/cloudphone/cloudphone.conf` |
 | `files/emulator_access.json` | gRPC allowlist (token-authenticated, loopback) |
 | `files/libexec/cloudphone-emulator` | launcher, installed in `/opt/cloudphone/libexec` |
@@ -16,6 +17,13 @@ Agents: read `AGENTS.md`. All-in-one install with part 04:
 
 Emulator 37.1.11 crashed with Google Play and WebRTC active, hence the pin.
 Google's files are downloaded on the server, never redistributed.
+
+## Screen size
+
+`sudo scripts/set-resolution.sh WIDTH HEIGHT DENSITY` (e.g. `360 780 160`)
+changes Android's screen and reboots Android; data is kept and the page
+follows the new size. Fewer pixels cost less CPU: without a GPU, Android is
+drawn and encoded by the CPU.
 
 ## Several instances on one host
 

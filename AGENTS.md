@@ -11,9 +11,7 @@ This repository installs a cloud Android phone in four parts, in this order:
 
 Each part's `AGENTS.md` is the installation procedure; development and
 reference docs are linked from there. Execution model and safety rules:
-`docs/METHOD.md`. `docs/legacy-reference-server/` describes the first server's
-older layout (account `master`, `/opt/android-sdk`): use it only to inspect
-that server, never for a new install.
+`docs/METHOD.md`.
 
 ## Changing this repository
 
