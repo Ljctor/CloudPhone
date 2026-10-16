@@ -229,6 +229,102 @@ function DisplaySettings({ gatewayUrl, displayState, refresh, rowStyle, labelSty
   );
 }
 
+// Polls the gateway's view of the server: emulator service, Android boot,
+// viewers, load. failures counts consecutive unanswered polls.
+function useServerState(gatewayUrl) {
+  const [server, setServer] = useState({ value: null, failures: 0 });
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => {
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 4000);
+      fetch(`${gatewayUrl}/api/v1/state`, { cache: 'no-store', signal: controller.signal })
+        .then((response) => (response.ok ? response.json() : Promise.reject(new Error(String(response.status)))))
+        .then((value) => { if (!cancelled) setServer({ value, failures: 0 }); })
+        .catch(() => { if (!cancelled) setServer((current) => ({ ...current, failures: current.failures + 1 })); })
+        .finally(() => window.clearTimeout(timeout));
+    };
+    load();
+    const timer = window.setInterval(load, 3000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [gatewayUrl]);
+  return server;
+}
+
+// The single most important thing to tell the user, or null.
+// level: 'error' (needs action or will not fix itself), 'wait' (being
+// fixed), 'info' (works, but worse than usual). blocking: covers the screen.
+function diagnose({ server, stream, connectingFor, touchFailures }) {
+  const value = server.value;
+  if (server.failures >= 2) {
+    return {
+      level: 'error', blocking: true, text: 'Serveur injoignable',
+      detail: 'Vérifiez que le VPN (WireGuard) est connecté sur cet appareil.',
+    };
+  }
+  const display = value?.display?.state;
+  if (display === 'pending' || display === 'applying') {
+    return { level: 'wait', blocking: true, text: 'Changement de résolution', detail: 'Android redémarre…' };
+  }
+  const unit = value?.emulator;
+  if (unit) {
+    if (unit.active === 'failed') {
+      return {
+        level: 'error', blocking: true, text: 'Android s’est arrêté sur une erreur',
+        detail: 'Il ne redémarre pas tout seul : il faut le relancer sur le serveur.',
+      };
+    }
+    if (unit.active === 'activating' && unit.sub === 'auto-restart') {
+      return { level: 'wait', blocking: true, text: 'Android a planté', detail: 'Redémarrage automatique…' };
+    }
+    if (unit.active === 'inactive' || unit.active === 'deactivating') {
+      return { level: 'error', blocking: true, text: 'Android est arrêté', detail: 'Il faut le démarrer sur le serveur.' };
+    }
+    if (unit.active === 'activating') {
+      return { level: 'wait', blocking: true, text: 'Android démarre…', detail: null };
+    }
+  }
+  const booted = value?.android?.booted;
+  if (value && booted === false) {
+    return { level: 'wait', blocking: stream !== 'connected', text: 'Android démarre…', detail: 'Cela peut prendre une minute.' };
+  }
+  if (value && booted === null) {
+    return { level: 'wait', blocking: stream !== 'connected', text: 'Le serveur se reconnecte à Android…', detail: null };
+  }
+  if (stream === 'disconnected') {
+    return { level: 'wait', blocking: true, text: 'Vidéo interrompue', detail: 'Reconnexion…' };
+  }
+  if (stream !== 'connected' && connectingFor >= 15) {
+    return {
+      level: 'error', blocking: true, text: 'La vidéo ne se connecte pas',
+      detail: 'Le réseau bloque peut-être le flux vidéo (UDP). Touchez ↻ pour réessayer.',
+    };
+  }
+  if (touchFailures >= 3) {
+    return { level: 'error', blocking: false, text: 'Les touches n’arrivent pas à Android', detail: null };
+  }
+  if (stream === 'connected' && value?.viewers > 1) {
+    const others = value.viewers - 1;
+    return {
+      level: 'info', blocking: false,
+      text: others === 1 ? 'Un autre appareil regarde ce téléphone' : `${others} autres appareils regardent ce téléphone`,
+      detail: 'L’image peut être plus lente.',
+    };
+  }
+  if (value?.load && value.load.one > value.load.cpus) {
+    return { level: 'info', blocking: false, text: 'Serveur très chargé', detail: 'L’image peut ralentir.' };
+  }
+  return null;
+}
+
+const LEVEL_COLORS = { error: '#ff453a', wait: '#ff9f0a', info: '#ffd60a' };
+
+function describeUnit(unit) {
+  if (!unit) return '–';
+  const restarts = unit.restarts ? `, ${unit.restarts} redémarrage${unit.restarts > 1 ? 's' : ''}` : '';
+  return `${unit.active} (${unit.sub})${restarts}`;
+}
+
 // Per-viewer page settings, kept in this browser only.
 const SETTINGS_KEY = 'cloudphone.settings';
 const DEFAULT_SETTINGS = { touchMarker: true, autoFold: true, handle: null };
@@ -498,6 +594,11 @@ function App() {
   const gatewayUrl = `${window.location.protocol}//${gateway}`;
   const stats = useStreamStats(deviceRef, gatewayUrl);
   const [displayState, refreshDisplay] = useDisplayState(gatewayUrl);
+  const server = useServerState(gatewayUrl);
+  // Seconds the stream has been trying to connect, and consecutive failed
+  // touch requests: both feed the message shown to the user.
+  const [connectingFor, setConnectingFor] = useState(0);
+  const [touchFailures, setTouchFailures] = useState(0);
   const displayChange = displayState?.request?.state;
   // A size change ends with the gateway restarting on the new size: reload
   // so that layout, touch mapping and the stream all start fresh.
@@ -565,6 +666,28 @@ function App() {
   };
 
   useEffect(() => {
+    if (state === 'connected') {
+      setConnectingFor(0);
+      return undefined;
+    }
+    const started = Date.now();
+    const timer = window.setInterval(() => setConnectingFor(Math.floor((Date.now() - started) / 1000)), 1000);
+    return () => window.clearInterval(timer);
+  }, [state, streamGeneration]);
+
+  const problem = diagnose({ server, stream: state, connectingFor, touchFailures });
+  // Android is usable again (after a crash, a restart or a lost stream):
+  // reconnect the video without waiting for the user.
+  const serverHealthy = server.failures < 2 && server.value?.android?.booted === true
+    && server.value?.emulator?.active !== 'activating';
+  useEffect(() => {
+    if (!serverHealthy || state === 'connected') return undefined;
+    if (state !== 'disconnected' && connectingFor < 20) return undefined;
+    const timer = window.setTimeout(reconnectStream, 2000);
+    return () => window.clearTimeout(timer);
+  }, [serverHealthy, state, connectingFor >= 20]);
+
+  useEffect(() => {
     const resize = () => setScreen(fittedScreen(display, barFolded));
     resize();
     window.addEventListener('resize', resize);
@@ -615,7 +738,11 @@ function App() {
     body: JSON.stringify(body),
   }).then((response) => {
     if (!response.ok) throw new Error(`${path}: HTTP ${response.status}`);
-  }).catch((error) => console.error('Android control:', error));
+    setTouchFailures(0);
+  }).catch((error) => {
+    setTouchFailures((count) => count + 1);
+    console.error('Android control:', error);
+  });
 
   const sendKey = (key) => post('/api/v1/emulator/key', { key });
 
@@ -734,7 +861,11 @@ function App() {
       <span
         title={state}
         aria-label={`Connexion ${state}`}
-        style={{ ...styles.led, background: connected ? '#34c759' : '#ff9f0a' }}
+        style={{
+          ...styles.led,
+          background: problem && problem.level !== 'info' ? LEVEL_COLORS[problem.level]
+            : connected ? '#34c759' : '#ff9f0a',
+        }}
       />
     </button>
   );
@@ -772,7 +903,16 @@ function App() {
     </div>
   );
   const configured = displayState?.configured;
+  const load = server.value?.load;
   const serverSections = [
+    ['État', [
+      ['Serveur', server.failures >= 2 ? 'injoignable' : server.value ? 'joignable' : '…'],
+      ['Service Android', describeUnit(server.value?.emulator)],
+      ['Android démarré', server.value?.android?.booted === true ? 'oui'
+        : server.value?.android?.booted === false ? 'en cours' : 'sans réponse'],
+      ['Appareils connectés', formatValue(server.value?.viewers)],
+      ['Charge du serveur', load ? `${load.one.toFixed(1)} / ${load.cpus} cœurs` : '–'],
+    ]],
     ['Réseau', [
       ['Ping', stats.ping === null ? '–' : `${Math.round(stats.ping)} ms (${stats.pingSource})`],
       ['Connexion', stats.connection ?? state],
@@ -839,15 +979,20 @@ function App() {
               onError={(error) => console.error('Android stream:', error)}
             />
           )}
-          {state !== 'connected' && (
+          {(state !== 'connected' || problem?.blocking) && (
             <div style={styles.loading} role="status" aria-live="polite">
-              <span style={styles.spinner} aria-hidden="true" />
-              <span style={styles.loadingText}>{reconnecting ? 'Reconnexion…' : 'Connexion au flux…'}</span>
+              {problem?.blocking && problem.level === 'error'
+                ? <span style={{ ...styles.problemMark, color: LEVEL_COLORS.error }} aria-hidden="true">!</span>
+                : <span style={styles.spinner} aria-hidden="true" />}
+              <span style={styles.loadingText}>
+                {problem?.blocking ? problem.text : reconnecting ? 'Reconnexion…' : 'Connexion au flux…'}
+              </span>
+              {problem?.blocking && problem.detail && <span style={styles.loadingDetail}>{problem.detail}</span>}
             </div>
           )}
-          {(displayChange === 'pending' || displayChange === 'applying') && (
-            <div style={styles.banner} role="status">
-              Changement de résolution : Android redémarre…
+          {problem && !problem.blocking && (
+            <div style={{ ...styles.banner, borderColor: LEVEL_COLORS[problem.level] }} role="status">
+              {problem.text}{problem.detail && <><br /><small>{problem.detail}</small></>}
             </div>
           )}
           {panel && (
@@ -1024,8 +1169,17 @@ const styles = {
     padding: '4px 10px', borderRadius: '7px', border: '1px solid #4da3ff',
     background: '#2f5d8f', color: '#fff', fontSize: '12px',
   },
+  problemMark: {
+    width: '34px', height: '34px', borderRadius: '50%', border: '3px solid currentColor',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: '20px', fontWeight: 700, fontFamily: 'system-ui, sans-serif', boxSizing: 'border-box',
+  },
+  loadingDetail: {
+    maxWidth: '80%', color: '#8a919c', fontSize: '12px', textAlign: 'center',
+    fontFamily: 'system-ui, sans-serif', lineHeight: 1.35,
+  },
   banner: {
-    position: 'absolute', left: '50%', top: '40%', transform: 'translateX(-50%)', zIndex: 3,
+    position: 'absolute', left: '50%', top: '8px', transform: 'translateX(-50%)', zIndex: 3,
     padding: '10px 14px', borderRadius: '10px', background: 'rgba(20, 22, 27, 0.92)',
     border: '1px solid #3b3f47', color: '#e8ebf0', fontFamily: 'system-ui, sans-serif',
     fontSize: '13px', textAlign: 'center', maxWidth: '80%',

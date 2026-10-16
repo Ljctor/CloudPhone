@@ -61,6 +61,14 @@ AVD_DIR = None
 DISPLAY_REQUEST = ""
 DISPLAY_STATUS = ""
 DISPLAY_LIMITS = {"width": (240, 1440), "height": (320, 3200), "density": (80, 640)}
+# What the page shows the user when something is wrong: the emulator's
+# systemd unit (read with "systemctl show", no privilege needed), whether
+# Android finished booting, how many viewers are connected and the load.
+EMULATOR_UNIT = ""
+DISCOVERY_FILE = ""
+VIEWERS = {"count": 0}
+STATE_CACHE = {"time": 0.0, "value": None}
+STATE_CACHE_SECONDS = 2.0
 
 
 def parse_discovery_file(path):
@@ -145,6 +153,99 @@ def read_display_status():
     if state == "failed":
         result["message"] = " ".join(words[1:])
     return result
+
+
+async def read_emulator_unit():
+    """Returns the emulator unit's systemd state, or None if unknown."""
+    if not EMULATOR_UNIT:
+        return None
+    try:
+        process = await asyncio.create_subprocess_exec(
+            "systemctl", "show", EMULATOR_UNIT,
+            "--property=ActiveState,SubState,NRestarts,Result",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+        )
+        output, _ = await asyncio.wait_for(process.communicate(), timeout=3)
+    except (OSError, asyncio.TimeoutError):
+        return None
+    values = dict(
+        line.split("=", 1) for line in output.decode(errors="replace").splitlines() if "=" in line
+    )
+    return {
+        "active": values.get("ActiveState", "unknown"),
+        "sub": values.get("SubState", "unknown"),
+        "result": values.get("Result", "unknown"),
+        "restarts": int(values["NRestarts"]) if values.get("NRestarts", "").isdigit() else None,
+    }
+
+
+async def read_android_booted():
+    """True when Android finished booting, False while booting, None if the
+    emulator does not answer on gRPC."""
+    if not EMULATOR_CHANNEL:
+        return None
+    try:
+        stub = ec_grpc.EmulatorControllerStub(EMULATOR_CHANNEL)
+        status = await stub.getStatus(
+            ec.google_dot_protobuf_dot_empty__pb2.Empty(),
+            metadata=get_emulator_metadata(),
+            timeout=2,
+        )
+        return bool(status.booted)
+    except Exception:
+        return None
+
+
+def read_load():
+    try:
+        with open("/proc/loadavg", "r") as f:
+            one, five = f.read().split()[:2]
+        return {"one": float(one), "five": float(five), "cpus": os.cpu_count() or 1}
+    except (OSError, ValueError):
+        return None
+
+
+async def handle_state(request):
+    """
+    GET /api/v1/state: what the page needs to explain a problem to the user.
+    Cached for a couple of seconds, as every open page polls it.
+    """
+    loop = asyncio.get_running_loop()
+    if STATE_CACHE["value"] is None or loop.time() - STATE_CACHE["time"] > STATE_CACHE_SECONDS:
+        unit, booted = await asyncio.gather(read_emulator_unit(), read_android_booted())
+        STATE_CACHE["value"] = {
+            "emulator": unit,
+            "android": {"booted": booted},
+            "viewers": VIEWERS["count"],
+            "load": read_load(),
+            "display": read_display_status(),
+        }
+        STATE_CACHE["time"] = loop.time()
+    return web.json_response(STATE_CACHE["value"], headers={"Cache-Control": "no-store"})
+
+
+async def watch_discovery_file():
+    """
+    The emulator writes a new discovery file (new pid, new gRPC token) each
+    time it starts. When ours disappears and another one appears, exit so
+    that systemd restarts the gateway on the new emulator instead of
+    serving a stale connection.
+    """
+    if not DISCOVERY_FILE:
+        return
+    directory = os.path.dirname(DISCOVERY_FILE)
+    while True:
+        await asyncio.sleep(5)
+        if os.path.exists(DISCOVERY_FILE):
+            continue
+        try:
+            others = [name for name in os.listdir(directory) if name.startswith("pid_")]
+        except OSError:
+            others = []
+        if others:
+            logging.warning("The emulator restarted: restarting the gateway to follow it.")
+            logging.shutdown()
+            os._exit(75)
 
 
 async def handle_display(request):
@@ -389,6 +490,7 @@ async def handle_websocket_jsep(request):
     guid = None
     stream_task = None
     bye_forwarded = False
+    VIEWERS["count"] += 1
 
     try:
         # 1. Build default ICE configuration using public STUN server
@@ -473,6 +575,7 @@ async def handle_websocket_jsep(request):
     except Exception as e:
         logging.exception("Error in WebSocket session handler:")
     finally:
+        VIEWERS["count"] -= 1
         logging.info(f"Closing signaling WebSocket session for ID: {guid}")
         # Browsers do not always get a chance to send a final WebSocket frame
         # when a tab is suspended or killed. Explicitly tear down the emulator
@@ -521,6 +624,7 @@ def init_app(videobridge_token):
     # Register routes
     app.router.add_get("/api/v1/ping", handle_ping)
     app.router.add_get("/api/v1/display", handle_display)
+    app.router.add_get("/api/v1/state", handle_state)
     app.router.add_post("/api/v1/display", handle_set_display)
     app.router.add_get("/api/v1/emulator/status", handle_status)
     app.router.add_post("/api/v1/emulator/gps", handle_gps)
@@ -576,6 +680,12 @@ async def main():
         help="Path to the active emulator discovery config (.ini) file.",
     )
     parser.add_argument(
+        "--emulator_unit",
+        type=str,
+        default="",
+        help="systemd unit running the emulator, reported to the page. Empty disables it.",
+    )
+    parser.add_argument(
         "--display_request",
         type=str,
         default="",
@@ -589,7 +699,9 @@ async def main():
     )
     args = parser.parse_args()
 
-    global ADB_PATH, ADB_SERIAL, DISPLAY_REQUEST, DISPLAY_STATUS
+    global ADB_PATH, ADB_SERIAL, DISPLAY_REQUEST, DISPLAY_STATUS, EMULATOR_UNIT, DISCOVERY_FILE
+    EMULATOR_UNIT = args.emulator_unit
+    DISCOVERY_FILE = args.discovery_file or ""
     ADB_PATH = args.adb
     ADB_SERIAL = args.adb_serial
     DISPLAY_REQUEST = args.display_request
@@ -635,6 +747,8 @@ async def main():
     await site.start()
 
     logging.info(f"Gateway Webserver listening on http://{args.host}:{args.port}")
+
+    watcher = asyncio.create_task(watch_discovery_file())
 
     # Run forever
     try:
