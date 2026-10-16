@@ -24,6 +24,13 @@ function viewportSize() {
 // Android's (e.g. 19.5:9) gets the full width with the toolbar below.
 function fittedScreen() {
   const viewport = viewportSize();
+  // Fullscreen: the screen takes the whole display and the toolbar floats
+  // over it, so a phone shaped like Android uses every pixel.
+  if (document.fullscreenElement) {
+    const width = Math.max(1, Math.floor(Math.min(viewport.width,
+      viewport.height * DEVICE_WIDTH / DEVICE_HEIGHT)));
+    return { width, height: Math.floor(width * DEVICE_HEIGHT / DEVICE_WIDTH), toolbar: 'overlay' };
+  }
   const fit = (availableWidth, availableHeight) => {
     const width = Math.max(1, Math.floor(Math.min(availableWidth,
       availableHeight * DEVICE_WIDTH / DEVICE_HEIGHT)));
@@ -42,11 +49,12 @@ function toggleFullscreen() {
   }
 }
 
-// Android navigation-bar shapes and Material icons (Apache 2.0), 24×24.
+// Navigation-bar shapes as on Samsung One UI (chevron back, rounded-square
+// home, three-bar recents) and Material icons (Apache 2.0), 24×24.
 const ICONS = {
-  back: <path d="M17 5.5v13L6.5 12z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />,
-  home: <circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" strokeWidth="2" />,
-  recents: <rect x="5.5" y="5.5" width="13" height="13" rx="2" fill="none" stroke="currentColor" strokeWidth="2" />,
+  back: <path d="M14.5 5.5L8 12l6.5 6.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />,
+  home: <rect x="6" y="6" width="12" height="12" rx="4" fill="none" stroke="currentColor" strokeWidth="2" />,
+  recents: <path d="M7.5 7v10M12 7v10M16.5 7v10" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />,
   volumeDown: <path fill="currentColor" d="M18.5 12c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM5 9v6h4l5 5V4L9 9H5z" />,
   volumeUp: <path fill="currentColor" d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />,
   power: <path fill="currentColor" d="M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42C17.99 7.86 19 9.81 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.19 1.01-4.14 2.58-5.42L6.17 5.17C4.23 6.82 3 9.26 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z" />,
@@ -206,6 +214,15 @@ function App() {
   const reconnectTimer = useRef(null);
   const [screen, setScreen] = useState(fittedScreen);
   const row = screen.toolbar === 'side';
+  const overlay = screen.toolbar === 'overlay';
+  const [toolbarShown, setToolbarShown] = useState(true);
+  useEffect(() => {
+    // Entering fullscreen shows the floating toolbar briefly, then hides it.
+    if (!overlay) return undefined;
+    setToolbarShown(true);
+    const timer = window.setTimeout(() => setToolbarShown(false), 3000);
+    return () => window.clearTimeout(timer);
+  }, [overlay]);
   const buttonStyle = row ? styles.button : { ...styles.button, ...styles.buttonBelow };
   const [state, setState] = useState('connecting');
   const [streamMounted, setStreamMounted] = useState(true);
@@ -257,9 +274,11 @@ function App() {
     const resize = () => setScreen(fittedScreen());
     window.addEventListener('resize', resize);
     window.visualViewport?.addEventListener('resize', resize);
+    document.addEventListener('fullscreenchange', resize);
     return () => {
       window.removeEventListener('resize', resize);
       window.visualViewport?.removeEventListener('resize', resize);
+      document.removeEventListener('fullscreenchange', resize);
     };
   }, []);
 
@@ -427,7 +446,19 @@ function App() {
           />
         </div>
       </section>
-      <nav style={row ? styles.toolbar : styles.toolbarBelow} aria-label="Contrôles Android">
+      {overlay && (
+        <button
+          style={{ ...styles.toolbarHandle, bottom: toolbarShown ? `${TOOLBAR_WIDTH + 6}px` : '6px' }}
+          onClick={() => setToolbarShown((shown) => !shown)}
+          aria-label={toolbarShown ? 'Masquer la barre' : 'Afficher la barre'}
+        >{toolbarShown ? '▾' : '▴'}</button>
+      )}
+      <nav
+        style={row ? styles.toolbar
+          : overlay ? { ...styles.toolbarBelow, ...styles.toolbarOverlay, display: toolbarShown ? 'flex' : 'none' }
+            : styles.toolbarBelow}
+        aria-label="Contrôles Android"
+      >
         <div
           style={{ ...styles.stats, ...(row ? null : styles.statsBelow) }}
           aria-label="Statistiques du flux (toucher pour les détails de l'écran)"
@@ -516,6 +547,16 @@ const styles = {
     boxSizing: 'border-box', display: 'flex', flexDirection: 'column', alignItems: 'center',
     justifyContent: 'center', padding: '6px 2px',
     background: '#1b1d22', borderLeft: '1px solid #3b3f47', zIndex: 10,
+  },
+  toolbarOverlay: {
+    position: 'fixed', left: 0, right: 0, bottom: 0, width: '100%',
+    background: 'rgba(27, 29, 34, 0.85)', borderTop: '1px solid rgba(59, 63, 71, 0.85)',
+  },
+  toolbarHandle: {
+    position: 'fixed', right: '6px', bottom: `${TOOLBAR_WIDTH + 6}px`, zIndex: 11,
+    width: '28px', height: '22px', padding: 0, border: '1px solid rgba(85, 85, 85, 0.8)',
+    borderRadius: '8px', background: 'rgba(27, 29, 34, 0.7)', color: '#d8dde5',
+    fontSize: '14px', lineHeight: 1, touchAction: 'manipulation',
   },
   toolbarBelow: {
     flex: `0 0 ${TOOLBAR_WIDTH}px`, alignSelf: 'stretch', height: `${TOOLBAR_WIDTH}px`,
