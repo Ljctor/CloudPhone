@@ -189,7 +189,7 @@ function DisplaySettings({ gatewayUrl, displayState, refresh, rowStyle, labelSty
     try {
       const response = await fetch(`${gatewayUrl}/api/v1/display`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: postHeaders(),
         body: JSON.stringify(target),
       });
       if (!response.ok) {
@@ -327,6 +327,13 @@ function describeUnit(unit) {
 }
 
 const LONG_PRESS_MS = 500;
+
+// The gateway writes a per-start token into the page; every POST carries it,
+// so a page from another origin cannot drive Android.
+function postHeaders() {
+  const token = document.querySelector('meta[name="cloudphone-token"]')?.getAttribute('content') ?? '';
+  return { 'Content-Type': 'application/json', 'X-CloudPhone-Token': token };
+}
 
 // Per-viewer page settings, kept in this browser only.
 const SETTINGS_KEY = 'cloudphone.settings';
@@ -603,10 +610,8 @@ function App() {
   const [state, setState] = useState('connecting');
   const [streamMounted, setStreamMounted] = useState(true);
   const [streamGeneration, setStreamGeneration] = useState(0);
-  // The gateway listens on the port right after the page's own (8000 → 8001),
-  // so several instances can share a host.
-  const pagePort = Number(window.location.port) || (window.location.protocol === 'https:' ? 443 : 80);
-  const gateway = `${window.location.hostname}:${pagePort + 1}`;
+  // The gateway serves this page: same origin, no CORS.
+  const gateway = window.location.host;
   const gatewayUrl = `${window.location.protocol}//${gateway}`;
   const stats = useStreamStats(deviceRef, gatewayUrl);
   const [displayState, refreshDisplay] = useDisplayState(gatewayUrl);
@@ -750,7 +755,7 @@ function App() {
 
   const post = (path, body) => fetch(`${gatewayUrl}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: postHeaders(),
     body: JSON.stringify(body),
   }).then((response) => {
     if (!response.ok) throw new Error(`${path}: HTTP ${response.status}`);

@@ -8,6 +8,7 @@ PREFIX=/opt/cloudphone
 STATE=/var/lib/cloudphone
 CONF_DIR=/etc/cloudphone
 SERVICE_USER=cloudphone
+# cloudphone-web: separate page server of earlier releases.
 UNITS=(cloudphone-web cloudphone-gateway cloudphone-emulator)
 
 purge=no

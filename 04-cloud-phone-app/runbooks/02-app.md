@@ -1,7 +1,7 @@
 # 02 — Gateway and web page
 
 Installs the release under `/opt/cloudphone/releases/` and the services
-`cloudphone-gateway` and `cloudphone-web`, bound to the WireGuard address.
+`cloudphone-gateway`, which also serves the page, bound to the WireGuard address.
 Android keeps running.
 
 ```sh

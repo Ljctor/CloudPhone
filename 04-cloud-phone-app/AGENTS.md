@@ -1,7 +1,7 @@
 # Part 04 — agent instructions: Cloud Phone app
 
 Default task: install the WebRTC streaming gateway and the mobile web page
-(`cloudphone-gateway`, `cloudphone-web`), reachable only through WireGuard,
+(`cloudphone-gateway`, which also serves the page), reachable only through WireGuard,
 then commission Google Play and the target app with the human.
 Prerequisites: parts 02 and 03 converged.
 

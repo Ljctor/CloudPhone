@@ -34,18 +34,22 @@ listens_only_on() {
 nft_has() { nft list ruleset 2>/dev/null | grep -qF "$1"; }
 
 check "release $RELEASE_VERSION is the active one" cmp -s "$TREE/VERSION" "$PREFIX/current/VERSION"
-for unit in cloudphone-gateway cloudphone-web; do
-  check "$unit is enabled" systemctl is-enabled --quiet "$unit.service"
-  check "$unit is active" systemctl is-active --quiet "$unit.service"
-done
+check "cloudphone-gateway is enabled" systemctl is-enabled --quiet cloudphone-gateway.service
+check "cloudphone-gateway is active" systemctl is-active --quiet cloudphone-gateway.service
+check "no separate cloudphone-web service is left" test ! -e /etc/systemd/system/cloudphone-web.service
 check "web page answers on $host:$WEB_PORT" answers "http://$host:$WEB_PORT/"
-check "gateway answers on $host:$GATEWAY_PORT" answers "http://$host:$GATEWAY_PORT/api/v1/emulator/status"
+check "gateway answers on $host:$WEB_PORT" answers "http://$host:$WEB_PORT/api/v1/emulator/status"
+check "page carries a token" bash -c "curl -fsS --max-time 5 http://$host:$WEB_PORT/ | grep -q 'name=\"cloudphone-token\"'"
+check "a POST without the token is refused" bash -c \
+  "[ \"\$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -X POST -d '{}' http://$host:$WEB_PORT/api/v1/emulator/key)\" = 403 ]"
+check "a request from another origin is refused" bash -c \
+  "[ \"\$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -H 'Origin: http://example.com' http://$host:$WEB_PORT/api/v1/state)\" = 403 ]"
+check "no CORS header is sent" bash -c \
+  "! curl -fsSI --max-time 5 http://$host:$WEB_PORT/api/v1/ping | grep -qi '^access-control-allow-origin'"
 if [ "$any_address" = no ]; then
   check "LISTEN_ADDRESS is a private address, not 0.0.0.0" test "$LISTEN_ADDRESS" != 0.0.0.0
-  check "web page listens only on $LISTEN_ADDRESS" listens_only_on "$WEB_PORT"
-  check "gateway listens only on $LISTEN_ADDRESS" listens_only_on "$GATEWAY_PORT"
-  check "firewall accepts TCP $WEB_PORT-$GATEWAY_PORT on wg0" \
-    nft_has "iifname \"wg0\" tcp dport { $WEB_PORT, $GATEWAY_PORT }"
+  check "page and gateway listen only on $LISTEN_ADDRESS" listens_only_on "$WEB_PORT"
+  check "firewall accepts TCP $WEB_PORT on wg0" nft_has "iifname \"wg0\" tcp dport $WEB_PORT "
   check "firewall accepts WebRTC media (UDP 32768-60999) on wg0" \
     nft_has 'iifname "wg0" udp dport 32768-60999'
 fi

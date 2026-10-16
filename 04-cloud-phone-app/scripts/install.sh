@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Installs the Cloud Phone app on top of part 03: the WebRTC streaming gateway
-# (cloudphone-gateway) and the mobile web control page (cloudphone-web).
+# (cloudphone-gateway), which also serves the mobile web control page on the
+# same port.
 #
 # Run it from an unpacked release: the web page and the gateway wheel are
 # built by packaging/build-release.sh into 04-cloud-phone-app/dist/.
@@ -11,7 +12,7 @@ TREE=$(cd "$(dirname "$0")/../.." && pwd)
 PART=$TREE/04-cloud-phone-app
 # shellcheck source=../../lib/common.sh
 . "$TREE/lib/common.sh"
-UNITS=(cloudphone-gateway cloudphone-web)
+UNITS=(cloudphone-gateway)
 
 listen=
 start=yes
@@ -104,6 +105,12 @@ install_release() {
 install_units() {
   log "Installing systemd services"
   local unit
+  # Earlier releases served the page from a separate cloudphone-web
+  # service on WEB_PORT; the gateway now takes that port.
+  if [ -f /etc/systemd/system/cloudphone-web.service ]; then
+    systemctl disable --now cloudphone-web.service >/dev/null 2>&1 || true
+    rm -f /etc/systemd/system/cloudphone-web.service
+  fi
   for unit in "${UNITS[@]}"; do
     install -m 644 "$PART/files/systemd/$unit.service" "/etc/systemd/system/$unit.service"
   done
@@ -117,7 +124,7 @@ start_services() {
   for unit in "${UNITS[@]}"; do
     systemctl is-active --quiet "$unit.service" && running=yes
   done
-  [ "$running" = yes ] || check_ports_free "$WEB_PORT" "$GATEWAY_PORT"
+  [ "$running" = yes ] || check_ports_free "$WEB_PORT"
   log "Restarting the streaming services (Android keeps running)"
   systemctl restart "${UNITS[@]/%/.service}"
 }
@@ -127,9 +134,9 @@ wait_until_ready() {
   local host=$LISTEN_ADDRESS deadline=$((SECONDS + 120))
   [ "$host" != 0.0.0.0 ] || host=127.0.0.1
   until curl -fsS "http://$host:$WEB_PORT/" >/dev/null 2>&1 &&
-    curl -fsS "http://$host:$GATEWAY_PORT/api/v1/emulator/status" >/dev/null 2>&1; do
+    curl -fsS "http://$host:$WEB_PORT/api/v1/emulator/status" >/dev/null 2>&1; do
     [ $SECONDS -lt $deadline ] ||
-      die "the web page or the gateway is not answering: journalctl -u cloudphone-gateway -u cloudphone-web"
+      die "the page and gateway are not answering: journalctl -u cloudphone-gateway"
     sleep 2
   done
 }
@@ -144,13 +151,13 @@ Cloud Phone $RELEASE_VERSION is installed.
   Web control page : http://$host:$WEB_PORT/
   Configuration    : $CONF
   Android data     : $AVD_HOME  (back it up; never deleted by upgrades)
-  Logs             : journalctl -u cloudphone-emulator -u cloudphone-gateway -u cloudphone-web
+  Logs             : journalctl -u cloudphone-emulator -u cloudphone-gateway
 
 EOF
   if [ "$LISTEN_ADDRESS" = 0.0.0.0 ]; then
     cat <<EOF
 SECURITY: the web page and the gateway listen on every interface and have no
-login. Do not expose ports $WEB_PORT, $GATEWAY_PORT and UDP 32768-60999 to the
+login. Do not expose port $WEB_PORT and UDP 32768-60999 to the
 internet: reach the phone through WireGuard (02-wireguard-server).
 
 EOF

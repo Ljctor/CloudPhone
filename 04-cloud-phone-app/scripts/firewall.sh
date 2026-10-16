@@ -2,8 +2,7 @@
 # Accepts the app's ports only on the WireGuard interface:
 #   sudo 04-cloud-phone-app/scripts/firewall.sh --check   # read-only
 #   sudo 04-cloud-phone-app/scripts/firewall.sh --apply
-# TCP WEB_PORT and WEB_PORT + 1 (page and gateway) and UDP 32768-60999 (the
-# WebRTC media). Uses 02-wireguard-server/scripts/nft-allow.sh.
+# TCP WEB_PORT (page and gateway) and UDP 32768-60999 (the WebRTC media). Uses 02-wireguard-server/scripts/nft-allow.sh.
 set -euo pipefail
 
 TREE=$(cd "$(dirname "$0")/../.." && pwd)
@@ -13,7 +12,7 @@ require_root
 [ -f "$CONF" ] || die "$CONF is missing: install part 03 first"
 load_conf
 
-tcp_rule="iifname \"wg0\" tcp dport { $WEB_PORT, $GATEWAY_PORT } ct state new accept"
+tcp_rule="iifname \"wg0\" tcp dport $WEB_PORT ct state new accept"
 udp_rule='iifname "wg0" udp dport 32768-60999 ct state new accept'
 
 case ${1:-} in

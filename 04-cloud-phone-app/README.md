@@ -5,8 +5,7 @@ keys. Agents: read `AGENTS.md`.
 
 | Service | Listens on |
 |---|---|
-| `cloudphone-web` (page) | `LISTEN_ADDRESS:WEB_PORT` |
-| `cloudphone-gateway` | `LISTEN_ADDRESS:WEB_PORT+1`, WebRTC media UDP 32768-60999 |
+| `cloudphone-gateway` (page and API, one origin) | `LISTEN_ADDRESS:WEB_PORT`, WebRTC media UDP 32768-60999 |
 
 | Path | Content |
 |---|---|

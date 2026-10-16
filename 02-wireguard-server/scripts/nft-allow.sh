@@ -4,7 +4,7 @@
 #   sudo nft-allow.sh NAME 'RULE'
 # e.g.
 #   sudo nft-allow.sh wireguard 'udp dport 51820 ct state new accept'
-#   sudo nft-allow.sh cloudphone-web 'iifname "wg0" tcp dport { 8000, 8001 } ct state new accept'
+#   sudo nft-allow.sh cloudphone-web-8000 'iifname "wg0" tcp dport 8000 ct state new accept'
 #
 # The rule is stored in /etc/nftables.d/NAME.nft, included at the end of
 # /etc/nftables.conf. Nothing changes when the rule is already active and

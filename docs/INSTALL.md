@@ -5,23 +5,23 @@ and hardened servers follow the parts' `AGENTS.md` instead; the scripts are
 the same.
 
 Cloud Phone turns a Linux server into an Android phone you use from a browser.
-It installs three systemd services:
+It installs two systemd services:
 
 | Service | What it does | Listens on |
 |---|---|---|
 | `cloudphone-emulator` | Google's official Android Emulator running Android 16 with Google Play, headless | `127.0.0.1:5558` (adb), `127.0.0.1:8554` (gRPC) |
-| `cloudphone-gateway` | Streams the screen over WebRTC and forwards touch and keys | `LISTEN_ADDRESS:8001` (always `WEB_PORT` + 1), WebRTC media on UDP 32768-60999 |
-| `cloudphone-web` | Mobile control page (540×1170 screen with a toolbar) | `LISTEN_ADDRESS:8000` |
+| `cloudphone-gateway` | Serves the mobile control page, streams the screen over WebRTC and forwards touch and keys | `LISTEN_ADDRESS:8000` (`WEB_PORT`), WebRTC media on UDP 32768-60999 |
 
 ```text
- phone browser ──WireGuard──▶ :8000 web page
-                              :8001 gateway ──gRPC (loopback)──▶ Android Emulator
+ phone browser ──WireGuard──▶ :8000 page + gateway ──gRPC (loopback)──▶ Android Emulator
               ◀──WebRTC video (UDP)──────────────────────────────┘
 ```
 
-> **The web page and the gateway have no login.** Anyone who can reach ports
-> 8000 and 8001 controls the phone and its Google account. Reach them only
-> through a VPN: set up [part 02](../02-wireguard-server/README.md) first.
+> **The page has no login.** Anyone who can reach port 8000 controls the
+> phone and its Google account. Reach it only through a VPN: set up
+> [part 02](../02-wireguard-server/README.md) first. (The gateway refuses
+> requests from other origins and POSTs without the page's per-start token,
+> so another web site open in the same browser cannot drive the phone.)
 
 ## Requirements
 
@@ -74,7 +74,7 @@ sudo ./install.sh --listen 10.20.0.1
 ```
 
 Otherwise install with the default (`0.0.0.0`, every interface) and make sure
-a firewall blocks ports 8000, 8001 and UDP 32768-60999 from the internet:
+a firewall blocks port 8000 and UDP 32768-60999 from the internet:
 
 ```sh
 sudo ./install.sh
@@ -136,7 +136,7 @@ Settings live in `/etc/cloudphone/cloudphone.conf`; upgrades keep your edits.
 
 Apply a change with `sudo systemctl restart cloudphone-emulator` (this reboots
 Android) or, for `LISTEN_ADDRESS` and `WEB_PORT` only,
-`sudo systemctl restart cloudphone-gateway cloudphone-web`.
+`sudo systemctl restart cloudphone-gateway`.
 
 ### Running next to another Android emulator
 
@@ -163,7 +163,7 @@ CONF
 sudo ./install.sh
 ```
 
-The page is then on port 8100 and the gateway on 8101. With software
+The page is then on port 8100. With software
 rendering, each emulator keeps several CPU cores busy; to give another
 workload priority, lower this instance's CPU share:
 
@@ -174,9 +174,9 @@ sudo systemctl edit cloudphone-emulator   # add: [Service] CPUWeight=20
 ## Day-to-day operations
 
 ```sh
-systemctl status cloudphone-emulator cloudphone-gateway cloudphone-web
+systemctl status cloudphone-emulator cloudphone-gateway
 journalctl -u cloudphone-gateway -f                 # follow the streaming logs
-sudo systemctl restart cloudphone-gateway cloudphone-web   # fix streaming; Android keeps running
+sudo systemctl restart cloudphone-gateway   # fix streaming; Android keeps running
 sudo systemctl restart cloudphone-emulator          # reboot Android
 ```
 
@@ -196,7 +196,7 @@ The previous release stays in `/opt/cloudphone/releases/`:
 ```sh
 ls -t /opt/cloudphone/releases/
 sudo ln -sfn /opt/cloudphone/releases/<previous> /opt/cloudphone/current
-sudo systemctl restart cloudphone-gateway cloudphone-web
+sudo systemctl restart cloudphone-gateway
 ```
 
 ### Back up the phone
@@ -207,7 +207,7 @@ Everything Android stores (Google account, apps, app data) is in
 ```sh
 sudo systemctl stop cloudphone-emulator
 sudo tar czf cloudphone-avd-$(date +%F).tar.gz -C /var/lib/cloudphone avd
-sudo systemctl start cloudphone-emulator cloudphone-gateway cloudphone-web
+sudo systemctl start cloudphone-emulator cloudphone-gateway
 ```
 
 ### Uninstall

@@ -26,8 +26,12 @@ if proto_dir not in sys.path:
 import aiohttp
 from aiohttp import web
 import grpc
+import hmac
+import html
 import json
 import logging
+import secrets
+import time
 
 # Add local path to package import context to resolve generated proto modules
 proto_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "proto")
@@ -69,6 +73,16 @@ DISCOVERY_FILE = ""
 VIEWERS = {"count": 0}
 STATE_CACHE = {"time": 0.0, "value": None}
 STATE_CACHE_SECONDS = 2.0
+# The gateway also serves the page, so page and API share one origin and no
+# CORS is needed. Each start draws a random token, written into index.html;
+# every POST must carry it, so a web page from another origin (for instance
+# one open in the phone's browser while the VPN is up) cannot drive or
+# reboot Android.
+PAGE_TOKEN = secrets.token_urlsafe(32)
+TOKEN_HEADER = "X-CloudPhone-Token"
+WEB_ROOT = ""
+DISPLAY_CHANGE_INTERVAL = 120.0
+LAST_DISPLAY_CHANGE = {"time": None}
 
 
 def parse_discovery_file(path):
@@ -285,6 +299,11 @@ async def handle_set_display(request):
         return web.json_response({"error": "width and height must be even"}, status=400)
     if read_display_status()["state"] in ("pending", "applying"):
         return web.json_response({"error": "A screen size change is already in progress"}, status=409)
+    last = LAST_DISPLAY_CHANGE["time"]
+    if last is not None and time.monotonic() - last < DISPLAY_CHANGE_INTERVAL:
+        wait = int(DISPLAY_CHANGE_INTERVAL - (time.monotonic() - last)) + 1
+        return web.json_response({"error": f"Wait {wait} s before the next change"}, status=429)
+    LAST_DISPLAY_CHANGE["time"] = time.monotonic()
     temporary = f"{DISPLAY_REQUEST}.tmp"
     with open(temporary, "w") as f:
         f.write(f"{wanted['width']} {wanted['height']} {wanted['density']}\n")
@@ -604,21 +623,54 @@ async def handle_websocket_jsep(request):
     return ws
 
 
-@web.middleware
-async def cors_middleware(request, handler):
-    if request.method == "OPTIONS":
-        response = web.Response(status=200)
-    else:
-        response = await handler(request)
+def same_origin(request):
+    """True when the request has no Origin (not sent by a cross-origin page)
+    or when its Origin is this server."""
+    origin = request.headers.get("Origin")
+    if origin is None:
+        return True
+    return origin in (f"http://{request.host}", f"https://{request.host}")
 
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, PUT, DELETE"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+
+@web.middleware
+async def guard_middleware(request, handler):
+    if not same_origin(request):
+        logging.warning(f"Refused {request.method} {request.path} from origin {request.headers.get('Origin')!r}")
+        return web.json_response({"error": "Cross-origin requests are not accepted"}, status=403)
+    if request.method not in ("GET", "HEAD"):
+        token = request.headers.get(TOKEN_HEADER, "")
+        if not hmac.compare_digest(token, PAGE_TOKEN):
+            return web.json_response({"error": "Missing or invalid page token: reload the page"}, status=403)
+    return await handler(request)
+
+
+async def handle_index(request):
+    """GET /: the page, with this start's token. Never cached, so a reload
+    always gets the current token and the current bundle names."""
+    try:
+        with open(os.path.join(WEB_ROOT, "index.html"), "r", encoding="utf-8") as f:
+            page = f.read()
+    except OSError:
+        return web.Response(status=503, text="The web page is not installed.")
+    meta = f'<meta name="cloudphone-token" content="{html.escape(PAGE_TOKEN)}">'
+    page = page.replace("<head>", f"<head>\n    {meta}", 1)
+    return web.Response(
+        text=page, content_type="text/html",
+        headers={"Cache-Control": "no-cache", "Referrer-Policy": "no-referrer"},
+    )
+
+
+@web.middleware
+async def cache_middleware(request, handler):
+    response = await handler(request)
+    # Bundles under /assets have content hashes in their names.
+    if request.path.startswith("/assets/") and response.status == 200:
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
     return response
 
 
 def init_app(videobridge_token):
-    app = web.Application(middlewares=[cors_middleware])
+    app = web.Application(middlewares=[guard_middleware, cache_middleware])
     app["videobridge_token"] = videobridge_token
 
     # Register routes
@@ -632,6 +684,10 @@ def init_app(videobridge_token):
     app.router.add_post("/api/v1/emulator/key", handle_key)
     app.router.add_post("/api/v1/emulator/touch", handle_touch)
     app.router.add_get("/api/v1/emulator/ws-jsep", handle_websocket_jsep)
+    if WEB_ROOT:
+        app.router.add_get("/", handle_index)
+        app.router.add_get("/index.html", handle_index)
+        app.router.add_static("/assets", os.path.join(WEB_ROOT, "assets"))
 
     return app
 
@@ -680,6 +736,12 @@ async def main():
         help="Path to the active emulator discovery config (.ini) file.",
     )
     parser.add_argument(
+        "--web_root",
+        type=str,
+        default="",
+        help="Directory of the built web page (index.html, assets/), served on the same port.",
+    )
+    parser.add_argument(
         "--emulator_unit",
         type=str,
         default="",
@@ -701,6 +763,8 @@ async def main():
 
     global ADB_PATH, ADB_SERIAL, DISPLAY_REQUEST, DISPLAY_STATUS, EMULATOR_UNIT, DISCOVERY_FILE
     EMULATOR_UNIT = args.emulator_unit
+    global WEB_ROOT
+    WEB_ROOT = args.web_root
     DISCOVERY_FILE = args.discovery_file or ""
     ADB_PATH = args.adb
     ADB_SERIAL = args.adb_serial

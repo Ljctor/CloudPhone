@@ -33,7 +33,6 @@ load_conf() {
   . "$src"
   [[ $AVD_NAME =~ ^[A-Za-z0-9._-]+$ ]] || die "invalid AVD_NAME: $AVD_NAME"
   ANDROID_ADB_SERVER_PORT=${ANDROID_ADB_SERVER_PORT:-5037}
-  GATEWAY_PORT=$((WEB_PORT + 1))
 }
 
 as_service_user() {

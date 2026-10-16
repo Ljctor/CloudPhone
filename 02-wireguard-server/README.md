@@ -99,7 +99,7 @@ wg show wg0
 The firewall must:
 
 - accept **UDP 51820** from the internet (WireGuard);
-- accept **TCP 8000-8001** (`WEB_PORT` and `WEB_PORT` + 1) and **UDP
+- accept **TCP 8000** (`WEB_PORT`) and **UDP
   32768-60999** (the WebRTC video) only on the `wg0` interface;
 - keep your SSH port open, or you will lock yourself out.
 
@@ -125,7 +125,7 @@ table inet filter {
     meta l4proto { icmp, ipv6-icmp } accept
     tcp dport 22 accept
     udp dport 51820 accept
-    iifname "wg0" tcp dport { 8000, 8001 } accept
+    iifname "wg0" tcp dport 8000 accept
     iifname "wg0" udp dport 32768-60999 accept
   }
   chain forward {
@@ -147,7 +147,7 @@ systemctl enable nftables
 
 ```sh
 ufw allow 51820/udp
-ufw allow in on wg0 to any port 8000,8001 proto tcp
+ufw allow in on wg0 to any port 8000 proto tcp
 ufw allow in on wg0 to any port 32768:60999 proto udp
 ufw status verbose
 ```
@@ -189,7 +189,7 @@ sudo ./install.sh --listen 10.20.0.1
 ```
 
 or edit `LISTEN_ADDRESS=10.20.0.1` in `/etc/cloudphone/cloudphone.conf`, then
-`systemctl restart cloudphone-gateway cloudphone-web`. At boot, the services
+`systemctl restart cloudphone-gateway`. At boot, the services
 retry until the tunnel is up.
 
 On the phone, with the tunnel on, open **http://10.20.0.1:8000/**.
@@ -232,6 +232,6 @@ To revoke a device, delete its `[Peer]` block and run the same
 | Symptom | Check |
 |---|---|
 | No *latest handshake* in `wg show` | UDP 51820 blocked: server firewall, provider firewall, or a wrong endpoint or key on the phone. |
-| Handshake OK but the page does not load | `LISTEN_ADDRESS` and the firewall rules for TCP 8000-8001 on `wg0`; `curl http://10.20.0.1:8000/` on the server. |
+| Handshake OK but the page does not load | `LISTEN_ADDRESS` and the firewall rule for TCP 8000 on `wg0`; `curl http://10.20.0.1:8000/` on the server. |
 | Page loads, spinner never ends | UDP 32768-60999 must be accepted on `wg0` for the WebRTC video. |
 | Works on Wi-Fi, not on mobile data | Some networks block UDP; keep `PersistentKeepalive = 25`, or try another network. |
