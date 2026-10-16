@@ -26,13 +26,13 @@ function viewportSize() {
 // Largest Android screen that fits, with the toolbar either beside it or
 // below it, whichever leaves the bigger screen. A phone whose shape matches
 // Android's (e.g. 19.5:9) gets the full width with the toolbar below.
-function fittedScreen(display = DEFAULT_DISPLAY) {
+function fittedScreen(display = DEFAULT_DISPLAY, folded = false) {
   const DEVICE_WIDTH = display.width;
   const DEVICE_HEIGHT = display.height;
   const viewport = viewportSize();
-  // Fullscreen: the screen takes the whole display and the toolbar floats
-  // over it, so a phone shaped like Android uses every pixel.
-  if (document.fullscreenElement) {
+  // Fullscreen or folded bar: the screen takes the whole window and the bar
+  // floats over it, so a phone shaped like Android uses every pixel.
+  if (document.fullscreenElement || folded) {
     const width = Math.max(1, Math.floor(Math.min(viewport.width,
       viewport.height * DEVICE_WIDTH / DEVICE_HEIGHT)));
     return { width, height: Math.floor(width * DEVICE_HEIGHT / DEVICE_WIDTH), toolbar: 'overlay' };
@@ -65,6 +65,10 @@ const ICONS = {
   volumeUp: <path fill="currentColor" d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />,
   power: <path fill="currentColor" d="M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42C17.99 7.86 19 9.81 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.19 1.01-4.14 2.58-5.42L6.17 5.17C4.23 6.82 3 9.26 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z" />,
   fullscreen: <path fill="currentColor" d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z" />,
+  // Fold/unfold the bar (Material expand_more / expand_less / chevron_right).
+  fold: <path fill="currentColor" d="M16.59 8.59L12 13.17 7.41 8.59 6 10l6 6 6-6z" />,
+  foldSide: <path fill="currentColor" d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" />,
+  unfold: <path fill="currentColor" d="M12 8l-6 6 1.41 1.41L12 10.83l4.59 4.58L18 14z" />,
   refresh: <path fill="currentColor" d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" />,
 };
 
@@ -221,17 +225,30 @@ function App() {
   const inputPath = useRef('–');
   const reconnectTimer = useRef(null);
   const [display, setDisplay] = useState(DEFAULT_DISPLAY);
+  // Folded: the bar is hidden and the screen uses the whole window; a small
+  // handle unfolds it. Entering fullscreen folds it after 3 s.
+  const [barFolded, setBarFolded] = useState(false);
   const [screen, setScreen] = useState(() => fittedScreen(DEFAULT_DISPLAY));
   const row = screen.toolbar === 'side';
   const overlay = screen.toolbar === 'overlay';
-  const [toolbarShown, setToolbarShown] = useState(true);
   useEffect(() => {
-    // Entering fullscreen shows the floating toolbar briefly, then hides it.
-    if (!overlay) return undefined;
-    setToolbarShown(true);
-    const timer = window.setTimeout(() => setToolbarShown(false), 3000);
-    return () => window.clearTimeout(timer);
-  }, [overlay]);
+    const folder = () => {
+      if (!document.fullscreenElement) return;
+      const timer = window.setTimeout(() => setBarFolded(true), 3000);
+      return () => window.clearTimeout(timer);
+    };
+    let cancel = null;
+    const changed = () => {
+      cancel?.();
+      setBarFolded(false);
+      cancel = folder() ?? null;
+    };
+    document.addEventListener('fullscreenchange', changed);
+    return () => {
+      cancel?.();
+      document.removeEventListener('fullscreenchange', changed);
+    };
+  }, []);
   const buttonStyle = row ? styles.button : { ...styles.button, ...styles.buttonBelow };
   const [state, setState] = useState('connecting');
   const [streamMounted, setStreamMounted] = useState(true);
@@ -296,7 +313,7 @@ function App() {
   };
 
   useEffect(() => {
-    const resize = () => setScreen(fittedScreen(display));
+    const resize = () => setScreen(fittedScreen(display, barFolded));
     resize();
     window.addEventListener('resize', resize);
     window.visualViewport?.addEventListener('resize', resize);
@@ -306,7 +323,7 @@ function App() {
       window.visualViewport?.removeEventListener('resize', resize);
       document.removeEventListener('fullscreenchange', resize);
     };
-  }, [display]);
+  }, [display, barFolded]);
 
   useEffect(() => {
     let wasHidden = document.visibilityState === 'hidden';
@@ -446,8 +463,10 @@ function App() {
     queueTouch(touchCoordinates(event), false);
   };
 
-  const keyButton = (key, label, icon) => (
-    <button className="tool-button" style={buttonStyle} onClick={() => sendKey(key)}
+  // Android's own navigation buttons are larger, as on a phone.
+  const navStyle = { ...buttonStyle, ...(row ? styles.navButtonSide : styles.navButtonBelow) };
+  const keyButton = (key, label, icon, nav = false) => (
+    <button className="tool-button" style={nav ? navStyle : buttonStyle} onClick={() => sendKey(key)}
       aria-label={label}><Icon name={icon} /></button>
   );
   const reloadButton = (
@@ -540,37 +559,37 @@ function App() {
           />
         </div>
       </section>
-      {overlay && (
-        <button
-          style={{ ...styles.toolbarHandle, bottom: toolbarShown ? `${TOOLBAR_WIDTH + 6}px` : '6px' }}
-          onClick={() => setToolbarShown((shown) => !shown)}
-          aria-label={toolbarShown ? 'Masquer la barre' : 'Afficher la barre'}
-        >{toolbarShown ? '▾' : '▴'}</button>
+      {barFolded && (
+        <button style={styles.toolbarHandle} onClick={() => setBarFolded(false)}
+          aria-label="Afficher la barre"><Icon name="unfold" /></button>
       )}
       <nav
         style={row ? styles.toolbar
-          : overlay ? { ...styles.toolbarBar, ...styles.toolbarOverlay, display: toolbarShown ? 'grid' : 'none' }
+          : overlay ? { ...styles.toolbarBar, ...styles.toolbarOverlay, display: barFolded ? 'none' : 'grid' }
             : styles.toolbarBar}
         aria-label="Contrôles Android"
       >
-        {/* Like a phone, in the same order whether the bar is beside the
-            screen (top to bottom) or below it (left to right): physical
-            keys at the ends, Android's recents, home and back centred. */}
+        {/* Same order beside the screen (top to bottom) and below it (left to
+            right): the phone's physical keys and the metrics, Android's
+            recents, home and back centred, then the LED and the page's own
+            buttons. */}
         <div style={{ ...zoneStyle, justifyContent: 'flex-start' }}>
           {keyButton('Power', 'Marche arrêt', 'power')}
-          {reloadButton}
-          {fullscreenButton}
-          {statusLed}
-        </div>
-        <div style={zoneStyle} aria-label="Navigation Android">
-          {keyButton('AppSwitch', 'Applications récentes', 'recents')}
-          {keyButton('GoHome', 'Accueil', 'home')}
-          {keyButton('GoBack', 'Retour', 'back')}
-        </div>
-        <div style={{ ...zoneStyle, justifyContent: 'flex-end' }}>
-          {statsBlock(row)}
           {keyButton('AudioVolumeDown', 'Baisser le volume', 'volumeDown')}
           {keyButton('AudioVolumeUp', 'Monter le volume', 'volumeUp')}
+          {statsBlock(row)}
+        </div>
+        <div style={zoneStyle} aria-label="Navigation Android">
+          {keyButton('AppSwitch', 'Applications récentes', 'recents', true)}
+          {keyButton('GoHome', 'Accueil', 'home', true)}
+          {keyButton('GoBack', 'Retour', 'back', true)}
+        </div>
+        <div style={{ ...zoneStyle, justifyContent: 'flex-end' }}>
+          {statusLed}
+          {reloadButton}
+          {fullscreenButton}
+          <button className="tool-button" style={buttonStyle} onClick={() => setBarFolded(true)}
+            aria-label="Replier la barre"><Icon name={row ? 'foldSide' : 'fold'} /></button>
         </div>
       </nav>
     </main>
@@ -612,7 +631,7 @@ const styles = {
   },
   toolbar: {
     flex: `0 0 ${TOOLBAR_WIDTH}px`, alignSelf: 'stretch', width: `${TOOLBAR_WIDTH}px`,
-    boxSizing: 'border-box', display: 'grid', gridTemplateRows: '1fr auto 1fr',
+    boxSizing: 'border-box', display: 'grid', gridTemplateRows: 'auto 1fr auto',
     justifyItems: 'center', rowGap: '8px', padding: '6px 2px',
     background: '#1b1d22', borderLeft: '1px solid #3b3f47', zIndex: 10,
   },
@@ -621,20 +640,23 @@ const styles = {
     background: 'rgba(27, 29, 34, 0.85)', borderTop: '1px solid rgba(59, 63, 71, 0.85)',
   },
   toolbarHandle: {
-    position: 'fixed', right: '6px', bottom: `${TOOLBAR_WIDTH + 6}px`, zIndex: 11,
-    width: '28px', height: '22px', padding: 0, border: '1px solid rgba(85, 85, 85, 0.8)',
-    borderRadius: '8px', background: 'rgba(27, 29, 34, 0.7)', color: '#d8dde5',
-    fontSize: '14px', lineHeight: 1, touchAction: 'manipulation',
+    position: 'fixed', right: '6px', bottom: '6px', zIndex: 11,
+    width: '30px', height: '30px', padding: 0, display: 'flex', alignItems: 'center',
+    justifyContent: 'center', border: '1px solid rgba(85, 85, 85, 0.8)',
+    borderRadius: '9px', background: 'rgba(27, 29, 34, 0.7)', color: '#d8dde5',
+    touchAction: 'manipulation',
   },
   // Horizontal bar: left, centre and right zones; the centre stays centred
   // whatever the side zones hold.
   toolbarBar: {
     flex: `0 0 ${TOOLBAR_WIDTH}px`, alignSelf: 'stretch', height: `${TOOLBAR_WIDTH}px`,
-    boxSizing: 'border-box', display: 'grid', gridTemplateColumns: '1fr auto 1fr',
+    boxSizing: 'border-box', display: 'grid', gridTemplateColumns: 'auto 1fr auto',
     alignItems: 'center', columnGap: '4px', padding: '2px 4px',
     background: '#1b1d22', borderTop: '1px solid #3b3f47', zIndex: 10,
   },
   barZone: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px', minWidth: 0 },
+  navButtonBelow: { flex: '1 1 52px', minWidth: '36px', maxWidth: '64px' },
+  navButtonSide: { flex: '0 0 48px', height: '48px' },
   barZoneColumn: { flexDirection: 'column', gap: '6px', minHeight: 0 },
   // Label above value, one column per statistic.
   statsBelow: {
@@ -643,7 +665,7 @@ const styles = {
   },
   // Below the screen the buttons share the width and shrink on narrow phones.
   buttonBelow: {
-    flex: '1 1 30px', width: 'auto', minWidth: '24px', maxWidth: '40px', height: '32px',
+    flex: '0 1 30px', width: 'auto', minWidth: '24px', maxWidth: '32px', height: '32px',
   },
   stats: {
     display: 'flex', flexDirection: 'column', alignItems: 'center',
