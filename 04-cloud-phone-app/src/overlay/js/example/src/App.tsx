@@ -89,12 +89,37 @@ function pingColor(ms) {
 }
 
 function formatValue(value) {
-  return value === null ? '–' : String(Math.round(value));
+  return value === null || value === undefined ? '–' : String(Math.round(value));
+}
+
+function formatBitrate(kbps) {
+  if (kbps === null || kbps === undefined) return '–';
+  return kbps >= 1000 ? `${(kbps / 1000).toFixed(1)}M` : `${Math.round(kbps)}k`;
+}
+
+// Per-viewer page settings, kept in this browser only.
+const SETTINGS_KEY = 'cloudphone.settings';
+const DEFAULT_SETTINGS = { touchMarker: true, autoFold: true, handle: null };
+
+function loadSettings() {
+  try {
+    return { ...DEFAULT_SETTINGS, ...JSON.parse(window.localStorage.getItem(SETTINGS_KEY) || '{}') };
+  } catch {
+    return { ...DEFAULT_SETTINGS };
+  }
+}
+
+function saveSettings(settings) {
+  try {
+    window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  } catch {
+    // Private mode or blocked storage: settings last for this page only.
+  }
 }
 
 // What this browser's device offers and what Android sends, as label/value
 // rows: CSS pixels (layout) and physical pixels (CSS × devicePixelRatio).
-function deviceInfo(shownScreen, video) {
+function deviceInfo(shownScreen, video, display) {
   const ratio = window.devicePixelRatio || 1;
   const viewport = viewportSize();
   const physical = (width, height) => `${Math.round(width * ratio)}×${Math.round(height * ratio)}`;
@@ -103,19 +128,27 @@ function deviceInfo(shownScreen, video) {
     ['Fenêtre', `${viewport.width}×${viewport.height} CSS · ${physical(viewport.width, viewport.height)} px`],
     ['Densité', `×${ratio.toFixed(2)}`],
     ['Image affichée', `${shownScreen.width}×${shownScreen.height} CSS · ${physical(shownScreen.width, shownScreen.height)} px`],
-    ['Flux Android', video ? `${video.width}×${video.height} px` : '–'],
+    ['Écran Android', `${display.width}×${display.height} px`],
+    ['Flux vidéo reçu', video ? `${video.width}×${video.height} px` : '–'],
   ];
 }
 
 // Samples the stream once per STATS_INTERVAL_MS:
 // - ping: ICE round-trip time when the browser reports it, otherwise the time
 //   of an HTTP request to the gateway (same network path);
-// - server: video frames received from the emulator per second (Android only
-//   sends a frame when the screen changes, so a still screen shows ~0);
-// - phone: frames this browser actually displayed per second.
-// Both frame rates are 0 while the Android screen does not change.
+// - server: video frames received from the emulator per second;
+// - phone: frames this browser actually displayed per second;
+// - network details for the connectivity panel.
+// Frame rates are 0 while the Android screen does not change: the emulator
+// sends a frame only when something moves.
+const EMPTY_STATS = {
+  ping: null, pingSource: null, server: null, phone: null, video: null,
+  bitrate: null, packetsLost: null, jitter: null, bufferDelay: null,
+  framesDropped: null, codec: null, path: null, connection: null,
+};
+
 function useStreamStats(deviceRef, gatewayUrl) {
-  const [stats, setStats] = useState({ ping: null, server: null, phone: null, video: null });
+  const [stats, setStats] = useState(EMPTY_STATS);
 
   useEffect(() => {
     let previous = null;
@@ -153,32 +186,50 @@ function useStreamStats(deviceRef, gatewayUrl) {
           const quality = video?.getVideoPlaybackQuality?.();
           shown = quality ? quality.totalVideoFrames - quality.droppedVideoFrames : null;
         }
-        let received = null;
-        let ping = null;
+        const sampleData = { received: null, bytes: null, ping: null, details: {} };
         const connection = activePeerConnection();
         if (connection) {
           try {
             const report = await connection.getStats();
+            const byId = new Map();
+            report.forEach((entry) => byId.set(entry.id, entry));
             report.forEach((entry) => {
               if (entry.type === 'inbound-rtp' && (entry.kind ?? entry.mediaType) === 'video') {
-                received = entry.framesReceived ?? entry.framesDecoded ?? null;
+                sampleData.received = entry.framesReceived ?? entry.framesDecoded ?? null;
+                sampleData.bytes = entry.bytesReceived ?? null;
+                sampleData.details.packetsLost = entry.packetsLost ?? null;
+                sampleData.details.jitter = typeof entry.jitter === 'number' ? entry.jitter * 1000 : null;
+                sampleData.details.framesDropped = entry.framesDropped ?? null;
+                if (entry.jitterBufferEmittedCount) {
+                  sampleData.details.bufferDelay = entry.jitterBufferDelay / entry.jitterBufferEmittedCount * 1000;
+                }
+                sampleData.details.codec = byId.get(entry.codecId)?.mimeType?.replace('video/', '') ?? null;
               } else if (entry.type === 'candidate-pair' && entry.state === 'succeeded'
-                && (entry.nominated || entry.selected)
-                && typeof entry.currentRoundTripTime === 'number') {
-                ping = entry.currentRoundTripTime * 1000;
+                && (entry.nominated || entry.selected)) {
+                if (typeof entry.currentRoundTripTime === 'number') {
+                  sampleData.ping = entry.currentRoundTripTime * 1000;
+                }
+                const local = byId.get(entry.localCandidateId);
+                const remote = byId.get(entry.remoteCandidateId);
+                if (local && remote) {
+                  sampleData.details.path = `${local.candidateType ?? '?'} → ${remote.candidateType ?? '?'} (${(local.protocol ?? '?').toUpperCase()})`;
+                }
               }
             });
+            sampleData.details.connection = connection.connectionState;
           } catch (error) {
             console.warn('Stream statistics:', error);
           }
         }
-        if (ping === null) {
+        let pingSource = sampleData.ping === null ? null : 'ICE';
+        if (sampleData.ping === null) {
           const start = performance.now();
           try {
             await fetch(`${gatewayUrl}/api/v1/ping`, { cache: 'no-store' });
-            ping = performance.now() - start;
+            sampleData.ping = performance.now() - start;
+            pingSource = 'HTTP';
           } catch {
-            ping = null;
+            sampleData.ping = null;
           }
         }
         const rate = (current, before, seconds) => (
@@ -186,13 +237,18 @@ function useStreamStats(deviceRef, gatewayUrl) {
         const seconds = previous ? (now - previous.time) / 1000 : 0;
         if (!stopped) {
           setStats({
-            ping,
-            server: previous ? rate(received, previous.received, seconds) : null,
+            ...EMPTY_STATS,
+            ...sampleData.details,
+            ping: sampleData.ping,
+            pingSource,
+            server: previous ? rate(sampleData.received, previous.received, seconds) : null,
             phone: previous ? rate(shown, previous.shown, seconds) : null,
+            bitrate: previous && rate(sampleData.bytes, previous.bytes, seconds) !== null
+              ? rate(sampleData.bytes, previous.bytes, seconds) * 8 / 1000 : null,
             video: video?.videoWidth ? { width: video.videoWidth, height: video.videoHeight } : null,
           });
         }
-        previous = { time: now, received, shown };
+        previous = { time: now, received: sampleData.received, shown, bytes: sampleData.bytes };
       } finally {
         busy = false;
       }
@@ -209,12 +265,64 @@ function useStreamStats(deviceRef, gatewayUrl) {
   return stats;
 }
 
+// A button that floats over the screen and can be dragged anywhere, so it
+// never sits for good over something the user wants to tap. A press that
+// does not move is a click.
+function FloatingHandle({ position, onMove, onClick, children, label }) {
+  const drag = useRef(null);
+  const size = 36;
+  const clamp = (x, y) => ({
+    x: Math.max(0, Math.min(window.innerWidth - size, x)),
+    y: Math.max(0, Math.min(window.innerHeight - size, y)),
+  });
+  const place = position ? clamp(position.x, position.y)
+    : clamp(window.innerWidth - size - 8, window.innerHeight - size - 8);
+
+  return (
+    <button
+      style={{ ...styles.toolbarHandle, left: place.x, top: place.y }}
+      aria-label={label}
+      onPointerDown={(event) => {
+        event.currentTarget.setPointerCapture(event.pointerId);
+        drag.current = { startX: event.clientX, startY: event.clientY, origin: place, moved: false };
+      }}
+      onPointerMove={(event) => {
+        const current = drag.current;
+        if (!current) return;
+        const dx = event.clientX - current.startX;
+        const dy = event.clientY - current.startY;
+        if (!current.moved && Math.hypot(dx, dy) < 6) return;
+        current.moved = true;
+        onMove(clamp(current.origin.x + dx, current.origin.y + dy), false);
+      }}
+      onPointerUp={() => {
+        const current = drag.current;
+        drag.current = null;
+        if (!current) return;
+        if (current.moved) onMove(place, true);
+        else onClick();
+      }}
+      onPointerCancel={() => { drag.current = null; }}
+    >
+      {children}
+    </button>
+  );
+}
+
 function App() {
   const emulatorRef = useRef(null);
   const deviceRef = useRef(null);
   const feedbackTimer = useRef(null);
   const [reconnecting, setReconnecting] = useState(false);
-  const [showInfo, setShowInfo] = useState(false);
+  // Open panel over the screen: 'network' (from ping/fps) or 'display'
+  // (from the stream information block), with the display settings.
+  const [panel, setPanel] = useState(null);
+  const [settings, setSettings] = useState(loadSettings);
+  const updateSettings = (change) => setSettings((current) => {
+    const next = { ...current, ...change };
+    saveSettings(next);
+    return next;
+  });
   const pointerDown = useRef(false);
   // Touch updates sent to the gateway: at most one request in flight. Press
   // and release are queued in order; while a request runs, intermediate moves
@@ -233,7 +341,7 @@ function App() {
   const overlay = screen.toolbar === 'overlay';
   useEffect(() => {
     const folder = () => {
-      if (!document.fullscreenElement) return;
+      if (!document.fullscreenElement || !loadSettings().autoFold) return;
       const timer = window.setTimeout(() => setBarFolded(true), 3000);
       return () => window.clearTimeout(timer);
     };
@@ -435,6 +543,7 @@ function App() {
   const showMarker = (event, visible) => {
     const marker = touchMarker.current;
     if (!marker) return;
+    if (!settings.touchMarker) visible = false;
     const bounds = event.currentTarget.getBoundingClientRect();
     marker.style.transform = `translate(${event.clientX - bounds.left}px, ${event.clientY - bounds.top}px)`;
     marker.style.opacity = visible ? '1' : '0';
@@ -463,51 +572,89 @@ function App() {
     queueTouch(touchCoordinates(event), false);
   };
 
-  // Android's own navigation buttons are larger, as on a phone.
-  const navStyle = { ...buttonStyle, ...(row ? styles.navButtonSide : styles.navButtonBelow) };
-  const keyButton = (key, label, icon, nav = false) => (
-    <button className="tool-button" style={nav ? navStyle : buttonStyle} onClick={() => sendKey(key)}
+  const keyButton = (key, label, icon) => (
+    <button className="tool-button" style={buttonStyle} onClick={() => sendKey(key)}
       aria-label={label}><Icon name={icon} /></button>
   );
+  const connected = state === 'connected';
+  // The connection LED sits in the refresh button's corner.
   const reloadButton = (
     <button
       className="tool-button"
-      style={{ ...buttonStyle, ...(reconnecting ? styles.buttonBusy : null) }}
+      style={{ ...buttonStyle, ...styles.withLed, ...(reconnecting ? styles.buttonBusy : null) }}
       onClick={manualReconnect}
       aria-label="Reconnecter la vidéo"
       aria-busy={reconnecting}
     >
       <Icon name="refresh" spinning={reconnecting} />
+      <span
+        title={state}
+        aria-label={`Connexion ${state}`}
+        style={{ ...styles.led, background: connected ? '#34c759' : '#ff9f0a' }}
+      />
     </button>
   );
   const fullscreenButton = (
     <button className="tool-button" style={buttonStyle} onClick={toggleFullscreen}
       aria-label="Plein écran"><Icon name="fullscreen" /></button>
   );
-  const statusLed = (
-    <span
-      title={state}
-      aria-label={`Connexion ${state}`}
-      style={{ ...styles.status, background: state === 'connected' ? '#34c759' : '#ff9f0a' }}
-    />
+  const foldButton = (
+    <button className="tool-button" style={buttonStyle} onClick={() => setBarFolded(true)}
+      aria-label="Replier la barre"><Icon name={row ? 'foldSide' : 'fold'} /></button>
   );
-  // Ping and the frame rate this device displays.
+  const togglePanel = (name) => setPanel((open) => (open === name ? null : name));
   const zoneStyle = row ? { ...styles.barZone, ...styles.barZoneColumn } : styles.barZone;
-  const statsBlock = (vertical) => (
-    <div
-      style={vertical ? styles.stats : styles.statsBelow}
-      aria-label="Statistiques du flux (toucher pour les détails de l'écran)"
-      role="button"
-      tabIndex={0}
-      onClick={() => setShowInfo((shown) => !shown)}
-    >
-      <span style={styles.statLabel}>ping</span>
-      <span style={{ ...styles.statValue, color: pingColor(stats.ping) }}
-        title="Aller-retour réseau jusqu'au serveur, en millisecondes">{formatValue(stats.ping)}</span>
-      <span style={styles.statLabel}>fps</span>
-      <span style={styles.statValue}
-        title="Images par seconde affichées par ce navigateur">{formatValue(stats.phone)}</span>
+  // Ping and displayed fps; tap for network and connectivity details.
+  const networkBlock = (
+    <button className="tool-button" style={styles.metric} onClick={() => togglePanel('network')}
+      aria-label="Réseau et connectivité">
+      <span style={{ ...styles.metricLine, color: pingColor(stats.ping) }}>{formatValue(stats.ping)}ms</span>
+      <span style={styles.metricLine}>{formatValue(stats.phone)}fps</span>
+    </button>
+  );
+  // Stream resolution and bitrate; tap for display details and settings.
+  const streamBlock = (
+    <button className="tool-button" style={{ ...styles.metric, ...(row ? null : styles.metricWide) }}
+      onClick={() => togglePanel('display')} aria-label="Écran, flux et réglages">
+      {row ? (
+        <>
+          <span style={styles.metricLine}>{stats.video?.width ?? display.width}</span>
+          <span style={styles.metricLine}>{stats.video?.height ?? display.height}</span>
+        </>
+      ) : (
+        <span style={styles.metricLine}>
+          {stats.video ? `${stats.video.width}×${stats.video.height}` : `${display.width}×${display.height}`}
+        </span>
+      )}
+      <span style={styles.metricLine}>{formatBitrate(stats.bitrate)}</span>
+    </button>
+  );
+  const row2 = (label, value) => (
+    <div key={label} style={styles.infoRow}>
+      <span style={styles.infoLabel}>{label}</span>
+      <span>{value}</span>
     </div>
+  );
+  const networkRows = [
+    ['Ping', stats.ping === null ? '–' : `${Math.round(stats.ping)} ms (${stats.pingSource})`],
+    ['Connexion', stats.connection ?? state],
+    ['Chemin', stats.path ?? '–'],
+    ['Débit vidéo', stats.bitrate === null ? '–' : `${Math.round(stats.bitrate)} kbit/s`],
+    ['Images reçues', `${formatValue(stats.server)} /s`],
+    ['Images affichées', `${formatValue(stats.phone)} /s`],
+    ['Images perdues', formatValue(stats.framesDropped)],
+    ['Paquets perdus', formatValue(stats.packetsLost)],
+    ['Gigue', stats.jitter === null ? '–' : `${Math.round(stats.jitter)} ms`],
+    ['Tampon vidéo', stats.bufferDelay === null ? '–' : `${Math.round(stats.bufferDelay)} ms`],
+    ['Codec', stats.codec ?? '–'],
+    ['Touches via', inputPath.current],
+  ];
+  const toggle = (label, key) => (
+    <label key={key} style={styles.infoRow}>
+      <span style={styles.infoLabel}>{label}</span>
+      <input type="checkbox" checked={settings[key]}
+        onChange={(event) => updateSettings({ [key]: event.target.checked })} />
+    </label>
   );
 
   return (
@@ -538,14 +685,27 @@ function App() {
               <span style={styles.loadingText}>{reconnecting ? 'Reconnexion…' : 'Connexion au flux…'}</span>
             </div>
           )}
-          {showInfo && (
-            <div style={styles.info} onClick={() => setShowInfo(false)} role="dialog" aria-label="Écran">
-              {[...deviceInfo(screen, stats.video), ['Touches via', inputPath.current]].map(([label, value]) => (
-                <div key={label} style={styles.infoRow}>
-                  <span style={styles.infoLabel}>{label}</span>
-                  <span>{value}</span>
-                </div>
-              ))}
+          {panel && (
+            <div style={styles.info} role="dialog"
+              aria-label={panel === 'network' ? 'Réseau et connectivité' : 'Écran et réglages'}>
+              <div style={styles.infoHeader}>
+                <strong>{panel === 'network' ? 'Réseau et connectivité' : 'Écran et réglages'}</strong>
+                <button style={styles.infoClose} onClick={() => setPanel(null)} aria-label="Fermer">✕</button>
+              </div>
+              {panel === 'network'
+                ? networkRows.map(([label, value]) => row2(label, value))
+                : (
+                  <>
+                    {deviceInfo(screen, stats.video, display).map(([label, value]) => row2(label, value))}
+                    <div style={styles.infoSection}>Réglages de cette page</div>
+                    {toggle('Point sous le doigt', 'touchMarker')}
+                    {toggle('Replier la barre en plein écran', 'autoFold')}
+                    <div style={styles.infoNote}>
+                      La résolution d’Android se règle sur le serveur
+                      (03-android-emulator/scripts/set-resolution.sh) et redémarre Android.
+                    </div>
+                  </>
+                )}
             </div>
           )}
           <div ref={touchMarker} style={styles.touchMarker} aria-hidden="true" />
@@ -560,8 +720,13 @@ function App() {
         </div>
       </section>
       {barFolded && (
-        <button style={styles.toolbarHandle} onClick={() => setBarFolded(false)}
-          aria-label="Afficher la barre"><Icon name="unfold" /></button>
+        <FloatingHandle
+          label="Afficher la barre (glisser pour déplacer)"
+          position={settings.handle}
+          onMove={(position, done) => (done ? updateSettings({ handle: position })
+            : setSettings((current) => ({ ...current, handle: position })))}
+          onClick={() => setBarFolded(false)}
+        ><Icon name="unfold" /></FloatingHandle>
       )}
       <nav
         style={row ? styles.toolbar
@@ -570,26 +735,25 @@ function App() {
         aria-label="Contrôles Android"
       >
         {/* Same order beside the screen (top to bottom) and below it (left to
-            right): the phone's physical keys and the metrics, Android's
-            recents, home and back centred, then the LED and the page's own
-            buttons. */}
+            right): the phone's physical keys and the network metrics,
+            Android's recents, home and back centred, then the stream
+            information and the page's own buttons. */}
         <div style={{ ...zoneStyle, justifyContent: 'flex-start' }}>
           {keyButton('Power', 'Marche arrêt', 'power')}
           {keyButton('AudioVolumeDown', 'Baisser le volume', 'volumeDown')}
           {keyButton('AudioVolumeUp', 'Monter le volume', 'volumeUp')}
-          {statsBlock(row)}
+          {networkBlock}
         </div>
         <div style={zoneStyle} aria-label="Navigation Android">
-          {keyButton('AppSwitch', 'Applications récentes', 'recents', true)}
-          {keyButton('GoHome', 'Accueil', 'home', true)}
-          {keyButton('GoBack', 'Retour', 'back', true)}
+          {keyButton('AppSwitch', 'Applications récentes', 'recents')}
+          {keyButton('GoHome', 'Accueil', 'home')}
+          {keyButton('GoBack', 'Retour', 'back')}
         </div>
         <div style={{ ...zoneStyle, justifyContent: 'flex-end' }}>
-          {statusLed}
+          {streamBlock}
           {reloadButton}
           {fullscreenButton}
-          <button className="tool-button" style={buttonStyle} onClick={() => setBarFolded(true)}
-            aria-label="Replier la barre"><Icon name={row ? 'foldSide' : 'fold'} /></button>
+          {foldButton}
         </div>
       </nav>
     </main>
@@ -640,58 +804,56 @@ const styles = {
     background: 'rgba(27, 29, 34, 0.85)', borderTop: '1px solid rgba(59, 63, 71, 0.85)',
   },
   toolbarHandle: {
-    position: 'fixed', right: '6px', bottom: '6px', zIndex: 11,
-    width: '30px', height: '30px', padding: 0, display: 'flex', alignItems: 'center',
+    position: 'fixed', zIndex: 11, touchAction: 'none',
+    width: '36px', height: '36px', padding: 0, display: 'flex', alignItems: 'center',
     justifyContent: 'center', border: '1px solid rgba(85, 85, 85, 0.8)',
-    borderRadius: '9px', background: 'rgba(27, 29, 34, 0.7)', color: '#d8dde5',
-    touchAction: 'manipulation',
+    borderRadius: '50%', background: 'rgba(27, 29, 34, 0.7)', color: '#d8dde5',
+    boxShadow: '0 1px 4px rgba(0, 0, 0, 0.5)',
   },
   // Horizontal bar: left, centre and right zones; the centre stays centred
   // whatever the side zones hold.
   toolbarBar: {
     flex: `0 0 ${TOOLBAR_WIDTH}px`, alignSelf: 'stretch', height: `${TOOLBAR_WIDTH}px`,
-    boxSizing: 'border-box', display: 'grid', gridTemplateColumns: 'auto 1fr auto',
+    boxSizing: 'border-box', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)',
     alignItems: 'center', columnGap: '4px', padding: '2px 4px',
     background: '#1b1d22', borderTop: '1px solid #3b3f47', zIndex: 10,
   },
   barZone: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px', minWidth: 0 },
-  navButtonBelow: { flex: '1 1 52px', minWidth: '36px', maxWidth: '64px' },
-  navButtonSide: { flex: '0 0 48px', height: '48px' },
   barZoneColumn: { flexDirection: 'column', gap: '6px', minHeight: 0 },
-  // Label above value, one column per statistic.
-  statsBelow: {
-    display: 'grid', gridAutoFlow: 'column', gridTemplateRows: 'auto auto',
-    columnGap: '6px', justifyItems: 'center', flex: '0 0 auto',
+  // Every button has the same size; below the screen they are a bit smaller
+  // so the whole bar fits a narrow phone.
+  buttonBelow: { flex: '0 0 30px', width: '30px', minWidth: '30px', height: '30px' },
+  metric: {
+    flex: '0 0 auto', minWidth: '30px', minHeight: '30px', margin: 0, padding: '1px 3px',
+    border: '1px solid #444', borderRadius: '9px', background: '#292929', color: '#e8ebf0',
+    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', touchAction: 'manipulation',
   },
-  // Below the screen the buttons share the width and shrink on narrow phones.
-  buttonBelow: {
-    flex: '0 1 30px', width: 'auto', minWidth: '24px', maxWidth: '32px', height: '32px',
+  metricWide: { flex: '1 1 auto', minWidth: 0 },
+  metricLine: { fontSize: '9px', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden' },
+  withLed: { position: 'relative' },
+  led: {
+    position: 'absolute', top: '3px', right: '3px', width: '7px', height: '7px',
+    borderRadius: '50%', boxShadow: '0 0 0 1px #1b1d22',
   },
-  stats: {
-    display: 'flex', flexDirection: 'column', alignItems: 'center',
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', lineHeight: 1.15,
+  infoHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' },
+  infoClose: {
+    width: '26px', height: '26px', padding: 0, border: '1px solid #444', borderRadius: '7px',
+    background: '#292929', color: '#fff', fontSize: '13px',
   },
+  infoSection: { marginTop: '8px', color: '#d8dde5', fontWeight: 600 },
+  infoNote: { marginTop: '4px', color: '#8a919c', fontSize: '11px', lineHeight: 1.35 },
   info: {
     position: 'absolute', left: '8px', right: '8px', top: '8px', zIndex: 4,
+    maxHeight: 'calc(100% - 16px)', overflowY: 'auto', touchAction: 'pan-y', boxSizing: 'border-box',
     padding: '10px 12px', borderRadius: '10px', background: 'rgba(20, 22, 27, 0.92)',
     border: '1px solid #3b3f47', fontFamily: 'system-ui, sans-serif', fontSize: '13px',
     display: 'flex', flexDirection: 'column', gap: '4px',
   },
   infoRow: { display: 'flex', justifyContent: 'space-between', gap: '12px' },
   infoLabel: { color: '#8a919c' },
-  statLabel: { fontSize: '9px', color: '#8a919c', marginTop: '3px' },
-  statValue: { fontSize: '12px', fontWeight: 600, color: '#e8ebf0', minWidth: '3ch', textAlign: 'center' },
-  webControls: {
-    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px',
-  },
-  separator: {
-    width: '26px', height: '1px', flex: '0 0 1px', margin: '10px 0', background: '#555',
-  },
-  emulatorControls: {
-    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px',
-  },
   button: {
-    flex: '0 0 36px', width: '36px', height: '36px', minWidth: '36px', margin: 0, padding: 0,
+    flex: '0 0 34px', width: '34px', height: '34px', minWidth: '34px', margin: 0, padding: 0,
     border: '1px solid #444', borderRadius: '9px', background: '#292929', color: '#fff',
     display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', lineHeight: 1, fontFamily: 'system-ui, sans-serif', touchAction: 'manipulation',
   },
@@ -702,7 +864,6 @@ const styles = {
     display: 'block', margin: 'auto', transformOrigin: '50% 50%',
     animation: 'stream-spinner 1.2s linear infinite',
   },
-  status: { width: '9px', height: '9px', flex: '0 0 9px', borderRadius: '50%' },
 };
 
 export default App;
