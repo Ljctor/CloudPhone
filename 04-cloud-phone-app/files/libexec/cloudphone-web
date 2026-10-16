@@ -1,6 +1,30 @@
 #!/bin/sh
 set -eu
 
-exec /usr/bin/python3 -m http.server "${WEB_PORT:-8000}" \
-  --bind "${LISTEN_ADDRESS:-0.0.0.0}" \
-  --directory /opt/cloudphone/current/web
+# Static server for the page. index.html must be revalidated on every load,
+# or a browser keeps an old page after an upgrade; the bundles under assets/
+# have content hashes in their names and can be cached for good.
+exec /usr/bin/python3 - "${LISTEN_ADDRESS:-0.0.0.0}" "${WEB_PORT:-8000}" /opt/cloudphone/current/web <<'PY'
+import functools
+import http.server
+import sys
+
+address, port, root = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+
+
+class Handler(http.server.SimpleHTTPRequestHandler):
+    def end_headers(self):
+        if self.path.startswith("/assets/"):
+            self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+        else:
+            self.send_header("Cache-Control", "no-cache")
+        super().end_headers()
+
+    def log_message(self, format, *args):
+        pass
+
+
+server = http.server.ThreadingHTTPServer(
+    (address, port), functools.partial(Handler, directory=root))
+server.serve_forever()
+PY
