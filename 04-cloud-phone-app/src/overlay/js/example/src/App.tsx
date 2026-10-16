@@ -664,8 +664,14 @@ function App() {
           to { transform: rotate(360deg); }
         }
         .tool-button:active { background: #3a6ea5 !important; border-color: #4da3ff !important; }
+        /* A long press must reach Android, not open the browser's
+           select/copy menu over the video. The panels stay selectable. */
+        body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+          -webkit-tap-highlight-color: transparent; }
+        [role="dialog"] { -webkit-user-select: text; user-select: text; }
       `}</style>
-      <section style={styles.screen} aria-label="Écran Android">
+      <section style={styles.screen} aria-label="Écran Android"
+        onContextMenu={(event) => event.preventDefault()}>
         <div ref={deviceRef} style={{ ...styles.device, width: screen.width, height: screen.height }}>
           {streamMounted && (
             <Emulator
