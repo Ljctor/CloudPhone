@@ -69,6 +69,8 @@ const ICONS = {
   fold: <path fill="currentColor" d="M16.59 8.59L12 13.17 7.41 8.59 6 10l6 6 6-6z" />,
   foldSide: <path fill="currentColor" d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" />,
   unfold: <path fill="currentColor" d="M12 8l-6 6 1.41 1.41L12 10.83l4.59 4.58L18 14z" />,
+  // Material "settings", drawn tiny next to the clickable metrics.
+  cog: <path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />,
   refresh: <path fill="currentColor" d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" />,
 };
 
@@ -249,7 +251,7 @@ function saveSettings(settings) {
 
 // What this browser's device offers and what Android sends, as label/value
 // rows: CSS pixels (layout) and physical pixels (CSS × devicePixelRatio).
-function deviceInfo(shownScreen, video, display) {
+function deviceInfo(shownScreen) {
   const ratio = window.devicePixelRatio || 1;
   const viewport = viewportSize();
   const physical = (width, height) => `${Math.round(width * ratio)}×${Math.round(height * ratio)}`;
@@ -258,8 +260,6 @@ function deviceInfo(shownScreen, video, display) {
     ['Fenêtre', `${viewport.width}×${viewport.height} CSS · ${physical(viewport.width, viewport.height)} px`],
     ['Densité', `×${ratio.toFixed(2)}`],
     ['Image affichée', `${shownScreen.width}×${shownScreen.height} CSS · ${physical(shownScreen.width, shownScreen.height)} px`],
-    ['Écran Android', `${display.width}×${display.height} px`],
-    ['Flux vidéo reçu', video ? `${video.width}×${video.height} px` : '–'],
   ];
 }
 
@@ -444,8 +444,8 @@ function App() {
   const deviceRef = useRef(null);
   const feedbackTimer = useRef(null);
   const [reconnecting, setReconnecting] = useState(false);
-  // Open panel over the screen: 'network' (from ping/fps) or 'display'
-  // (from the stream information block), with the display settings.
+  // Open panel over the screen: 'server' (from the ping block) or 'client'
+  // (from the fps block).
   const [panel, setPanel] = useState(null);
   const [settings, setSettings] = useState(loadSettings);
   const updateSettings = (change) => setSettings((current) => {
@@ -748,42 +748,61 @@ function App() {
   );
   const togglePanel = (name) => setPanel((open) => (open === name ? null : name));
   const zoneStyle = row ? { ...styles.barZone, ...styles.barZoneColumn } : styles.barZone;
-  // Ping and displayed fps; tap for network and connectivity details.
-  const networkBlock = (
-    <button className="tool-button" style={styles.metric} onClick={() => togglePanel('network')}
-      aria-label="Réseau et connectivité">
-      <span style={{ ...styles.metricLine, color: pingColor(stats.ping) }}>{formatValue(stats.ping)}ms</span>
-      <span style={styles.metricLine}>{formatValue(stats.phone)}fps</span>
+  // Two blocks, each opening its panel; the small cog says they are
+  // clickable. Server: network, emulator, video stream and Android's
+  // screen size, showing the ping. This device: display, input and page
+  // options, showing the frames per second it displays.
+  const panelBlock = (name, label, value, color) => (
+    <button className="tool-button" style={styles.metric} onClick={() => togglePanel(name)}
+      aria-label={label} aria-expanded={panel === name}>
+      <span style={{ ...styles.metricLine, color }}>
+        {value}
+        <svg viewBox="0 0 24 24" width="7" height="7" style={styles.cog} aria-hidden="true">{ICONS.cog}</svg>
+      </span>
     </button>
   );
-  // Stream resolution ("360p": the short side); tap for display details,
-  // Android's screen size and the page settings.
-  const streamBlock = (
-    <button className="tool-button" style={styles.metric}
-      onClick={() => togglePanel('display')} aria-label="Écran, résolution et réglages">
-      <span style={styles.metricLine}>{shortSide(stats.video ?? display)}</span>
-    </button>
-  );
+  const serverBlock = panelBlock('server', 'Serveur, réseau et Android',
+    `${formatValue(stats.ping)}ms`, pingColor(stats.ping));
+  const clientBlock = panelBlock('client', 'Cet appareil, affichage et options',
+    `${formatValue(stats.phone)}fps`, '#e8ebf0');
   const row2 = (label, value) => (
     <div key={label} style={styles.infoRow}>
       <span style={styles.infoLabel}>{label}</span>
       <span>{value}</span>
     </div>
   );
-  const networkRows = [
-    ['Ping', stats.ping === null ? '–' : `${Math.round(stats.ping)} ms (${stats.pingSource})`],
-    ['Connexion', stats.connection ?? state],
-    ['Chemin', stats.path ?? '–'],
-    ['Débit vidéo', stats.bitrate === null ? '–' : `${Math.round(stats.bitrate)} kbit/s`],
-    ['Images reçues', `${formatValue(stats.server)} /s`],
-    ['Images affichées', `${formatValue(stats.phone)} /s`],
-    ['Images perdues', formatValue(stats.framesDropped)],
-    ['Paquets perdus', formatValue(stats.packetsLost)],
-    ['Gigue', stats.jitter === null ? '–' : `${Math.round(stats.jitter)} ms`],
-    ['Tampon vidéo', stats.bufferDelay === null ? '–' : `${Math.round(stats.bufferDelay)} ms`],
-    ['Codec', stats.codec ?? '–'],
-    ['Touches via', inputPath.current],
+  const configured = displayState?.configured;
+  const serverSections = [
+    ['Réseau', [
+      ['Ping', stats.ping === null ? '–' : `${Math.round(stats.ping)} ms (${stats.pingSource})`],
+      ['Connexion', stats.connection ?? state],
+      ['Chemin', stats.path ?? '–'],
+      ['Débit vidéo', stats.bitrate === null ? '–' : `${Math.round(stats.bitrate)} kbit/s`],
+      ['Paquets perdus', formatValue(stats.packetsLost)],
+      ['Gigue', stats.jitter === null ? '–' : `${Math.round(stats.jitter)} ms`],
+    ]],
+    ['Android et flux vidéo', [
+      ['Écran Android', configured?.width ? `${configured.width}×${configured.height} px` : `${display.width}×${display.height} px`],
+      ['Flux vidéo', stats.video ? `${stats.video.width}×${stats.video.height} px (${shortSide(stats.video)})` : '–'],
+      ['Images envoyées', `${formatValue(stats.server)} /s`],
+      ['Codec', stats.codec ?? '–'],
+    ]],
   ];
+  const clientSections = [
+    ['Affichage', [
+      ['Images affichées', `${formatValue(stats.phone)} /s`],
+      ['Images perdues', formatValue(stats.framesDropped)],
+      ['Tampon vidéo', stats.bufferDelay === null ? '–' : `${Math.round(stats.bufferDelay)} ms`],
+      ...deviceInfo(screen),
+    ]],
+    ['Entrées', [['Touches via', inputPath.current]]],
+  ];
+  const sections = (list) => list.map(([title, rows]) => (
+    <div key={title}>
+      <div style={styles.infoSection}>{title}</div>
+      {rows.map(([label, value]) => row2(label, value))}
+    </div>
+  ));
   const toggle = (label, key) => (
     <label key={key} style={styles.infoRow}>
       <span style={styles.infoLabel}>{label}</span>
@@ -833,30 +852,32 @@ function App() {
           )}
           {panel && (
             <div style={styles.info} role="dialog"
-              aria-label={panel === 'network' ? 'Réseau et connectivité' : 'Écran et réglages'}>
+              aria-label={panel === 'server' ? 'Serveur' : 'Cet appareil'}>
               <div style={styles.infoHeader}>
-                <strong>{panel === 'network' ? 'Réseau et connectivité' : 'Écran et réglages'}</strong>
+                <strong>{panel === 'server' ? 'Serveur' : 'Cet appareil'}</strong>
                 <button style={styles.infoClose} onClick={() => setPanel(null)} aria-label="Fermer">✕</button>
               </div>
-              {panel === 'network'
-                ? networkRows.map(([label, value]) => row2(label, value))
-                : (
-                  <>
-                    {deviceInfo(screen, stats.video, display).map(([label, value]) => row2(label, value))}
-                    <div style={styles.infoSection}>Android</div>
-                    <DisplaySettings
-                      gatewayUrl={gatewayUrl}
-                      displayState={displayState}
-                      refresh={refreshDisplay}
-                      rowStyle={styles.infoRow}
-                      labelStyle={styles.infoLabel}
-                      buttonStyle={styles.panelButton}
-                    />
-                    <div style={styles.infoSection}>Réglages de cette page</div>
-                    {toggle('Point sous le doigt', 'touchMarker')}
-                    {toggle('Replier la barre en plein écran', 'autoFold')}
-                  </>
-                )}
+              {panel === 'server' ? (
+                <>
+                  {sections(serverSections)}
+                  <div style={styles.infoSection}>Écran d’Android</div>
+                  <DisplaySettings
+                    gatewayUrl={gatewayUrl}
+                    displayState={displayState}
+                    refresh={refreshDisplay}
+                    rowStyle={styles.infoRow}
+                    labelStyle={styles.infoLabel}
+                    buttonStyle={styles.panelButton}
+                  />
+                </>
+              ) : (
+                <>
+                  {sections(clientSections)}
+                  <div style={styles.infoSection}>Options</div>
+                  {toggle('Point sous le doigt', 'touchMarker')}
+                  {toggle('Replier la barre en plein écran', 'autoFold')}
+                </>
+              )}
             </div>
           )}
           <div ref={touchMarker} style={styles.touchMarker} aria-hidden="true" />
@@ -893,7 +914,7 @@ function App() {
           {keyButton('Power', 'Marche arrêt', 'power')}
           {keyButton('AudioVolumeDown', 'Baisser le volume', 'volumeDown')}
           {keyButton('AudioVolumeUp', 'Monter le volume', 'volumeUp')}
-          {networkBlock}
+          {serverBlock}
         </div>
         <div style={zoneStyle} aria-label="Navigation Android">
           {keyButton('AppSwitch', 'Applications récentes', 'recents')}
@@ -901,7 +922,7 @@ function App() {
           {keyButton('GoBack', 'Retour', 'back')}
         </div>
         <div style={{ ...zoneStyle, justifyContent: 'flex-end' }}>
-          {streamBlock}
+          {clientBlock}
           {reloadButton}
           {fullscreenButton}
           {foldButton}
@@ -969,18 +990,18 @@ const styles = {
     alignItems: 'center', columnGap: '4px', padding: '2px 4px',
     background: '#1b1d22', borderTop: '1px solid #3b3f47', zIndex: 10,
   },
-  barZone: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px', minWidth: 0 },
+  barZone: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px', minWidth: 0 },
   barZoneColumn: { flexDirection: 'column', gap: '6px', minHeight: 0 },
   // Every button has the same size; below the screen they are a bit smaller
   // so the whole bar fits a narrow phone.
-  buttonBelow: { flex: '0 0 30px', width: '30px', minWidth: '30px', height: '30px' },
+  buttonBelow: { flex: '0 0 28px', width: '28px', minWidth: '28px', height: '28px' },
   metric: {
-    flex: '0 0 auto', minWidth: '30px', minHeight: '30px', margin: 0, padding: '1px 3px',
+    flex: '0 0 auto', minWidth: '28px', minHeight: '28px', margin: 0, padding: '1px 2px',
     border: '1px solid #444', borderRadius: '9px', background: '#292929', color: '#e8ebf0',
     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', touchAction: 'manipulation',
+    fontFamily: 'system-ui, sans-serif', fontVariantNumeric: 'tabular-nums', touchAction: 'manipulation',
   },
-  metricLine: { fontSize: '9px', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden' },
+  metricLine: { fontSize: '10px', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden' },
   withLed: { position: 'relative' },
   led: {
     position: 'absolute', top: '3px', right: '3px', width: '7px', height: '7px',
@@ -991,7 +1012,8 @@ const styles = {
     width: '26px', height: '26px', padding: 0, border: '1px solid #444', borderRadius: '7px',
     background: '#292929', color: '#fff', fontSize: '13px',
   },
-  infoSection: { marginTop: '8px', color: '#d8dde5', fontWeight: 600 },
+  infoSection: { marginTop: '8px', marginBottom: '2px', color: '#d8dde5', fontWeight: 600 },
+  cog: { marginLeft: '1px', color: '#8a919c', verticalAlign: 'top' },
   infoNote: { marginTop: '4px', color: '#8a919c', fontSize: '11px', lineHeight: 1.35 },
   infoWarning: { marginTop: '4px', color: '#ff9f0a', fontSize: '12px', lineHeight: 1.35 },
   select: {
