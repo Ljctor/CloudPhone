@@ -188,7 +188,7 @@ done
 mkdir -p "$STAGE/04-cloud-phone-app/dist/wheels"
 cp -R "$UPSTREAM/js/example/dist" "$STAGE/04-cloud-phone-app/dist/web"
 install -m 644 "$wheel" "$STAGE/04-cloud-phone-app/dist/wheels/"
-install -m 644 "$ROOT/docs/INSTALL.md" "$ROOT/docs/METHOD.md" "$STAGE/docs/"
+install -m 644 "$ROOT/docs/INSTALL.md" "$ROOT/docs/METHOD.md" "$ROOT/docs/TUTORIAL.md" "$STAGE/docs/"
 install -m 644 "$UPSTREAM/LICENSE" "$STAGE/licenses/android-emulator-container-scripts-LICENSE"
 chmod -R u=rwX,go=rX "$STAGE"
 chmod 755 "$STAGE"/install.sh "$STAGE"/uninstall.sh "$STAGE"/*/scripts/*.sh \
