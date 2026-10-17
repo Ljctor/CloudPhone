@@ -97,11 +97,12 @@ function blank(data) {
 
 // The game's counter font, in digit heights: how far each digit and the
 // comma advance, and how much bigger the digits are with 5 digits or fewer
-// than with 6 or more (compare the diamonds counter). Measured on 360x780
-// and 480x1040 screenshots.
-const DIGIT_ADVANCE = 0.78;
-const COMMA_ADVANCE = 0.45;
-const SHORT_NUMBER_SCALE = 1.17;
+// than with 6 or more. Measured at 480x1040 on "284,086" (6 digits, 9 px
+// high, 39 px wide with the comma) and the diamonds' "306" (10 px high,
+// 19 px wide): about 1 px of precision.
+const DIGIT_ADVANCE = 0.68;
+const COMMA_ADVANCE = 0.35;
+const SHORT_NUMBER_SCALE = 1.11;
 // Cap height of the drawn font, as a fraction of its font size.
 const CAP_HEIGHT = 0.72;
 

@@ -91,7 +91,8 @@ def black(r, g, b):
 def classify(shot):
     if share(shot, CONFIRM_BUTTON, orange) > 0.6 and share(shot, EXIT_BUTTON, grey) > 0.6:
         return "save"
-    if share(shot, MENU_LABELS, white) > 0.03:
+    # Menu names along the bottom; one highlighted tab lowers the share.
+    if share(shot, MENU_LABELS, white) > 0.01:
         return "battle"
     if (share(shot, SAVER_BUTTON, dim_grey) > 0.8 and share(shot, SAVER_TOP, black) > 0.95
             and share(shot, SAVER_TEXT, orange) > 0.08):
