@@ -26,15 +26,21 @@ function luminance(data, index) {
 // pixels: RGBA bytes of the search area, scaled by `scale` (video width /
 // 360), `width` × `height` pixels. Returns the rectangle to paint, in
 // 360-wide Android pixels relative to the screen, and its colour; or null
-// when the counter is not on screen.
-export function findEmeraldMask(pixels, width, height, scale) {
+// when the counter is not on screen. On null, `why.reason` (when given) says
+// which step failed: 'flat' (no contrast: blank image or no text), 'text',
+// 'comma', 'digits' or 'colour'.
+export function findEmeraldMask(pixels, width, height, scale, why = {}) {
+  const miss = (reason) => {
+    why.reason = reason;
+    return null;
+  };
   let low = 255, high = 0;
   for (let i = 0; i < width * height * 4; i += 4) {
     const value = luminance(pixels, i);
     if (value < low) low = value;
     if (value > high) high = value;
   }
-  if (high - low < MIN_CONTRAST) return null;
+  if (high - low < MIN_CONTRAST) return miss('flat');
   const level = (fraction) => low + (high - low) * fraction;
   const brightLevel = level(BRIGHT), edgeLevel = level(EDGE), darkLevel = level(DARK);
   const bright = (x, y) => luminance(pixels, (y * width + x) * 4) > brightLevel;
@@ -55,9 +61,9 @@ export function findEmeraldMask(pixels, width, height, scale) {
     if (!best || end - y > best.bottom - best.top) best = { top: y, bottom: end };
     y = end;
   }
-  if (!best) return null;
+  if (!best) return miss('text');
   const textHeight = best.bottom - best.top + 1;
-  if (textHeight < 4 * scale || textHeight > 10 * scale) return null;
+  if (textHeight < 4 * scale || textHeight > 10 * scale) return miss('text');
 
   // The comma's tail: bright pixels just below the digits. Keep the last one.
   let comma = -1;
@@ -70,7 +76,7 @@ export function findEmeraldMask(pixels, width, height, scale) {
       }
     }
   }
-  if (comma < 0) return null;
+  if (comma < 0) return miss('comma');
   // Left edge of that tail.
   while (comma > 0 && bright(comma - 1, best.bottom + 1)) comma--;
 
@@ -89,7 +95,7 @@ export function findEmeraldMask(pixels, width, height, scale) {
       empty++;
     }
   }
-  if (right - comma < 3 * scale) return null;
+  if (right - comma < 3 * scale) return miss('digits');
 
   // Colour: the bar just right of the number, where there is no glyph
   // edge to lighten it.
@@ -104,7 +110,8 @@ export function findEmeraldMask(pixels, width, height, scale) {
       }
     }
   }
-  if (n === 0) return null;
+  if (n === 0) return miss('colour');
+  why.reason = null;
   const pad = 1;
   return {
     x: AREA.x + left / scale,

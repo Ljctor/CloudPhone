@@ -93,7 +93,9 @@ describe("findEmeraldMask", () => {
 
   test("finds nothing on a plain dark area", () => {
     const { pixels, width, height } = rgba(ROWS.map((row) => "1e1e1a".repeat(row.length / 6)));
-    expect(findEmeraldMask(pixels, width, height, 1)).toBeNull();
+    const why = {};
+    expect(findEmeraldMask(pixels, width, height, 1, why)).toBeNull();
+    expect(why.reason).toBe("flat");
   });
 
   test("finds nothing on a plain bright area", () => {

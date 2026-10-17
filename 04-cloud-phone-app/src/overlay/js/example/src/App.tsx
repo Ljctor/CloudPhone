@@ -3,7 +3,7 @@ import { AREA as EMERALD_AREA, findEmeraldMask } from './emeraldMask';
 import React, { useEffect, useRef, useState } from 'react';
 import { Emulator, logger } from '../../src';
 import {
-  activePeerConnection, sendInputEvent, setViewerId,
+  activePeerConnection, sendInputEvent, setVideoBitrate, setViewerId,
 } from '../../src/components/emulator/net/ws_jsep_protocol_driver';
 import Proto from '../../src/proto/emulator_controller_pb';
 
@@ -266,9 +266,10 @@ function useEmeraldMask(deviceRef, enabled) {
       canvas.height = height;
       try {
         context.drawImage(video, EMERALD_AREA.x * scale, EMERALD_AREA.y * scale, width, height, 0, 0, width, height);
-        const found = findEmeraldMask(context.getImageData(0, 0, width, height).data, width, height, scale);
+        const why = {};
+        const found = findEmeraldMask(context.getImageData(0, 0, width, height).data, width, height, scale, why);
         setMask((current) => (JSON.stringify(current) === JSON.stringify(found) ? current : found));
-        setProblem(null);
+        setProblem(found ? null : `${why.reason}, ${video.videoWidth}×${video.videoHeight}`);
       } catch (error) {
         setProblem(String(error?.name ?? error));
         console.warn('Emerald mask:', error);
@@ -400,7 +401,29 @@ function postHeaders() {
 const SETTINGS_KEY = 'cloudphone.settings';
 const DEFAULT_SETTINGS = {
   touchMarker: true, autoFold: true, barDocked: false, language: null, emeraldMask: false,
+  streamQuality: null,
 };
+
+// Bitrate cap this device asks of the emulator. The emulator then lowers the
+// stream's size or frame rate; Android's own screen does not change.
+const STREAM_QUALITIES = [
+  { id: 'eco', label: 'Éco', kbps: 300 },
+  { id: 'normal', label: 'Normale', kbps: 1000 },
+  { id: 'max', label: 'Max', kbps: 0 },
+];
+
+// Without a choice: Éco on mobile data or a slow link, else Normale.
+function defaultStreamQuality() {
+  const connection = navigator.connection;
+  if (connection?.type === 'cellular' || ['slow-2g', '2g', '3g'].includes(connection?.effectiveType)) return 'eco';
+  // Until the levels are set from measurements at 720p: no cap by default.
+  return 'max';
+}
+
+function streamQuality(settings) {
+  const id = settings.streamQuality ?? defaultStreamQuality();
+  return STREAM_QUALITIES.find((quality) => quality.id === id) ?? STREAM_QUALITIES[1];
+}
 
 function loadSettings() {
   try {
@@ -630,6 +653,9 @@ function App() {
   const [settings, setSettings] = useState(loadSettings);
   // Before any tr() of this render: null means the browser's language.
   setLanguage(settings.language ?? defaultLanguage());
+  // Read by the next stream connection.
+  const quality = streamQuality(settings);
+  setVideoBitrate(quality.kbps);
   const updateSettings = (change) => setSettings((current) => {
     const next = { ...current, ...change };
     saveSettings(next);
@@ -1181,6 +1207,25 @@ function App() {
                 </>
               ) : (
                 <>
+                  <div style={styles.infoSection}>{tr('Flux vidéo')}</div>
+                  <label style={styles.infoRow}>
+                    <span style={styles.infoLabel}>{tr('Qualité du flux')}</span>
+                    <select value={quality.id} style={styles.select}
+                      onChange={(event) => {
+                        updateSettings({ streamQuality: event.target.value });
+                        setVideoBitrate(STREAM_QUALITIES.find((item) => item.id === event.target.value)?.kbps ?? 0);
+                        reconnectStream();
+                      }}>
+                      {STREAM_QUALITIES.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.kbps ? `${tr(item.label)} (${item.kbps} kbit/s)` : tr(item.label)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {row2(tr('Reçu'), stats.video
+                    ? `${stats.video.width}×${stats.video.height} · ${formatValue(stats.server)} ${tr('images/s')} · ${stats.bitrate === null ? '–' : Math.round(stats.bitrate)} kbit/s`
+                    : '–')}
                   {sections(clientSections)}
                   <div style={styles.infoSection}>{tr('Options')}</div>
                   <label style={styles.infoRow}>
