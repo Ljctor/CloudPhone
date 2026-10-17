@@ -399,14 +399,17 @@ function useEmeraldMask(deviceRef, enabled, gatewayUrl) {
   return [mask, problem];
 }
 
-function useServerState(gatewayUrl) {
+// details: also ask for the server metrics (CPU, memory, Android's frame
+// rate), which cost the server an adb call: only while the server panel is
+// open.
+function useServerState(gatewayUrl, details = false) {
   const [server, setServer] = useState({ value: null, failures: 0 });
   useEffect(() => {
     let cancelled = false;
     const load = () => {
       const controller = new AbortController();
       const timeout = window.setTimeout(() => controller.abort(), 4000);
-      fetch(`${gatewayUrl}/api/v1/state?viewer=${encodeURIComponent(VIEWER_ID)}`,
+      fetch(`${gatewayUrl}/api/v1/state?viewer=${encodeURIComponent(VIEWER_ID)}${details ? '&details=1' : ''}`,
         { cache: 'no-store', signal: controller.signal })
         .then((response) => (response.ok ? response.json() : Promise.reject(new Error(String(response.status)))))
         .then((value) => { if (!cancelled) setServer({ value, failures: 0 }); })
@@ -414,9 +417,9 @@ function useServerState(gatewayUrl) {
         .finally(() => window.clearTimeout(timeout));
     };
     load();
-    const timer = window.setInterval(load, 3000);
+    const timer = window.setInterval(load, details ? 2000 : 3000);
     return () => { cancelled = true; window.clearInterval(timer); };
-  }, [gatewayUrl]);
+  }, [gatewayUrl, details]);
   return server;
 }
 
@@ -815,7 +818,7 @@ function App() {
   const stats = useStreamStats(deviceRef, gatewayUrl);
   const [emeraldMask, emeraldProblem] = useEmeraldMask(deviceRef, settings.emeraldMask, gatewayUrl);
   const [displayState, refreshDisplay] = useDisplayState(gatewayUrl);
-  const server = useServerState(gatewayUrl);
+  const server = useServerState(gatewayUrl, panel === 'server');
   // Seconds the stream has been trying to connect, and consecutive failed
   // touch requests: both feed the message shown to the user.
   const [connectingFor, setConnectingFor] = useState(0);
@@ -1177,6 +1180,15 @@ function App() {
   );
   const configured = displayState?.configured;
   const load = server.value?.load;
+  const metrics = server.value?.metrics;
+  const mib = (value) => (value === null || value === undefined ? '–'
+    : value >= 1024 ? `${(value / 1024).toFixed(1)} ${tr('Go')}` : `${value} ${tr('Mo')}`);
+  const memoryRow = (memory) => (memory?.total
+    ? tr('{used} utilisés / {total}', { used: mib(memory.total - memory.available), total: mib(memory.total) }) : '–');
+  const swapRow = (memory) => (memory?.swapTotal ? `${mib(memory.swapUsed)} / ${mib(memory.swapTotal)}` : '–');
+  const host = metrics?.host;
+  const emulator = metrics?.emulator;
+  const android = metrics?.android;
   const serverSections = [
     ['État', [
       ['Serveur', server.failures >= 2 ? tr('injoignable') : server.value ? tr('joignable') : '…'],
@@ -1186,22 +1198,35 @@ function App() {
       ['Appareils connectés', formatValue(server.value?.viewers)],
       ['Charge du serveur', load ? tr('{load} / {cpus} cœurs', { load: load.one.toFixed(1), cpus: load.cpus }) : '–'],
     ]],
-    ['Réseau', [
-      ['Ping', stats.ping === null ? '–' : `${Math.round(stats.ping)} ms (${stats.pingSource})`],
-      ['Connexion', stats.connection ?? state],
-      ['Chemin', stats.path ?? '–'],
-      ['Débit vidéo', stats.bitrate === null ? '–' : `${Math.round(stats.bitrate)} kbit/s`],
-      ['Paquets perdus', formatValue(stats.packetsLost)],
-      ['Gigue', stats.jitter === null ? '–' : `${Math.round(stats.jitter)} ms`],
+    ['Machine', [
+      ['Processeur', host ? tr('{cpu} % de {cpus} fils', { cpu: host.cpu, cpus: host.cpus }) : '–'],
+      ['Fréquence', host?.mhz ? `${host.mhz} MHz${host.governor ? ` (${host.governor})` : ''}` : '–'],
+      ['Mémoire', memoryRow(host?.memory)],
+      ['Émulateur', emulator?.cpu === null || emulator?.cpu === undefined ? '–'
+        : tr('{cores} cœurs · {memory}', { cores: (emulator.cpu / 100).toFixed(1), memory: mib(emulator.memory) })],
     ]],
-    ['Android et flux vidéo', [
+    ['Android', [
       ['Écran Android', configured?.width ? `${configured.width}×${configured.height} px` : `${display.width}×${display.height} px`],
+      ['Images/s du jeu', android?.fps === null || android?.fps === undefined ? '–'
+        : `${android.fps}${android.app ? ` (${android.app})` : ''}`],
+      ['Mémoire Android', memoryRow(android?.memory)],
+      ['Swap Android', swapRow(android?.memory)],
+    ]],
+    ['Flux envoyé', [
       ['Flux vidéo', stats.video ? `${stats.video.width}×${stats.video.height} px (${shortSide(stats.video)})` : '–'],
       ['Images envoyées', `${formatValue(stats.server)} /s`],
+      ['Débit vidéo', stats.bitrate === null ? '–' : `${Math.round(stats.bitrate)} kbit/s`],
       ['Codec', stats.codec ?? '–'],
     ]],
   ];
   const clientSections = [
+    ['Réseau', [
+      ['Ping', stats.ping === null ? '–' : `${Math.round(stats.ping)} ms (${stats.pingSource})`],
+      ['Connexion', stats.connection ?? state],
+      ['Chemin', stats.path ?? '–'],
+      ['Paquets perdus', formatValue(stats.packetsLost)],
+      ['Gigue', stats.jitter === null ? '–' : `${Math.round(stats.jitter)} ms`],
+    ]],
     ['Affichage', [
       ['Images affichées', `${formatValue(stats.phone)} /s`],
       ['Images perdues', formatValue(stats.framesDropped)],

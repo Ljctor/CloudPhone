@@ -84,6 +84,13 @@ STATE_CACHE = {"time": 0.0, "value": None}
 # one screenshot at a time, shared by every page asking within the period.
 EMERALD_CACHE = {"time": 0.0, "value": None, "lock": None}
 EMERALD_CACHE_SECONDS = 0.4
+# Server metrics for the page's server panel, sampled in the background.
+# Android's own figures need adb, so they are read only while a page asks
+# for them (GET /api/v1/state?details=1 in the last ANDROID_WANTED_SECONDS).
+METRICS = {"host": None, "emulator": None, "android": None, "android_wanted": 0.0}
+METRICS_SECONDS = 2
+ANDROID_METRICS_SECONDS = 5
+ANDROID_WANTED_SECONDS = 30
 STATE_CACHE_SECONDS = 2.0
 # The gateway also serves the page, so page and API share one origin and no
 # CORS is needed. Each start draws a random token, written into index.html;
@@ -231,6 +238,122 @@ def read_load():
         return None
 
 
+def read_proc_stat():
+    """(busy, total) jiffies of all host CPUs."""
+    with open("/proc/stat", "r") as f:
+        values = [int(v) for v in f.readline().split()[1:]]
+    idle = values[3] + (values[4] if len(values) > 4 else 0)
+    return sum(values) - idle, sum(values)
+
+
+def read_meminfo(text):
+    """kB values of a /proc/meminfo text, by name."""
+    values = {}
+    for line in text.splitlines():
+        name, _, rest = line.partition(":")
+        if rest.split():
+            try:
+                values[name] = int(rest.split()[0])
+            except ValueError:
+                pass
+    return values
+
+
+def read_file(path):
+    try:
+        with open(path, "r") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+def memory_summary(values):
+    """MiB figures from meminfo values."""
+    mib = lambda name: round(values[name] / 1024) if name in values else None
+    return {
+        "total": mib("MemTotal"), "available": mib("MemAvailable"),
+        "swapTotal": mib("SwapTotal"),
+        "swapUsed": mib("SwapTotal") - mib("SwapFree") if "SwapTotal" in values and "SwapFree" in values else None,
+    }
+
+
+async def read_android_metrics():
+    """Android's memory and the frame rate of the top layer since the last
+    call (SurfaceFlinger timestats, enabled on first use)."""
+    script = (
+        "cat /proc/meminfo; echo ==TIMESTATS==;"
+        " dumpsys SurfaceFlinger --timestats -enable >/dev/null;"
+        " dumpsys SurfaceFlinger --timestats -dump -maxlayers 1;"
+        " dumpsys SurfaceFlinger --timestats -clear >/dev/null"
+    )
+    process = await asyncio.create_subprocess_exec(
+        ADB_PATH, "-s", ADB_SERIAL, "shell", script,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+    )
+    try:
+        output, _ = await asyncio.wait_for(process.communicate(), timeout=10)
+    except asyncio.TimeoutError:
+        process.kill()
+        return None
+    meminfo, _, timestats = output.decode(errors="replace").partition("==TIMESTATS==")
+    layer = fps = None
+    for line in timestats.splitlines():
+        name, _, value = line.strip().partition(" = ")
+        if name == "layerName" and layer is None:
+            # "<id> SurfaceView[com.example/...Activity](BLAST)#12": the package.
+            layer = value.split("[", 1)[-1].split("/", 1)[0].split("]", 1)[0] if "[" in value else value
+        elif name == "averageFPS" and layer is not None and fps is None:
+            try:
+                fps = round(float(value), 1)
+            except ValueError:
+                pass
+    return {"memory": memory_summary(read_meminfo(meminfo)), "app": layer, "fps": fps}
+
+
+async def sample_metrics():
+    """Host CPU and memory, the emulator unit's CPU and memory (its cgroup),
+    and Android's figures while a page wants them."""
+    loop = asyncio.get_running_loop()
+    cgroup = f"/sys/fs/cgroup/system.slice/{EMULATOR_UNIT}" if EMULATOR_UNIT else None
+    previous = None
+    last_android = 0.0
+    while True:
+        try:
+            now = loop.time()
+            busy, total = read_proc_stat()
+            stat = read_file(f"{cgroup}/cpu.stat") if cgroup else None
+            usage = None
+            if stat:
+                usage = dict(line.split() for line in stat.splitlines() if len(line.split()) == 2).get("usage_usec")
+            usage = int(usage) if usage else None
+            cpus = os.cpu_count() or 1
+            if previous:
+                p_now, p_busy, p_total, p_usage = previous
+                governor = read_file("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor")
+                mhz = [float(line.split(":")[1]) for line in (read_file("/proc/cpuinfo") or "").splitlines()
+                       if line.startswith("cpu MHz")]
+                METRICS["host"] = {
+                    "cpu": round(100 * (busy - p_busy) / max(1, total - p_total)),
+                    "cpus": cpus,
+                    "governor": governor.strip() if governor else None,
+                    "mhz": round(sum(mhz) / len(mhz)) if mhz else None,
+                    "memory": memory_summary(read_meminfo(read_file("/proc/meminfo") or "")),
+                }
+                memory = read_file(f"{cgroup}/memory.current") if cgroup else None
+                METRICS["emulator"] = {
+                    # Percent of one core, like top: 400 = four cores busy.
+                    "cpu": round((usage - p_usage) / 1e4 / (now - p_now)) if usage is not None and p_usage is not None else None,
+                    "memory": round(int(memory) / 1048576) if memory and memory.strip().isdigit() else None,
+                }
+            previous = (now, busy, total, usage)
+            if now - METRICS["android_wanted"] < ANDROID_WANTED_SECONDS and now - last_android >= ANDROID_METRICS_SECONDS:
+                last_android = now
+                METRICS["android"] = await read_android_metrics()
+        except Exception as error:
+            logging.warning("Metrics sampling failed: %s", error)
+        await asyncio.sleep(METRICS_SECONDS)
+
+
 def viewer_of(request):
     return request.query.get("viewer", "")[:64]
 
@@ -285,6 +408,9 @@ async def handle_state(request):
         }
         STATE_CACHE["time"] = loop.time()
     value = {**STATE_CACHE["value"], "kicked": is_kicked(viewer_of(request))}
+    if request.query.get("details") == "1":
+        METRICS["android_wanted"] = loop.time()
+        value["metrics"] = {key: METRICS[key] for key in ("host", "emulator", "android")}
     return web.json_response(value, headers={"Cache-Control": "no-store"})
 
 
@@ -916,6 +1042,7 @@ async def main():
     logging.info(f"Gateway Webserver listening on http://{args.host}:{args.port}")
 
     watcher = asyncio.create_task(watch_discovery_file())
+    sampler = asyncio.create_task(sample_metrics())
 
     # Run forever
     try:
