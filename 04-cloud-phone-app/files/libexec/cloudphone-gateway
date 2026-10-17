@@ -18,4 +18,6 @@ exec /opt/cloudphone/current/venv/bin/videobridge-gateway \
   --discovery_file "$discovery" \
   --emulator_unit cloudphone-emulator.service \
   --display_request /var/lib/cloudphone/display-request \
-  --display_status /run/cloudphone-display/status
+  --display_status /run/cloudphone-display/status \
+  --settings_request /var/lib/cloudphone/settings-request \
+  --settings_status /run/cloudphone-settings/status

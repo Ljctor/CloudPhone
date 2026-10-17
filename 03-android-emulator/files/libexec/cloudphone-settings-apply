@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# Applies emulator settings requested from the web page: renderer, cores and
+# memory. Run as root by cloudphone-settings.service when the gateway
+# (service user) writes /var/lib/cloudphone/settings-request containing
+# "RENDERER CORES MEMORY_MB".
+#
+# Same rules as cloudphone-display-apply: the request file is in a directory
+# the service user controls, so it is treated as hostile (no symlinks, at
+# most 64 bytes, content never logged, values from a fixed list or bounded
+# integers). The configuration is backed up before it is changed, then
+# Android restarts with the new settings.
+set -euo pipefail
+
+request=/var/lib/cloudphone/settings-request
+status=/run/cloudphone-settings/status
+conf=/etc/cloudphone/cloudphone.conf
+renderers=(lavapipe swiftshader_indirect swangle_indirect)
+
+report() {
+  local tmp
+  tmp=$(mktemp /run/cloudphone-settings/.status.XXXXXX)
+  printf '%s\n' "$*" >"$tmp"
+  chmod 644 "$tmp"
+  mv -f "$tmp" "$status"
+}
+
+[ -e "$request" ] || [ -L "$request" ] || exit 0
+if [ -L "$request" ] || [ ! -f "$request" ]; then
+  rm -f "$request"
+  report "failed invalid request"
+  exit 0
+fi
+line=$(head -c 64 "$request" | head -n 1)
+rm -f "$request"
+
+if ! [[ $line =~ ^([a-z_]{1,32})\ ([0-9]{1,2})\ ([0-9]{4,6})$ ]]; then
+  report "failed invalid request"
+  exit 0
+fi
+renderer=${BASH_REMATCH[1]}
+cores=$((10#${BASH_REMATCH[2]}))
+memory=$((10#${BASH_REMATCH[3]}))
+
+known=no
+for item in "${renderers[@]}"; do [ "$item" = "$renderer" ] && known=yes; done
+host_mib=$(awk '/^MemTotal:/ { print int($2 / 1024) }' /proc/meminfo)
+# Keep 2 GiB for the host, the gateway and the encoder.
+if [ "$known" != yes ] || [ "$cores" -lt 1 ] || [ "$cores" -gt "$(nproc)" ] ||
+  [ "$memory" -lt 2048 ] || [ "$memory" -gt $((host_mib - 2048)) ] || [ $((memory % 512)) -ne 0 ]; then
+  report "failed out of range"
+  exit 0
+fi
+if systemctl is-active --quiet cloudphone-display.service; then
+  report "failed a screen size change is in progress"
+  exit 0
+fi
+
+report "applying $renderer $cores $memory"
+cp -p "$conf" "$conf.bak-$(date +%Y%m%d-%H%M%S)"
+set_conf() {
+  if grep -q "^$1=" "$conf"; then
+    sed -i "s|^$1=.*|$1=$2|" "$conf"
+  else
+    printf '%s=%s\n' "$1" "$2" >>"$conf"
+  fi
+}
+set_conf EMULATOR_GPU "$renderer"
+set_conf EMULATOR_CORES "$cores"
+set_conf EMULATOR_MEMORY_MB "$memory"
+echo "==> Emulator settings: renderer $renderer, $cores cores, $memory MiB; restarting Android"
+if systemctl restart cloudphone-emulator.service; then
+  report "done $renderer $cores $memory"
+else
+  report "failed restart: journalctl -u cloudphone-emulator"
+fi

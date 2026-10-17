@@ -55,6 +55,7 @@ check "gRPC access policy is root-owned" test "$(stat -c %U:%a "$CONF_DIR/emulat
 check "cloudphone-emulator is enabled" systemctl is-enabled --quiet cloudphone-emulator.service
 check "cloudphone-emulator is active" systemctl is-active --quiet cloudphone-emulator.service
 check "screen size requests from the page are watched" systemctl is-active --quiet cloudphone-display.path
+check "emulator settings requests from the page are watched" systemctl is-active --quiet cloudphone-settings.path
 check "service does not skip adb authentication" bash -c '! systemctl cat cloudphone-emulator.service | grep -q -- -skip-adb-auth'
 check "console port $EMULATOR_PORT is loopback-only" loopback_only "$EMULATOR_PORT"
 check "gRPC port $GRPC_PORT is loopback-only" loopback_only "$GRPC_PORT"

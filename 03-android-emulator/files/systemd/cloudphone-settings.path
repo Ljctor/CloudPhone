@@ -1,0 +1,9 @@
+[Unit]
+Description=Cloud Phone: watch for emulator settings requests from the web page
+
+[Path]
+PathExists=/var/lib/cloudphone/settings-request
+Unit=cloudphone-settings.service
+
+[Install]
+WantedBy=paths.target

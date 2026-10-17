@@ -15,6 +15,8 @@ Agents: read `AGENTS.md`. All-in-one install with part 04:
 | `files/libexec/cloudphone-emulator` | launcher, installed in `/opt/cloudphone/libexec` |
 | `files/systemd/cloudphone-emulator.service` | the service |
 | `files/systemd/cloudphone-display.path`, `.service` | root unit applying screen size requests from the page |
+| `files/libexec/cloudphone-settings-apply` | root side of renderer, cores and memory changes requested from the page: checks the request against a fixed list and bounds, backs up `cloudphone.conf`, sets `EMULATOR_GPU`, `EMULATOR_CORES`, `EMULATOR_MEMORY_MB`, restarts Android (started by `cloudphone-settings.path`) |
+| `files/systemd/cloudphone-settings.path`, `.service` | root unit applying emulator settings requests from the page |
 | `../lib/versions.env` | pinned versions, URLs and checksums |
 
 Emulator 37.1.11 crashed with Google Play and WebRTC active, hence the pin.

@@ -101,6 +101,13 @@ PAGE_TOKEN = secrets.token_urlsafe(32)
 TOKEN_HEADER = "X-CloudPhone-Token"
 WEB_ROOT = ""
 DISPLAY_CHANGE_INTERVAL = 120.0
+# Emulator settings (renderer, cores, memory) work the same way: the gateway
+# writes "RENDERER CORES MEMORY_MB" to SETTINGS_REQUEST and a root service
+# applies it, reporting in SETTINGS_STATUS. Changes of either kind share the
+# rate limit above: each one restarts Android.
+SETTINGS_REQUEST = ""
+SETTINGS_STATUS = ""
+RENDERERS = ("lavapipe", "swiftshader_indirect", "swangle_indirect")
 LAST_DISPLAY_CHANGE = {"time": None}
 
 
@@ -163,6 +170,76 @@ def read_avd_config(avd_dir):
         }
     except (OSError, KeyError, ValueError):
         return {}
+
+
+def read_settings_status():
+    """Returns the state of the last emulator settings request."""
+    if SETTINGS_REQUEST and os.path.exists(SETTINGS_REQUEST):
+        return {"state": "pending"}
+    words = (read_file(SETTINGS_STATUS) or "").split() if SETTINGS_STATUS else []
+    if not words or words[0] not in ("applying", "done", "failed"):
+        return {"state": "idle"}
+    if words[0] == "failed":
+        return {"state": "failed", "message": " ".join(words[1:])[:200]}
+    if len(words) == 4:
+        return {"state": words[0], "renderer": words[1], "cores": words[2], "memoryMb": words[3]}
+    return {"state": words[0]}
+
+
+def settings_limits():
+    """What the page may ask for: renderers, at most every host thread, and
+    the host's memory minus 2 GiB."""
+    meminfo = read_meminfo(read_file("/proc/meminfo") or "")
+    return {
+        "renderers": list(RENDERERS),
+        "maxCores": os.cpu_count() or 1,
+        "maxMemoryMb": (meminfo.get("MemTotal", 0) // 1024 - 2048) // 512 * 512,
+    }
+
+
+async def handle_settings(request):
+    """GET /api/v1/emulator-settings: the settings Android runs with, the
+    allowed choices and the state of the last change."""
+    cgroup = f"/sys/fs/cgroup/system.slice/{EMULATOR_UNIT}" if EMULATOR_UNIT else None
+    return web.json_response({
+        "canChange": bool(SETTINGS_REQUEST),
+        "current": read_emulator_settings(cgroup),
+        "limits": settings_limits(),
+        "request": read_settings_status(),
+    }, headers={"Cache-Control": "no-store"})
+
+
+async def handle_set_settings(request):
+    """POST /api/v1/emulator-settings {renderer, cores, memoryMb}: asks the
+    root service to change them, which restarts Android (data is kept)."""
+    if not SETTINGS_REQUEST:
+        return web.json_response({"error": "Emulator settings changes are disabled"}, status=403)
+    try:
+        data = await request.json()
+        renderer, cores, memory = str(data["renderer"]), int(data["cores"]), int(data["memoryMb"])
+    except (ValueError, KeyError, TypeError):
+        return web.json_response({"error": "renderer, cores and memoryMb are required"}, status=400)
+    limits = settings_limits()
+    if renderer not in RENDERERS:
+        return web.json_response({"error": f"renderer must be one of {', '.join(RENDERERS)}"}, status=400)
+    if not 1 <= cores <= limits["maxCores"]:
+        return web.json_response({"error": f"cores must be between 1 and {limits['maxCores']}"}, status=400)
+    if not 2048 <= memory <= limits["maxMemoryMb"] or memory % 512:
+        return web.json_response(
+            {"error": f"memoryMb must be a multiple of 512 between 2048 and {limits['maxMemoryMb']}"}, status=400)
+    if read_settings_status()["state"] in ("pending", "applying") or read_display_status()["state"] in ("pending", "applying"):
+        return web.json_response({"error": "A change is already in progress"}, status=409)
+    last = LAST_DISPLAY_CHANGE["time"]
+    if last is not None and time.monotonic() - last < DISPLAY_CHANGE_INTERVAL:
+        wait = int(DISPLAY_CHANGE_INTERVAL - (time.monotonic() - last)) + 1
+        return web.json_response({"error": f"Wait {wait} s before the next change"}, status=429)
+    LAST_DISPLAY_CHANGE["time"] = time.monotonic()
+    temporary = f"{SETTINGS_REQUEST}.tmp"
+    with open(temporary, "w") as f:
+        f.write(f"{renderer} {cores} {memory}\n")
+    os.replace(temporary, SETTINGS_REQUEST)
+    logging.info(f"Emulator settings requested by {request.remote}: {renderer}, {cores} cores, {memory} MiB")
+    return web.json_response({"status": "pending"}, status=202)
 
 
 def read_display_status():
@@ -566,7 +643,7 @@ async def handle_set_display(request):
     with open(temporary, "w") as f:
         f.write(f"{wanted['width']} {wanted['height']} {wanted['density']}\n")
     os.replace(temporary, DISPLAY_REQUEST)
-    logging.info(f"Screen size requested: {wanted}")
+    logging.info(f"Screen size requested by {request.remote}: {wanted}")
     return web.json_response({"status": "pending"}, status=202)
 
 
@@ -944,6 +1021,8 @@ def init_app(videobridge_token):
     app.router.add_get("/api/v1/emerald-mask", handle_emerald_mask)
     app.router.add_post("/api/v1/viewers/disconnect-others", handle_disconnect_others)
     app.router.add_post("/api/v1/display", handle_set_display)
+    app.router.add_get("/api/v1/emulator-settings", handle_settings)
+    app.router.add_post("/api/v1/emulator-settings", handle_set_settings)
     app.router.add_get("/api/v1/emulator/status", handle_status)
     app.router.add_post("/api/v1/emulator/gps", handle_gps)
     app.router.add_get("/api/v1/emulator/logcat", handle_logcat)
@@ -1025,9 +1104,22 @@ async def main():
         default="",
         help="File where that privileged service reports progress.",
     )
+    parser.add_argument(
+        "--settings_request",
+        type=str,
+        default="",
+        help="File the gateway writes emulator settings requests to (empty: disabled).",
+    )
+    parser.add_argument(
+        "--settings_status",
+        type=str,
+        default="",
+        help="File where the privileged settings service reports progress.",
+    )
     args = parser.parse_args()
 
     global ADB_PATH, ADB_SERIAL, DISPLAY_REQUEST, DISPLAY_STATUS, EMULATOR_UNIT, DISCOVERY_FILE
+    global SETTINGS_REQUEST, SETTINGS_STATUS
     EMULATOR_UNIT = args.emulator_unit
     global WEB_ROOT
     WEB_ROOT = args.web_root
@@ -1036,6 +1128,8 @@ async def main():
     ADB_SERIAL = args.adb_serial
     DISPLAY_REQUEST = args.display_request
     DISPLAY_STATUS = args.display_status
+    SETTINGS_REQUEST = args.settings_request
+    SETTINGS_STATUS = args.settings_status
 
     # Parse discovery configuration properties
     global DISCOVERY_PROPS

@@ -1,5 +1,6 @@
 import { LANGUAGES, defaultLanguage, setLanguage, tr } from './i18n';
 import { AREA as EMERALD_AREA, findEmeraldMask } from './emeraldMask';
+import { coreOptions, memoryOptions, rendererOptions, sameSettings } from './emulatorSettings';
 import React, { useEffect, useRef, useState } from 'react';
 import { Emulator, logger } from '../../src';
 import {
@@ -229,6 +230,87 @@ function DisplaySettings({ gatewayUrl, displayState, refresh, rowStyle, labelSty
       {request.state === 'applying' && (
         <div style={styles.infoNote}>{tr('Android redémarre en {size}…', { size: `${request.width}×${request.height}` })}</div>
       )}
+      {request.state === 'failed' && <div style={styles.infoWarning}>{tr('Échec : {message}', { message: request.message })}</div>}
+      {error && <div style={styles.infoWarning}>{error}</div>}
+    </>
+  );
+}
+
+function useEmulatorSettings(gatewayUrl, enabled) {
+  const [value, setValue] = useState(null);
+  const [nonce, setNonce] = useState(0);
+  const busy = ['pending', 'applying'].includes(value?.request?.state);
+  useEffect(() => {
+    if (!enabled) return undefined;
+    let cancelled = false;
+    const load = () => fetch(`${gatewayUrl}/api/v1/emulator-settings`, { cache: 'no-store' })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((next) => { if (!cancelled && next) setValue(next); })
+      .catch(() => {});
+    load();
+    const timer = window.setInterval(load, busy ? 2000 : 10000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [gatewayUrl, enabled, busy, nonce]);
+  return [value, () => setNonce((n) => n + 1)];
+}
+
+// Renderer, cores and memory Android runs with; changing them restarts it.
+function EmulatorSettings({ gatewayUrl, settings, refresh, rowStyle, labelStyle, buttonStyle }) {
+  const current = settings?.current;
+  const [choice, setChoice] = useState(null);
+  const [error, setError] = useState(null);
+  const currentKey = current ? `${current.renderer} ${current.cores} ${current.memoryMb}` : '';
+  useEffect(() => {
+    if (current) setChoice({ renderer: current.renderer, cores: Number(current.cores), memoryMb: Number(current.memoryMb) });
+  }, [currentKey]);
+  if (!settings) return <div style={styles.infoNote}>{tr('Indisponible pour le moment.')}</div>;
+  if (!settings.canChange || !choice) return <div style={styles.infoNote}>{tr('Non disponible sur ce serveur.')}</div>;
+  const request = settings.request ?? { state: 'idle' };
+  const busy = request.state === 'pending' || request.state === 'applying';
+  const renderers = rendererOptions(settings.limits);
+  const hint = renderers.find((item) => item.id === choice.renderer)?.hint;
+
+  const apply = async () => {
+    setError(null);
+    const message = `${tr('Android va redémarrer avec ces réglages.')}\n`
+      + tr('Cela prend une à deux minutes. Les applications ouvertes se ferment ; les données sont conservées.');
+    if (!window.confirm(message)) return;
+    try {
+      const response = await fetch(`${gatewayUrl}/api/v1/emulator-settings`, {
+        method: 'POST', headers: postHeaders(), body: JSON.stringify(choice),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        setError(body.error ?? tr('Erreur {status}', { status: response.status }));
+      }
+    } catch {
+      setError(tr('Passerelle injoignable'));
+    }
+    refresh();
+  };
+  const select = (key, options, label) => (
+    <select value={choice[key]} disabled={busy} style={styles.select}
+      onChange={(event) => setChoice((value) => ({
+        ...value, [key]: key === 'renderer' ? event.target.value : Number(event.target.value),
+      }))}>
+      {options.map((item) => <option key={item.id ?? item} value={item.id ?? item}>{label(item)}</option>)}
+    </select>
+  );
+  return (
+    <>
+      <label style={rowStyle}><span style={labelStyle}>{tr('Moteur de rendu')}</span>
+        {select('renderer', renderers, (item) => tr(item.label))}</label>
+      {hint && <div style={styles.infoNote}>{tr(hint)}</div>}
+      <label style={rowStyle}><span style={labelStyle}>{tr('Cœurs')}</span>
+        {select('cores', coreOptions(settings.limits?.maxCores, current?.cores), (n) => String(n))}</label>
+      <label style={rowStyle}><span style={labelStyle}>{tr('Mémoire')}</span>
+        {select('memoryMb', memoryOptions(settings.limits?.maxMemoryMb, current?.memoryMb), (mb) => `${mb / 1024} ${tr('Go')}`)}</label>
+      <div style={rowStyle}>
+        <span style={labelStyle} />
+        <button style={buttonStyle} onClick={apply} disabled={busy || sameSettings(choice, current)}>{tr('Appliquer')}</button>
+      </div>
+      {request.state === 'pending' && <div style={styles.infoNote}>{tr('Demande envoyée, en attente du serveur…')}</div>}
+      {request.state === 'applying' && <div style={styles.infoNote}>{tr('Android redémarre…')}</div>}
       {request.state === 'failed' && <div style={styles.infoWarning}>{tr('Échec : {message}', { message: request.message })}</div>}
       {error && <div style={styles.infoWarning}>{error}</div>}
     </>
@@ -819,6 +901,7 @@ function App() {
   const [emeraldMask, emeraldProblem] = useEmeraldMask(deviceRef, settings.emeraldMask, gatewayUrl);
   const [displayState, refreshDisplay] = useDisplayState(gatewayUrl);
   const server = useServerState(gatewayUrl, panel === 'server');
+  const [emulatorSettings, refreshEmulatorSettings] = useEmulatorSettings(gatewayUrl, panel === 'server');
   // Seconds the stream has been trying to connect, and consecutive failed
   // touch requests: both feed the message shown to the user.
   const [connectingFor, setConnectingFor] = useState(0);
@@ -1319,6 +1402,15 @@ function App() {
                       </button>
                     </div>
                   )}
+                  <div style={styles.infoSection}>{tr('Réglages d’Android')}</div>
+                  <EmulatorSettings
+                    gatewayUrl={gatewayUrl}
+                    settings={emulatorSettings}
+                    refresh={refreshEmulatorSettings}
+                    rowStyle={styles.infoRow}
+                    labelStyle={styles.infoLabel}
+                    buttonStyle={styles.panelButton}
+                  />
                   <div style={styles.infoSection}>{tr('Écran d’Android')}</div>
                   <DisplaySettings
                     gatewayUrl={gatewayUrl}

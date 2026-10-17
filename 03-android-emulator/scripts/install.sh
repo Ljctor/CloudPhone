@@ -288,12 +288,15 @@ install_unit() {
   install -m 644 "$TREE/lib/common.sh" "$TREE/lib/versions.env" "$PREFIX/tools/lib/"
   install -m 644 "$PART/files/cloudphone.conf" "$PREFIX/tools/03-android-emulator/files/"
   install -m 755 "$PART/scripts/set-resolution.sh" "$PREFIX/tools/03-android-emulator/scripts/"
-  install -m 755 "$PART/files/libexec/cloudphone-display-apply" "$PREFIX/libexec/"
+  install -m 755 "$PART/files/libexec/cloudphone-display-apply" \
+    "$PART/files/libexec/cloudphone-settings-apply" "$PREFIX/libexec/"
   install -m 644 "$PART/files/systemd/cloudphone-display.path" \
-    "$PART/files/systemd/cloudphone-display.service" /etc/systemd/system/
+    "$PART/files/systemd/cloudphone-display.service" \
+    "$PART/files/systemd/cloudphone-settings.path" \
+    "$PART/files/systemd/cloudphone-settings.service" /etc/systemd/system/
   systemctl daemon-reload
   systemctl enable cloudphone-emulator.service >/dev/null
-  systemctl enable --now cloudphone-display.path >/dev/null
+  systemctl enable --now cloudphone-display.path cloudphone-settings.path >/dev/null
 }
 
 start_emulator() {
