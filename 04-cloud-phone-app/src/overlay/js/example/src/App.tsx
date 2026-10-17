@@ -1196,7 +1196,7 @@ function App() {
       ['Android démarré', server.value?.android?.booted === true ? tr('oui')
         : server.value?.android?.booted === false ? tr('en cours') : tr('sans réponse')],
       ['Appareils connectés', formatValue(server.value?.viewers)],
-      ['Charge du serveur', load ? tr('{load} / {cpus} cœurs', { load: load.one.toFixed(1), cpus: load.cpus }) : '–'],
+      ['Charge du serveur', load ? tr('{load} tâches pour {cpus} fils', { load: load.one.toFixed(1), cpus: load.cpus }) : '–'],
     ]],
     ['Machine', [
       ['Processeur', host ? tr('{cpu} % de {cpus} fils', { cpu: host.cpu, cpus: host.cpus }) : '–'],

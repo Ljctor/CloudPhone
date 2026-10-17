@@ -70,7 +70,7 @@ const EN = {
   'Un autre appareil a pris la main': 'Another device took over',
   'Touchez ↻ pour la reprendre.': 'Tap ↻ to take it back.',
   'Charge du serveur': 'Server load',
-  '{load} / {cpus} cœurs': '{load} / {cpus} cores',
+  '{load} tâches pour {cpus} fils': '{load} tasks for {cpus} threads',
   '{n} redémarrage': '{n} restart',
   '{n} redémarrages': '{n} restarts',
   'Réseau': 'Network',
