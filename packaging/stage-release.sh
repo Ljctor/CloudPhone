@@ -1,6 +1,6 @@
 #!/bin/sh
 # Copies a release tarball to a server, verifies it and unpacks it as root
-# under /var/tmp/cloudphone-release/, where the runbooks of parts 02-04 run it
+# under /var/tmp/cloudphone-release/, where the runbooks of parts 02-05 run it
 # from (root runs these scripts, so only root may write them):
 #   packaging/stage-release.sh setup-agent@SERVER_ADDRESS [TARBALL]
 # AS_ROOT is the privilege path on the server (default: through master).

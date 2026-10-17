@@ -15,6 +15,7 @@ host=${TARGET#*@}
 ! curl -fsS --max-time 3 "http://$host:${WEB_PORT:-8000}/" >/dev/null 2>&1
 ```
 
-Set `WEB_PORT` to the instance's port (8000 by default, 8100 for a second
-instance). Page and API share that one port. Passes when every command
+Set `WEB_PORT` to the instance's port (8000 by default; a test instance on
+another host may use another one, 8100 in the examples). Page and API share
+that one port. Passes when every command
 succeeds: the page answers on the VPN and not on the public address. Runbook 03 and the human part of 04 complete the acceptance.

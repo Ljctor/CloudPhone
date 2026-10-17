@@ -8,15 +8,16 @@ Agents: read `AGENTS.md`. All-in-one install with part 04:
 |---|---|
 | `scripts/install.sh` | SDK, pinned emulator, system image, AVD, service; waits for boot |
 | `scripts/verify.sh` | read-only acceptance test (prints `PASS`) |
+| `scripts/measure.sh` | read-only performance sample of the running instance (frame rate inside Android, emulator CPU, host CPU, swap) |
 | `scripts/set-resolution.sh` | change Android's screen size (reboots Android); the web page can request it too |
-| `files/libexec/cloudphone-display-apply` | root side of size changes requested from the page: checks the request, runs `set-resolution.sh` (started by `cloudphone-display.path`) |
+| `files/libexec/cloudphone-display-apply` | root side of size-only changes sent by API clients (`POST /api/v1/display`): checks the request, runs `set-resolution.sh` (started by `cloudphone-display.path`) |
 | `files/cloudphone.conf` | default `/etc/cloudphone/cloudphone.conf` |
 | `files/emulator_access.json` | gRPC allowlist (token-authenticated, loopback) |
 | `files/libexec/cloudphone-emulator` | launcher, installed in `/opt/cloudphone/libexec` |
 | `files/systemd/cloudphone-emulator.service` | the service |
-| `files/systemd/cloudphone-display.path`, `.service` | root unit applying screen size requests from the page |
-| `files/libexec/cloudphone-settings-apply` | root side of renderer, cores and memory changes requested from the page: checks the request against a fixed list and bounds, backs up `cloudphone.conf`, sets `EMULATOR_GPU`, `EMULATOR_CORES`, `EMULATOR_MEMORY_MB`, restarts Android (started by `cloudphone-settings.path`) |
-| `files/systemd/cloudphone-settings.path`, `.service` | root unit applying emulator settings requests from the page |
+| `files/systemd/cloudphone-display.path`, `.service` | root unit applying size-only requests from API clients |
+| `files/libexec/cloudphone-settings-apply` | root side of the page's Apply: checks the request (renderer from a fixed list, bounded cores, memory and size), backs up `cloudphone.conf`, sets `EMULATOR_GPU`, `EMULATOR_CORES`, `EMULATOR_MEMORY_MB`, then restarts Android, through `set-resolution.sh` when a screen size comes with it (started by `cloudphone-settings.path`) |
+| `files/systemd/cloudphone-settings.path`, `.service` | root unit applying the page's Android settings requests |
 | `../lib/versions.env` | pinned versions, URLs and checksums |
 
 Emulator 37.1.11 crashed with Google Play and WebRTC active, hence the pin.
@@ -27,14 +28,22 @@ Google's files are downloaded on the server, never redistributed.
 `sudo scripts/set-resolution.sh WIDTH HEIGHT DENSITY` (e.g. `360 780 160`)
 changes Android's screen and reboots Android; data is kept and the page
 follows the new size. Fewer pixels cost less CPU: without a GPU, Android is
-drawn and encoded by the CPU. The page's Server settings panel requests the
-same change through `cloudphone-display.path` (root), at most once every 2
-minutes.
+drawn and encoded by the CPU. The page's Apply (Information → Server →
+Android settings) sends the size together with the renderer, cores and
+memory through `cloudphone-settings.path` (root): `cloudphone-settings-apply`
+runs `set-resolution.sh` when a size comes with the request, one restart for
+all of it. `cloudphone-display.path` and `cloudphone-display-apply` handle
+size-only requests (`POST /api/v1/display`) from API clients. Either way, at
+most one change every 2 minutes.
 
 ## Performance
 
-The server has no GPU: `EMULATOR_GPU=swiftshader_indirect` renders on the
-CPU with SwiftShader. Measured at 360×780 with a game running:
+Without a GPU (the default target), Android is rendered on the CPU.
+`EMULATOR_GPU` picks the renderer: `swiftshader_indirect` (SwiftShader, the
+packaged default), `lavapipe` (recommended by the page: right colours and
+the fastest without a GPU) or `swangle_indirect`; the page's Android
+settings switch between them. Measured with SwiftShader at 360×780 with a
+game running:
 
 | What | Measured |
 |---|---|
@@ -47,24 +56,26 @@ The bottleneck is the guest CPU and software rendering, not the video
 encoding or the network: a lower bitrate or a faster link does not raise the
 frame rate; fewer pixels and more host CPU do.
 
-Measure the frame rate inside Android, as root on the server, with the
-instance's adb server port (`ANDROID_ADB_SERVER_PORT`, here 5038):
+Measure on the server, as root, while the app to compare is on screen and
+animating:
 
 ```sh
-adb() { runuser -u cloudphone -- env HOME=/var/lib/cloudphone \
-  /opt/cloudphone/android-sdk/platform-tools/adb -P 5038 "$@"; }
-adb shell dumpsys SurfaceFlinger --timestats -clear -enable
-sleep 30                                   # use the app meanwhile
-adb shell dumpsys SurfaceFlinger --timestats -dump
-adb shell dumpsys SurfaceFlinger --timestats -disable
+sudo scripts/measure.sh 60      # seconds; prints one table
 ```
 
-Never run adb on that port while `install.sh` runs: the installer checks the
-port is free before starting Android.
+It prints the screen, renderer, cores, memory and governor, then the app's
+frame rate inside Android, the emulator's CPU, the host's free CPU and
+Android's swap. Change one setting between two runs and keep the same scene.
+It goes through the instance's own adb server (`ANDROID_ADB_SERVER_PORT`,
+5037 by default) and never starts one. Never run adb on that port while
+`install.sh` runs: the installer checks the port is free before starting
+Android.
 
-## Several instances on one host
+## Running next to another emulator or adb server
 
-Each instance needs free ports. Before installing the second one:
+One host runs one Cloud Phone: one `cloudphone.conf`, one
+`/var/lib/cloudphone`, fixed unit names. It can share the host with another
+emulator or adb server if its ports are free. Before installing, write:
 
 ```sh
 sudo install -d /etc/cloudphone

@@ -1,6 +1,7 @@
 # Agent instructions
 
-This repository installs a cloud Android phone in four parts, in this order:
+This repository installs a cloud Android phone in four parts, in this order,
+plus an optional fifth:
 
 | Part | Read first |
 |---|---|
@@ -8,6 +9,7 @@ This repository installs a cloud Android phone in four parts, in this order:
 | `02-wireguard-server/` | its `AGENTS.md` |
 | `03-android-emulator/` | its `AGENTS.md` |
 | `04-cloud-phone-app/` | its `AGENTS.md` |
+| `05-slayer-legend/` (optional) | its `AGENTS.md` |
 
 Each part's `AGENTS.md` is the installation procedure; development and
 reference docs are linked from there. Execution model and safety rules:
@@ -27,5 +29,5 @@ reference docs are linked from there. Execution model and safety rules:
 ```sh
 git diff --check
 shellcheck -x -P SCRIPTDIR */scripts/*.sh packaging/*.sh lib/common.sh */files/libexec/*
-packaging/build-release.sh          # when parts 03/04 or packaging changed
+packaging/build-release.sh          # when parts 03–05 or packaging changed
 ```

@@ -28,7 +28,7 @@ packaging/build-release.sh          # jest tests, page, gateway wheel, dist/*.ta
 
 ## Iterate on a test instance
 
-Use a second instance (other ports, see `03-android-emulator/README.md`),
+Use a test instance on another host (the examples give it port 8100),
 never the production phone. Build, then stage and install part 04 in one
 command (`SERVER` is an ssh destination; `AS_ROOT` and `LISTEN` as in
 `packaging/deploy.sh`):
@@ -40,15 +40,17 @@ packaging/deploy.sh SERVER 03 04    # also part 03 (an upgrade: the SDK licences
 ssh SERVER "$AS_ROOT /var/tmp/cloudphone-release/cloudphone-VERSION-linux-x86_64/04-cloud-phone-app/scripts/verify.sh"
 ```
 
-`deploy.sh` runs `install.sh` over non-interactive ssh, so a first install
-of part 03 (licence prompt) still goes through its runbook 02.
+`deploy.sh` allocates a terminal when it runs from one, so a first install
+of part 03 can answer the licence prompt there; or pass
+`ACCEPT_ANDROID_SDK_LICENSE=yes` after reading the licences. From a
+non-interactive shell, use part 03's runbook 02 instead.
 
 Android keeps running. Reload the page (the index is never cached).
 
 ## Gateway: one port, one origin
 
 `cloudphone-gateway` serves the page and the API on `LISTEN_ADDRESS:WEB_PORT`
-(8000 by default; 8100 in the second-instance example). There is no CORS.
+(8000 by default; 8100 for the test instance in the examples). There is no CORS.
 
 - Each start draws a random token and writes it into `index.html` as
   `<meta name="cloudphone-token">`. Every POST must carry it in the
@@ -56,15 +58,20 @@ Android keeps running. Reload the page (the index is never cached).
 - A request whose `Origin` is not this server is refused with 403 (GET,
   POST and the WebSocket alike). Requests without `Origin` pass.
 - `Cache-Control`: `/` and `/index.html` `no-cache`; `/assets/*` (hashed
-  names) `public, max-age=31536000, immutable`; API answers `no-store`.
+  names) `public, max-age=31536000, immutable`; `/plugins/<id>/*.js`
+  `no-cache`; every answer under `/api/` `no-store` unless the handler set
+  its own (`cache_middleware`), including the upstream helpers
+  `/api/v1/emulator/{status,gps,logcat,key,touch}`.
 
 | Route | Purpose |
 |---|---|
 | `GET /`, `/index.html`, `/assets/*` | the page |
 | `GET /api/v1/ping` | 204 at once, for the round-trip time |
-| `GET /api/v1/state?viewer=ID` | emulator unit state (`systemctl show`), Android booted, viewers, load, display change status, `kicked` for this viewer; cached 2 s |
+| `GET /api/v1/state?viewer=ID[&details=1]` | emulator unit state (`systemctl show`), Android booted, viewers, load, `display` and `settings` change status, `kicked` for this viewer; cached 2 s. `details=1` adds `metrics` (host, emulator, Android) and turns on adb sampling of Android for 30 s. The page polls every 3 s, every 2 s with details while the Server tab is open |
+| `GET /api/v1/emulator-settings` | renderer, cores and memory from the running emulator's command line, the configured screen (`display`), limits (`renderers`, `maxCores`, `maxMemoryMb`), state of the last request |
+| `POST /api/v1/emulator-settings` `{renderer, cores, memoryMb[, width, height, density]}` | what the page's Apply sends: change all of them with one restart of Android |
 | `GET /api/v1/display` | running and configured screen size, last change request, limits |
-| `POST /api/v1/display` `{width, height, density}` | change Android's screen size (reboots Android) |
+| `POST /api/v1/display` `{width, height, density}` | screen size only (reboots Android); kept for API clients, the page no longer calls it |
 | `POST /api/v1/viewers/disconnect-others` `{viewer}` | close the other viewers' sessions |
 | `GET /api/v1/plugins` | installed plugins (id, title, version, page script) |
 | `GET /api/v1/emulator/status` | emulator status and screen size |
@@ -72,13 +79,25 @@ Android keeps running. Reload the page (the index is never cached).
 | `POST /api/v1/emulator/gps`, `GET /api/v1/emulator/logcat` | upstream helpers |
 | `GET /api/v1/emulator/ws-jsep?viewer=ID` | WebSocket signaling |
 
-Screen size changes: the gateway (service user) writes `WIDTH HEIGHT
-DENSITY` to `/var/lib/cloudphone/display-request`; the root path unit
-`cloudphone-display.path` of part 03 starts `cloudphone-display.service`,
-which checks the request and runs `set-resolution.sh`, reporting in
-`/run/cloudphone-display/status`. Width and height even, within
-240–1440 × 320–3200, density 80–640; one change per 2 minutes (429
-otherwise), 409 while one is in progress.
+Changes that restart Android go through part 03's root path units: the
+gateway (service user) writes a request file, the path unit starts a oneshot
+service that checks it and reports in a status file, which the gateway reads
+back (`display` and `settings` in `GET /api/v1/state`).
+`POST /api/v1/emulator-settings` writes `RENDERER CORES MEMORY_MB[ WIDTH
+HEIGHT DENSITY]` to `/var/lib/cloudphone/settings-request`;
+`cloudphone-settings.path` runs `cloudphone-settings-apply`, which backs up
+and rewrites `cloudphone.conf`, then restarts Android (through
+`set-resolution.sh` when a size is given); status in
+`/run/cloudphone-settings/status`. `POST /api/v1/display` writes `WIDTH
+HEIGHT DENSITY` to `/var/lib/cloudphone/display-request`;
+`cloudphone-display.path` runs `cloudphone-display-apply`, which runs
+`set-resolution.sh`; status in `/run/cloudphone-display/status`. Numbers
+must be JSON integers (`"360"` is refused with 400). Bounds: renderer in
+`lavapipe`, `swiftshader_indirect`, `swangle_indirect`; cores 1 to the host's
+threads; memory a multiple of 512 from 2048 to the host's memory minus
+2 GiB; width and height even, within 240–1440 × 320–3200, density 80–640,
+all three or none. One change per 2 minutes for both routes together (429
+otherwise); 409 while either kind is pending or applying.
 
 Other viewers: `disconnect-others` closes every other signaling session with
 WebSocket code 4001 and refuses those viewer ids for 10 minutes. The driver
@@ -97,9 +116,9 @@ token); systemd starts it again on the new emulator.
   Server: state, machine, Android and video stream, the **Disconnect** button
   for other devices when more than one viewer is connected, and Android
   settings (renderer, cores, memory, shape and resolution, one Apply).
-- Options: language (French/English, default from the browser), touch
-  marker, fold 3 s after entering fullscreen, and Plugins: each installed
-  plugin's options.
+- Options: language (French/English, default from the browser), cursor (the
+  touch marker, setting `touchMarker`), fold 3 s after entering fullscreen,
+  and Plugins: each installed plugin's options.
 - Fold button: tap folds the bar away (the screen takes the whole window, a
   floating handle unfolds it and can be dragged); long press docks the bar
   so it keeps its own space; a tap then makes it float again.
@@ -108,8 +127,9 @@ token); systemd starts it again on the new emulator.
 ## Stream behaviour
 
 - `diagnose()` picks the one message to show, from `GET /api/v1/state`
-  (polled every 3 s) and the stream state: server unreachable (check
-  WireGuard), another device took over, screen size change, Android
+  (polled every 3 s, every 2 s while the Server tab is open) and the stream
+  state: server unreachable (check WireGuard), another device took over,
+  screen size or Android settings change (pending or applying), Android
   crashed/stopped/starting, server reconnecting to Android, video
   interrupted, video not connecting after 15 s (UDP). These cover the
   screen. Touches failing, other viewers watching and heavy load show as a
@@ -154,7 +174,10 @@ optional `gateway.py` (`setup(context)`). The gateway (`--plugins_dir`)
 loads them at start, logs and skips one that fails, serves its scripts at
 `/plugins/<id>/` and lists them at `GET /api/v1/plugins`; a plugin's own
 routes live under `/api/v1/plugins/<id>/`, behind the usual origin and token
-checks. The page imports each `page.js`, gives it the API described at the
+checks. The `id` must equal the directory name and match
+`^[a-z0-9][a-z0-9-]{0,31}$`; only top-level `*.js` files matching
+`^[a-z0-9][a-z0-9_-]{0,63}\.js$` are served. The page imports each
+`page.js`, gives it the API described at the
 top of `plugins.ts` (video element, a drawing layer over the screen, stored
 options, gateway calls) and renders its options (toggle, number, action,
 status) in Options → Plugins.

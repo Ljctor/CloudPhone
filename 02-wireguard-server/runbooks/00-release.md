@@ -1,6 +1,6 @@
 # 00 — Release on the server
 
-Parts 02–04 run their scripts from the unpacked release on the server.
+Parts 02–05 run their scripts from the unpacked release on the server.
 
 ```sh
 : "${TARGET:?setup-agent@SERVER_ADDRESS}" "${RELEASE:?unpacked release directory on the server}"

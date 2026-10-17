@@ -1,9 +1,10 @@
 # Tutorial: Cloud Phone from scratch
 
 A complete installation, from a fresh Debian server to an Android phone with
-Google Play running in your own phone's browser. It follows the four parts of
-this repository in order. You need to be comfortable with a terminal; nothing
-else is assumed.
+Google Play running in your own phone's browser. It follows parts 01 to 04 of
+this repository in order; part 05, an optional game plugin, is a short extra
+step at the end. You need to be comfortable with a terminal; nothing else is
+assumed.
 
 ```text
  your phone ──WireGuard (UDP 51820)──▶ server 10.20.0.1
@@ -21,11 +22,12 @@ through the VPN.
 |---|---|
 | `cloudphone-emulator` | Google's official Android Emulator running Android 16 with Google Play, headless, started at boot |
 | `cloudphone-gateway` | serves the web page and streams the screen over WebRTC; forwards touches and keys |
-| `cloudphone-display.path` | applies the screen size changes you request from the page |
+| `cloudphone-settings.path` | applies the Android settings you change from the page (renderer, cores, memory, screen size) with one restart |
+| `cloudphone-display.path` | the same for a screen size change alone, sent by API clients rather than the page |
 | `wg-quick@wg0` | the WireGuard tunnel; the server is `10.20.0.1`, your phone `10.20.0.2` |
 | `/var/lib/cloudphone/avd/` | **the phone's data**: Google account, apps, app data. Upgrades never touch it |
-| `/etc/cloudphone/cloudphone.conf` | the configuration: listen address, port, RAM, screen size |
-| `/opt/cloudphone/` | Android SDK and emulator, the current and previous app release |
+| `/etc/cloudphone/cloudphone.conf` | the configuration: listen address, port, renderer, cores, RAM, screen size. The page's Apply rewrites it, after saving a `.bak-<date>` copy |
+| `/opt/cloudphone/` | Android SDK and emulator, the current and previous app release (`releases/`), the plugins (`plugins/`) |
 | `http://10.20.0.1:8000/` | the page, from any device on the VPN |
 
 Total time: 2 to 3 hours, most of it waiting for downloads and Android's first
@@ -227,7 +229,7 @@ You should see `ok` lines ending with `PASS: WireGuard server is converged`,
 and in `wg show` a `latest handshake:` a few seconds old for the phone. No
 handshake: see [Troubleshooting](#troubleshooting).
 
-## 5. Install Android (part 03, 20–30 minutes)
+## 5. Install Android (part 03, 10–30 minutes)
 
 The server now downloads Google's emulator (pinned to 36.6.11 and
 checksum-verified) and the Android 16 Google Play image, several GB. You must
@@ -244,12 +246,13 @@ the Android command-line tools`, then `==> Review and accept the Android SDK
 licences`: Google's `sdkmanager` shows each licence and asks you to accept it
 (answer `y`). Then `==> Downloading … (the system image is several GB)`,
 `==> Installing the pinned Android Emulator 36.6.11 (build 15507667)`,
-`==> Creating the Android device cloudphone`, `==> Installing the
-cloudphone-emulator service`, `==> Starting the Android Emulator`,
-`==> Waiting for Android to boot (the first boot can take several minutes)`
-and finally `==> Android is running`.
+`==> Installing configuration`, `==> Creating the Android device cloudphone`,
+`==> Installing the cloudphone-emulator service`, `==> Starting the Android
+Emulator`, `==> Waiting for Android to boot (the first boot can take several
+minutes)` and finally `==> Android is running`.
 
-It takes 5 to 20 minutes. Do not interrupt it. If your connection drops, run
+It takes 10 to 30 minutes depending on the download speed. Do not interrupt
+it. If your connection drops, run
 the same command again: it continues where it stopped and never recreates
 the Android device. Without `-t` it stops at once with `ERROR: the Android
 SDK licences must be accepted: run interactively, or pass
@@ -270,7 +273,7 @@ You should see `ok` lines ending with `PASS: Android Emulator is converged`.
 
 Another Android emulator or adb server already on this host? Write
 `/etc/cloudphone/cloudphone.conf` with free ports **before** installing
-([03 README](../03-android-emulator/README.md#several-instances-on-one-host));
+([03 README](../03-android-emulator/README.md#running-next-to-another-emulator-or-adb-server));
 the page is then on port 8100 instead of 8000.
 
 ## 6. Install the page and the gateway (part 04, 5 minutes)
@@ -335,11 +338,14 @@ The toolbar holds: power and volume, the **ping/fps** block (your ping above
 the frames per second you see), recents / home / back, the **cog**, `↻`
 (reconnect the video only; it never restarts Android or the app on screen)
 and fullscreen. The ping/fps block opens **Information** with two tabs:
-**Client** (network, display, touches) and **Server** (server and Android
-state, **Disconnect** for other devices, and **Android settings**: renderer,
-cores, memory, device shape, resolution; one **Apply** restarts Android once
-with all of them). The cog opens **Options**: language, cursor,
-folding, and the options of installed plugins. In fullscreen, a fold button hides the bar; a small
+**Client** (network, display, touches) and **Server** (Status, Machine,
+Android and Stream sent, then **Android settings**: **Renderer**, **Cores**,
+**Memory**, **Device** and **Resolution** (360p, 480p (default), 720p,
+1080p); one **Apply** restarts Android once with all of them, at most once
+every 2 minutes; **Disconnect** shows only when another device is
+connected). The cog opens **Options**: **Language**, **Show the cursor**,
+**Fold the bar 3 s after entering fullscreen**, and **Plugins** (the options
+of installed plugins). In fullscreen, a fold button hides the bar; a small
 handle brings it back, and a long press docks the bar instead.
 
 ## 8. First checks
@@ -380,6 +386,26 @@ first`. `--check` instead of `--apply` re-tests without changing anything.
 Nothing launches or relaunches the app for you, by design: after a reboot of
 Android, you open it again from the page.
 
+## Install the Slayer Legend plugin (part 05, optional)
+
+Only if you play Slayer Legend: part 05 adds a launch button and an emerald
+counter option to the page. The game must already be installed from Google
+Play and signed in once, in the page. From the workstation:
+
+```sh
+packaging/deploy.sh "$SERVER" 05
+```
+
+You should see `==> Installing the slayer-legend plugin`, `==> Restarting
+the gateway to load plugins (Android keeps running)` and `==> Done; reload
+the web page`. Reload the page: cog → **Options** → **Plugins** now shows
+**Slayer Legend**. What its options do:
+[05 README](../05-slayer-legend/README.md). To remove it:
+
+```sh
+ssh "$SERVER" "$AS_ROOT $RELEASE/05-slayer-legend/scripts/install.sh --uninstall"
+```
+
 ## Adding a second device
 
 Create its tunnel in its WireGuard app or client the same way, with the next
@@ -407,6 +433,7 @@ git pull
 packaging/build-release.sh
 packaging/deploy.sh "$SERVER" 04        # the page and the gateway; Android keeps running (about a minute)
 packaging/deploy.sh "$SERVER" 03 04     # also the emulator part
+packaging/deploy.sh "$SERVER" 04 05     # add 05 when the plugin is installed, to update it too
 ```
 
 `deploy.sh` runs `stage-release.sh` and then each part's `install.sh`; it
@@ -481,9 +508,9 @@ the same variables as the installation.
 
 | Message on the page | What to do |
 |---|---|
-| Server unreachable | Switch the phone's WireGuard tunnel on. Still there: `ssh "$SERVER" "$AS_ROOT systemctl status cloudphone-gateway"`. |
+| Server unreachable | Switch the phone's WireGuard tunnel on. Right after an Apply in Android settings, it can show for a few seconds while the server follows the new Android: wait. Still there: `ssh "$SERVER" "$AS_ROOT systemctl status cloudphone-gateway"`. |
 | Another device took over | Someone pressed Disconnect on another device. Tap `↻` to take the phone back. |
-| Changing resolution / Android is restarting… | A screen size change reboots Android: 1–2 minutes. |
+| Changing resolution / Changing Android settings / Android is restarting… | An Apply (screen size, renderer, cores or memory) reboots Android: 1–2 minutes. |
 | Android crashed / Restarting automatically… | systemd restarts it; the page reconnects by itself. |
 | Android stopped on an error / Android is stopped | It will not come back alone: `ssh "$SERVER" "$AS_ROOT journalctl -u cloudphone-emulator -n 100"`, then `ssh "$SERVER" "$AS_ROOT systemctl start cloudphone-emulator"`. |
 | Android is starting… / The server is reconnecting to Android… | Wait; the first boot takes up to 10 minutes. |
@@ -491,7 +518,7 @@ the same variables as the installation.
 | The video does not connect | UDP 32768-60999 does not reach the phone: `ssh "$SERVER" "$AS_ROOT $RELEASE/04-cloud-phone-app/scripts/firewall.sh --check"`; some networks block UDP. Tap `↻` to retry. |
 | Touches do not reach Android | `ssh "$SERVER" "$AS_ROOT systemctl restart cloudphone-gateway"`, then reload the page. |
 | Another device is watching this phone | Information: the image may be slower. Information → Server → Disconnect. |
-| Server under heavy load | Information: a smaller screen size (Information → Server) costs less CPU. |
+| Server under heavy load | Information: a lower Resolution or the Lavapipe renderer (Information → Server → Android settings) costs less CPU. |
 
 | Symptom | Fix |
 |---|---|

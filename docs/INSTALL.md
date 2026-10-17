@@ -6,9 +6,11 @@ the same. New to this? [`TUTORIAL.md`](TUTORIAL.md) walks through the whole
 installation, parts 01 to 04, step by step.
 
 Cloud Phone turns a Linux server into an Android phone you use from a browser.
-It installs two systemd services, plus a root path unit
-(`cloudphone-display.path`) that applies screen size changes requested from
-the page:
+It installs two systemd services, plus two root path units that apply changes
+requested from the page: `cloudphone-settings.path` (renderer, cores, memory
+and screen size sent by the page's Apply, one restart) and
+`cloudphone-display.path` (screen size only, `POST /api/v1/display`, kept for
+API clients):
 
 | Service | What it does | Listens on |
 |---|---|---|
@@ -92,8 +94,8 @@ The installer:
 4. installs the Android SDK, the pinned emulator and the system image,
    showing you Google's licences;
 5. creates the Android device (AVD) `cloudphone` with a 480×1040 screen (480p);
-6. installs `cloudphone-emulator` and `cloudphone-display.path`, starts
-   Android and waits until it has booted;
+6. installs `cloudphone-emulator` and the two path units, starts Android and
+   waits until it has booted;
 7. installs the gateway and the web page, starts `cloudphone-gateway` and
    waits until the page answers.
 
@@ -125,14 +127,21 @@ Play as on a new phone.
   action.
 - `↻` reconnects the video stream only. It never restarts Android or the app in
   the foreground.
-- The ping/fps block opens Information: a Client tab (network, display,
-  touches) and a Server tab (state, disconnecting other devices, Android
-  settings: renderer, cores, memory, screen size). The cog opens Options
-  (language, cursor, folding, plugin options).
+- The ping/fps block opens **Information**, with two tabs. **Client**:
+  network, display, touches. **Server**: Status, Machine, Android, Stream
+  sent, then **Android settings** (**Renderer**, **Cores**, **Memory**,
+  **Device**, **Resolution**: 360p, 480p (default), 720p, 1080p) and one
+  **Apply**, which restarts Android with all of them (at most once every 2
+  minutes); **Disconnect** appears only when another device is connected.
+  The cog opens **Options**: **Language**, **Show the cursor**, **Fold the
+  bar 3 s after entering fullscreen**, **Plugins**.
 
 ## Configuration
 
 Settings live in `/etc/cloudphone/cloudphone.conf`; upgrades keep your edits.
+The page's Apply (Information → Server → Android settings) rewrites
+`EMULATOR_GPU`, `EMULATOR_CORES`, `EMULATOR_MEMORY_MB` and `SCREEN_*` there
+too, after saving a copy as `cloudphone.conf.bak-<date>`.
 
 | Setting | Default | Meaning |
 |---|---|---|
@@ -141,14 +150,16 @@ Settings live in `/etc/cloudphone/cloudphone.conf`; upgrades keep your edits.
 | `AVD_NAME` | `cloudphone` | Android device to run |
 | `EMULATOR_MEMORY_MB` | `4096` | RAM given to Android |
 | `EMULATOR_CORES` | `4` | CPU cores given to Android |
-| `EMULATOR_GPU` | `swiftshader_indirect` | Software rendering, works without a GPU |
+| `EMULATOR_GPU` | `swiftshader_indirect` | Renderer, all without a GPU: `lavapipe` (recommended by the page: right colours, the fastest), `swiftshader_indirect` (packaged default), `swangle_indirect` |
 | `EMULATOR_PORT` / `GRPC_PORT` | `5558` / `8554` | Loopback ports of the emulator (it also uses `EMULATOR_PORT` + 1) |
 | `ANDROID_ADB_SERVER_PORT` | `5037` | adb server of this instance |
 | `SCREEN_WIDTH` / `SCREEN_HEIGHT` / `SCREEN_DENSITY` | `480` / `1040` / `213` | Screen of a newly created device |
 
 Apply a change with `sudo systemctl restart cloudphone-emulator` (this reboots
-Android) or, for `LISTEN_ADDRESS` and `WEB_PORT` only,
-`sudo systemctl restart cloudphone-gateway`.
+Android; the gateway follows by itself) or, for `LISTEN_ADDRESS` and
+`WEB_PORT` only, `sudo systemctl restart cloudphone-gateway`. After changing
+`WEB_PORT`, rerun `04-cloud-phone-app/scripts/firewall.sh --apply` so the new
+port is allowed on `wg0`.
 
 ### Running next to another Android emulator
 
@@ -182,6 +193,24 @@ workload priority, lower this instance's CPU share:
 ```sh
 sudo systemctl edit cloudphone-emulator   # add: [Service] CPUWeight=20
 ```
+
+## Plugins (optional)
+
+Plugins add features to the page without touching parts 03 and 04. Each one
+is a directory `/opt/cloudphone/plugins/<id>/` (`plugin.json`, optional
+`page.js` and `gateway.py`), loaded when the gateway starts and listed by
+`GET /api/v1/plugins`. Their options appear under cog → Options → Plugins;
+without any, that section says "No plugin installed."
+
+Part 05 installs the Slayer Legend plugin, from the unpacked release:
+
+```sh
+sudo 05-slayer-legend/scripts/install.sh              # then reload the page
+sudo 05-slayer-legend/scripts/install.sh --uninstall
+```
+
+It restarts the gateway; Android keeps running. Details:
+[`05-slayer-legend/README.md`](../05-slayer-legend/README.md).
 
 ## Day-to-day operations
 
@@ -239,13 +268,14 @@ sudo ./uninstall.sh --purge    # erases the phone permanently
 | The page loads but the screen stays gray after Android was restarted | `sudo systemctl restart cloudphone-gateway` |
 | `cloudphone-emulator` keeps restarting | `journalctl -u cloudphone-emulator -n 100`; check free RAM against `EMULATOR_MEMORY_MB`. |
 | The page does not load at all | Check `LISTEN_ADDRESS`: with a WireGuard address, the tunnel must be up on the server (`wg show`). The services retry until it is. |
-| "Server unreachable" | The page no longer reaches the gateway: switch the phone's WireGuard tunnel on; on the server, `systemctl status cloudphone-gateway`. |
+| "Server unreachable" | The page no longer reaches the gateway: switch the phone's WireGuard tunnel on; on the server, `systemctl status cloudphone-gateway`. Right after an Apply in Android settings it can show for a moment while the gateway follows the new Android: wait, it reconnects. |
 | "Android stopped on an error" / "Android is stopped" | `sudo systemctl start cloudphone-emulator`; read `journalctl -u cloudphone-emulator -n 100` first. |
-| "Android crashed", "Android is starting…", "Changing resolution" | Wait: systemd restarts Android, or a screen size change is rebooting it (1–2 minutes). The page reconnects by itself. |
+| "Android crashed", "Android is starting…", "Changing resolution", "Changing Android settings" | Wait: systemd restarts Android, or an Apply (screen size, renderer, cores, memory) is rebooting it (1–2 minutes). The page reconnects by itself. |
 | "The video does not connect" | UDP 32768-60999 does not reach the phone (firewall on `wg0`, or a network blocking UDP). Tap `↻` to retry. |
 | "Another device took over" | Someone pressed Disconnect (Information → Server) on another device. Tap `↻` to take the phone back. |
 | "Touches do not reach Android" | `sudo systemctl restart cloudphone-gateway`, then reload the page. |
-| "Another device is watching this phone" / "Server under heavy load" | Information only: the image may be slower. Information → Server → Disconnect closes the other devices. |
+| "Another device is watching this phone" | Information only: the image may be slower. Information → Server → Disconnect closes the other devices. |
+| "Server under heavy load" | Information only. A lower Resolution or the Lavapipe renderer (Information → Server → Android settings) costs less CPU. |
 | Buttons do nothing (POSTs answer 403) | The tab predates a gateway restart: reload the page. |
 
 ## Files
@@ -253,12 +283,15 @@ sudo ./uninstall.sh --purge    # erases the phone permanently
 | Path | Content | Removed by `uninstall.sh` |
 |---|---|---|
 | `/opt/cloudphone/current` | Active app release: web page, gateway | yes |
-| `/opt/cloudphone/libexec` | Emulator launcher | yes |
+| `/opt/cloudphone/releases` | Current and previous app release; `current` points into it | yes |
+| `/opt/cloudphone/plugins` | Installed plugins, one directory each (part 05) | yes |
+| `/opt/cloudphone/libexec` | Emulator launcher and the root helpers of the path units | yes |
+| `/opt/cloudphone/tools` | `set-resolution.sh` and what it sources, for the path units | yes |
 | `/opt/cloudphone/android-sdk` | Android SDK, pinned emulator, system image | yes |
 | `/var/lib/cloudphone/avd` | **Android's data** | only with `--purge` |
 | `/var/lib/cloudphone/.android` | adb key of the service account | only with `--purge` |
 | `/etc/cloudphone` | Configuration and gRPC access policy | only with `--purge` |
-| `/etc/systemd/system/cloudphone-*.service` | Services | yes |
+| `/etc/systemd/system/cloudphone-*.service`, `cloudphone-*.path` | Services and the two path units | yes |
 
 ## Building from source
 

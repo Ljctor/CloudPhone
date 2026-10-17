@@ -7,12 +7,14 @@ no game-specific code.
 
 | Feature | What it does |
 |---|---|
-| **Lancer le jeu** | Starts the game and brings it to the battle screen: taps "TAP TO START", then **Confirm** on the "last save time" notice (the latest save). It only runs when you press it, and it taps nothing else: on any other screen (Google sign-in, an update, an event pop-up) it stops and says so. |
-| **Réécrire le compteur d'émeraudes** | Covers the emerald counter of the top bar, on this screen only, and writes over it at the game's size for that many digits (6 digits are smaller than 5 or fewer): by default the digits after the comma, leading zeros dropped (`284,086` shows `86`), or the number typed in **Nombre affiché**. Nothing is sent to Android. |
+| **Lancer le jeu** (Launch the game), button **Lancer** (Launch) | Starts the game and brings it to the battle screen. It taps exactly three things, each only when the screen shows it: "TAP TO START", **Confirm** on the "last save time" notice (the latest save), and "Press here to finish Power Saving Mode", held 4 s as the game requires (at most 3 times). It only runs when you press it. On any other screen (Google sign-in, an update, an event pop-up) it stops after about 45–60 s with "Écran inattendu : termine le lancement à la main" (Unexpected screen: finish the launch by hand), and in any case after 3 minutes. The status row **Lancement** (Launch) shows where it is. |
+| **Réécrire le compteur d’émeraudes** (Rewrite the emerald counter) | Covers the emerald counter of the top bar, on this screen only, and writes over it at the game's size for that many digits (6 digits are smaller than 5 or fewer): by default the digits after the comma, leading zeros dropped (`284,086` shows `86`), or the number typed in **Nombre affiché (vide : après la virgule)** (Number shown (empty: after the comma)). The status row **Compteur d’émeraudes** (Emerald counter) says détecté / non détecté (detected / not detected). Nothing is sent to Android. The option is stored per browser, like the page's other options. |
 
 ## Install
 
-Part 04 must be installed. From an unpacked release (or a checkout), on the
+Part 04 must be installed, and the game installed from Google Play and
+signed in once by hand, in the page: the plugin only taps, it never installs
+anything or logs in. From an unpacked release (or a checkout), on the
 server:
 
 ```sh
@@ -23,6 +25,11 @@ or from a workstation: `packaging/deploy.sh SERVER 05`. The script copies
 `files/plugin/` to `/opt/cloudphone/plugins/slayer-legend/` and restarts the
 gateway (Android keeps running). Reload the page afterwards.
 `sudo 05-slayer-legend/scripts/install.sh --uninstall` removes it.
+
+Check: `curl http://10.20.0.1:<WEB_PORT>/api/v1/plugins` lists
+`slayer-legend`. If it does not, the load error is in
+`journalctl -u cloudphone-gateway`. Upgrading part 04 keeps the plugins; the
+release's `uninstall.sh` removes them with the rest of `/opt/cloudphone`.
 
 ## Files
 

@@ -13,7 +13,7 @@ Human + agent step. Never put Google credentials in a command, file or chat.
 : "${AS_ROOT:=sudo -n -u master sudo -n}"
 ```
 ```sh
-: "${APP_PACKAGE:?Android package of the target app, e.g. com.gear2.growslayer}"
+: "${APP_PACKAGE:?Android package of the target app, e.g. com.example.game}"
 : "${TIMEZONE:=Europe/Paris}"
 ```
 

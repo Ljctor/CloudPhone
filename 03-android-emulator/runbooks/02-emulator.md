@@ -30,9 +30,12 @@ or, only after the human said they read and accept the licences:
 ssh "$TARGET" "$AS_ROOT $RELEASE/03-android-emulator/scripts/install.sh --accept-android-sdk-license"
 ```
 
-Takes 5–20 minutes (several GB downloaded, first boot). Do not interrupt it,
+Takes 10–30 minutes (several GB downloaded, first boot). Do not interrupt it,
 and run no adb command on the instance's adb port meanwhile (the installer
 checks that port is free before starting Android).
 
 Upgrade, once the licences were accepted: `packaging/deploy.sh "$TARGET" 03`
-from a checkout stages the release and reruns this `install.sh`.
+from a checkout stages the release and reruns this `install.sh`. Run from a
+terminal, it also lets the human answer the licence prompt of a first
+install; `ACCEPT_ANDROID_SDK_LICENSE=yes` passes
+`--accept-android-sdk-license` once they have read the licences.

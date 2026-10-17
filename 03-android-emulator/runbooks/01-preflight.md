@@ -24,4 +24,4 @@ REMOTE
 
 To run next to another emulator or adb server, write
 `/etc/cloudphone/cloudphone.conf` with free ports **before** runbook 02 (see
-README, "Several instances on one host").
+README, "Running next to another emulator or adb server").

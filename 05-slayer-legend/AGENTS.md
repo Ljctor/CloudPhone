@@ -10,6 +10,8 @@ Rules:
 - Everything specific to Slayer Legend lives here, never in parts 03–04.
 - The launch only runs when the user presses it. Never call it from a
   watchdog, a timer or a script: nothing may launch or restart an app
-  automatically. It taps only "TAP TO START" and Confirm on the save notice.
+  automatically. It taps only "TAP TO START", Confirm on the save notice and
+  the "Press here to finish Power Saving Mode" button (held 4 s, at most 3 times), each
+  only when the screen shows it; on any other screen it stops.
 - Never commit screenshots of the game: they can show the user's Google
   account.
