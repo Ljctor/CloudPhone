@@ -320,7 +320,7 @@ On the phone, with the WireGuard tunnel on, open **http://10.20.0.1:8000/**
 in the browser. You should see a spinner with `Connecting to the stream…`
 and an orange LED on `↻`, then Android's home screen within about 10 seconds
 and a green LED. The page is in French when the browser is, English
-otherwise: the fps block → **Client settings** → *Language* changes it.
+otherwise: the cog → **Options** → *Language* changes it.
 
 Sign in to Google Play as on a new phone: open the Play Store, enter your
 account. Android's on-screen keyboard appears in text fields. Because this is
@@ -331,13 +331,15 @@ holding, so pull down the notification shade to find it, tap **Yes**, then
 return to the Cloud Phone tab (the stream reconnects by itself). A passkey
 works too. Then install your apps from Google Play.
 
-The toolbar holds: power and volume, the **ping** block, recents / home /
-back, the **fps** block, `↻` (reconnect the video only; it never restarts
-Android or the app on screen) and fullscreen. The ping block opens **Server
-settings**: server and Android state, **Disconnect** for other devices, and
-**Android settings** (renderer, cores, memory, device shape, resolution: one
-**Apply** restarts Android once with all of them). The fps block opens **Client settings**: language, touch
-marker, other options. In fullscreen, a fold button hides the bar; a small
+The toolbar holds: power and volume, the **ping/fps** block (your ping above
+the frames per second you see), recents / home / back, the **cog**, `↻`
+(reconnect the video only; it never restarts Android or the app on screen)
+and fullscreen. The ping/fps block opens **Information** with two tabs:
+**Client** (network, display, touches) and **Server** (server and Android
+state, **Disconnect** for other devices, and **Android settings**: renderer,
+cores, memory, device shape, resolution; one **Apply** restarts Android once
+with all of them). The cog opens **Options**: language, cursor,
+folding, and the options of installed plugins. In fullscreen, a fold button hides the bar; a small
 handle brings it back, and a long press docks the bar instead.
 
 ## 8. First checks
@@ -345,9 +347,9 @@ handle brings it back, and a long press docks the bar instead.
 - The LED on `↻` is green and no message covers the screen.
 - A swipe from the top opens Android's notification shade; home, back and
   the volume keys work.
-- Client settings → *Touches via* says `data channel` (touches go straight
+- Information → Client → *Touches via* says `data channel` (touches go straight
   to the emulator; `HTTP` is the slower fallback through the gateway).
-- Server settings → *Android service* says `active (running)` and *Android
+- Information → Server → *Android service* says `active (running)` and *Android
   booted* says `yes`.
 - `↻` brings the image back without restarting the app on screen.
 - Closing and reopening the tab reconnects.
@@ -389,7 +391,7 @@ ssh "$SERVER" "$AS_ROOT $RELEASE/02-wireguard-server/scripts/add-peer.sh laptop 
 
 Existing devices are not disturbed. Enter the printed `[Peer]` values as in
 step 4 (`10.20.0.4` for the next one, and so on). Several devices can watch
-the phone at once; Server settings → **Disconnect** closes the others. To
+the phone at once; Information → Server → **Disconnect** closes the others. To
 remove a device:
 
 ```sh
@@ -488,12 +490,12 @@ the same variables as the installation.
 | Video interrupted | The page reconnects by itself. |
 | The video does not connect | UDP 32768-60999 does not reach the phone: `ssh "$SERVER" "$AS_ROOT $RELEASE/04-cloud-phone-app/scripts/firewall.sh --check"`; some networks block UDP. Tap `↻` to retry. |
 | Touches do not reach Android | `ssh "$SERVER" "$AS_ROOT systemctl restart cloudphone-gateway"`, then reload the page. |
-| Another device is watching this phone | Information: the image may be slower. Server settings → Disconnect. |
-| Server under heavy load | Information: a smaller screen size (Server settings) costs less CPU. |
+| Another device is watching this phone | Information: the image may be slower. Information → Server → Disconnect. |
+| Server under heavy load | Information: a smaller screen size (Information → Server) costs less CPU. |
 
 | Symptom | Fix |
 |---|---|
-| The page is in the wrong language | fps block → Client settings → *Language*. The page follows the browser's language the first time. |
+| The page is in the wrong language | cog → Options → *Language*. The page follows the browser's language the first time. |
 | Black screen, green LED | The video works; Android itself shows black, usually because its screen is off. Press the power key in the toolbar. |
 | Works on Wi-Fi, not on mobile data | That network blocks UDP (WireGuard or the video). Keep *Persistent keepalive* 25; try another network. |
 | No *latest handshake* in `wg show` | UDP 51820 blocked (server or provider firewall), or a wrong key or Endpoint in the app. |

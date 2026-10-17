@@ -6,7 +6,7 @@ No automated Check: ask the human, on a device with WireGuard on, to open
 1. the Android screen appears within ~10 s, the LED on `↻` is green and no
    message covers the screen;
 2. touch and swipe respond, the toolbar keys (back, home, recents, power,
-   volume) work; Client settings (fps block) shows touches going via
+   volume) work; Information → Client (ping/fps block) shows touches going via
    `data channel`;
 3. `↻` brings the image back without restarting Android or the foreground app;
 4. closing and reopening the tab reconnects.

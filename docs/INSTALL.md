@@ -125,9 +125,10 @@ Play as on a new phone.
   action.
 - `↻` reconnects the video stream only. It never restarts Android or the app in
   the foreground.
-- The ping block opens Server settings (state, disconnecting other devices,
-  Android settings: renderer, cores, memory, screen size); the fps block opens Client settings
-  (language, touch marker, options).
+- The ping/fps block opens Information: a Client tab (network, display,
+  touches) and a Server tab (state, disconnecting other devices, Android
+  settings: renderer, cores, memory, screen size). The cog opens Options
+  (language, cursor, folding, plugin options).
 
 ## Configuration
 
@@ -242,9 +243,9 @@ sudo ./uninstall.sh --purge    # erases the phone permanently
 | "Android stopped on an error" / "Android is stopped" | `sudo systemctl start cloudphone-emulator`; read `journalctl -u cloudphone-emulator -n 100` first. |
 | "Android crashed", "Android is starting…", "Changing resolution" | Wait: systemd restarts Android, or a screen size change is rebooting it (1–2 minutes). The page reconnects by itself. |
 | "The video does not connect" | UDP 32768-60999 does not reach the phone (firewall on `wg0`, or a network blocking UDP). Tap `↻` to retry. |
-| "Another device took over" | Someone pressed Disconnect in Server settings on another device. Tap `↻` to take the phone back. |
+| "Another device took over" | Someone pressed Disconnect (Information → Server) on another device. Tap `↻` to take the phone back. |
 | "Touches do not reach Android" | `sudo systemctl restart cloudphone-gateway`, then reload the page. |
-| "Another device is watching this phone" / "Server under heavy load" | Information only: the image may be slower. Server settings → Disconnect closes the other devices. |
+| "Another device is watching this phone" / "Server under heavy load" | Information only: the image may be slower. Information → Server → Disconnect closes the other devices. |
 | Buttons do nothing (POSTs answer 403) | The tab predates a gateway restart: reload the page. |
 
 ## Files

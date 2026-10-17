@@ -2,7 +2,7 @@
 # Builds nothing: stages the current release tarball on a server and runs the
 # install scripts of the parts given (default: 04), listening on the
 # WireGuard address:
-#   packaging/deploy.sh SERVER [PART...]      e.g. packaging/deploy.sh myserver 03 04
+#   packaging/deploy.sh SERVER [PART...]      e.g. packaging/deploy.sh myserver 03 04 05
 # SERVER is an ssh destination (host alias or USER@HOST). AS_ROOT and the
 # tarball choice are those of stage-release.sh. LISTEN overrides 10.20.0.1.
 # A first install of part 03 asks to accept the Android SDK licences: run
@@ -26,7 +26,8 @@ for part in "$@"; do
       [ "${ACCEPT_ANDROID_SDK_LICENSE:-}" = yes ] && args=--accept-android-sdk-license
       ;;
     04) script=04-cloud-phone-app/scripts/install.sh; args="--listen $listen" ;;
-    *) echo "ERROR: unknown part '$part' (03 or 04)" >&2; exit 1 ;;
+    05) script=05-slayer-legend/scripts/install.sh; args= ;;
+    *) echo "ERROR: unknown part '$part' (03, 04 or 05)" >&2; exit 1 ;;
   esac
   echo "== part $part" >&2
   # A terminal lets install.sh ask its questions (licences).

@@ -48,8 +48,6 @@ const EN = {
   'Navigation Android': 'Android navigation',
   'Écran Android': 'Android screen',
   'Surface tactile Android': 'Android touch surface',
-  'Serveur, réseau et Android': 'Server, network and Android',
-  'Cet appareil, affichage et options': 'This device, display and options',
   'Connexion au flux…': 'Connecting to the stream…',
   'Reconnexion…': 'Reconnecting…',
   'Fermer': 'Close',
@@ -97,11 +95,7 @@ const EN = {
   'Touches via': 'Touches via',
   'Options': 'Options',
   'Langue': 'Language',
-  'Point sous le doigt': 'Dot under the finger',
-  'Compteur d’émeraudes': 'Emerald counter',
-  'détecté': 'detected',
-  'non détecté': 'not detected',
-  'Masquer les décimales des émeraudes (Slayer Legend)': 'Hide the emerald decimals (Slayer Legend)',
+  'Afficher le curseur': 'Show the cursor',
   'Replier la barre 3 s après l’entrée en plein écran': 'Fold the bar 3 s after entering fullscreen',
   'Machine': 'Machine',
   'Processeur': 'Processor',
@@ -127,11 +121,15 @@ const EN = {
   '{used} utilisés / {total}': '{used} used / {total}',
   'Go': 'GB',
   'Mo': 'MB',
-  'Configuration serveur': 'Server settings',
-  'Configuration client': 'Client settings',
   // Android screen size
   'Appareil': 'Device',
   'Résolution': 'Resolution',
+  'Informations : client et serveur': 'Information: client and server',
+  'Options et plugins': 'Options and plugins',
+  'Informations': 'Information',
+  'Client': 'Client',
+  'Plugins': 'Plugins',
+  'Aucun plugin installé.': 'No plugin installed.',
   '480p (défaut)': '480p (default)',
   'Appliquer': 'Apply',
   'Tablette 16:10': 'Tablet 16:10',
@@ -174,6 +172,13 @@ const EN = {
   'Serveur très chargé': 'Server under heavy load',
   'L’image peut ralentir.': 'The image may slow down.',
 };
+
+// Plugins bring their own English texts.
+export function addTranslations(english) {
+  for (const [french, text] of Object.entries(english ?? {})) {
+    if (typeof french === 'string' && typeof text === 'string' && !(french in EN)) EN[french] = text;
+  }
+}
 
 export function tr(text, params) {
   let out = current === 'en' ? (EN[text] ?? text) : text;

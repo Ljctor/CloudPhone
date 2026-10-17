@@ -1,6 +1,6 @@
 import { LANGUAGES, defaultLanguage, setLanguage, tr } from './i18n';
-import { AREA as EMERALD_AREA, findEmeraldMask } from './emeraldMask';
 import { coreOptions, memoryOptions, rendererOptions, sameSettings } from './emulatorSettings';
+import { usePlugins } from './plugins';
 import React, { useEffect, useRef, useState } from 'react';
 import { Emulator, logger } from '../../src';
 import {
@@ -284,168 +284,6 @@ function EmulatorSettings({ gatewayUrl, settings, refresh, rowStyle, labelStyle,
 
 // Polls the gateway's view of the server: emulator service, Android boot,
 // viewers, load. failures counts consecutive unanswered polls.
-// While enabled, reads the emerald counter's area of the video 4 times a
-// second and returns the rectangle that hides its last digits, or null.
-// Ways to copy the video's pixels. Some browsers (Firefox on Android, with
-// hardware decoding) hand a blank image to drawImage(video); another path may
-// still work. The first one giving a non-blank image is kept.
-const CAPTURE_METHODS = {
-  // Only the search area.
-  crop: async (video, context, area) => {
-    context.drawImage(video, area.x, area.y, area.width, area.height, 0, 0, area.width, area.height);
-  },
-  // The whole frame, then the area.
-  full: async (video, context, area, scratch) => {
-    scratch.canvas.width = video.videoWidth;
-    scratch.canvas.height = video.videoHeight;
-    scratch.drawImage(video, 0, 0);
-    context.drawImage(scratch.canvas, area.x, area.y, area.width, area.height, 0, 0, area.width, area.height);
-  },
-  bitmap: async (video, context, area) => {
-    const bitmap = await createImageBitmap(video, area.x, area.y, area.width, area.height);
-    context.drawImage(bitmap, 0, 0);
-    bitmap.close();
-  },
-  // Through a WebGL texture, read back with readPixels.
-  webgl: async (video, context, area, scratch, gl) => {
-    if (!gl) throw new Error('none');
-    gl.canvas.width = video.videoWidth;
-    gl.canvas.height = video.videoHeight;
-    const texture = gl.createTexture();
-    const framebuffer = gl.createFramebuffer();
-    try {
-      gl.bindTexture(gl.TEXTURE_2D, texture);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
-      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
-      const data = new Uint8ClampedArray(area.width * area.height * 4);
-      // Texture rows are in the video's order: row 0 is the top.
-      gl.readPixels(area.x, area.y, area.width, area.height, gl.RGBA, gl.UNSIGNED_BYTE, data);
-      context.putImageData(new ImageData(data, area.width, area.height), 0, 0);
-    } finally {
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      gl.deleteFramebuffer(framebuffer);
-      gl.deleteTexture(texture);
-    }
-  },
-  frame: async (video, context, area) => {
-    if (typeof VideoFrame === 'undefined') throw new Error('none');
-    const frame = new VideoFrame(video);
-    try {
-      context.drawImage(frame, area.x, area.y, area.width, area.height, 0, 0, area.width, area.height);
-    } finally {
-      frame.close();
-    }
-  },
-};
-
-// When no method gives an image, the gateway finds the mask on an emulator
-// screenshot instead (slower to follow, costs the server a little CPU).
-const EMERALD_SERVER_MS = 500;
-
-// True when every pixel is the same: the copy failed.
-function blank(data) {
-  for (let i = 4; i < data.length; i += 4) {
-    if (data[i] !== data[0] || data[i + 1] !== data[1] || data[i + 2] !== data[2]) return false;
-  }
-  return true;
-}
-
-function useEmeraldMask(deviceRef, enabled, gatewayUrl) {
-  const [mask, setMask] = useState(null);
-  const [problem, setProblem] = useState(null);
-  useEffect(() => {
-    if (!enabled) {
-      setMask(null);
-      return undefined;
-    }
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d', { willReadFrequently: true });
-    const scratch = document.createElement('canvas').getContext('2d');
-    let gl = null;
-    try {
-      gl = document.createElement('canvas').getContext('webgl', { preserveDrawingBuffer: true });
-    } catch {
-      gl = null;
-    }
-    // Set once every method gave a blank image or an error.
-    let server = false;
-    let lastServer = 0;
-    // Method in use, once one gave a non-blank image; and what each gave.
-    let method = null;
-    const tried = {};
-    let busy = false;
-    const capture = async (video, name, area) => {
-      context.clearRect(0, 0, area.width, area.height);
-      await CAPTURE_METHODS[name](video, context, area, scratch, gl);
-      return context.getImageData(0, 0, area.width, area.height).data;
-    };
-    const timer = window.setInterval(async () => {
-      if (busy) return;
-      const video = deviceRef.current?.querySelector('video');
-      if (!context || !scratch) {
-        setProblem('canvas');
-        return;
-      }
-      if (!video?.videoWidth) {
-        setProblem('video');
-        return;
-      }
-      busy = true;
-      try {
-        if (server) {
-          if (Date.now() - lastServer < EMERALD_SERVER_MS) return;
-          lastServer = Date.now();
-          const response = await fetch(`${gatewayUrl}/api/v1/emerald-mask`, { cache: 'no-store' });
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          const { mask: found, reason } = await response.json();
-          setMask((current) => (JSON.stringify(current) === JSON.stringify(found) ? current : found));
-          setProblem(found ? null : `${reason}, serveur`);
-          return;
-        }
-        const scale = video.videoWidth / 360;
-        const area = {
-          x: Math.round(EMERALD_AREA.x * scale),
-          y: Math.round(EMERALD_AREA.y * scale),
-          width: Math.round(EMERALD_AREA.width * scale),
-          height: Math.round(EMERALD_AREA.height * scale),
-        };
-        canvas.width = area.width;
-        canvas.height = area.height;
-        let pixels = null;
-        for (const name of method ? [method] : Object.keys(CAPTURE_METHODS)) {
-          try {
-            pixels = await capture(video, name, area);
-            tried[name] = blank(pixels) ? 'blank' : 'ok';
-          } catch (error) {
-            tried[name] = String(error?.message === 'none' ? 'none' : error?.name ?? error);
-            pixels = null;
-          }
-          if (tried[name] === 'ok') {
-            method = name;
-            break;
-          }
-        }
-        if (!method && Object.keys(tried).length === Object.keys(CAPTURE_METHODS).length) {
-          server = true;
-          return;
-        }
-        const why = {};
-        const found = pixels ? findEmeraldMask(pixels, area.width, area.height, scale, why) : null;
-        setMask((current) => (JSON.stringify(current) === JSON.stringify(found) ? current : found));
-        const methods = Object.entries(tried).map(([name, result]) => `${name}:${result}`).join(' ');
-        setProblem(found ? null : `${why.reason ?? 'capture'}, ${video.videoWidth}×${video.videoHeight}, ${methods}`);
-      } catch (error) {
-        setProblem(String(error?.message ?? error));
-      } finally {
-        busy = false;
-      }
-    }, 250);
-    return () => window.clearInterval(timer);
-  }, [deviceRef, enabled, gatewayUrl]);
-  return [mask, problem];
-}
-
 // details: also ask for the server metrics (CPU, memory, Android's frame
 // rate), which cost the server an adb call: only while the server panel is
 // open.
@@ -569,7 +407,9 @@ function postHeaders() {
 // Per-viewer page settings, kept in this browser only.
 const SETTINGS_KEY = 'cloudphone.settings';
 const DEFAULT_SETTINGS = {
-  touchMarker: true, autoFold: true, barDocked: false, language: null, emeraldMask: false,
+  touchMarker: true, autoFold: true, barDocked: false, language: null,
+  // Plugin options: { <plugin id>: { <key>: true } }.
+  plugins: {},
 };
 
 
@@ -794,9 +634,11 @@ function App() {
   const deviceRef = useRef(null);
   const feedbackTimer = useRef(null);
   const [reconnecting, setReconnecting] = useState(false);
-  // Open panel over the screen: 'server' (from the ping block) or 'client'
-  // (from the fps block).
+  // Open panel over the screen: 'info' (from the ping/fps block, with a
+  // client and a server tab) or 'options' (from the cog).
   const [panel, setPanel] = useState(null);
+  const [infoTab, setInfoTab] = useState('client');
+  const serverTab = panel === 'info' && infoTab === 'server';
   const foldPress = useRef({ timer: null, long: false });
   const [settings, setSettings] = useState(loadSettings);
   // Before any tr() of this render: null means the browser's language.
@@ -863,9 +705,12 @@ function App() {
   const gateway = window.location.host;
   const gatewayUrl = `${window.location.protocol}//${gateway}`;
   const stats = useStreamStats(deviceRef, gatewayUrl);
-  const [emeraldMask, emeraldProblem] = useEmeraldMask(deviceRef, settings.emeraldMask, gatewayUrl);
-  const server = useServerState(gatewayUrl, panel === 'server');
-  const [emulatorSettings, refreshEmulatorSettings] = useEmulatorSettings(gatewayUrl, panel === 'server');
+  const server = useServerState(gatewayUrl, serverTab);
+  const [emulatorSettings, refreshEmulatorSettings] = useEmulatorSettings(gatewayUrl, serverTab);
+  const pluginLayer = useRef(null);
+  const plugins = usePlugins({
+    gatewayUrl, deviceRef, layerRef: pluginLayer, screenWidth: screen.width, settings, postHeaders,
+  });
   const displayState = useDisplayState(gatewayUrl,
     ['pending', 'applying'].includes(emulatorSettings?.request?.state));
   // Seconds the stream has been trying to connect, and consecutive failed
@@ -1201,23 +1046,22 @@ function App() {
   );
   const togglePanel = (name) => setPanel((open) => (open === name ? null : name));
   const zoneStyle = row ? { ...styles.barZone, ...styles.barZoneColumn } : styles.barZone;
-  // Two blocks, each opening its panel; the small cog says they are
-  // clickable. Server: network, emulator, video stream and Android's
-  // screen size, showing the ping. This device: display, input and page
-  // options, showing the frames per second it displays.
-  const panelBlock = (name, label, value, color) => (
-    <button className="metric-link" style={styles.metric} onClick={() => togglePanel(name)}
-      aria-label={label} aria-expanded={panel === name}>
-      <span style={{ ...styles.metricLine, color }}>
-        {value}
-        <svg viewBox="0 0 24 24" width="7" height="7" style={styles.cog} aria-hidden="true">{ICONS.cog}</svg>
-      </span>
+  // The ping and the frames per second this device shows, one above the
+  // other: opens the information panel on its client tab.
+  const metricsBlock = (
+    <button className="metric-link" style={styles.metric}
+      onClick={() => { if (panel !== 'info') setInfoTab('client'); togglePanel('info'); }}
+      aria-label={tr('Informations : client et serveur')} aria-expanded={panel === 'info'}>
+      <span style={{ ...styles.metricLine, color: pingColor(stats.ping) }}>{formatValue(stats.ping)}ms</span>
+      <span style={{ ...styles.metricLine, color: '#e8ebf0' }}>{formatValue(stats.phone)}fps</span>
     </button>
   );
-  const serverBlock = panelBlock('server', tr('Serveur, réseau et Android'),
-    `${formatValue(stats.ping)}ms`, pingColor(stats.ping));
-  const clientBlock = panelBlock('client', tr('Cet appareil, affichage et options'),
-    `${formatValue(stats.phone)}fps`, '#e8ebf0');
+  const optionsButton = (
+    <button className="tool-button" style={buttonStyle} onClick={() => togglePanel('options')}
+      aria-label={tr('Options et plugins')} title={tr('Options et plugins')} aria-expanded={panel === 'options'}>
+      <Icon name="cog" />
+    </button>
+  );
   const row2 = (label, value) => (
     <div key={label} style={styles.infoRow}>
       <span style={styles.infoLabel}>{label}</span>
@@ -1299,6 +1143,46 @@ function App() {
     </label>
   );
 
+  const setPluginOption = (id, key, value) => updateSettings({
+    plugins: { ...settings.plugins, [id]: { ...settings.plugins?.[id], [key]: value } },
+  });
+  const pluginOption = (plugin, option, index) => {
+    const key = `${plugin.id}-${index}`;
+    if (option.type === 'toggle') {
+      return (
+        <label key={key} style={styles.infoRow}>
+          <span style={styles.infoLabel}>{tr(option.label)}</span>
+          <input type="checkbox" checked={Boolean(settings.plugins?.[plugin.id]?.[option.key])}
+            onChange={(event) => setPluginOption(plugin.id, option.key, event.target.checked)} />
+        </label>
+      );
+    }
+    if (option.type === 'number') {
+      if (!(option.visible?.() ?? true)) return null;
+      return (
+        <label key={key} style={styles.infoRow}>
+          <span style={styles.infoLabel}>{tr(option.label)}</span>
+          <input type="text" inputMode="numeric" pattern="[0-9]*" maxLength={12} style={styles.numberInput}
+            placeholder={option.placeholder ?? ''} value={settings.plugins?.[plugin.id]?.[option.key] ?? ''}
+            onChange={(event) => setPluginOption(plugin.id, option.key, event.target.value.replace(/\D/g, ''))} />
+        </label>
+      );
+    }
+    if (option.type === 'action') {
+      return (
+        <div key={key} style={styles.infoRow}>
+          <span style={styles.infoLabel}>{tr(option.label)}</span>
+          <button style={styles.panelButton} disabled={option.disabled?.() ?? false}
+            onClick={() => Promise.resolve(option.run?.()).catch((error) => console.error(error))}>
+            {tr(option.button ?? option.label)}
+          </button>
+        </div>
+      );
+    }
+    if (option.type === 'status' && (option.visible?.() ?? true)) return row2(tr(option.label), option.value?.() ?? '–');
+    return null;
+  };
+
   return (
     <main style={{ ...styles.app, flexDirection: row ? 'row' : 'column' }}>
       <style>{`
@@ -1347,15 +1231,25 @@ function App() {
                 aria-label={tr('Fermer')}>✕</button>
             </div>
           )}
+          <div ref={pluginLayer} style={styles.pluginLayer} aria-hidden="true" />
           {panel && (
             <div style={styles.info} role="dialog"
-              aria-label={panel === 'server' ? tr('Configuration serveur') : tr('Configuration client')}>
+              aria-label={panel === 'info' ? tr('Informations') : tr('Options')}>
               <div style={styles.infoHeader}>
-                <strong>{panel === 'server' ? tr('Configuration serveur') : tr('Configuration client')}</strong>
+                <strong>{panel === 'info' ? tr('Informations') : tr('Options')}</strong>
                 <button style={styles.infoClose} onClick={() => setPanel(null)} aria-label={tr('Fermer')}>✕</button>
               </div>
-              {panel === 'server' ? (
-                <>
+              {panel === 'info' && (
+                <div style={styles.tabs} role="tablist">
+                  {[['client', tr('Client')], ['server', tr('Serveur')]].map(([id, label]) => (
+                    <button key={id} role="tab" aria-selected={infoTab === id}
+                      style={infoTab === id ? { ...styles.tab, ...styles.tabSelected } : styles.tab}
+                      onClick={() => setInfoTab(id)}>{label}</button>
+                  ))}
+                </div>
+              )}
+              {panel === 'info' && infoTab === 'server' && (
+                <div role="tabpanel">
                   {sections(serverSections)}
                   {server.value?.viewers > 1 && (
                     <div style={styles.infoRow}>
@@ -1374,11 +1268,13 @@ function App() {
                     labelStyle={styles.infoLabel}
                     buttonStyle={styles.panelButton}
                   />
-                </>
-              ) : (
+                </div>
+              )}
+              {panel === 'info' && infoTab === 'client' && (
+                <div role="tabpanel">{sections(clientSections)}</div>
+              )}
+              {panel === 'options' && (
                 <>
-                  {sections(clientSections)}
-                  <div style={styles.infoSection}>{tr('Options')}</div>
                   <label style={styles.infoRow}>
                     <span style={styles.infoLabel}>{tr('Langue')}</span>
                     <select value={settings.language ?? defaultLanguage()} style={styles.select}
@@ -1386,24 +1282,20 @@ function App() {
                       {LANGUAGES.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
                     </select>
                   </label>
-                  {toggle('Point sous le doigt', 'touchMarker')}
-                  {toggle('Masquer les décimales des émeraudes (Slayer Legend)', 'emeraldMask')}
-                  {settings.emeraldMask && row2(tr('Compteur d’émeraudes'), emeraldMask ? tr('détecté')
-                    : emeraldProblem ? `${tr('non détecté')} (${emeraldProblem})` : tr('non détecté'))}
+                  {toggle('Afficher le curseur', 'touchMarker')}
                   {toggle('Replier la barre 3 s après l’entrée en plein écran', 'autoFold')}
+                  <div style={styles.infoSection}>{tr('Plugins')}</div>
+                  {plugins.length === 0 && <div style={styles.infoNote}>{tr('Aucun plugin installé.')}</div>}
+                  {plugins.map((plugin) => (
+                    <div key={plugin.id}>
+                      <div style={styles.pluginTitle}>{plugin.title}</div>
+                      {plugin.error && <div style={styles.infoWarning}>{tr('Échec : {message}', { message: plugin.error })}</div>}
+                      {(plugin.instance.options ?? []).map((option, index) => pluginOption(plugin, option, index))}
+                    </div>
+                  ))}
                 </>
               )}
             </div>
-          )}
-          {emeraldMask && (
-            <div aria-hidden="true" style={{
-              ...styles.emeraldMask,
-              left: emeraldMask.x * screen.width / 360,
-              top: emeraldMask.y * screen.width / 360,
-              width: emeraldMask.width * screen.width / 360,
-              height: emeraldMask.height * screen.width / 360,
-              background: emeraldMask.color,
-            }} />
           )}
           <div ref={touchMarker} style={styles.touchMarker} aria-hidden="true" />
           <div
@@ -1438,7 +1330,7 @@ function App() {
           {keyButton('Power', tr('Marche arrêt'), 'power')}
           {keyButton('AudioVolumeDown', tr('Baisser le volume'), 'volumeDown')}
           {keyButton('AudioVolumeUp', tr('Monter le volume'), 'volumeUp')}
-          {serverBlock}
+          {metricsBlock}
         </div>
         <div style={zoneStyle} aria-label={tr('Navigation Android')}>
           {keyButton('AppSwitch', tr('Applications récentes'), 'recents')}
@@ -1446,7 +1338,7 @@ function App() {
           {keyButton('GoBack', tr('Retour'), 'back')}
         </div>
         <div style={{ ...zoneStyle, justifyContent: 'flex-end' }}>
-          {clientBlock}
+          {optionsButton}
           {reloadButton}
           {fullscreenButton}
           {fullscreen && foldButton}
@@ -1481,7 +1373,18 @@ const styles = {
   loadingText: {
     color: '#d8dde5', fontSize: '13px', fontFamily: 'system-ui, sans-serif',
   },
-  emeraldMask: { position: 'absolute', zIndex: 1, pointerEvents: 'none' },
+  pluginLayer: { position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none' },
+  pluginTitle: { marginTop: '6px', fontWeight: 600 },
+  numberInput: {
+    width: '96px', padding: '3px 6px', borderRadius: '6px', border: '1px solid #3a3f47',
+    background: '#1b1d22', color: '#e8ebf0', font: 'inherit', textAlign: 'right',
+  },
+  tabs: { display: 'flex', gap: '6px', margin: '4px 0 6px' },
+  tab: {
+    flex: 1, padding: '5px 0', borderRadius: '6px', border: '1px solid #3a3f47',
+    background: 'transparent', color: '#c9ced6', font: 'inherit', cursor: 'pointer',
+  },
+  tabSelected: { background: '#3a6ea5', borderColor: '#4da3ff', color: '#fff' },
   touchMarker: {
     position: 'absolute', left: '-14px', top: '-14px', width: '28px', height: '28px', zIndex: 2,
     borderRadius: '50%', background: 'rgba(77, 163, 255, 0.35)', border: '2px solid rgba(77, 163, 255, 0.8)',
@@ -1538,7 +1441,6 @@ const styles = {
     background: '#292929', color: '#fff', fontSize: '13px',
   },
   infoSection: { marginTop: '8px', marginBottom: '2px', color: '#d8dde5', fontWeight: 600 },
-  cog: { marginLeft: '1px', color: '#8a919c', verticalAlign: 'top' },
   infoNote: { marginTop: '4px', color: '#8a919c', fontSize: '11px', lineHeight: 1.35 },
   infoWarning: { marginTop: '4px', color: '#ff9f0a', fontSize: '12px', lineHeight: 1.35 },
   select: {

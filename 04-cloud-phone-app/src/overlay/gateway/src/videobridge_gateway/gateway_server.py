@@ -41,7 +41,7 @@ from .proto import emulator_controller_pb2_grpc as ec_grpc
 from .proto import rtc_service_v2_pb2 as rtc
 from .proto import rtc_service_v2_pb2_grpc as rtc_grpc
 from .proto import ice_config_pb2 as ice
-from .emerald_mask import AREA as EMERALD_AREA, find_emerald_mask, js_round
+from .plugins import load_plugins, run_adb
 
 # Configure Logging
 logging.basicConfig(
@@ -82,8 +82,6 @@ CLOSED_BY_OTHER_VIEWER = 4001
 STATE_CACHE = {"time": 0.0, "value": None}
 # Emerald mask computed here for pages that cannot read the video's pixels:
 # one screenshot at a time, shared by every page asking within the period.
-EMERALD_CACHE = {"time": 0.0, "value": None, "lock": None}
-EMERALD_CACHE_SECONDS = 0.4
 # Server metrics for the page's server panel, sampled in the background.
 # Android's own figures need adb, so they are read only while a page asks
 # for them (GET /api/v1/state?details=1 in the last ANDROID_WANTED_SECONDS).
@@ -558,49 +556,24 @@ async def handle_state(request):
     return web.json_response(value, headers={"Cache-Control": "no-store"})
 
 
-async def read_emerald_mask():
+async def read_screenshot():
+    """Android's screen as (width, height, RGB888 bytes), or None."""
     if not EMULATOR_CHANNEL:
-        return {"mask": None, "reason": "emulator"}
+        return None
     stub = ec_grpc.EmulatorControllerStub(EMULATOR_CHANNEL)
     image = await stub.getScreenshot(
         ec.ImageFormat(format=ec.ImageFormat.RGB888),
         metadata=get_emulator_metadata(),
         timeout=3,
     )
-    width = image.format.width
-    if not width or not image.image:
-        return {"mask": None, "reason": "screenshot"}
-    scale = width / 360
-    x0, y0 = js_round(EMERALD_AREA["x"] * scale), js_round(EMERALD_AREA["y"] * scale)
-    w, h = js_round(EMERALD_AREA["width"] * scale), js_round(EMERALD_AREA["height"] * scale)
-    area = bytearray()
-    for y in range(y0, y0 + h):
-        start = (y * width + x0) * 3
-        area += image.image[start:start + w * 3]
-    if len(area) != w * h * 3:
-        return {"mask": None, "reason": "screenshot"}
-    mask, reason = find_emerald_mask(area, w, h, scale, channels=3)
-    return {"mask": mask, "reason": reason}
+    width, height = image.format.width, image.format.height
+    if not width or not height or len(image.image) < width * height * 3:
+        return None
+    return width, height, image.image
 
 
-async def handle_emerald_mask(request):
-    """
-    GET /api/v1/emerald-mask: where to hide the decimals of Slayer Legend's
-    emerald counter, from an emulator screenshot. For pages whose browser
-    hands a blank image when copying the video (Firefox on Android).
-    """
-    if EMERALD_CACHE["lock"] is None:
-        EMERALD_CACHE["lock"] = asyncio.Lock()
-    loop = asyncio.get_running_loop()
-    async with EMERALD_CACHE["lock"]:
-        if EMERALD_CACHE["value"] is None or loop.time() - EMERALD_CACHE["time"] > EMERALD_CACHE_SECONDS:
-            try:
-                EMERALD_CACHE["value"] = await read_emerald_mask()
-            except Exception as error:
-                logging.warning("Emerald mask screenshot failed: %s", error)
-                EMERALD_CACHE["value"] = {"mask": None, "reason": "screenshot"}
-            EMERALD_CACHE["time"] = loop.time()
-    return web.json_response(EMERALD_CACHE["value"], headers={"Cache-Control": "no-store"})
+async def plugin_adb(*args, timeout=10):
+    return await run_adb(ADB_PATH, ADB_SERIAL, *args, timeout=timeout)
 
 
 async def watch_discovery_file():
@@ -1040,7 +1013,7 @@ async def cache_middleware(request, handler):
     return response
 
 
-def init_app(videobridge_token):
+def init_app(videobridge_token, plugins_dir=""):
     app = web.Application(middlewares=[guard_middleware, cache_middleware])
     app["videobridge_token"] = videobridge_token
 
@@ -1048,7 +1021,6 @@ def init_app(videobridge_token):
     app.router.add_get("/api/v1/ping", handle_ping)
     app.router.add_get("/api/v1/display", handle_display)
     app.router.add_get("/api/v1/state", handle_state)
-    app.router.add_get("/api/v1/emerald-mask", handle_emerald_mask)
     app.router.add_post("/api/v1/viewers/disconnect-others", handle_disconnect_others)
     app.router.add_post("/api/v1/display", handle_set_display)
     app.router.add_get("/api/v1/emulator-settings", handle_settings)
@@ -1063,6 +1035,7 @@ def init_app(videobridge_token):
         app.router.add_get("/", handle_index)
         app.router.add_get("/index.html", handle_index)
         app.router.add_static("/assets", os.path.join(WEB_ROOT, "assets"))
+    load_plugins(app, plugins_dir, read_screenshot, plugin_adb)
 
     return app
 
@@ -1146,6 +1119,12 @@ async def main():
         default="",
         help="File where the privileged settings service reports progress.",
     )
+    parser.add_argument(
+        "--plugins_dir",
+        type=str,
+        default="",
+        help="Directory of installed plugins, one subdirectory each (empty: none).",
+    )
     args = parser.parse_args()
 
     global ADB_PATH, ADB_SERIAL, DISPLAY_REQUEST, DISPLAY_STATUS, EMULATOR_UNIT, DISCOVERY_FILE
@@ -1194,7 +1173,7 @@ async def main():
     # When the emulator itself provides the RTC bridge, reuse its discovery
     # token. Passing the token on the command line would expose it via /proc.
     bridge_token = args.videobridge_token or DISCOVERY_PROPS.get("grpc.token", "")
-    app = init_app(bridge_token)
+    app = init_app(bridge_token, args.plugins_dir)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, args.host, args.port)

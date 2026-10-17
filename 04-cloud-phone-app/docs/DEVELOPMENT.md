@@ -9,11 +9,11 @@ built, never committed.
 |---|---|
 | `js/example/src/App.tsx` | the page: layout, toolbar, touch, panels, status banners, reconnect |
 | `js/example/src/i18n.ts` | French (source text) and English; `tr()` falls back to French |
-| `js/example/src/emeraldMask.ts` | emerald counter detection (Slayer Legend option) |
+| `js/example/src/plugins.ts` | loads the installed plugins' `page.js` and their API |
 | `js/src/components/emulator/net/ws_jsep_protocol_driver.ts` | signaling, viewer id, input on the emulator's data channels; waits for the emulator's SDP offer (Firefox) |
 | `js/src/components/emulator/views/webrtc_view.tsx` | `connected` only after a real decoded frame |
 | `gateway/src/videobridge_gateway/gateway_server.py` | serves the page, WebSocket JSEP bridge, HTTP API |
-| `gateway/src/videobridge_gateway/emerald_mask.py` | Python twin of `emeraldMask.ts`, used by `/api/v1/emerald-mask` |
+| `gateway/src/videobridge_gateway/plugins.py` | loads the installed plugins' `gateway.py`, serves their scripts |
 | `js/test/*.test.js` | jest unit tests (run by `packaging/build-release.sh`) |
 
 ## Build
@@ -66,7 +66,7 @@ Android keeps running. Reload the page (the index is never cached).
 | `GET /api/v1/display` | running and configured screen size, last change request, limits |
 | `POST /api/v1/display` `{width, height, density}` | change Android's screen size (reboots Android) |
 | `POST /api/v1/viewers/disconnect-others` `{viewer}` | close the other viewers' sessions |
-| `GET /api/v1/emerald-mask` | emerald mask from an emulator screenshot |
+| `GET /api/v1/plugins` | installed plugins (id, title, version, page script) |
 | `GET /api/v1/emulator/status` | emulator status and screen size |
 | `POST /api/v1/emulator/touch`, `/key` | input fallback (gRPC touch, adb key) |
 | `POST /api/v1/emulator/gps`, `GET /api/v1/emulator/logcat` | upstream helpers |
@@ -90,15 +90,16 @@ token); systemd starts it again on the new emulator.
 
 ## The page
 
-- Toolbar: power, volume, a server block (ping) opening **Server settings**,
-  recents/home/back, a client block (displayed fps) opening **Client
-  settings**, `↻`, fullscreen, and in fullscreen only the fold button.
-- Server settings: state, network, Android and video stream, the
-  **Disconnect** button for other devices when more than one viewer is
-  connected, and Android's screen size (shape and resolution presets).
-- Client settings: display, input path, language (French/English, default
-  from the browser), touch marker, emerald mask, fold 3 s after entering
-  fullscreen.
+- Toolbar: power, volume, the ping/fps block (this device's ping above its
+  displayed fps) opening **Information**, recents/home/back, the cog opening
+  **Options**, `↻`, fullscreen, and in fullscreen only the fold button.
+- Information, tab Client (default): network, display, input path. Tab
+  Server: state, machine, Android and video stream, the **Disconnect** button
+  for other devices when more than one viewer is connected, and Android
+  settings (renderer, cores, memory, shape and resolution, one Apply).
+- Options: language (French/English, default from the browser), touch
+  marker, fold 3 s after entering fullscreen, and Plugins: each installed
+  plugin's options.
 - Fold button: tap folds the bar away (the screen takes the whole window, a
   floating handle unfolds it and can be dragged); long press docks the bar
   so it keeps its own space; a tap then makes it float again.
@@ -142,26 +143,41 @@ missing. Checked on 2026-10-16 with a swipe that opened the notification
 shade and a volume key, with no HTTP request. While no channel is open,
 touches go to `POST /api/v1/emulator/touch` (moves coalesced, one request in
 flight) and keys to `POST /api/v1/emulator/key` (adb on the gateway). The
-client settings panel shows which path the last touch took.
+Information → Client tab shows which path the last touch took.
 
-## Emerald mask (Slayer Legend)
+## Plugins
 
-Option in Client settings. It hides the decimals of the emerald counter
-("282,230" shows as "282") by painting a rectangle in the bar's colour over
-the video, on this screen only; nothing is sent to Android.
-`emeraldMask.ts` finds the comma in a small area of the frame, 4 times a
-second.
+Game-specific features are plugins, never part of the page or the gateway.
+`/opt/cloudphone/plugins/<id>/` holds `plugin.json` (id, title, version), an
+optional `page.js` (ES module, may import the other `*.js` beside it) and an
+optional `gateway.py` (`setup(context)`). The gateway (`--plugins_dir`)
+loads them at start, logs and skips one that fails, serves its scripts at
+`/plugins/<id>/` and lists them at `GET /api/v1/plugins`; a plugin's own
+routes live under `/api/v1/plugins/<id>/`, behind the usual origin and token
+checks. The page imports each `page.js`, gives it the API described at the
+top of `plugins.ts` (video element, a drawing layer over the screen, stored
+options, gateway calls) and renders its options (toggle, number, action,
+status) in Options → Plugins.
+
+## Emerald counter (part 05 plugin)
+
+Option of the Slayer Legend plugin (`05-slayer-legend/files/plugin`). It
+covers the emerald counter with the bar's colour and writes over it, at the
+game's size for that many digits: the digits after the comma (leading zeros
+dropped) copied from the video, or a number the user typed. Nothing is sent
+to Android. `emerald_mask.js` finds the comma in a small area of the frame,
+4 times a second.
 
 The page copies the video's pixels with the first method that gives a
 non-blank image: 2D canvas (crop, then full frame), `createImageBitmap`,
 WebGL `readPixels`, `VideoFrame`. On Firefox for Android with hardware
 decoding the 2D canvas, `createImageBitmap` and `VideoFrame` give a blank
 image or an error (WebGL was added afterwards and not checked there on its
-own). When every method fails, the page asks
-`GET /api/v1/emerald-mask` twice a second. The gateway takes an emulator
+own). When every method fails, the plugin asks
+`GET /api/v1/plugins/slayer-legend/emerald-mask` twice a second. The gateway takes an emulator
 screenshot over gRPC and runs `emerald_mask.py` (one screenshot at a time,
-shared for 0.4 s). Keep `emeraldMask.ts` and `emerald_mask.py` in step; the
-jest fixtures in `js/test/emerald_mask.test.js` are the reference.
+shared for 0.4 s) and also returns the pixels of the digits after the comma.
+Keep `emerald_mask.js` and `emerald_mask.py` in step.
 The panel shows "detected" or why not (`flat`, `text`, `comma`, `digits`,
 `colour`, and the capture methods tried).
 

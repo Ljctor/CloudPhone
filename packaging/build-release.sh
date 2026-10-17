@@ -179,7 +179,7 @@ mkdir -p "$STAGE"/{docs,licenses}
 install -m 755 "$PKG/install.sh" "$PKG/uninstall.sh" "$STAGE/"
 install -m 644 "$ROOT/VERSION" "$ROOT/README.md" "$ROOT/AGENTS.md" "$STAGE/"
 cp -R "$ROOT/lib" "$STAGE/lib"
-for part in 02-wireguard-server 03-android-emulator 04-cloud-phone-app; do
+for part in 02-wireguard-server 03-android-emulator 04-cloud-phone-app 05-slayer-legend; do
   mkdir -p "$STAGE/$part"
   for item in AGENTS.md README.md runbooks scripts files constraints.txt; do
     [ ! -e "$ROOT/$part/$item" ] || cp -R "$ROOT/$part/$item" "$STAGE/$part/"

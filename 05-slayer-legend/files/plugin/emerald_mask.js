@@ -1,6 +1,7 @@
-// Hides what follows the last comma of Slayer Legend's emerald counter
-// ("282,230" shows as "282"), on this screen only: a rectangle painted in the
-// bar's own colour over the video. Nothing is sent to Android.
+// Finds Slayer Legend's emerald counter on the video ("282,230"), so that the
+// plugin can paint over it, on this screen only: either what follows the last
+// comma, or the whole number replaced by one the user chose. Nothing is sent
+// to Android.
 //
 // The counter sits in the game's top bar, right of the emerald icon. Its
 // width changes with the number, so the comma is found on each frame: it is
@@ -96,6 +97,30 @@ export function findEmeraldMask(pixels, width, height, scale, why = {}) {
     }
   }
   if (right - comma < 3 * scale) return miss('digits');
+  // The digits after the comma: skip the comma's own columns and the gap
+  // after it. When the comma touches the next digit, assume a 2 px comma.
+  const column = (x) => {
+    for (let y = best.top; y <= best.bottom; y++) if (edge(x, y)) return true;
+    return false;
+  };
+  let after = comma;
+  while (after <= right && column(after)) after++;
+  while (after <= right && !column(after)) after++;
+  if (after > right - 2 * scale) after = Math.min(right, comma + Math.round(2 * scale));
+  // Start of the number: first glyph column left of the comma, stopping at
+  // the same kind of gap (the emerald icon) or at the area's edge.
+  let start = comma;
+  empty = 0;
+  for (let x = comma - 1; x >= 0 && empty <= gap; x--) {
+    let any = false;
+    for (let y = best.top; y <= best.bottom; y++) if (edge(x, y)) any = true;
+    if (any) {
+      start = x;
+      empty = 0;
+    } else {
+      empty++;
+    }
+  }
 
   // Colour: the bar just right of the number, where there is no glyph
   // edge to lighten it.
@@ -119,5 +144,25 @@ export function findEmeraldMask(pixels, width, height, scale, why = {}) {
     width: (right - left + 1) / scale + pad,
     height: (best.bottom - best.top + 1 + tailRows) / scale + 2 * pad,
     color: `rgb(${Math.round(r / n)}, ${Math.round(g / n)}, ${Math.round(b / n)})`,
+    // The whole number, and the digits' height without the comma's tail.
+    number: {
+      x: AREA.x + start / scale - pad,
+      y: AREA.y + best.top / scale - pad,
+      width: (right - start + 1) / scale + 2 * pad,
+      height: (best.bottom - best.top + 1 + tailRows) / scale + 2 * pad,
+      digitHeight: (best.bottom - best.top + 1) / scale,
+    },
+    // The digits after the comma: where they are on screen, and the same
+    // box in the search area's pixels (to copy them), one row of margin.
+    decimals: {
+      x: AREA.x + after / scale,
+      width: (right - after + 1) / scale,
+      pixels: {
+        x: after,
+        y: Math.max(0, best.top - 1),
+        width: right - after + 1,
+        height: Math.min(height - 1, best.bottom + 1) - Math.max(0, best.top - 1) + 1,
+      },
+    },
   };
 }

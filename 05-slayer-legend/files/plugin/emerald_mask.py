@@ -1,9 +1,9 @@
 """Finds the decimals of Slayer Legend's emerald counter on a screenshot.
 
-Python twin of js/example/src/emeraldMask.ts, for browsers that cannot read
+Python twin of emerald_mask.js (same directory), for browsers that cannot read
 the video's pixels (Firefox on Android with hardware decoding): the page then
 asks the gateway, which takes the screenshot from the emulator. Keep the two
-in step; the page's jest fixtures are the reference.
+in step.
 """
 
 import math
@@ -96,6 +96,30 @@ def find_emerald_mask(pixels, width, height, scale, channels=4):
         x += 1
     if right - comma < 3 * scale:
         return None, "digits"
+    # The digits after the comma: skip the comma's own columns and the gap
+    # after it. When the comma touches the next digit, assume a 2 px comma.
+    def column(x):
+        return any(edge(x, y) for y in range(top, bottom + 1))
+
+    after = comma
+    while after <= right and column(after):
+        after += 1
+    while after <= right and not column(after):
+        after += 1
+    if after > right - 2 * scale:
+        after = min(right, comma + js_round(2 * scale))
+    # Start of the number: first glyph column left of the comma, stopping at
+    # the same kind of gap (the emerald icon) or at the area's edge.
+    start = comma
+    empty = 0
+    x = comma - 1
+    while x >= 0 and empty <= gap:
+        if any(edge(x, y) for y in range(top, bottom + 1)):
+            start = x
+            empty = 0
+        else:
+            empty += 1
+        x -= 1
 
     # Colour: the bar just right of the number.
     r = g = b = n = 0
@@ -116,4 +140,24 @@ def find_emerald_mask(pixels, width, height, scale, channels=4):
         "width": (right - comma + 1) / scale + pad,
         "height": (bottom - top + 1 + tail_rows) / scale + 2 * pad,
         "color": f"rgb({js_round(r / n)}, {js_round(g / n)}, {js_round(b / n)})",
+        # The whole number, and the digits' height without the comma's tail.
+        "number": {
+            "x": AREA["x"] + start / scale - pad,
+            "y": AREA["y"] + top / scale - pad,
+            "width": (right - start + 1) / scale + 2 * pad,
+            "height": (bottom - top + 1 + tail_rows) / scale + 2 * pad,
+            "digitHeight": (bottom - top + 1) / scale,
+        },
+        # The digits after the comma: where they are on screen, and the same
+        # box in the search area's pixels (to copy them), one row of margin.
+        "decimals": {
+            "x": AREA["x"] + after / scale,
+            "width": (right - after + 1) / scale,
+            "pixels": {
+                "x": after,
+                "y": max(0, top - 1),
+                "width": right - after + 1,
+                "height": min(height - 1, bottom + 1) - max(0, top - 1) + 1,
+            },
+        },
     }, None

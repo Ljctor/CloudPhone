@@ -24,18 +24,24 @@ and runs `scripts/install.sh --listen 10.20.0.1`.
 
 ## The page
 
-- Toolbar: power, volume down/up, the **ping** block, recents, home, back,
-  the **fps** block (frames per second displayed), `↻`, fullscreen, and in
-  fullscreen the fold button.
-- The ping block opens **Server settings**: server and Android state,
-  network, video stream, **Disconnect** for the other devices (shown when
-  more than one is connected), and **Android settings**: renderer, cores,
-  memory, device shape and resolution, applied together with one **Apply**
-  (it reboots Android once; one change per 2 minutes).
-- The fps block opens **Client settings**: this device's display, how
-  touches reach Android, language (French/English), touch marker, emerald
-  mask (Slayer Legend), fold 3 s after entering fullscreen. Settings stay in
-  this browser (`localStorage`, key `cloudphone.settings`).
+- Toolbar: power, volume down/up, the **ping/fps** block (this device's ping
+  above the frames per second it displays), recents, home, back, the
+  **cog**, `↻`, fullscreen, and in fullscreen the fold button.
+- The ping/fps block opens **Information**, with two tabs. **Client** (the
+  default): network, this device's display, how touches reach Android.
+  **Server**: server and Android state, the machine, the video stream,
+  **Disconnect** for the other devices (shown when more than one is
+  connected), and **Android settings**: renderer, cores, memory, device shape
+  and resolution, applied together with one **Apply** (it reboots Android
+  once; one change per 2 minutes).
+- The cog opens **Options**: language (French/English), cursor, fold
+  3 s after entering fullscreen, and **Plugins**: the options of the
+  installed plugins (e.g. part 05, Slayer Legend). Settings stay in this
+  browser (`localStorage`, key `cloudphone.settings`).
+- Plugins live in `/opt/cloudphone/plugins/<id>/` (`plugin.json`, optional
+  `page.js` and `gateway.py`); the gateway loads them at start and lists them
+  at `GET /api/v1/plugins`. API: `src/overlay/js/example/src/plugins.ts` and
+  `src/overlay/gateway/src/videobridge_gateway/plugins.py`.
 - Fold button (fullscreen only): tap folds the bar away and shows a small
   handle (drag to move, tap to unfold); long press docks the bar beside the
   screen.
