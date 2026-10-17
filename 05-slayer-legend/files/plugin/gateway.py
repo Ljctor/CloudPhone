@@ -8,8 +8,9 @@ GET  /api/v1/plugins/slayer-legend/launch
      State of the last launch: {state, message}.
 POST /api/v1/plugins/slayer-legend/launch
      Starts the game and brings it to the battle screen: taps "TAP TO START",
-     then Confirm on the "last save time" notice (the latest save). It never
-     taps anything else; any other screen stops it and asks the user.
+     then Confirm on the "last save time" notice (the latest save), or
+     "Press here to finish Power Saving Mode". It never taps anything else;
+     any other screen stops it and asks the user.
 
 Screens are recognised from a few pixel areas, as fractions of the screen,
 measured on a 360x780 screen (the page's device shapes keep this ratio).
@@ -31,7 +32,12 @@ START_TAP = (0.50, 0.836)
 CONFIRM_BUTTON = (0.26, 0.735, 0.37, 0.755)  # orange
 EXIT_BUTTON = (0.62, 0.735, 0.73, 0.755)     # grey
 CONFIRM_TAP = (0.314, 0.745)
-MENU_LABELS = (0.0, 0.975, 1.0, 0.995)  # bottom menu names, white on dark
+SAVER_TAP = (0.50, 0.88)
+MENU_LABELS = (0.0, 0.975, 1.0, 0.995)
+# Power Saving Mode: black screen, orange "In battle . . .", grey button.
+SAVER_BUTTON = (0.33, 0.83, 0.67, 0.92)
+SAVER_TEXT = (0.40, 0.465, 0.60, 0.48)
+SAVER_TOP = (0.10, 0.10, 0.90, 0.25)  # bottom menu names, white on dark
 
 LAUNCH = {"state": "idle", "message": "", "task": None, "since": 0.0}
 EMERALD = {"time": 0.0, "value": None, "lock": None}
@@ -72,11 +78,22 @@ def grey(r, g, b):
     return max(r, g, b) - min(r, g, b) < 25 and 50 < r < 170
 
 
+def dim_grey(r, g, b):
+    return max(r, g, b) - min(r, g, b) < 20 and 35 < r < 110
+
+
+def black(r, g, b):
+    return r < 20 and g < 20 and b < 20
+
+
 def classify(shot):
     if share(shot, CONFIRM_BUTTON, orange) > 0.6 and share(shot, EXIT_BUTTON, grey) > 0.6:
         return "save"
     if share(shot, MENU_LABELS, white) > 0.03:
         return "battle"
+    if (share(shot, SAVER_BUTTON, dim_grey) > 0.8 and share(shot, SAVER_TOP, black) > 0.95
+            and share(shot, SAVER_TEXT, orange) > 0.08):
+        return "saver"
     if 0.02 < share(shot, START_TEXT, white) < 0.4:
         return "title"
     return "other"
@@ -148,6 +165,7 @@ def setup(context):
             confirmed = False
             last_tap = 0.0
             seen_other = None
+            saver_taps = 0
             while time.monotonic() < deadline:
                 await asyncio.sleep(3)
                 shot = await context.screenshot()
@@ -164,6 +182,18 @@ def setup(context):
                     seen_other = None
                     report("loading", "Dernière sauvegarde confirmée, chargement")
                     await asyncio.sleep(3)
+                    continue
+                if screen == "saver" and time.monotonic() - last_tap > 5:
+                    # Power Saving Mode: the game is already in battle. A
+                    # plain tap did not always close it: give up after 3.
+                    if saver_taps >= 3:
+                        report("blocked", "Le mode économie d’énergie ne se ferme pas : touche son bouton à la main")
+                        return
+                    saver_taps += 1
+                    await tap(shot, SAVER_TAP)
+                    last_tap = time.monotonic()
+                    seen_other = None
+                    report("loading", "Sortie du mode économie d’énergie")
                     continue
                 if screen == "title" and time.monotonic() - last_tap > 8:
                     await tap(shot, START_TAP)

@@ -22,6 +22,8 @@ const ENGLISH = {
   'Écran titre touché, connexion': 'Title screen tapped, signing in',
   'Dernière sauvegarde confirmée, chargement': 'Latest save confirmed, loading',
   'Le jeu est sur l’écran de combat': 'The game is on the battle screen',
+  'Sortie du mode économie d’énergie': 'Leaving Power Saving Mode',
+  'Le mode économie d’énergie ne se ferme pas : touche son bouton à la main': 'Power Saving Mode does not close: tap its button by hand',
   'Écran inattendu : termine le lancement à la main': 'Unexpected screen: finish the launch by hand',
   'Le jeu n’a pas atteint l’écran de combat en 3 minutes': 'The game did not reach the battle screen in 3 minutes',
   'Android ne répond pas': 'Android does not answer',
