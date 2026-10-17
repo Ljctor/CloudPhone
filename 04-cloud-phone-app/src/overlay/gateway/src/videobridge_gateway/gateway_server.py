@@ -229,11 +229,29 @@ async def read_android_booted():
         return None
 
 
+def physical_cores():
+    """Physical cores (with Hyper-Threading, two threads share each one)."""
+    try:
+        with open("/proc/cpuinfo", "r") as f:
+            text = f.read()
+    except OSError:
+        return None
+    cores = set()
+    for chunk in text.split("\n\n"):
+        fields = {}
+        for line in chunk.splitlines():
+            name, _, value = line.partition(":")
+            fields[name.strip()] = value.strip()
+        if "core id" in fields:
+            cores.add((fields.get("physical id"), fields["core id"]))
+    return len(cores) or None
+
+
 def read_load():
     try:
         with open("/proc/loadavg", "r") as f:
             one, five = f.read().split()[:2]
-        return {"one": float(one), "five": float(five), "cpus": os.cpu_count() or 1}
+        return {"one": float(one), "five": float(five), "cpus": os.cpu_count() or 1, "cores": physical_cores()}
     except (OSError, ValueError):
         return None
 
@@ -310,6 +328,24 @@ async def read_android_metrics():
     return {"memory": memory_summary(read_meminfo(meminfo)), "app": layer, "fps": fps}
 
 
+def read_emulator_settings(cgroup):
+    """Renderer, cores and memory the running emulator was started with,
+    from its command line (not the configuration, which may have changed
+    since)."""
+    procs = read_file(f"{cgroup}/cgroup.procs") if cgroup else None
+    for pid in (procs or "").split():
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as f:
+                args = f.read().decode(errors="replace").split("\0")
+        except OSError:
+            continue
+        if "qemu-system" not in args[0]:
+            continue
+        option = lambda name: args[args.index(name) + 1] if name in args[:-1] else None
+        return {"renderer": option("-gpu"), "cores": option("-cores"), "memoryMb": option("-memory")}
+    return None
+
+
 async def sample_metrics():
     """Host CPU and memory, the emulator unit's CPU and memory (its cgroup),
     and Android's figures while a page wants them."""
@@ -341,6 +377,7 @@ async def sample_metrics():
                 }
                 memory = read_file(f"{cgroup}/memory.current") if cgroup else None
                 METRICS["emulator"] = {
+                    "settings": read_emulator_settings(cgroup),
                     # Percent of one core, like top: 400 = four cores busy.
                     "cpu": round((usage - p_usage) / 1e4 / (now - p_now)) if usage is not None and p_usage is not None else None,
                     "memory": round(int(memory) / 1048576) if memory and memory.strip().isdigit() else None,

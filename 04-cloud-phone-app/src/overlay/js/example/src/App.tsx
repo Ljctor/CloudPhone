@@ -1196,10 +1196,11 @@ function App() {
       ['Android démarré', server.value?.android?.booted === true ? tr('oui')
         : server.value?.android?.booted === false ? tr('en cours') : tr('sans réponse')],
       ['Appareils connectés', formatValue(server.value?.viewers)],
-      ['Charge du serveur', load ? tr('{load} tâches pour {cpus} fils', { load: load.one.toFixed(1), cpus: load.cpus }) : '–'],
+      ['Charge du serveur', load ? (load.cores ? tr('{load} tâches pour {cpus} threads ({cores} cœurs)', { load: load.one.toFixed(1), cpus: load.cpus, cores: load.cores })
+        : tr('{load} tâches pour {cpus} threads', { load: load.one.toFixed(1), cpus: load.cpus })) : '–'],
     ]],
     ['Machine', [
-      ['Processeur', host ? tr('{cpu} % de {cpus} fils', { cpu: host.cpu, cpus: host.cpus }) : '–'],
+      ['Processeur', host ? tr('{cpu} % de {cpus} threads', { cpu: host.cpu, cpus: host.cpus }) : '–'],
       ['Fréquence', host?.mhz ? `${host.mhz} MHz${host.governor ? ` (${host.governor})` : ''}` : '–'],
       ['Mémoire', memoryRow(host?.memory)],
       ['Émulateur', emulator?.cpu === null || emulator?.cpu === undefined ? '–'
@@ -1207,6 +1208,9 @@ function App() {
     ]],
     ['Android', [
       ['Écran Android', configured?.width ? `${configured.width}×${configured.height} px` : `${display.width}×${display.height} px`],
+      ['Moteur de rendu', emulator?.settings?.renderer ?? '–'],
+      ['Cœurs et mémoire', emulator?.settings
+        ? tr('{cores} cœurs · {memory}', { cores: emulator.settings.cores ?? '?', memory: mib(Number(emulator.settings.memoryMb)) }) : '–'],
       ['Images/s du jeu', android?.fps === null || android?.fps === undefined ? '–'
         : `${android.fps}${android.app ? ` (${android.app})` : ''}`],
       ['Mémoire Android', memoryRow(android?.memory)],
