@@ -15,7 +15,6 @@
  */
 import logger from "./logger";
 import Proto from "../../../proto/emulator_controller_pb";
-import { capVideoBitrate } from "./sdp_bitrate";
 
 // The peer connection of the stream currently on screen, for statistics
 // (frame rates, round-trip time). Only one stream is shown at a time.
@@ -28,14 +27,6 @@ let viewerId = "";
 
 export function setViewerId(id: string) {
   viewerId = id;
-}
-
-// Bitrate cap asked of the emulator for this page, in kbit/s (0: none).
-// Applies from the next connection.
-let videoBitrateKbps = 0;
-
-export function setVideoBitrate(kbps: number) {
-  videoBitrateKbps = kbps > 0 ? kbps : 0;
 }
 
 /** WebSocket close code of a session ended by another viewer. */
@@ -464,9 +455,7 @@ export default class WsJsepProtocol {
         await this.peerConnection.setLocalDescription(answer);
         if (!this.peerConnection) return; 
 
-        // The browser keeps its own answer; the emulator gets it with the
-        // bitrate cap, which only the sender acts on.
-        this._sendJsep({ sdp: { type: answer.type, sdp: capVideoBitrate(answer.sdp ?? "", videoBitrateKbps) } });
+        this._sendJsep({ sdp: answer });
       }
     } catch (e) {
       logger.error("Failed to process remote SDP:", e);
