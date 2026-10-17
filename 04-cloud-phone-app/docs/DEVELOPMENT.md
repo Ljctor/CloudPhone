@@ -179,7 +179,7 @@ checks. The `id` must equal the directory name and match
 `^[a-z0-9][a-z0-9_-]{0,63}\.js$` are served. The page imports each
 `page.js`, gives it the API described at the
 top of `plugins.ts` (video element, a drawing layer over the screen, stored
-options, gateway calls) and renders its options (toggle, number, action,
+options, gateway calls) and renders its options (toggle, number, choice, action,
 status) in Options → Plugins.
 
 ## Emerald counter (part 05 plugin)

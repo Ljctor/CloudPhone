@@ -129,6 +129,12 @@ def setup(context):
                 start = (y * w + box["x"]) * 3
                 crop += pixels[start:start + box["width"] * 3]
             box["rgb"] = base64.b64encode(bytes(crop)).decode("ascii")
+            # The finder counts from AREA; the crop starts at a whole pixel.
+            dx, dy = x0 / scale - area["x"], y0 / scale - area["y"]
+            for part in (mask, mask["number"]):
+                part["x"] += dx
+                part["y"] += dy
+            mask["decimals"]["x"] += dx
         return {"mask": mask, "reason": reason}
 
     async def handle_emerald_mask(request):

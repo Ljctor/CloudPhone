@@ -1172,6 +1172,19 @@ function App() {
         </label>
       );
     }
+    if (option.type === 'choice') {
+      return (
+        <label key={key} style={styles.infoRow}>
+          <span style={styles.infoLabel}>{tr(option.label)}</span>
+          <select style={styles.select} value={settings.plugins?.[plugin.id]?.[option.key] ?? option.choices?.[0]?.value ?? ''}
+            onChange={(event) => setPluginOption(plugin.id, option.key, event.target.value)}>
+            {(option.choices ?? []).map((choice) => (
+              <option key={choice.value} value={choice.value}>{tr(choice.label)}</option>
+            ))}
+          </select>
+        </label>
+      );
+    }
     if (option.type === 'action') {
       return (
         <div key={key} style={styles.infoRow}>

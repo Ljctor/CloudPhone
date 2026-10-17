@@ -9,6 +9,7 @@
 // where an Option is one of
 //   { type: 'toggle', key, label }                 stored per plugin, off by default
 //   { type: 'number', key, label, placeholder?, visible?() }  digits, stored as text
+//   { type: 'choice', key, label, choices: [{ value, label }] }   stored as the value, first one by default
 //   { type: 'action', label, button, run(), disabled?() }
 //   { type: 'status', label, value(), visible?() }
 // Labels are French; the plugin gives English texts with api.addTranslations.

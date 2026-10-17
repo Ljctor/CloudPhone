@@ -2,20 +2,24 @@
 // plugins.ts in part 04 for the API). Two features:
 // - "Lancer le jeu": the gateway starts the game and brings it to the
 //   battle screen (TAP TO START, then Confirm on the latest save).
-// - Rewrite the emerald counter: the game's counter is covered with the
-//   bar's colour and, at the game's size for that many digits, either the
-//   digits after its comma (leading zeros dropped) or a number the user
-//   chose are written over it, on this screen only. Nothing is sent to
-//   Android.
+// - The emerald counter, on this screen only (nothing is sent to Android),
+//   either cut at its comma ("284,086" shows "284"), or rewritten: covered
+//   with the bar's colour and, in the game's font and colour at the game's
+//   size for that many digits, either the digits after its comma (leading
+//   zeros dropped) or a number the user chose are written over it.
 import { AREA, findEmeraldMask } from './emerald_mask.js';
+import { FONT, shade } from './emerald_font.js';
 
 const ENGLISH = {
   'Lancer le jeu': 'Launch the game',
   'Lancer': 'Launch',
   'Lancement': 'Launch',
-  'Réécrire le compteur d’émeraudes': 'Rewrite the emerald counter',
-  'Nombre affiché (vide : après la virgule)': 'Number shown (empty: after the comma)',
   'Compteur d’émeraudes': 'Emerald counter',
+  'Inchangé': 'Unchanged',
+  'Coupé à la virgule': 'Cut at the comma',
+  'Réécrit': 'Rewritten',
+  'Détection du compteur': 'Counter detection',
+  'Nombre affiché (vide : après la virgule)': 'Number shown (empty: after the comma)',
   'détecté': 'detected',
   'non détecté': 'not detected',
   'Ouverture du jeu': 'Opening the game',
@@ -103,10 +107,6 @@ function blank(data) {
 const DIGIT_ADVANCE = 0.68;
 const COMMA_ADVANCE = 0.35;
 const SHORT_NUMBER_SCALE = 1.11;
-// Cap height of the drawn font, and where its baseline sits from the top
-// of a line-height-1 box, as fractions of its font size.
-const CAP_HEIGHT = 0.72;
-const BASELINE = 0.81;
 // Margin the finder leaves around the number, in 360-wide pixels.
 const NUMBER_PAD = 1;
 
@@ -187,6 +187,44 @@ function grouped(value) {
   return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
+// The colour of the digits: the mean of the brightest pixels of `rgba`
+// (the copied digits), as [r, g, b].
+function inkColour(rgba) {
+  let high = 0;
+  for (let i = 0; i < rgba.length; i += 4) high = Math.max(high, rgba[i] + rgba[i + 1] + rgba[i + 2]);
+  const sum = [0, 0, 0];
+  let n = 0;
+  for (let i = 0; i < rgba.length; i += 4) {
+    if (rgba[i] + rgba[i + 1] + rgba[i + 2] >= high * 0.9) {
+      sum[0] += rgba[i]; sum[1] += rgba[i + 1]; sum[2] += rgba[i + 2]; n++;
+    }
+  }
+  return n ? sum.map((v) => v / n) : [255, 255, 255];
+}
+
+// Writes `text` (digits and commas) into `canvas` in the game's font, as
+// the game would draw it at 480 px wide with digits `rows` pixels high: ink
+// over `paper`, then enlarged pixel by pixel (no smoothing) when the digits
+// are bigger than the font's 9 rows.
+function drawText(canvas, text, rows, ink, paper) {
+  const { width, cover } = shade(text);
+  const factor = rows / FONT.digitRows;
+  canvas.width = Math.max(1, Math.round(width * factor));
+  canvas.height = Math.round(FONT.height * factor);
+  const context = canvas.getContext('2d');
+  const image = context.createImageData(canvas.width, canvas.height);
+  for (let y = 0; y < canvas.height; y++) {
+    const sy = Math.min(FONT.height - 1, Math.floor(y / factor));
+    for (let x = 0; x < canvas.width; x++) {
+      const a = cover[sy][Math.min(width - 1, Math.floor(x / factor))];
+      const i = (y * canvas.width + x) * 4;
+      for (let c = 0; c < 3; c++) image.data[i + c] = paper[c] + (ink[c] - paper[c]) * a;
+      image.data[i + 3] = 255;
+    }
+  }
+  context.putImageData(image, 0, 0);
+}
+
 // Every 250 ms, finds the emerald counter and covers it with the bar's
 // colour in api.layer, then writes over it, at the game's size for that many
 // digits: the chosen number if there is one, else the digits after the
@@ -194,16 +232,13 @@ function grouped(value) {
 // Returns a function that stops it.
 function startEmeraldMask(api, state) {
   const box = document.createElement('div');
-  box.style.cssText = 'position:absolute;display:none;overflow:visible;white-space:nowrap;color:#fff;'
-    + 'font-family:"Arial Black","Arial",sans-serif;font-weight:900;line-height:1;'
-    + 'text-shadow:0 0 1px #000,0 0 1px #000;box-sizing:border-box';
-  // Both sit on the game's baseline: bigger digits grow upwards, so that
-  // they line up with the diamonds' digits, as the game draws them.
+  box.style.cssText = 'position:absolute;display:none;box-sizing:border-box';
+  // The digits sit on the game's baseline: bigger digits grow upwards, so
+  // that they line up with the diamonds' digits, as the game draws them.
+  // Scaled smoothly, like the browser scales the video around them.
   const copy = document.createElement('canvas');
-  copy.style.cssText = 'position:absolute;display:block;image-rendering:pixelated';
-  const label = document.createElement('span');
-  label.style.position = 'absolute';
-  box.append(copy, label);
+  copy.style.cssText = 'position:absolute;display:block';
+  box.append(copy);
   api.layer.appendChild(box);
   const canvas = document.createElement('canvas');
   const context = canvas.getContext('2d', { willReadFrequently: true });
@@ -223,7 +258,17 @@ function startEmeraldMask(api, state) {
   // answer the decimals' own pixels as base64 RGB.
   const show = (mask, problem, rgba = null, areaWidth = 0) => {
     const wanted = String(api.setting('emeraldCount') ?? '').replace(/\D/g, '').replace(/^0+(?=\d)/, '');
-    if (mask?.number && mask.decimals) {
+    if (mask && emeraldMode(api) === 'cut') {
+      const k = api.screenWidth() / 360;
+      copy.style.display = 'none';
+      // Half a pixel more on the left: the video's smoothing spreads the
+      // comma's edge into the next column.
+      const margin = 0.5 * (360 / (api.video()?.videoWidth || 360));
+      Object.assign(box.style, {
+        display: 'block', left: `${(mask.x - margin) * k}px`, top: `${mask.y * k}px`,
+        width: `${(mask.width + margin) * k}px`, height: `${mask.height * k}px`, background: mask.color,
+      });
+    } else if (mask?.number && mask.decimals) {
       const k = api.screenWidth() / 360;
       const number = mask.number;
       // Digit height the game uses for 6 digits, then for the shown number.
@@ -237,18 +282,7 @@ function startEmeraldMask(api, state) {
       });
       // The digits' bottom inside the box (the box has 1 px of margin).
       const baseline = (NUMBER_PAD + number.digitHeight) * k;
-      if (wanted) {
-        copy.style.display = 'none';
-        const fontSize = (heightFor(wanted.length) / CAP_HEIGHT) * k;
-        label.textContent = grouped(wanted);
-        Object.assign(label.style, {
-          display: '', left: `${NUMBER_PAD * k}px`, fontSize: `${fontSize}px`,
-          top: `${baseline - BASELINE * fontSize}px`,
-        });
-      } else {
-        label.style.display = 'none';
-        drawDecimals(mask, rgba, areaWidth, heightFor, k, baseline);
-      }
+      drawDecimals(mask, rgba, areaWidth, heightFor, k, baseline, wanted);
     } else {
       box.style.display = 'none';
     }
@@ -259,7 +293,7 @@ function startEmeraldMask(api, state) {
   };
   // Copies the digits after the comma into `copy`, leading zeros dropped,
   // scaled to the game's size for that many digits.
-  const drawDecimals = (mask, rgba, areaWidth, heightFor, k, baseline) => {
+  const drawDecimals = (mask, rgba, areaWidth, heightFor, k, baseline, wanted) => {
     const box360 = mask.decimals.pixels;
     let crop;
     if (box360.rgb) {
@@ -276,6 +310,21 @@ function startEmeraldMask(api, state) {
       }
     } else {
       copy.style.display = 'none';
+      return;
+    }
+    if (wanted) {
+      // The game's font in the colour of the digits it replaces, drawn in
+      // 480 px wide pixels then scaled to the screen like the video.
+      const rows = Math.round(heightFor(wanted.length) * FONT.scale);
+      drawText(copy, grouped(wanted), rows, inkColour(crop), mask.color.match(/\d+/g).map(Number));
+      const below = Math.round(FONT.below * (rows / FONT.digitRows));
+      Object.assign(copy.style, {
+        display: 'block',
+        left: `${NUMBER_PAD * k}px`,
+        width: `${(copy.width / FONT.scale) * k}px`,
+        height: `${(copy.height / FONT.scale) * k}px`,
+        top: `${baseline - ((copy.height - below) / FONT.scale) * k}px`,
+      });
       return;
     }
     const { list, ink } = glyphs(crop, box360.width, box360.height);
@@ -358,6 +407,15 @@ function startEmeraldMask(api, state) {
       }
       const why = {};
       const found = pixels ? findEmeraldMask(pixels, area.width, area.height, scale, why) : null;
+      if (found) {
+        // The finder counts from AREA; the area really starts at a whole
+        // pixel. Without this the mask lands up to half a pixel off.
+        const dx = area.x / scale - AREA.x;
+        const dy = area.y / scale - AREA.y;
+        found.x += dx; found.y += dy;
+        found.number.x += dx; found.number.y += dy;
+        found.decimals.x += dx;
+      }
       const methods = Object.entries(tried).map(([name, result]) => `${name}:${result}`).join(' ');
       show(found, found ? null : `${why.reason ?? 'capture'}, ${video.videoWidth}×${video.videoHeight}, ${methods}`,
         pixels, area.width);
@@ -375,6 +433,11 @@ function startEmeraldMask(api, state) {
   };
 }
 
+// '' (unchanged), 'cut' or 'rewrite'.
+function emeraldMode(api) {
+  return api.setting('emeraldMode') ?? '';
+}
+
 export default function activate(api) {
   api.addTranslations(ENGLISH);
   const emerald = { found: false, problem: null };
@@ -386,7 +449,7 @@ export default function activate(api) {
       stopEmerald = null;
     }
   };
-  setEmerald(api.setting('emeraldMask'));
+  setEmerald(Boolean(emeraldMode(api)));
 
   // Launch state from the gateway, followed while a launch runs.
   const launch = { state: 'idle', message: '' };
@@ -424,20 +487,27 @@ export default function activate(api) {
         visible: () => launch.state !== 'idle',
         value: () => api.tr(launch.message || launch.state),
       },
-      { type: 'toggle', key: 'emeraldMask', label: 'Réécrire le compteur d’émeraudes' },
       {
-        type: 'number', key: 'emeraldCount', label: 'Nombre affiché (vide : après la virgule)', placeholder: '86',
-        visible: () => Boolean(stopEmerald),
+        type: 'choice', key: 'emeraldMode', label: 'Compteur d’émeraudes',
+        choices: [
+          { value: '', label: 'Inchangé' },
+          { value: 'cut', label: 'Coupé à la virgule' },
+          { value: 'rewrite', label: 'Réécrit' },
+        ],
       },
       {
-        type: 'status', label: 'Compteur d’émeraudes',
+        type: 'number', key: 'emeraldCount', label: 'Nombre affiché (vide : après la virgule)', placeholder: '86',
+        visible: () => emeraldMode(api) === 'rewrite',
+      },
+      {
+        type: 'status', label: 'Détection du compteur',
         visible: () => Boolean(stopEmerald),
         value: () => (emerald.found ? api.tr('détecté')
           : emerald.problem ? `${api.tr('non détecté')} (${emerald.problem})` : api.tr('non détecté')),
       },
     ],
     onSetting: (key, value) => {
-      if (key === 'emeraldMask') setEmerald(value);
+      if (key === 'emeraldMode') setEmerald(Boolean(value));
     },
     dispose: () => {
       setEmerald(false);

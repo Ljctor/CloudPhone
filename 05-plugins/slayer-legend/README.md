@@ -8,7 +8,7 @@ no game-specific code.
 | Feature | What it does |
 |---|---|
 | **Lancer le jeu** (Launch the game), button **Lancer** (Launch) | Starts the game and brings it to the battle screen. It taps exactly three things, each only when the screen shows it: "TAP TO START", **Confirm** on the "last save time" notice (the latest save), and "Press here to finish Power Saving Mode", held 4 s as the game requires (at most 3 times). It only runs when you press it. On any other screen (Google sign-in, an update, an event pop-up) it stops after about 45–60 s with "Écran inattendu : termine le lancement à la main" (Unexpected screen: finish the launch by hand), and in any case after 3 minutes. The status row **Lancement** (Launch) shows where it is. |
-| **Réécrire le compteur d’émeraudes** (Rewrite the emerald counter) | Covers the emerald counter of the top bar, on this screen only, and writes over it at the game's size for that many digits (6 digits are smaller than 5 or fewer): by default the digits after the comma, leading zeros dropped (`284,086` shows `86`), or the number typed in **Nombre affiché (vide : après la virgule)** (Number shown (empty: after the comma)). The status row **Compteur d’émeraudes** (Emerald counter) says détecté / non détecté (detected / not detected). Nothing is sent to Android. The option is stored per browser, like the page's other options. |
+| **Compteur d’émeraudes** (Emerald counter) | On this screen only, nothing is sent to Android. **Coupé à la virgule** (Cut at the comma): the comma and what follows are covered with the bar's colour (`284,086` shows `284`). **Réécrit** (Rewritten): the counter is covered and written again at the game's size for that many digits (6 digits are smaller than 5 or fewer), on the game's baseline: by default the digits after the comma, leading zeros dropped (`284,086` shows `86`), or the number typed in **Nombre affiché (vide : après la virgule)** (Number shown (empty: after the comma)), drawn in the game's own pixel font (`emerald_font.js`) and in the colour of the digits it replaces. The status row **Détection du compteur** (Counter detection) says détecté / non détecté (detected / not detected). Stored per browser, like the page's other options. |
 
 ## Install
 
@@ -38,6 +38,7 @@ release's `uninstall.sh` removes them with the rest of `/opt/cloudphone`.
 | `plugin.json` | id, title, version |
 | `page.js` | page side: options, the emerald overlay, the launch button |
 | `emerald_mask.js` | finds the emerald counter on the video |
+| `emerald_font.js` | the game's counter font at 480 px wide, for the rewritten number |
 | `gateway.py` | gateway side: `/api/v1/plugins/slayer-legend/launch` and `/emerald-mask` |
 | `emerald_mask.py` | Python twin of `emerald_mask.js`, for browsers that cannot read the video's pixels (Firefox on Android); keep the two in step |
 
