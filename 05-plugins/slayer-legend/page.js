@@ -103,8 +103,12 @@ function blank(data) {
 const DIGIT_ADVANCE = 0.68;
 const COMMA_ADVANCE = 0.35;
 const SHORT_NUMBER_SCALE = 1.11;
-// Cap height of the drawn font, as a fraction of its font size.
+// Cap height of the drawn font, and where its baseline sits from the top
+// of a line-height-1 box, as fractions of its font size.
 const CAP_HEIGHT = 0.72;
+const BASELINE = 0.81;
+// Margin the finder leaves around the number, in 360-wide pixels.
+const NUMBER_PAD = 1;
 
 function digitsShown(number) {
   const perHeight = number.width / number.digitHeight;
@@ -117,7 +121,7 @@ function digitsShown(number) {
 
 // The digits after the comma, cut out of `rgba` (width × height pixels,
 // 4 bytes each) as glyphs: [{ from, to }] column ranges, left to right.
-function glyphs(rgba, width, height) {
+export function glyphs(rgba, width, height) {
   const lum = (x, y) => {
     const i = (y * width + x) * 4;
     return (rgba[i] * 299 + rgba[i + 1] * 587 + rgba[i + 2] * 114) / 1000;
@@ -129,18 +133,30 @@ function glyphs(rgba, width, height) {
       high = Math.max(high, lum(x, y));
     }
   }
-  const level = low + (high - low) * 0.5;
+  // High enough that the anti-aliased edges between touching digits stay
+  // below it ("086" at 480 px wide merges into one glyph at 0.5).
+  const level = low + (high - low) * 0.7;
   const ink = (x, y) => lum(x, y) > level;
   const used = (x) => {
     for (let y = 0; y < height; y++) if (ink(x, y)) return true;
     return false;
   };
   const list = [];
+  // A glyph wider than 1.5 digits is several touching digits: split it by
+  // the digit pitch (digits are 0.68 of their height apart; the crop has one
+  // row of margin above and below).
+  const pitch = Math.max(2, DIGIT_ADVANCE * (height - 2));
   for (let x = 0; x < width; x++) {
     if (!used(x)) continue;
     let to = x;
     while (to + 1 < width && used(to + 1)) to++;
-    list.push({ from: x, to });
+    const parts = to - x + 1 > 1.5 * pitch ? Math.round((to - x + 2) / pitch) : 1;
+    for (let k = 0; k < parts; k++) {
+      list.push({
+        from: x + Math.round((k * (to - x + 1)) / parts),
+        to: x + Math.round(((k + 1) * (to - x + 1)) / parts) - 1,
+      });
+    }
     x = to;
   }
   return { list, ink };
@@ -149,7 +165,7 @@ function glyphs(rgba, width, height) {
 // A "0": one hole through the middle. Down its centre column, ink at the
 // top and the bottom with no ink in between (an 8 has ink in the middle,
 // a 6 or a 9 a hole on one half only).
-function isZero(glyph, ink, height) {
+export function isZero(glyph, ink, height) {
   if (glyph.to - glyph.from < 2) return false;
   const x = Math.round((glyph.from + glyph.to) / 2);
   const rows = [];
@@ -180,10 +196,13 @@ function startEmeraldMask(api, state) {
   const box = document.createElement('div');
   box.style.cssText = 'position:absolute;display:none;overflow:visible;white-space:nowrap;color:#fff;'
     + 'font-family:"Arial Black","Arial",sans-serif;font-weight:900;line-height:1;'
-    + 'text-shadow:0 0 1px #000,0 0 1px #000;align-items:center;box-sizing:border-box';
+    + 'text-shadow:0 0 1px #000,0 0 1px #000;box-sizing:border-box';
+  // Both sit on the game's baseline: bigger digits grow upwards, so that
+  // they line up with the diamonds' digits, as the game draws them.
   const copy = document.createElement('canvas');
-  copy.style.cssText = 'display:block;image-rendering:pixelated';
+  copy.style.cssText = 'position:absolute;display:block;image-rendering:pixelated';
   const label = document.createElement('span');
+  label.style.position = 'absolute';
   box.append(copy, label);
   api.layer.appendChild(box);
   const canvas = document.createElement('canvas');
@@ -211,19 +230,24 @@ function startEmeraldMask(api, state) {
       const sixDigitHeight = digitsShown(number) <= 5 ? number.digitHeight / SHORT_NUMBER_SCALE : number.digitHeight;
       const heightFor = (digits) => (digits <= 5 ? sixDigitHeight * SHORT_NUMBER_SCALE : sixDigitHeight);
       Object.assign(box.style, {
-        display: 'flex', left: `${number.x * k}px`, top: `${number.y * k}px`,
+        display: 'block', left: `${number.x * k}px`, top: `${number.y * k}px`,
         // Wide enough to hide the game's number; the new one may be longer.
-        minWidth: `${number.width * k}px`, height: `${number.height * k}px`,
-        background: mask.color, paddingLeft: `${k}px`,
+        width: `${number.width * k}px`, height: `${number.height * k}px`,
+        background: mask.color,
       });
+      // The digits' bottom inside the box (the box has 1 px of margin).
+      const baseline = (NUMBER_PAD + number.digitHeight) * k;
       if (wanted) {
         copy.style.display = 'none';
-        label.style.display = '';
+        const fontSize = (heightFor(wanted.length) / CAP_HEIGHT) * k;
         label.textContent = grouped(wanted);
-        box.style.fontSize = `${(heightFor(wanted.length) / CAP_HEIGHT) * k}px`;
+        Object.assign(label.style, {
+          display: '', left: `${NUMBER_PAD * k}px`, fontSize: `${fontSize}px`,
+          top: `${baseline - BASELINE * fontSize}px`,
+        });
       } else {
         label.style.display = 'none';
-        drawDecimals(mask, rgba, areaWidth, heightFor, k);
+        drawDecimals(mask, rgba, areaWidth, heightFor, k, baseline);
       }
     } else {
       box.style.display = 'none';
@@ -235,7 +259,7 @@ function startEmeraldMask(api, state) {
   };
   // Copies the digits after the comma into `copy`, leading zeros dropped,
   // scaled to the game's size for that many digits.
-  const drawDecimals = (mask, rgba, areaWidth, heightFor, k) => {
+  const drawDecimals = (mask, rgba, areaWidth, heightFor, k, baseline) => {
     const box360 = mask.decimals.pixels;
     let crop;
     if (box360.rgb) {
@@ -273,10 +297,16 @@ function startEmeraldMask(api, state) {
     copy.width = to - from + 1;
     copy.height = box360.height;
     copy.getContext('2d').drawImage(source, from, 0, copy.width, copy.height, 0, 0, copy.width, copy.height);
+    // Rows of the crop below the digits' bottom (the comma's tail row).
+    const digitBottom = Math.round((mask.number.y + NUMBER_PAD + mask.number.digitHeight - AREA.y) * sourceScale);
+    const below = box360.y + box360.height - digitBottom;
+    const height = (copy.height / sourceScale) * zoom * k;
     Object.assign(copy.style, {
       display: 'block',
+      left: `${NUMBER_PAD * k}px`,
       width: `${(copy.width / sourceScale) * zoom * k}px`,
-      height: `${(copy.height / sourceScale) * zoom * k}px`,
+      height: `${height}px`,
+      top: `${baseline - height + (below / sourceScale) * zoom * k}px`,
     });
   };
   const capture = async (video, name, area) => {
