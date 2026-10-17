@@ -259,6 +259,28 @@ const CAPTURE_METHODS = {
     context.drawImage(bitmap, 0, 0);
     bitmap.close();
   },
+  // Through a WebGL texture, read back with readPixels.
+  webgl: async (video, context, area, scratch, gl) => {
+    if (!gl) throw new Error('none');
+    gl.canvas.width = video.videoWidth;
+    gl.canvas.height = video.videoHeight;
+    const texture = gl.createTexture();
+    const framebuffer = gl.createFramebuffer();
+    try {
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+      const data = new Uint8ClampedArray(area.width * area.height * 4);
+      // Texture rows are in the video's order: row 0 is the top.
+      gl.readPixels(area.x, area.y, area.width, area.height, gl.RGBA, gl.UNSIGNED_BYTE, data);
+      context.putImageData(new ImageData(data, area.width, area.height), 0, 0);
+    } finally {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.deleteFramebuffer(framebuffer);
+      gl.deleteTexture(texture);
+    }
+  },
   frame: async (video, context, area) => {
     if (typeof VideoFrame === 'undefined') throw new Error('none');
     const frame = new VideoFrame(video);
@@ -270,6 +292,10 @@ const CAPTURE_METHODS = {
   },
 };
 
+// When no method gives an image, the gateway finds the mask on an emulator
+// screenshot instead (slower to follow, costs the server a little CPU).
+const EMERALD_SERVER_MS = 500;
+
 // True when every pixel is the same: the copy failed.
 function blank(data) {
   for (let i = 4; i < data.length; i += 4) {
@@ -278,7 +304,7 @@ function blank(data) {
   return true;
 }
 
-function useEmeraldMask(deviceRef, enabled) {
+function useEmeraldMask(deviceRef, enabled, gatewayUrl) {
   const [mask, setMask] = useState(null);
   const [problem, setProblem] = useState(null);
   useEffect(() => {
@@ -289,13 +315,22 @@ function useEmeraldMask(deviceRef, enabled) {
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d', { willReadFrequently: true });
     const scratch = document.createElement('canvas').getContext('2d');
+    let gl = null;
+    try {
+      gl = document.createElement('canvas').getContext('webgl', { preserveDrawingBuffer: true });
+    } catch {
+      gl = null;
+    }
+    // Set once every method gave a blank image or an error.
+    let server = false;
+    let lastServer = 0;
     // Method in use, once one gave a non-blank image; and what each gave.
     let method = null;
     const tried = {};
     let busy = false;
     const capture = async (video, name, area) => {
       context.clearRect(0, 0, area.width, area.height);
-      await CAPTURE_METHODS[name](video, context, area, scratch);
+      await CAPTURE_METHODS[name](video, context, area, scratch, gl);
       return context.getImageData(0, 0, area.width, area.height).data;
     };
     const timer = window.setInterval(async () => {
@@ -311,6 +346,16 @@ function useEmeraldMask(deviceRef, enabled) {
       }
       busy = true;
       try {
+        if (server) {
+          if (Date.now() - lastServer < EMERALD_SERVER_MS) return;
+          lastServer = Date.now();
+          const response = await fetch(`${gatewayUrl}/api/v1/emerald-mask`, { cache: 'no-store' });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const { mask: found, reason } = await response.json();
+          setMask((current) => (JSON.stringify(current) === JSON.stringify(found) ? current : found));
+          setProblem(found ? null : `${reason}, serveur`);
+          return;
+        }
         const scale = video.videoWidth / 360;
         const area = {
           x: Math.round(EMERALD_AREA.x * scale),
@@ -334,17 +379,23 @@ function useEmeraldMask(deviceRef, enabled) {
             break;
           }
         }
+        if (!method && Object.keys(tried).length === Object.keys(CAPTURE_METHODS).length) {
+          server = true;
+          return;
+        }
         const why = {};
         const found = pixels ? findEmeraldMask(pixels, area.width, area.height, scale, why) : null;
         setMask((current) => (JSON.stringify(current) === JSON.stringify(found) ? current : found));
         const methods = Object.entries(tried).map(([name, result]) => `${name}:${result}`).join(' ');
         setProblem(found ? null : `${why.reason ?? 'capture'}, ${video.videoWidth}×${video.videoHeight}, ${methods}`);
+      } catch (error) {
+        setProblem(String(error?.message ?? error));
       } finally {
         busy = false;
       }
     }, 250);
     return () => window.clearInterval(timer);
-  }, [deviceRef, enabled]);
+  }, [deviceRef, enabled, gatewayUrl]);
   return [mask, problem];
 }
 
@@ -786,7 +837,7 @@ function App() {
   const gateway = window.location.host;
   const gatewayUrl = `${window.location.protocol}//${gateway}`;
   const stats = useStreamStats(deviceRef, gatewayUrl);
-  const [emeraldMask, emeraldProblem] = useEmeraldMask(deviceRef, settings.emeraldMask);
+  const [emeraldMask, emeraldProblem] = useEmeraldMask(deviceRef, settings.emeraldMask, gatewayUrl);
   const [displayState, refreshDisplay] = useDisplayState(gatewayUrl);
   const server = useServerState(gatewayUrl);
   // Seconds the stream has been trying to connect, and consecutive failed

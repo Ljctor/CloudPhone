@@ -41,6 +41,7 @@ from .proto import emulator_controller_pb2_grpc as ec_grpc
 from .proto import rtc_service_v2_pb2 as rtc
 from .proto import rtc_service_v2_pb2_grpc as rtc_grpc
 from .proto import ice_config_pb2 as ice
+from .emerald_mask import AREA as EMERALD_AREA, find_emerald_mask, js_round
 
 # Configure Logging
 logging.basicConfig(
@@ -79,6 +80,10 @@ KICKED = {}
 KICK_SECONDS = 600.0
 CLOSED_BY_OTHER_VIEWER = 4001
 STATE_CACHE = {"time": 0.0, "value": None}
+# Emerald mask computed here for pages that cannot read the video's pixels:
+# one screenshot at a time, shared by every page asking within the period.
+EMERALD_CACHE = {"time": 0.0, "value": None, "lock": None}
+EMERALD_CACHE_SECONDS = 0.4
 STATE_CACHE_SECONDS = 2.0
 # The gateway also serves the page, so page and API share one origin and no
 # CORS is needed. Each start draws a random token, written into index.html;
@@ -281,6 +286,51 @@ async def handle_state(request):
         STATE_CACHE["time"] = loop.time()
     value = {**STATE_CACHE["value"], "kicked": is_kicked(viewer_of(request))}
     return web.json_response(value, headers={"Cache-Control": "no-store"})
+
+
+async def read_emerald_mask():
+    if not EMULATOR_CHANNEL:
+        return {"mask": None, "reason": "emulator"}
+    stub = ec_grpc.EmulatorControllerStub(EMULATOR_CHANNEL)
+    image = await stub.getScreenshot(
+        ec.ImageFormat(format=ec.ImageFormat.RGB888),
+        metadata=get_emulator_metadata(),
+        timeout=3,
+    )
+    width = image.format.width
+    if not width or not image.image:
+        return {"mask": None, "reason": "screenshot"}
+    scale = width / 360
+    x0, y0 = js_round(EMERALD_AREA["x"] * scale), js_round(EMERALD_AREA["y"] * scale)
+    w, h = js_round(EMERALD_AREA["width"] * scale), js_round(EMERALD_AREA["height"] * scale)
+    area = bytearray()
+    for y in range(y0, y0 + h):
+        start = (y * width + x0) * 3
+        area += image.image[start:start + w * 3]
+    if len(area) != w * h * 3:
+        return {"mask": None, "reason": "screenshot"}
+    mask, reason = find_emerald_mask(area, w, h, scale, channels=3)
+    return {"mask": mask, "reason": reason}
+
+
+async def handle_emerald_mask(request):
+    """
+    GET /api/v1/emerald-mask: where to hide the decimals of Slayer Legend's
+    emerald counter, from an emulator screenshot. For pages whose browser
+    hands a blank image when copying the video (Firefox on Android).
+    """
+    if EMERALD_CACHE["lock"] is None:
+        EMERALD_CACHE["lock"] = asyncio.Lock()
+    loop = asyncio.get_running_loop()
+    async with EMERALD_CACHE["lock"]:
+        if EMERALD_CACHE["value"] is None or loop.time() - EMERALD_CACHE["time"] > EMERALD_CACHE_SECONDS:
+            try:
+                EMERALD_CACHE["value"] = await read_emerald_mask()
+            except Exception as error:
+                logging.warning("Emerald mask screenshot failed: %s", error)
+                EMERALD_CACHE["value"] = {"mask": None, "reason": "screenshot"}
+            EMERALD_CACHE["time"] = loop.time()
+    return web.json_response(EMERALD_CACHE["value"], headers={"Cache-Control": "no-store"})
 
 
 async def watch_discovery_file():
@@ -728,6 +778,7 @@ def init_app(videobridge_token):
     app.router.add_get("/api/v1/ping", handle_ping)
     app.router.add_get("/api/v1/display", handle_display)
     app.router.add_get("/api/v1/state", handle_state)
+    app.router.add_get("/api/v1/emerald-mask", handle_emerald_mask)
     app.router.add_post("/api/v1/viewers/disconnect-others", handle_disconnect_others)
     app.router.add_post("/api/v1/display", handle_set_display)
     app.router.add_get("/api/v1/emulator/status", handle_status)
