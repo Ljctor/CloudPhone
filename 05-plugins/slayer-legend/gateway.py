@@ -4,6 +4,14 @@ GET  /api/v1/plugins/slayer-legend/emerald-mask
      Where the emerald counter is, and the pixels of its digits after the
      comma, from an emulator screenshot: for browsers that cannot read the
      video's pixels.
+GET  /api/v1/plugins/slayer-legend/screen
+     The screen the game shows, {screen: title | save | battle | menu |
+     saver | other | away (another app in front)}, and the farmed stage,
+     {stage: {number, name, monsters_per_wave, drop, grade, soul_colour,
+     soul_colour_confirmed, checked} or null}, from an emulator screenshot
+     at most every 2 s. The number is read in Power Saving Mode; the
+     battle screen only confirms it (checked: true when the numeral after
+     the name still matches). The rest comes from stages.json.
 GET  /api/v1/plugins/slayer-legend/launch
      State of the last launch: {state, message}.
 POST /api/v1/plugins/slayer-legend/launch
@@ -19,6 +27,7 @@ measured on a 360x780 screen (the page's device shapes keep this ratio).
 import asyncio
 import base64
 import importlib.util
+import json
 import logging
 import os
 import time
@@ -36,6 +45,8 @@ SAVER_TAP = (0.50, 0.88)
 # The game leaves Power Saving Mode only after a press held a few seconds.
 SAVER_HOLD_MS = 4000
 MENU_LABELS = (0.0, 0.975, 1.0, 0.995)
+# The emerald in the top bar: the game's own screens (battle and its menus).
+TOP_EMERALD = (0.377, 0.018, 0.402, 0.030)
 # Power Saving Mode: black screen, orange "In battle . . .", grey button.
 SAVER_BUTTON = (0.33, 0.83, 0.67, 0.92)
 SAVER_TEXT = (0.40, 0.465, 0.60, 0.48)
@@ -44,6 +55,10 @@ SAVER_TOP = (0.10, 0.10, 0.90, 0.25)  # bottom menu names, white on dark
 LAUNCH = {"state": "idle", "message": "", "task": None, "since": 0.0}
 EMERALD = {"time": 0.0, "value": None, "lock": None}
 EMERALD_SECONDS = 0.4
+SCREEN = {"time": 0.0, "value": None, "lock": None}
+SCREEN_SECONDS = 2.0
+# The last stage number read in Power Saving Mode: {number, numeral}.
+FARMED = {"number": None}
 
 
 def load_sibling(directory, name):
@@ -88,12 +103,18 @@ def black(r, g, b):
     return r < 20 and g < 20 and b < 20
 
 
+def green(r, g, b):
+    # Relative, so that it also holds when a panel darkens the screen.
+    return g >= 64 and g > 1.3 * r and g > 2 * b
+
+
 def classify(shot):
     if share(shot, CONFIRM_BUTTON, orange) > 0.6 and share(shot, EXIT_BUTTON, grey) > 0.6:
         return "save"
-    # Menu names along the bottom; one highlighted tab lowers the share.
-    if share(shot, MENU_LABELS, white) > 0.01:
-        return "battle"
+    # The top bar's emerald: the battle screen, or one of its panels over it
+    # (the bottom menu names then go dark or are covered).
+    if share(shot, TOP_EMERALD, green) > 0.15:
+        return "battle" if share(shot, MENU_LABELS, white) > 0.01 else "menu"
     if (share(shot, SAVER_BUTTON, dim_grey) > 0.8 and share(shot, SAVER_TOP, black) > 0.95
             and share(shot, SAVER_TEXT, orange) > 0.08):
         return "saver"
@@ -151,6 +172,58 @@ def setup(context):
                 EMERALD["time"] = loop.time()
         return context.json(EMERALD["value"])
 
+    stage = load_sibling(context.directory, "stage")
+    with open(os.path.join(context.directory, "stages.json"), encoding="utf-8") as f:
+        table = json.load(f)
+
+    def stage_info(number, checked):
+        if not number or number > len(table["stages"]):
+            return {"number": number, "name": None, "checked": checked}
+        info = dict(zip(table["fields"], table["stages"][number - 1]))
+        return {"number": number, "checked": checked, **info}
+
+    def name_numeral(number):
+        """The Roman numeral ending the stage's name in the table, or None."""
+        if not number or number > len(table["stages"]):
+            return None
+        last = table["stages"][number - 1][0].rsplit(" ", 1)[-1]
+        if not last or any(c not in "IVX" for c in last):
+            return None
+        return stage._roman(last)
+
+    async def read_screen():
+        if not await in_focus():
+            return {"screen": "away", "stage": None}
+        shot = await context.screenshot()
+        if not shot:
+            return {"screen": None, "stage": None}
+        screen = classify(shot)
+        known = FARMED["number"]
+        if screen == "saver":
+            number, numeral = stage.read_saver(shot)
+            # Trust a number whose numeral agrees with the table.
+            if number and (numeral is None or name_numeral(number) in (None, numeral)):
+                FARMED["number"] = number
+                return {"screen": screen, "stage": stage_info(number, True)}
+        elif screen in ("battle", "menu") and known:
+            numeral = stage.read_battle(shot)
+            return {"screen": screen, "stage": stage_info(known, numeral is not None and numeral == name_numeral(known))}
+        return {"screen": screen, "stage": stage_info(known, False) if known else None}
+
+    async def handle_screen(request):
+        if SCREEN["lock"] is None:
+            SCREEN["lock"] = asyncio.Lock()
+        loop = asyncio.get_running_loop()
+        async with SCREEN["lock"]:
+            if SCREEN["value"] is None or loop.time() - SCREEN["time"] > SCREEN_SECONDS:
+                try:
+                    SCREEN["value"] = await read_screen()
+                except Exception as e:
+                    logging.warning(f"Slayer Legend screen: no screenshot: {e!r}")
+                    SCREEN["value"] = {"screen": None}
+                SCREEN["time"] = loop.time()
+        return context.json(SCREEN["value"])
+
     def report(state, message=""):
         LAUNCH["state"], LAUNCH["message"] = state, message
         logging.info(f"Slayer Legend launch: {state} {message}".rstrip())
@@ -187,7 +260,7 @@ def setup(context):
                 if not shot:
                     continue
                 screen = classify(shot)
-                if screen == "battle" and await in_focus():
+                if screen in ("battle", "menu") and await in_focus():
                     report("done", "Le jeu est sur l’écran de combat")
                     return
                 if screen == "save":
@@ -242,5 +315,6 @@ def setup(context):
         return context.json({"state": "starting"}, status=202)
 
     context.add_get("/emerald-mask", handle_emerald_mask)
+    context.add_get("/screen", handle_screen)
     context.add_get("/launch", handle_launch_state)
     context.add_post("/launch", handle_launch)

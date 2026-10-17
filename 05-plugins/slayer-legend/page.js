@@ -32,6 +32,31 @@ const ENGLISH = {
   'Le jeu n’a pas atteint l’écran de combat en 3 minutes': 'The game did not reach the battle screen in 3 minutes',
   'Android ne répond pas': 'Android does not answer',
   'Un lancement est déjà en cours': 'A launch is already running',
+  'Écran détecté': 'Detected screen',
+  'Écran titre': 'Title screen',
+  'Choix de la sauvegarde': 'Save choice',
+  'Combat': 'Battle',
+  'Économie d’énergie': 'Power Saving',
+  'Autre (menu, chargement…)': 'Other (menu, loading…)',
+  'Pas de capture d’écran': 'No screenshot',
+  'Menu du jeu': 'Game menu',
+  'Autre application': 'Another app',
+  'Stage farmé': 'Farmed stage',
+  'vu en mode économie d’énergie, à confirmer': 'seen in Power Saving Mode, to be confirmed',
+  'inconnu : passe en mode économie d’énergie pour le lire': 'unknown: go to Power Saving Mode to read it',
+  'Monstres par vague': 'Monsters per wave',
+  'Équipement lâché': 'Equipment dropped',
+  'Arme': 'Weapon',
+  'Accessoire': 'Accessory',
+  'Commun': 'Common',
+  'Supérieur': 'Great',
+  'Épique': 'Epic',
+  'Légendaire': 'Legendary',
+  'Couleur des âmes': 'Soul colour',
+  'verte': 'green',
+  'bleue': 'blue',
+  'rouge': 'red',
+  'déduite, non vérifiée': 'deduced, not checked',
 };
 
 // Ways to copy the video's pixels. Some browsers (Firefox on Android, with
@@ -467,8 +492,63 @@ export default function activate(api) {
   };
   follow();
 
+  // The game's screen, asked to the gateway only while the options panel
+  // shows it: each render asks again once the last answer is 3 s old.
+  const SCREENS = {
+    title: 'Écran titre', save: 'Choix de la sauvegarde', battle: 'Combat',
+    saver: 'Économie d’énergie', other: 'Autre (menu, chargement…)',
+    menu: 'Menu du jeu', away: 'Autre application',
+  };
+  const GRADES = { Common: 'Commun', Great: 'Supérieur', Rare: 'Rare', Epic: 'Épique', Legendary: 'Légendaire' };
+  const COLOURS = { green: 'verte', blue: 'bleue', red: 'rouge' };
+  const stageRow = (label, value) => ({
+    type: 'status', label, visible: () => Boolean(screen.answer?.stage?.name), value,
+  });
+  const screen = { answer: null, at: 0, busy: false, timer: null };
+  const watchScreen = () => {
+    if (screen.busy || Date.now() - screen.at < 3000) return;
+    screen.busy = true;
+    api.get('/screen').catch(() => null).then((answer) => {
+      Object.assign(screen, { answer, at: Date.now(), busy: false });
+      api.refresh();
+      window.clearTimeout(screen.timer);
+      screen.timer = window.setTimeout(api.refresh, 3000);
+    });
+  };
+
   return {
     options: [
+      {
+        type: 'status', label: 'Écran détecté',
+        value: () => {
+          watchScreen();
+          const name = screen.answer?.screen;
+          if (!screen.at) return '…';
+          return api.tr(name ? SCREENS[name] ?? name : 'Pas de capture d’écran');
+        },
+      },
+      {
+        type: 'status', label: 'Stage farmé',
+        visible: () => Boolean(screen.at),
+        value: () => {
+          const stage = screen.answer?.stage;
+          if (!stage?.number) return api.tr('inconnu : passe en mode économie d’énergie pour le lire');
+          const text = `${stage.number}${stage.name ? ` · ${stage.name}` : ''}`;
+          return stage.checked ? text : `${text} (${api.tr('vu en mode économie d’énergie, à confirmer')})`;
+        },
+      },
+      stageRow('Monstres par vague', () => String(screen.answer.stage.monsters_per_wave ?? '–')),
+      stageRow('Équipement lâché', () => {
+        const stage = screen.answer.stage;
+        const [grade, level] = String(stage.grade ?? '').split(' ');
+        return `${api.tr(stage.drop === 'A' ? 'Accessoire' : 'Arme')}, ${api.tr(GRADES[grade] ?? grade)} ${level ?? ''}`.trim();
+      }),
+      stageRow('Couleur des âmes', () => {
+        const stage = screen.answer.stage;
+        if (!stage.soul_colour) return '–';
+        const colour = api.tr(COLOURS[stage.soul_colour] ?? stage.soul_colour);
+        return stage.soul_colour_confirmed ? colour : `${colour} (${api.tr('déduite, non vérifiée')})`;
+      }),
       {
         type: 'action', label: 'Lancer le jeu', button: 'Lancer',
         disabled: () => ['starting', 'loading'].includes(launch.state),
@@ -512,6 +592,7 @@ export default function activate(api) {
     dispose: () => {
       setEmerald(false);
       if (poll) window.clearInterval(poll);
+      window.clearTimeout(screen.timer);
     },
   };
 }
