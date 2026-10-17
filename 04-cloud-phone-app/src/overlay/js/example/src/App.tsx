@@ -19,7 +19,7 @@ const USE_DATA_CHANNEL = true;
 // Give up showing the reconnect feedback if no frame arrives in this time.
 const RECONNECT_FEEDBACK_MS = 15000;
 // Android's display size until the gateway reports the real one.
-const DEFAULT_DISPLAY = { width: 540, height: 1170 };
+const DEFAULT_DISPLAY = { width: 480, height: 1040 };
 
 function viewportSize() {
   const viewport = window.visualViewport;
@@ -113,11 +113,12 @@ const DEVICE_SHAPES = [
   { id: 'fold', label: 'Pliable ouvert', ratio: 2176 / 1812 },
   { id: 'window', label: 'Cette fenêtre', ratio: null },
 ];
-// Auto is the lightest size, the most fluid on a server without a GPU.
+// 480p is the default: sharp enough on a phone, still fluid on a server
+// without a GPU.
+const DEFAULT_RESOLUTION = '480';
 const RESOLUTIONS = [
-  { id: 'auto', label: 'Auto', width: 360 },
   { id: '360', label: '360p', width: 360 },
-  { id: '480', label: '480p', width: 480 },
+  { id: '480', label: '480p (défaut)', width: 480 },
   { id: '720', label: '720p', width: 720 },
   { id: '1080', label: '1080p', width: 1080 },
 ];
@@ -134,7 +135,8 @@ function shapeRatio(shape) {
 
 function targetSize(shapeId, resolutionId) {
   const shape = DEVICE_SHAPES.find((item) => item.id === shapeId) ?? DEVICE_SHAPES[0];
-  const resolution = RESOLUTIONS.find((item) => item.id === resolutionId) ?? RESOLUTIONS[0];
+  const resolution = RESOLUTIONS.find((item) => item.id === resolutionId)
+    ?? RESOLUTIONS.find((item) => item.id === DEFAULT_RESOLUTION);
   const width = resolution.width;
   return {
     width,
@@ -145,11 +147,11 @@ function targetSize(shapeId, resolutionId) {
 
 // The presets closest to a configured size, for the selectors' start values.
 function matchPresets(size) {
-  if (!size?.width) return { shape: 's23', resolution: 'auto' };
+  if (!size?.width) return { shape: 's23', resolution: DEFAULT_RESOLUTION };
   const ratio = size.height / size.width;
   const shape = DEVICE_SHAPES.find((item) => item.ratio && Math.abs(item.ratio - ratio) / ratio < 0.015);
   const resolution = RESOLUTIONS.find((item) => item.width === size.width);
-  return { shape: shape?.id ?? 'window', resolution: resolution?.id ?? 'auto' };
+  return { shape: shape?.id ?? 'window', resolution: resolution?.id ?? DEFAULT_RESOLUTION };
 }
 
 function shortSide(size) {

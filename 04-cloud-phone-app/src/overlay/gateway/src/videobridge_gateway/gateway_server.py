@@ -57,8 +57,8 @@ VIDEOBRIDGE_CHANNEL = None
 ADB_PATH = "/opt/android-sdk/platform-tools/adb"
 ADB_SERIAL = "emulator-5558"
 # Android display size in pixels, read from the running AVD's config.ini.
-DISPLAY_WIDTH = 540
-DISPLAY_HEIGHT = 1170
+DISPLAY_WIDTH = 480
+DISPLAY_HEIGHT = 1040
 AVD_DIR = None
 # Screen size changes requested from the page: the gateway writes
 # "WIDTH HEIGHT DENSITY" to DISPLAY_REQUEST and a root service applies it,

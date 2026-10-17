@@ -132,6 +132,7 @@ const EN = {
   // Android screen size
   'Appareil': 'Device',
   'Résolution': 'Resolution',
+  '480p (défaut)': '480p (default)',
   'Appliquer': 'Apply',
   'Tablette 16:10': 'Tablet 16:10',
   'Pliable ouvert': 'Foldable, open',

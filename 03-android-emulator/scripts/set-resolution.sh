@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Changes Android's screen size, then reboots Android (data is kept):
 #   sudo 03-android-emulator/scripts/set-resolution.sh WIDTH HEIGHT DENSITY
-# e.g. 360 780 160 (light) or 540 1170 240 (default). Fewer pixels means
+# e.g. 360 780 160 (light) or 480 1040 213 (default, the page's 480p). Fewer pixels means
 # less CPU for software rendering and video encoding.
 #
 # Updates the AVD's config.ini and SCREEN_* in cloudphone.conf (a backup of

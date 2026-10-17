@@ -91,7 +91,7 @@ The installer:
 3. creates the unprivileged `cloudphone` account, member of `kvm`;
 4. installs the Android SDK, the pinned emulator and the system image,
    showing you Google's licences;
-5. creates the Android device (AVD) `cloudphone` with a 540×1170 screen;
+5. creates the Android device (AVD) `cloudphone` with a 480×1040 screen (480p);
 6. installs `cloudphone-emulator` and `cloudphone-display.path`, starts
    Android and waits until it has booted;
 7. installs the gateway and the web page, starts `cloudphone-gateway` and
@@ -143,7 +143,7 @@ Settings live in `/etc/cloudphone/cloudphone.conf`; upgrades keep your edits.
 | `EMULATOR_GPU` | `swiftshader_indirect` | Software rendering, works without a GPU |
 | `EMULATOR_PORT` / `GRPC_PORT` | `5558` / `8554` | Loopback ports of the emulator (it also uses `EMULATOR_PORT` + 1) |
 | `ANDROID_ADB_SERVER_PORT` | `5037` | adb server of this instance |
-| `SCREEN_WIDTH` / `SCREEN_HEIGHT` / `SCREEN_DENSITY` | `540` / `1170` / `240` | Screen of a newly created device |
+| `SCREEN_WIDTH` / `SCREEN_HEIGHT` / `SCREEN_DENSITY` | `480` / `1040` / `213` | Screen of a newly created device |
 
 Apply a change with `sudo systemctl restart cloudphone-emulator` (this reboots
 Android) or, for `LISTEN_ADDRESS` and `WEB_PORT` only,
@@ -167,9 +167,9 @@ EMULATOR_GPU=swiftshader_indirect
 EMULATOR_PORT=5560
 GRPC_PORT=8556
 ANDROID_ADB_SERVER_PORT=5038
-SCREEN_WIDTH=540
-SCREEN_HEIGHT=1170
-SCREEN_DENSITY=240
+SCREEN_WIDTH=480
+SCREEN_HEIGHT=1040
+SCREEN_DENSITY=213
 CONF
 sudo ./install.sh
 ```
