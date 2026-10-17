@@ -239,6 +239,45 @@ function DisplaySettings({ gatewayUrl, displayState, refresh, rowStyle, labelSty
 // viewers, load. failures counts consecutive unanswered polls.
 // While enabled, reads the emerald counter's area of the video 4 times a
 // second and returns the rectangle that hides its last digits, or null.
+// Ways to copy the video's pixels. Some browsers (Firefox on Android, with
+// hardware decoding) hand a blank image to drawImage(video); another path may
+// still work. The first one giving a non-blank image is kept.
+const CAPTURE_METHODS = {
+  // Only the search area.
+  crop: async (video, context, area) => {
+    context.drawImage(video, area.x, area.y, area.width, area.height, 0, 0, area.width, area.height);
+  },
+  // The whole frame, then the area.
+  full: async (video, context, area, scratch) => {
+    scratch.canvas.width = video.videoWidth;
+    scratch.canvas.height = video.videoHeight;
+    scratch.drawImage(video, 0, 0);
+    context.drawImage(scratch.canvas, area.x, area.y, area.width, area.height, 0, 0, area.width, area.height);
+  },
+  bitmap: async (video, context, area) => {
+    const bitmap = await createImageBitmap(video, area.x, area.y, area.width, area.height);
+    context.drawImage(bitmap, 0, 0);
+    bitmap.close();
+  },
+  frame: async (video, context, area) => {
+    if (typeof VideoFrame === 'undefined') throw new Error('none');
+    const frame = new VideoFrame(video);
+    try {
+      context.drawImage(frame, area.x, area.y, area.width, area.height, 0, 0, area.width, area.height);
+    } finally {
+      frame.close();
+    }
+  },
+};
+
+// True when every pixel is the same: the copy failed.
+function blank(data) {
+  for (let i = 4; i < data.length; i += 4) {
+    if (data[i] !== data[0] || data[i + 1] !== data[1] || data[i + 2] !== data[2]) return false;
+  }
+  return true;
+}
+
 function useEmeraldMask(deviceRef, enabled) {
   const [mask, setMask] = useState(null);
   const [problem, setProblem] = useState(null);
@@ -249,9 +288,20 @@ function useEmeraldMask(deviceRef, enabled) {
     }
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d', { willReadFrequently: true });
-    const timer = window.setInterval(() => {
+    const scratch = document.createElement('canvas').getContext('2d');
+    // Method in use, once one gave a non-blank image; and what each gave.
+    let method = null;
+    const tried = {};
+    let busy = false;
+    const capture = async (video, name, area) => {
+      context.clearRect(0, 0, area.width, area.height);
+      await CAPTURE_METHODS[name](video, context, area, scratch);
+      return context.getImageData(0, 0, area.width, area.height).data;
+    };
+    const timer = window.setInterval(async () => {
+      if (busy) return;
       const video = deviceRef.current?.querySelector('video');
-      if (!context) {
+      if (!context || !scratch) {
         setProblem('canvas');
         return;
       }
@@ -259,20 +309,38 @@ function useEmeraldMask(deviceRef, enabled) {
         setProblem('video');
         return;
       }
-      const scale = video.videoWidth / 360;
-      const width = Math.round(EMERALD_AREA.width * scale);
-      const height = Math.round(EMERALD_AREA.height * scale);
-      canvas.width = width;
-      canvas.height = height;
+      busy = true;
       try {
-        context.drawImage(video, EMERALD_AREA.x * scale, EMERALD_AREA.y * scale, width, height, 0, 0, width, height);
+        const scale = video.videoWidth / 360;
+        const area = {
+          x: Math.round(EMERALD_AREA.x * scale),
+          y: Math.round(EMERALD_AREA.y * scale),
+          width: Math.round(EMERALD_AREA.width * scale),
+          height: Math.round(EMERALD_AREA.height * scale),
+        };
+        canvas.width = area.width;
+        canvas.height = area.height;
+        let pixels = null;
+        for (const name of method ? [method] : Object.keys(CAPTURE_METHODS)) {
+          try {
+            pixels = await capture(video, name, area);
+            tried[name] = blank(pixels) ? 'blank' : 'ok';
+          } catch (error) {
+            tried[name] = String(error?.message === 'none' ? 'none' : error?.name ?? error);
+            pixels = null;
+          }
+          if (tried[name] === 'ok') {
+            method = name;
+            break;
+          }
+        }
         const why = {};
-        const found = findEmeraldMask(context.getImageData(0, 0, width, height).data, width, height, scale, why);
+        const found = pixels ? findEmeraldMask(pixels, area.width, area.height, scale, why) : null;
         setMask((current) => (JSON.stringify(current) === JSON.stringify(found) ? current : found));
-        setProblem(found ? null : `${why.reason}, ${video.videoWidth}×${video.videoHeight}`);
-      } catch (error) {
-        setProblem(String(error?.name ?? error));
-        console.warn('Emerald mask:', error);
+        const methods = Object.entries(tried).map(([name, result]) => `${name}:${result}`).join(' ');
+        setProblem(found ? null : `${why.reason ?? 'capture'}, ${video.videoWidth}×${video.videoHeight}, ${methods}`);
+      } finally {
+        busy = false;
       }
     }, 250);
     return () => window.clearInterval(timer);
