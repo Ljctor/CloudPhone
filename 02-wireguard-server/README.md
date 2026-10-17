@@ -99,7 +99,7 @@ wg show wg0
 The firewall must:
 
 - accept **UDP 51820** from the internet (WireGuard);
-- accept **TCP 8000** (`WEB_PORT`) and **UDP
+- accept **TCP 8000** (`WEB_PORT`, the page and its API on one port) and **UDP
   32768-60999** (the WebRTC video) only on the `wg0` interface;
 - keep your SSH port open, or you will lock yourself out.
 
@@ -233,5 +233,6 @@ To revoke a device, delete its `[Peer]` block and run the same
 |---|---|
 | No *latest handshake* in `wg show` | UDP 51820 blocked: server firewall, provider firewall, or a wrong endpoint or key on the phone. |
 | Handshake OK but the page does not load | `LISTEN_ADDRESS` and the firewall rule for TCP 8000 on `wg0`; `curl http://10.20.0.1:8000/` on the server. |
-| Page loads, spinner never ends | UDP 32768-60999 must be accepted on `wg0` for the WebRTC video. |
+| Page loads, then "The video does not connect" | UDP 32768-60999 must be accepted on `wg0` for the WebRTC video. |
+| Page shows "Server unreachable" | The tunnel is off on this device, or the handshake stopped: check the app and `wg show`. |
 | Works on Wi-Fi, not on mobile data | Some networks block UDP; keep `PersistentKeepalive = 25`, or try another network. |

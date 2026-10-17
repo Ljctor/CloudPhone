@@ -21,3 +21,5 @@ From the repository root (build first with `packaging/build-release.sh` if
 ```sh
 packaging/stage-release.sh "$TARGET"   # prints the directory to use as RELEASE
 ```
+
+`packaging/deploy.sh "$TARGET" 04` stages and also runs runbook 02's Apply.

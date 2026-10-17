@@ -2,15 +2,18 @@
 
 Parts 03 and 04 in one command, on any Debian or Ubuntu host with KVM. Agents
 and hardened servers follow the parts' `AGENTS.md` instead; the scripts are
-the same.
+the same. New to this? [`TUTORIAL.md`](TUTORIAL.md) walks through the whole
+installation, parts 01 to 04, step by step.
 
 Cloud Phone turns a Linux server into an Android phone you use from a browser.
-It installs two systemd services:
+It installs two systemd services, plus a root path unit
+(`cloudphone-display.path`) that applies screen size changes requested from
+the page:
 
 | Service | What it does | Listens on |
 |---|---|---|
 | `cloudphone-emulator` | Google's official Android Emulator running Android 16 with Google Play, headless | `127.0.0.1:5558` (adb), `127.0.0.1:8554` (gRPC) |
-| `cloudphone-gateway` | Serves the mobile control page, streams the screen over WebRTC and forwards touch and keys | `LISTEN_ADDRESS:8000` (`WEB_PORT`), WebRTC media on UDP 32768-60999 |
+| `cloudphone-gateway` | Serves the mobile control page and its API on one port, streams the screen over WebRTC and forwards touch and keys | `LISTEN_ADDRESS:8000` (`WEB_PORT`), WebRTC media on UDP 32768-60999 |
 
 ```text
  phone browser ──WireGuard──▶ :8000 page + gateway ──gRPC (loopback)──▶ Android Emulator
@@ -89,8 +92,10 @@ The installer:
 4. installs the Android SDK, the pinned emulator and the system image,
    showing you Google's licences;
 5. creates the Android device (AVD) `cloudphone` with a 540×1170 screen;
-6. installs the gateway and the web page, then starts the three services;
-7. waits until Android has booted and the page answers.
+6. installs `cloudphone-emulator` and `cloudphone-display.path`, starts
+   Android and waits until it has booted;
+7. installs the gateway and the web page, starts `cloudphone-gateway` and
+   waits until the page answers.
 
 Downloading the SDK takes a few minutes; Android's first boot takes up to 10
 minutes with software rendering. Re-running `install.sh` is safe.
@@ -111,12 +116,18 @@ Open `http://<address>:8000/` in the phone's browser (with WireGuard active,
 `http://10.20.0.1:8000/`). Android starts on its home screen; sign in to Google
 Play as on a new phone.
 
-- Gray screen with a spinner and an orange dot: the video stream is still
-  connecting.
-- Green dot: video is playing. A black screen with a green dot means Android
+- Spinner with "Connecting to the stream…" and an orange LED on `↻`: the
+  video stream is still connecting.
+- Green LED: video is playing. A black screen with a green LED means Android
   itself displays black (for example, the screen is off: press the power key).
+- When something is wrong, the screen or a closable banner says what (see
+  [Troubleshooting](#troubleshooting)); the LED turns red when it needs
+  action.
 - `↻` reconnects the video stream only. It never restarts Android or the app in
   the foreground.
+- The ping block opens Server settings (state, Android's screen size,
+  disconnecting other devices); the fps block opens Client settings
+  (language, touch marker, options).
 
 ## Configuration
 
@@ -125,7 +136,7 @@ Settings live in `/etc/cloudphone/cloudphone.conf`; upgrades keep your edits.
 | Setting | Default | Meaning |
 |---|---|---|
 | `LISTEN_ADDRESS` | `0.0.0.0` | Address of the web page and the gateway |
-| `WEB_PORT` | `8000` | Port of the web page; the gateway uses `WEB_PORT` + 1 |
+| `WEB_PORT` | `8000` | Port of the web page and its API (one port, one origin) |
 | `AVD_NAME` | `cloudphone` | Android device to run |
 | `EMULATOR_MEMORY_MB` | `4096` | RAM given to Android |
 | `EMULATOR_CORES` | `4` | CPU cores given to Android |
@@ -180,8 +191,9 @@ sudo systemctl restart cloudphone-gateway   # fix streaming; Android keeps runni
 sudo systemctl restart cloudphone-emulator          # reboot Android
 ```
 
-After an upgrade of the web page, close the browser tab and open it again so
-the browser does not keep the old version.
+After an upgrade or a gateway restart, reload the page: the page itself is
+never cached, and each gateway start issues a new page token, so the buttons
+of a tab opened before answer 403 until it is reloaded.
 
 ### Upgrade
 
@@ -226,6 +238,14 @@ sudo ./uninstall.sh --purge    # erases the phone permanently
 | The page loads but the screen stays gray after Android was restarted | `sudo systemctl restart cloudphone-gateway` |
 | `cloudphone-emulator` keeps restarting | `journalctl -u cloudphone-emulator -n 100`; check free RAM against `EMULATOR_MEMORY_MB`. |
 | The page does not load at all | Check `LISTEN_ADDRESS`: with a WireGuard address, the tunnel must be up on the server (`wg show`). The services retry until it is. |
+| "Server unreachable" | The page no longer reaches the gateway: switch the phone's WireGuard tunnel on; on the server, `systemctl status cloudphone-gateway`. |
+| "Android stopped on an error" / "Android is stopped" | `sudo systemctl start cloudphone-emulator`; read `journalctl -u cloudphone-emulator -n 100` first. |
+| "Android crashed", "Android is starting…", "Changing resolution" | Wait: systemd restarts Android, or a screen size change is rebooting it (1–2 minutes). The page reconnects by itself. |
+| "The video does not connect" | UDP 32768-60999 does not reach the phone (firewall on `wg0`, or a network blocking UDP). Tap `↻` to retry. |
+| "Another device took over" | Someone pressed Disconnect in Server settings on another device. Tap `↻` to take the phone back. |
+| "Touches do not reach Android" | `sudo systemctl restart cloudphone-gateway`, then reload the page. |
+| "Another device is watching this phone" / "Server under heavy load" | Information only: the image may be slower. Server settings → Disconnect closes the other devices. |
+| Buttons do nothing (POSTs answer 403) | The tab predates a gateway restart: reload the page. |
 
 ## Files
 
@@ -249,7 +269,7 @@ packaging/build-release.sh
 
 The script fetches Google's `android-emulator-container-scripts` at the commit
 pinned in `lib/versions.env`, applies `04-cloud-phone-app/src/overlay`,
-runs the JavaScript tests, builds the web page and the gateway wheel, checks
+runs the JavaScript (jest) tests, builds the web page and the gateway wheel, checks
 that every Python dependency has a wheel for Python 3.10 to 3.13, and writes
 `dist/cloudphone-<version>-linux-x86_64.tar.gz` with its checksum. Downloads
 are cached in `build/cache`. The tarball is reproducible for a given commit.

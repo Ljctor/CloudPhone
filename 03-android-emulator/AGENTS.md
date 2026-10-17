@@ -29,7 +29,9 @@ Rules:
   restart a running Android unless the pinned emulator version changed.
 - Another emulator or adb server on the host: write
   `/etc/cloudphone/cloudphone.conf` with free ports before installing
-  (`README.md`). Do not run adb on a port the installer is about to check.
+  (`README.md`). Never run adb on this instance's adb port (e.g. 5038)
+  while `install.sh` runs: it checks that port is free before starting
+  Android.
 - Do not restart the emulator to fix a display problem; restart
   `cloudphone-gateway` instead (part 04).
 

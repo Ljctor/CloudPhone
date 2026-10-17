@@ -20,13 +20,14 @@ history: the server is the only source of truth (`../docs/METHOD.md`).
 
 Rules:
 
-- `install.sh` restarts only the gateway and the page; Android keeps running.
-  Upgrade = stage a newer release, rerun runbook 02.
+- `install.sh` restarts only the gateway (page and API on one port,
+  `WEB_PORT`); Android keeps running. Upgrade = stage a newer release, rerun
+  runbook 02, or `packaging/deploy.sh "$TARGET" 04` from a checkout.
 - The page has no login: `LISTEN_ADDRESS` must be the WireGuard address and
   the ports open only on `wg0` (runbooks 01, 05).
 - Runbooks 03 and 04 need the human. Never handle Google credentials. Never
   install an APK or a third-party store. Never add anything that launches or
   restarts an app automatically.
 
-Developing the app (source overlay, build, test instance loop):
-`docs/DEVELOPMENT.md`.
+Developing the app (gateway API, page, build, test instance loop, testing
+from a workstation): `docs/DEVELOPMENT.md`.
