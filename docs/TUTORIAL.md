@@ -400,10 +400,10 @@ You should see `==> Installing the slayer-legend plugin`, `==> Restarting
 the gateway to load plugins (Android keeps running)` and `==> Done; reload
 the web page`. Reload the page: cog → **Options** → **Plugins** now shows
 **Slayer Legend**. What its options do:
-[05 README](../05-slayer-legend/README.md). To remove it:
+[05 README](../05-plugins/slayer-legend/README.md). To remove it:
 
 ```sh
-ssh "$SERVER" "$AS_ROOT $RELEASE/05-slayer-legend/scripts/install.sh --uninstall"
+ssh "$SERVER" "$AS_ROOT $RELEASE/05-plugins/scripts/install.sh --uninstall"
 ```
 
 ## Adding a second device

@@ -9,7 +9,7 @@ plus an optional fifth:
 | `02-wireguard-server/` | its `AGENTS.md` |
 | `03-android-emulator/` | its `AGENTS.md` |
 | `04-cloud-phone-app/` | its `AGENTS.md` |
-| `05-slayer-legend/` (optional) | its `AGENTS.md` |
+| `05-plugins/` (optional) | its `AGENTS.md` |
 
 Each part's `AGENTS.md` is the installation procedure; development and
 reference docs are linked from there. Execution model and safety rules:

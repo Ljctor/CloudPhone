@@ -205,12 +205,12 @@ without any, that section says "No plugin installed."
 Part 05 installs the Slayer Legend plugin, from the unpacked release:
 
 ```sh
-sudo 05-slayer-legend/scripts/install.sh              # then reload the page
-sudo 05-slayer-legend/scripts/install.sh --uninstall
+sudo 05-plugins/scripts/install.sh              # then reload the page
+sudo 05-plugins/scripts/install.sh --uninstall
 ```
 
 It restarts the gateway; Android keeps running. Details:
-[`05-slayer-legend/README.md`](../05-slayer-legend/README.md).
+[`05-plugins/slayer-legend/README.md`](../05-plugins/slayer-legend/README.md).
 
 ## Day-to-day operations
 

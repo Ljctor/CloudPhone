@@ -179,12 +179,14 @@ mkdir -p "$STAGE"/{docs,licenses}
 install -m 755 "$PKG/install.sh" "$PKG/uninstall.sh" "$STAGE/"
 install -m 644 "$ROOT/VERSION" "$ROOT/README.md" "$ROOT/AGENTS.md" "$STAGE/"
 cp -R "$ROOT/lib" "$STAGE/lib"
-for part in 02-wireguard-server 03-android-emulator 04-cloud-phone-app 05-slayer-legend; do
+for part in 02-wireguard-server 03-android-emulator 04-cloud-phone-app 05-plugins; do
   mkdir -p "$STAGE/$part"
   for item in AGENTS.md README.md runbooks scripts files constraints.txt; do
     [ ! -e "$ROOT/$part/$item" ] || cp -R "$ROOT/$part/$item" "$STAGE/$part/"
   done
 done
+# Plugins: every plugin directory as it is.
+cp -R "$ROOT"/05-plugins/*/ "$STAGE/05-plugins/"
 mkdir -p "$STAGE/04-cloud-phone-app/dist/wheels"
 cp -R "$UPSTREAM/js/example/dist" "$STAGE/04-cloud-phone-app/dist/web"
 install -m 644 "$wheel" "$STAGE/04-cloud-phone-app/dist/wheels/"

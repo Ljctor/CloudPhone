@@ -1,4 +1,4 @@
-# Part 05 — Slayer Legend plugin
+# Slayer Legend plugin (part 05)
 
 Features for the game Slayer Legend only, installed as a plugin of the Cloud
 Phone app (part 04). They show in the page's options panel (the cog in the
@@ -18,13 +18,13 @@ anything or logs in. From an unpacked release (or a checkout), on the
 server:
 
 ```sh
-sudo 05-slayer-legend/scripts/install.sh
+sudo 05-plugins/scripts/install.sh slayer-legend   # or no name: every plugin
 ```
 
 or from a workstation: `packaging/deploy.sh SERVER 05`. The script copies
-`files/plugin/` to `/opt/cloudphone/plugins/slayer-legend/` and restarts the
+this directory (except this README) to `/opt/cloudphone/plugins/slayer-legend/` and restarts the
 gateway (Android keeps running). Reload the page afterwards.
-`sudo 05-slayer-legend/scripts/install.sh --uninstall` removes it.
+`sudo 05-plugins/scripts/install.sh --uninstall slayer-legend` removes it.
 
 Check: `curl http://10.20.0.1:<WEB_PORT>/api/v1/plugins` lists
 `slayer-legend`. If it does not, the load error is in
@@ -35,11 +35,11 @@ release's `uninstall.sh` removes them with the rest of `/opt/cloudphone`.
 
 | File | Role |
 |---|---|
-| `files/plugin/plugin.json` | id, title, version |
-| `files/plugin/page.js` | page side: options, the emerald overlay, the launch button |
-| `files/plugin/emerald_mask.js` | finds the emerald counter on the video |
-| `files/plugin/gateway.py` | gateway side: `/api/v1/plugins/slayer-legend/launch` and `/emerald-mask` |
-| `files/plugin/emerald_mask.py` | Python twin of `emerald_mask.js`, for browsers that cannot read the video's pixels (Firefox on Android); keep the two in step |
+| `plugin.json` | id, title, version |
+| `page.js` | page side: options, the emerald overlay, the launch button |
+| `emerald_mask.js` | finds the emerald counter on the video |
+| `gateway.py` | gateway side: `/api/v1/plugins/slayer-legend/launch` and `/emerald-mask` |
+| `emerald_mask.py` | Python twin of `emerald_mask.js`, for browsers that cannot read the video's pixels (Firefox on Android); keep the two in step |
 
 The plugin API (what `page.js` and `gateway.py` may use) is described at the
 top of `04-cloud-phone-app/src/overlay/js/example/src/plugins.ts` and

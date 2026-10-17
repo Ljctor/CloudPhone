@@ -184,7 +184,7 @@ status) in Options → Plugins.
 
 ## Emerald counter (part 05 plugin)
 
-Option of the Slayer Legend plugin (`05-slayer-legend/files/plugin`). It
+Option of the Slayer Legend plugin (`05-plugins/slayer-legend`). It
 covers the emerald counter with the bar's colour and writes over it, at the
 game's size for that many digits: the digits after the comma (leading zeros
 dropped) copied from the video, or a number the user typed. Nothing is sent

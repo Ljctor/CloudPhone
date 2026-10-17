@@ -9,7 +9,7 @@ from a browser through WireGuard.
 | [02 WireGuard server](02-wireguard-server/) | VPN `10.20.0.0/24` on UDP 51820, device keys, firewall rules | `scripts/install.sh`, `add-peer.sh`, `nft-allow.sh` |
 | [03 Android Emulator](03-android-emulator/) | pinned official emulator, Android 16 Google Play AVD, systemd service | `scripts/install.sh`, `scripts/verify.sh` |
 | [04 Cloud Phone app](04-cloud-phone-app/) | WebRTC gateway and mobile web page, VPN-only; Google Play commissioning | `scripts/install.sh`, `src/`, `docs/DEVELOPMENT.md` |
-| [05 Slayer Legend plugin](05-slayer-legend/) | Optional, game-specific: launch button, emerald counter rewrite | `scripts/install.sh`, `files/plugin/` |
+| [05 Plugins](05-plugins/) | Optional plugins of the app; for now Slayer Legend (launch button, emerald counter rewrite) | `scripts/install.sh`, `slayer-legend/` |
 
 **First time?** Follow [`docs/TUTORIAL.md`](docs/TUTORIAL.md): a step-by-step
 installation from a fresh server to Android in your phone's browser.

@@ -26,7 +26,7 @@ for part in "$@"; do
       [ "${ACCEPT_ANDROID_SDK_LICENSE:-}" = yes ] && args=--accept-android-sdk-license
       ;;
     04) script=04-cloud-phone-app/scripts/install.sh; args="--listen $listen" ;;
-    05) script=05-slayer-legend/scripts/install.sh; args= ;;
+    05) script=05-plugins/scripts/install.sh; args= ;;
     *) echo "ERROR: unknown part '$part' (03, 04 or 05)" >&2; exit 1 ;;
   esac
   echo "== part $part" >&2
