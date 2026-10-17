@@ -172,6 +172,13 @@ def read_avd_config(avd_dir):
         return {}
 
 
+def json_int(value):
+    """A JSON integer, never a string, float or boolean ("360" is refused)."""
+    if type(value) is not int:
+        raise TypeError("not an integer")
+    return value
+
+
 def read_settings_status():
     """Returns the state of the last emulator settings request."""
     if SETTINGS_REQUEST and os.path.exists(SETTINGS_REQUEST):
@@ -222,7 +229,9 @@ async def handle_set_settings(request):
         return web.json_response({"error": "Emulator settings changes are disabled"}, status=403)
     try:
         data = await request.json()
-        renderer, cores, memory = str(data["renderer"]), int(data["cores"]), int(data["memoryMb"])
+        renderer, cores, memory = data["renderer"], json_int(data["cores"]), json_int(data["memoryMb"])
+        if not isinstance(renderer, str):
+            raise TypeError("renderer is not a string")
     except (ValueError, KeyError, TypeError):
         return web.json_response({"error": "renderer, cores and memoryMb are required"}, status=400)
     limits = settings_limits()
@@ -239,7 +248,7 @@ async def handle_set_settings(request):
         try:
             if len(given) != len(DISPLAY_LIMITS):
                 raise ValueError
-            wanted = {key: int(data[key]) for key in DISPLAY_LIMITS}
+            wanted = {key: json_int(data[key]) for key in DISPLAY_LIMITS}
         except (ValueError, TypeError):
             return web.json_response({"error": "width, height and density go together"}, status=400)
         for key, (low, high) in DISPLAY_LIMITS.items():
@@ -645,7 +654,7 @@ async def handle_set_display(request):
         return web.json_response({"error": "Screen size changes are disabled"}, status=403)
     try:
         data = await request.json()
-        wanted = {key: int(data[key]) for key in DISPLAY_LIMITS}
+        wanted = {key: json_int(data[key]) for key in DISPLAY_LIMITS}
     except (ValueError, KeyError, TypeError):
         return web.json_response({"error": "width, height and density are required"}, status=400)
     for key, (low, high) in DISPLAY_LIMITS.items():
