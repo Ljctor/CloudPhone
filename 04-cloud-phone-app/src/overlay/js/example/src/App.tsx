@@ -329,6 +329,10 @@ function diagnose({ server, stream, connectingFor, touchFailures }) {
   if (display === 'pending' || display === 'applying') {
     return { level: 'wait', blocking: true, text: 'Changement de résolution', detail: 'Android redémarre…' };
   }
+  const settingsChange = value?.settings?.state;
+  if (settingsChange === 'pending' || settingsChange === 'applying') {
+    return { level: 'wait', blocking: true, text: 'Changement des réglages d’Android', detail: 'Android redémarre…' };
+  }
   const unit = value?.emulator;
   if (unit) {
     if (unit.active === 'failed') {

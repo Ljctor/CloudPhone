@@ -150,6 +150,7 @@ const EN = {
   'Vérifiez que le VPN (WireGuard) est connecté sur cet appareil.':
     'Check that the VPN (WireGuard) is connected on this device.',
   'Changement de résolution': 'Changing resolution',
+  'Changement des réglages d’Android': 'Changing Android settings',
   'Android redémarre…': 'Android is restarting…',
   'Android s’est arrêté sur une erreur': 'Android stopped on an error',
   'Il ne redémarre pas tout seul : il faut le relancer sur le serveur.':

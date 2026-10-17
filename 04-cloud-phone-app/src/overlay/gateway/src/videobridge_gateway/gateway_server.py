@@ -80,8 +80,6 @@ KICKED = {}
 KICK_SECONDS = 600.0
 CLOSED_BY_OTHER_VIEWER = 4001
 STATE_CACHE = {"time": 0.0, "value": None}
-# Emerald mask computed here for pages that cannot read the video's pixels:
-# one screenshot at a time, shared by every page asking within the period.
 # Server metrics for the page's server panel, sampled in the background.
 # Android's own figures need adb, so they are read only while a page asks
 # for them (GET /api/v1/state?details=1 in the last ANDROID_WANTED_SECONDS).
@@ -547,6 +545,7 @@ async def handle_state(request):
             "viewers": VIEWERS["count"],
             "load": read_load(),
             "display": read_display_status(),
+            "settings": read_settings_status(),
         }
         STATE_CACHE["time"] = loop.time()
     value = {**STATE_CACHE["value"], "kicked": is_kicked(viewer_of(request))}
@@ -1010,6 +1009,11 @@ async def cache_middleware(request, handler):
     # Bundles under /assets have content hashes in their names.
     if request.path.startswith("/assets/") and response.status == 200:
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    # API answers are live state: never cached, including the upstream
+    # helpers that set nothing themselves.
+    elif (request.path.startswith("/api/") and not response.prepared
+          and "Cache-Control" not in response.headers):
+        response.headers["Cache-Control"] = "no-store"
     return response
 
 
