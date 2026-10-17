@@ -3,6 +3,33 @@
 A private Android phone with Google Play, running on a Linux server and used
 from a browser through WireGuard.
 
+<table>
+<tr>
+<td><img src="docs/images/page.png" width="200" alt="The page on a phone: Android streamed, toolbar on the right"></td>
+<td><img src="docs/images/information-client.png" width="200" alt="Information panel, Client tab: network, display, touches"></td>
+<td><img src="docs/images/information-server.png" width="200" alt="Information panel, Server tab: state, machine, Android, stream and Android settings"></td>
+<td><img src="docs/images/options.png" width="200" alt="Options panel: language, cursor, folding, and the Slayer Legend plugin"></td>
+</tr>
+<tr>
+<td align="center">The page (game: Slayer Legend)</td>
+<td align="center">Information → Client</td>
+<td align="center">Information → Server, with Android settings</td>
+<td align="center">Options and plugins</td>
+</tr>
+<tr>
+<td><img src="docs/images/fullscreen-bar.png" width="200" alt="Fullscreen with the toolbar floating over the bottom"></td>
+<td><img src="docs/images/fullscreen-folded.png" width="200" alt="Fullscreen with the toolbar folded away, a small handle left"></td>
+<td><img src="docs/images/fullscreen-docked.png" width="200" alt="Fullscreen with the toolbar docked on the side"></td>
+<td></td>
+</tr>
+<tr>
+<td align="center">Fullscreen, floating bar</td>
+<td align="center">Bar folded (handle to unfold)</td>
+<td align="center">Bar docked (long press)</td>
+<td></td>
+</tr>
+</table>
+
 | Part | What it sets up | Entry points |
 |---|---|---|
 | [01 Server system setup](01-server-system-setup/) | hardened Debian baseline: accounts, SSH 52242, auditing, firewall, Fail2ban | runbooks over SSH, `scripts/verify.sh` |
