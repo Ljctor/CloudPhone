@@ -9,7 +9,7 @@ GET  /api/v1/plugins/slayer-legend/launch
 POST /api/v1/plugins/slayer-legend/launch
      Starts the game and brings it to the battle screen: taps "TAP TO START",
      then Confirm on the "last save time" notice (the latest save), or
-     "Press here to finish Power Saving Mode". It never taps anything else;
+     holds "Press here to finish Power Saving Mode" for 4 s. It never taps anything else;
      any other screen stops it and asks the user.
 
 Screens are recognised from a few pixel areas, as fractions of the screen,
@@ -33,6 +33,8 @@ CONFIRM_BUTTON = (0.26, 0.735, 0.37, 0.755)  # orange
 EXIT_BUTTON = (0.62, 0.735, 0.73, 0.755)     # grey
 CONFIRM_TAP = (0.314, 0.745)
 SAVER_TAP = (0.50, 0.88)
+# The game leaves Power Saving Mode only after a press held a few seconds.
+SAVER_HOLD_MS = 4000
 MENU_LABELS = (0.0, 0.975, 1.0, 0.995)
 # Power Saving Mode: black screen, orange "In battle . . .", grey button.
 SAVER_BUTTON = (0.33, 0.83, 0.67, 0.92)
@@ -146,6 +148,12 @@ def setup(context):
         LAUNCH["state"], LAUNCH["message"] = state, message
         logging.info(f"Slayer Legend launch: {state} {message}".rstrip())
 
+    async def hold(shot, point, milliseconds):
+        width, height, _ = shot
+        x, y = str(round(point[0] * width)), str(round(point[1] * height))
+        await context.adb("shell", "input", "swipe", x, y, x, y, str(milliseconds),
+                          timeout=milliseconds / 1000 + 10)
+
     async def tap(shot, point):
         width, height, _ = shot
         await context.adb("shell", "input", "tap", str(round(point[0] * width)), str(round(point[1] * height)))
@@ -184,13 +192,13 @@ def setup(context):
                     await asyncio.sleep(3)
                     continue
                 if screen == "saver" and time.monotonic() - last_tap > 5:
-                    # Power Saving Mode: the game is already in battle. A
-                    # plain tap did not always close it: give up after 3.
+                    # Power Saving Mode: the game is already in battle; a
+                    # long press closes it. Give up after 3.
                     if saver_taps >= 3:
                         report("blocked", "Le mode économie d’énergie ne se ferme pas : touche son bouton à la main")
                         return
                     saver_taps += 1
-                    await tap(shot, SAVER_TAP)
+                    await hold(shot, SAVER_TAP, SAVER_HOLD_MS)
                     last_tap = time.monotonic()
                     seen_other = None
                     report("loading", "Sortie du mode économie d’énergie")
