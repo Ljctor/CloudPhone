@@ -5,6 +5,9 @@
 #   packaging/deploy.sh SERVER [PART...]      e.g. packaging/deploy.sh myserver 03 04
 # SERVER is an ssh destination (host alias or USER@HOST). AS_ROOT and the
 # tarball choice are those of stage-release.sh. LISTEN overrides 10.20.0.1.
+# A first install of part 03 asks to accept the Android SDK licences: run
+# this from a terminal to answer, or set ACCEPT_ANDROID_SDK_LICENSE=yes after
+# reading them.
 set -eu
 
 target=${1:?usage: $0 SERVER [PART...]}
@@ -17,10 +20,17 @@ listen=${LISTEN:-10.20.0.1}
 release=$("$root/packaging/stage-release.sh" "$target")
 for part in "$@"; do
   case $part in
-    03) script=03-android-emulator/scripts/install.sh; args= ;;
+    03)
+      script=03-android-emulator/scripts/install.sh
+      args=
+      [ "${ACCEPT_ANDROID_SDK_LICENSE:-}" = yes ] && args=--accept-android-sdk-license
+      ;;
     04) script=04-cloud-phone-app/scripts/install.sh; args="--listen $listen" ;;
     *) echo "ERROR: unknown part '$part' (03 or 04)" >&2; exit 1 ;;
   esac
   echo "== part $part" >&2
-  ssh -o BatchMode=yes "$target" "$as_root $release/$script $args"
+  # A terminal lets install.sh ask its questions (licences).
+  tty=-T
+  [ -t 0 ] && tty=-t
+  ssh -o BatchMode=yes $tty "$target" "$as_root $release/$script $args"
 done

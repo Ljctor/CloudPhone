@@ -1,4 +1,7 @@
 const { test, expect } = require('@playwright/test');
+// The page to test: CLOUDPHONE_URL, e.g. http://127.0.0.1:18100/ through an
+// SSH tunnel, or the gateway on this machine.
+const PAGE_URL = process.env.CLOUDPHONE_URL || 'http://127.0.0.1:8000/';
 
 test.use({
   viewport: { width: 360, height: 780 },
@@ -31,7 +34,7 @@ test('stream loads and refresh creates exactly one replacement session', async (
     window.RTCPeerConnection.prototype = NativePeerConnection.prototype;
   });
 
-  await page.goto(`http://127.0.0.1:8000/?e2e=${Date.now()}`, {
+  await page.goto(`${PAGE_URL}?e2e=${Date.now()}`, {
     waitUntil: 'domcontentloaded',
   });
 

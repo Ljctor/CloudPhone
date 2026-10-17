@@ -186,6 +186,7 @@ From the server (Chromium must reach the WebRTC candidates directly):
 
 ```sh
 docker run --rm --network host \
+  -e CLOUDPHONE_URL=http://10.20.0.1:8000/ \
   -e npm_config_registry=https://registry.npmjs.org/ \
   -v "$PWD/04-cloud-phone-app/tests/android-web-smoke.spec.js:/input/android-web-smoke.spec.js:ro" \
   mcr.microsoft.com/playwright:v1.62.1-noble \
@@ -195,6 +196,6 @@ docker run --rm --network host \
     npx playwright test android-web-smoke.spec.js --reporter=line --workers=1'
 ```
 
-It opens `http://127.0.0.1:8000/` (edit the URL for another `WEB_PORT` or
-`LISTEN_ADDRESS`) and checks decoded video, spinner/status transitions, clean
+It opens `CLOUDPHONE_URL` (default `http://127.0.0.1:8000/`; set it to the
+gateway's `LISTEN_ADDRESS` and `WEB_PORT`) and checks decoded video, spinner/status transitions, clean
 refresh, a rapid double refresh and console errors.
