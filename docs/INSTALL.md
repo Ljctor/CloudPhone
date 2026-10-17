@@ -125,8 +125,8 @@ Play as on a new phone.
   action.
 - `↻` reconnects the video stream only. It never restarts Android or the app in
   the foreground.
-- The ping block opens Server settings (state, Android's screen size,
-  disconnecting other devices); the fps block opens Client settings
+- The ping block opens Server settings (state, disconnecting other devices,
+  Android settings: renderer, cores, memory, screen size); the fps block opens Client settings
   (language, touch marker, options).
 
 ## Configuration

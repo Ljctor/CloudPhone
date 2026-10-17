@@ -334,8 +334,9 @@ works too. Then install your apps from Google Play.
 The toolbar holds: power and volume, the **ping** block, recents / home /
 back, the **fps** block, `↻` (reconnect the video only; it never restarts
 Android or the app on screen) and fullscreen. The ping block opens **Server
-settings**: server and Android state, Android's screen size, **Disconnect**
-for other devices. The fps block opens **Client settings**: language, touch
+settings**: server and Android state, **Disconnect** for other devices, and
+**Android settings** (renderer, cores, memory, device shape, resolution: one
+**Apply** restarts Android once with all of them). The fps block opens **Client settings**: language, touch
 marker, other options. In fullscreen, a fold button hides the bar; a small
 handle brings it back, and a long press docks the bar instead.
 

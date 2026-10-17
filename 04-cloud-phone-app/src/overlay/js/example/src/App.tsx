@@ -157,11 +157,11 @@ function shortSide(size) {
 }
 
 // Polls the gateway for the screen size and the state of a size change:
-// often while one is in progress, rarely otherwise.
-function useDisplayState(gatewayUrl) {
+// often while a change is in progress (or `changing` says one is), rarely
+// otherwise.
+function useDisplayState(gatewayUrl, changing) {
   const [displayState, setDisplayState] = useState(null);
-  const [nonce, setNonce] = useState(0);
-  const busy = ['pending', 'applying'].includes(displayState?.request?.state);
+  const busy = changing || ['pending', 'applying'].includes(displayState?.request?.state);
   useEffect(() => {
     let cancelled = false;
     const load = () => fetch(`${gatewayUrl}/api/v1/display`, { cache: 'no-store' })
@@ -171,69 +171,8 @@ function useDisplayState(gatewayUrl) {
     load();
     const timer = window.setInterval(load, busy ? 2000 : 15000);
     return () => { cancelled = true; window.clearInterval(timer); };
-  }, [gatewayUrl, busy, nonce]);
-  return [displayState, () => setNonce((value) => value + 1)];
-}
-
-function DisplaySettings({ gatewayUrl, displayState, refresh, rowStyle, labelStyle, buttonStyle }) {
-  const configured = displayState?.configured;
-  const [choice, setChoice] = useState(() => matchPresets(configured));
-  const [error, setError] = useState(null);
-  const configuredKey = configured ? `${configured.width}x${configured.height}` : '';
-  useEffect(() => { setChoice(matchPresets(configured)); }, [configuredKey]);
-  const request = displayState?.request ?? { state: 'idle' };
-  const busy = request.state === 'pending' || request.state === 'applying';
-  const target = targetSize(choice.shape, choice.resolution);
-  const unchanged = configured && target.width === configured.width
-    && target.height === configured.height && target.density === configured.density;
-
-  const apply = async () => {
-    setError(null);
-    const message = `${tr('Android va redémarrer en {size}.', { size: `${target.width}×${target.height}` })}\n`
-      + tr('Cela prend une à deux minutes. Les applications ouvertes se ferment ; les données sont conservées.');
-    if (!window.confirm(message)) return;
-    try {
-      const response = await fetch(`${gatewayUrl}/api/v1/display`, {
-        method: 'POST',
-        headers: postHeaders(),
-        body: JSON.stringify(target),
-      });
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        setError(body.error ?? tr('Erreur {status}', { status: response.status }));
-      }
-    } catch {
-      setError(tr('Passerelle injoignable'));
-    }
-    refresh();
-  };
-
-  const select = (key, options) => (
-    <select value={choice[key]} disabled={busy}
-      onChange={(event) => setChoice((current) => ({ ...current, [key]: event.target.value }))}
-      style={styles.select}>
-      {options.map((item) => <option key={item.id} value={item.id}>{tr(item.label)}</option>)}
-    </select>
-  );
-
-  if (!displayState) return <div style={styles.infoNote}>{tr('Indisponible pour le moment.')}</div>;
-  if (!displayState.canChange) return <div style={styles.infoNote}>{tr('Non disponible sur ce serveur.')}</div>;
-  return (
-    <>
-      <label style={rowStyle}><span style={labelStyle}>{tr('Appareil')}</span>{select('shape', DEVICE_SHAPES)}</label>
-      <label style={rowStyle}><span style={labelStyle}>{tr('Résolution')}</span>{select('resolution', RESOLUTIONS)}</label>
-      <div style={rowStyle}>
-        <span style={labelStyle}>{target.width}×{target.height}</span>
-        <button style={buttonStyle} onClick={apply} disabled={busy || unchanged}>{tr('Appliquer')}</button>
-      </div>
-      {request.state === 'pending' && <div style={styles.infoNote}>{tr('Demande envoyée, en attente du serveur…')}</div>}
-      {request.state === 'applying' && (
-        <div style={styles.infoNote}>{tr('Android redémarre en {size}…', { size: `${request.width}×${request.height}` })}</div>
-      )}
-      {request.state === 'failed' && <div style={styles.infoWarning}>{tr('Échec : {message}', { message: request.message })}</div>}
-      {error && <div style={styles.infoWarning}>{error}</div>}
-    </>
-  );
+  }, [gatewayUrl, busy]);
+  return displayState;
 }
 
 function useEmulatorSettings(gatewayUrl, enabled) {
@@ -254,14 +193,22 @@ function useEmulatorSettings(gatewayUrl, enabled) {
   return [value, () => setNonce((n) => n + 1)];
 }
 
-// Renderer, cores and memory Android runs with; changing them restarts it.
+// Renderer, cores, memory and screen Android runs with. Applying restarts
+// Android once, whatever changed.
 function EmulatorSettings({ gatewayUrl, settings, refresh, rowStyle, labelStyle, buttonStyle }) {
   const current = settings?.current;
+  const display = settings?.display;
   const [choice, setChoice] = useState(null);
   const [error, setError] = useState(null);
-  const currentKey = current ? `${current.renderer} ${current.cores} ${current.memoryMb}` : '';
+  const currentKey = current && display
+    ? `${current.renderer} ${current.cores} ${current.memoryMb} ${display.width}x${display.height}x${display.density}` : '';
   useEffect(() => {
-    if (current) setChoice({ renderer: current.renderer, cores: Number(current.cores), memoryMb: Number(current.memoryMb) });
+    if (current && display) {
+      setChoice({
+        renderer: current.renderer, cores: Number(current.cores), memoryMb: Number(current.memoryMb),
+        ...matchPresets(display),
+      });
+    }
   }, [currentKey]);
   if (!settings) return <div style={styles.infoNote}>{tr('Indisponible pour le moment.')}</div>;
   if (!settings.canChange || !choice) return <div style={styles.infoNote}>{tr('Non disponible sur ce serveur.')}</div>;
@@ -269,15 +216,22 @@ function EmulatorSettings({ gatewayUrl, settings, refresh, rowStyle, labelStyle,
   const busy = request.state === 'pending' || request.state === 'applying';
   const renderers = rendererOptions(settings.limits);
   const hint = renderers.find((item) => item.id === choice.renderer)?.hint;
+  const target = targetSize(choice.shape, choice.resolution);
+  const sameScreen = target.width === display.width && target.height === display.height
+    && target.density === display.density;
+  const unchanged = sameScreen && sameSettings(choice, current);
 
   const apply = async () => {
     setError(null);
     const message = `${tr('Android va redémarrer avec ces réglages.')}\n`
       + tr('Cela prend une à deux minutes. Les applications ouvertes se ferment ; les données sont conservées.');
     if (!window.confirm(message)) return;
+    const { renderer, cores, memoryMb } = choice;
     try {
       const response = await fetch(`${gatewayUrl}/api/v1/emulator-settings`, {
-        method: 'POST', headers: postHeaders(), body: JSON.stringify(choice),
+        method: 'POST',
+        headers: postHeaders(),
+        body: JSON.stringify({ renderer, cores, memoryMb, ...(sameScreen ? {} : target) }),
       });
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
@@ -288,10 +242,11 @@ function EmulatorSettings({ gatewayUrl, settings, refresh, rowStyle, labelStyle,
     }
     refresh();
   };
+  const numeric = ['cores', 'memoryMb'];
   const select = (key, options, label) => (
     <select value={choice[key]} disabled={busy} style={styles.select}
       onChange={(event) => setChoice((value) => ({
-        ...value, [key]: key === 'renderer' ? event.target.value : Number(event.target.value),
+        ...value, [key]: numeric.includes(key) ? Number(event.target.value) : event.target.value,
       }))}>
       {options.map((item) => <option key={item.id ?? item} value={item.id ?? item}>{label(item)}</option>)}
     </select>
@@ -305,12 +260,20 @@ function EmulatorSettings({ gatewayUrl, settings, refresh, rowStyle, labelStyle,
         {select('cores', coreOptions(settings.limits?.maxCores, current?.cores), (n) => String(n))}</label>
       <label style={rowStyle}><span style={labelStyle}>{tr('Mémoire')}</span>
         {select('memoryMb', memoryOptions(settings.limits?.maxMemoryMb, current?.memoryMb), (mb) => `${mb / 1024} ${tr('Go')}`)}</label>
+      <label style={rowStyle}><span style={labelStyle}>{tr('Appareil')}</span>
+        {select('shape', DEVICE_SHAPES, (item) => tr(item.label))}</label>
+      <label style={rowStyle}><span style={labelStyle}>{tr('Résolution')}</span>
+        {select('resolution', RESOLUTIONS, (item) => tr(item.label))}</label>
       <div style={rowStyle}>
-        <span style={labelStyle} />
-        <button style={buttonStyle} onClick={apply} disabled={busy || sameSettings(choice, current)}>{tr('Appliquer')}</button>
+        <span style={labelStyle}>{target.width}×{target.height}</span>
+        <button style={buttonStyle} onClick={apply} disabled={busy || unchanged}>{tr('Appliquer')}</button>
       </div>
       {request.state === 'pending' && <div style={styles.infoNote}>{tr('Demande envoyée, en attente du serveur…')}</div>}
-      {request.state === 'applying' && <div style={styles.infoNote}>{tr('Android redémarre…')}</div>}
+      {request.state === 'applying' && (
+        <div style={styles.infoNote}>{request.width
+          ? tr('Android redémarre en {size}…', { size: `${request.width}×${request.height}` })
+          : tr('Android redémarre…')}</div>
+      )}
       {request.state === 'failed' && <div style={styles.infoWarning}>{tr('Échec : {message}', { message: request.message })}</div>}
       {error && <div style={styles.infoWarning}>{error}</div>}
     </>
@@ -899,25 +862,23 @@ function App() {
   const gatewayUrl = `${window.location.protocol}//${gateway}`;
   const stats = useStreamStats(deviceRef, gatewayUrl);
   const [emeraldMask, emeraldProblem] = useEmeraldMask(deviceRef, settings.emeraldMask, gatewayUrl);
-  const [displayState, refreshDisplay] = useDisplayState(gatewayUrl);
   const server = useServerState(gatewayUrl, panel === 'server');
   const [emulatorSettings, refreshEmulatorSettings] = useEmulatorSettings(gatewayUrl, panel === 'server');
+  const displayState = useDisplayState(gatewayUrl,
+    ['pending', 'applying'].includes(emulatorSettings?.request?.state));
   // Seconds the stream has been trying to connect, and consecutive failed
   // touch requests: both feed the message shown to the user.
   const [connectingFor, setConnectingFor] = useState(0);
   const [touchFailures, setTouchFailures] = useState(0);
-  const displayChange = displayState?.request?.state;
   // A size change ends with the gateway restarting on the new size: reload
   // so that layout, touch mapping and the stream all start fresh.
-  const changeSeen = useRef(false);
+  const firstSize = useRef(null);
   useEffect(() => {
-    if (displayChange === 'pending' || displayChange === 'applying') changeSeen.current = true;
     const running = displayState?.running;
-    const wanted = displayState?.request;
-    if (changeSeen.current && displayChange === 'done' && running
-      && running.width === wanted.width && running.height === wanted.height) {
-      window.location.reload();
-    }
+    if (!running?.width) return;
+    const size = `${running.width}x${running.height}`;
+    if (firstSize.current === null) firstSize.current = size;
+    else if (size !== firstSize.current) window.location.reload();
   }, [displayState]);
 
   // The gateway reads Android's display size from the running device, so
@@ -1407,15 +1368,6 @@ function App() {
                     gatewayUrl={gatewayUrl}
                     settings={emulatorSettings}
                     refresh={refreshEmulatorSettings}
-                    rowStyle={styles.infoRow}
-                    labelStyle={styles.infoLabel}
-                    buttonStyle={styles.panelButton}
-                  />
-                  <div style={styles.infoSection}>{tr('Écran d’Android')}</div>
-                  <DisplaySettings
-                    gatewayUrl={gatewayUrl}
-                    displayState={displayState}
-                    refresh={refreshDisplay}
                     rowStyle={styles.infoRow}
                     labelStyle={styles.infoLabel}
                     buttonStyle={styles.panelButton}

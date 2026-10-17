@@ -129,7 +129,6 @@ const EN = {
   'Mo': 'MB',
   'Configuration serveur': 'Server settings',
   'Configuration client': 'Client settings',
-  'Écran d’Android': 'Android screen',
   // Android screen size
   'Appareil': 'Device',
   'Résolution': 'Resolution',

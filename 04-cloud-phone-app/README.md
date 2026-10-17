@@ -29,8 +29,9 @@ and runs `scripts/install.sh --listen 10.20.0.1`.
   fullscreen the fold button.
 - The ping block opens **Server settings**: server and Android state,
   network, video stream, **Disconnect** for the other devices (shown when
-  more than one is connected), and Android's screen size (changing it
-  reboots Android; one change per 2 minutes).
+  more than one is connected), and **Android settings**: renderer, cores,
+  memory, device shape and resolution, applied together with one **Apply**
+  (it reboots Android once; one change per 2 minutes).
 - The fps block opens **Client settings**: this device's display, how
   touches reach Android, language (French/English), touch marker, emerald
   mask (Slayer Legend), fold 3 s after entering fullscreen. Settings stay in

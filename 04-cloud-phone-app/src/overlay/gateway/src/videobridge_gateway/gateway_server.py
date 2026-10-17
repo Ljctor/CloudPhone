@@ -181,9 +181,12 @@ def read_settings_status():
         return {"state": "idle"}
     if words[0] == "failed":
         return {"state": "failed", "message": " ".join(words[1:])[:200]}
-    if len(words) == 4:
-        return {"state": words[0], "renderer": words[1], "cores": words[2], "memoryMb": words[3]}
-    return {"state": words[0]}
+    result = {"state": words[0]}
+    if len(words) in (4, 7):
+        result.update(renderer=words[1], cores=words[2], memoryMb=words[3])
+    if len(words) == 7:
+        result.update(width=words[4], height=words[5], density=words[6])
+    return result
 
 
 def settings_limits():
@@ -204,14 +207,17 @@ async def handle_settings(request):
     return web.json_response({
         "canChange": bool(SETTINGS_REQUEST),
         "current": read_emulator_settings(cgroup),
+        "display": read_avd_config(AVD_DIR),
         "limits": settings_limits(),
         "request": read_settings_status(),
     }, headers={"Cache-Control": "no-store"})
 
 
 async def handle_set_settings(request):
-    """POST /api/v1/emulator-settings {renderer, cores, memoryMb}: asks the
-    root service to change them, which restarts Android (data is kept)."""
+    """POST /api/v1/emulator-settings {renderer, cores, memoryMb[, width,
+    height, density]}: asks the root service to change them, which restarts
+    Android once (data is kept). The screen size is optional and all three
+    of its values come together."""
     if not SETTINGS_REQUEST:
         return web.json_response({"error": "Emulator settings changes are disabled"}, status=403)
     try:
@@ -227,6 +233,21 @@ async def handle_set_settings(request):
     if not 2048 <= memory <= limits["maxMemoryMb"] or memory % 512:
         return web.json_response(
             {"error": f"memoryMb must be a multiple of 512 between 2048 and {limits['maxMemoryMb']}"}, status=400)
+    size = ""
+    given = [key for key in DISPLAY_LIMITS if data.get(key) is not None]
+    if given:
+        try:
+            if len(given) != len(DISPLAY_LIMITS):
+                raise ValueError
+            wanted = {key: int(data[key]) for key in DISPLAY_LIMITS}
+        except (ValueError, TypeError):
+            return web.json_response({"error": "width, height and density go together"}, status=400)
+        for key, (low, high) in DISPLAY_LIMITS.items():
+            if not low <= wanted[key] <= high:
+                return web.json_response({"error": f"{key} must be between {low} and {high}"}, status=400)
+        if wanted["width"] % 2 or wanted["height"] % 2:
+            return web.json_response({"error": "width and height must be even"}, status=400)
+        size = f" {wanted['width']} {wanted['height']} {wanted['density']}"
     if read_settings_status()["state"] in ("pending", "applying") or read_display_status()["state"] in ("pending", "applying"):
         return web.json_response({"error": "A change is already in progress"}, status=409)
     last = LAST_DISPLAY_CHANGE["time"]
@@ -236,9 +257,9 @@ async def handle_set_settings(request):
     LAST_DISPLAY_CHANGE["time"] = time.monotonic()
     temporary = f"{SETTINGS_REQUEST}.tmp"
     with open(temporary, "w") as f:
-        f.write(f"{renderer} {cores} {memory}\n")
+        f.write(f"{renderer} {cores} {memory}{size}\n")
     os.replace(temporary, SETTINGS_REQUEST)
-    logging.info(f"Emulator settings requested by {request.remote}: {renderer}, {cores} cores, {memory} MiB")
+    logging.info(f"Emulator settings requested by {request.remote}: {renderer}, {cores} cores, {memory} MiB{size}")
     return web.json_response({"status": "pending"}, status=202)
 
 
@@ -632,8 +653,8 @@ async def handle_set_display(request):
             return web.json_response({"error": f"{key} must be between {low} and {high}"}, status=400)
     if wanted["width"] % 2 or wanted["height"] % 2:
         return web.json_response({"error": "width and height must be even"}, status=400)
-    if read_display_status()["state"] in ("pending", "applying"):
-        return web.json_response({"error": "A screen size change is already in progress"}, status=409)
+    if read_display_status()["state"] in ("pending", "applying") or read_settings_status()["state"] in ("pending", "applying"):
+        return web.json_response({"error": "A change is already in progress"}, status=409)
     last = LAST_DISPLAY_CHANGE["time"]
     if last is not None and time.monotonic() - last < DISPLAY_CHANGE_INTERVAL:
         wait = int(DISPLAY_CHANGE_INTERVAL - (time.monotonic() - last)) + 1
