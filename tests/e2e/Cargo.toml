@@ -1,0 +1,12 @@
+[package]
+name = "cloudphone-e2e"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Black-box end-to-end tests of a running Cloud Phone instance"
+
+[dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+serde_json = "1"
+tungstenite = "0.24"
+url = "2"
