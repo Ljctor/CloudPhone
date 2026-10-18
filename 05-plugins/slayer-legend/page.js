@@ -52,6 +52,10 @@ const ENGLISH = {
   'Lancer': 'Launch',
   'Lancement': 'Launch',
   'Compteur d’émeraudes': 'Emerald counter',
+  'Jeu': 'Game',
+  'Mode et farming': 'Mode and farming',
+  'Émeraudes': 'Emeralds',
+  'Diamants': 'Diamonds',
   'Compteur de diamants': 'Diamond counter',
   'Inchangé': 'Unchanged',
   'Coupé à la virgule': 'Cut at the comma',
@@ -730,6 +734,7 @@ export default function activate(api) {
 
   return {
     options: [
+      { type: 'section', key: 'game', label: 'Jeu' },
       {
         type: 'status', label: 'Écran détecté',
         value: () => {
@@ -779,6 +784,7 @@ export default function activate(api) {
         visible: () => launch.state !== 'idle',
         value: () => api.tr(launch.message || launch.state),
       },
+      { type: 'section', key: 'mode', label: 'Mode et farming' },
       {
         type: 'choice', key: 'mode', label: 'Mode',
         choices: [
@@ -831,6 +837,7 @@ export default function activate(api) {
           return api.tr(answer.message || 'Farming mpw18');
         },
       },
+      { type: 'section', key: 'emerald', label: 'Émeraudes', folded: true },
       {
         type: 'choice', key: 'emeraldMode', label: 'Compteur d’émeraudes',
         choices: [
@@ -849,6 +856,7 @@ export default function activate(api) {
         value: () => (emerald.found ? api.tr('détecté')
           : emerald.problem ? `${api.tr('non détecté')} (${emerald.problem})` : api.tr('non détecté')),
       },
+      { type: 'section', key: 'diamond', label: 'Diamants', folded: true },
       {
         type: 'choice', key: 'diamondMode', label: 'Compteur de diamants',
         choices: [

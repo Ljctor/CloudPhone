@@ -1281,6 +1281,31 @@ function App() {
   const setPluginOption = (id, key, value) => updateSettings({
     plugins: { ...settings.plugins, [id]: { ...settings.plugins?.[id], [key]: value } },
   });
+  // A plugin's options, cut into foldable sub-sections at each
+  // { type: 'section', key, label, folded? } (folded: its default state).
+  const pluginSections = (plugin) => {
+    const parts = [{ section: null, items: [] }];
+    (plugin.instance.options ?? []).forEach((option, index) => {
+      if (option.type === 'section') parts.push({ section: option, items: [] });
+      else parts[parts.length - 1].items.push(pluginOption(plugin, option, index));
+    });
+    return parts.map(({ section, items }, index) => {
+      if (!section) return <React.Fragment key="top">{items}</React.Fragment>;
+      const id = `${plugin.id}:${section.key ?? section.label}`;
+      const folded = settings.foldedPlugins?.[id] ?? Boolean(section.folded);
+      return (
+        <details key={id} open={!folded} style={styles.pluginSection}
+          onToggle={(event) => {
+            const now = !event.currentTarget.open;
+            if (now !== folded) updateSettings({ foldedPlugins: { ...settings.foldedPlugins, [id]: now } });
+          }}>
+          <summary style={styles.pluginSectionTitle}>{tr(section.label)}</summary>
+          {items}
+        </details>
+      );
+    });
+  };
+
   const pluginOption = (plugin, option, index) => {
     const key = `${plugin.id}-${index}`;
     if (!(option.visible?.() ?? true)) return null;
@@ -1512,7 +1537,7 @@ function App() {
                       }}>
                       <summary style={styles.pluginTitle}>{plugin.title}</summary>
                       {plugin.error && <div style={styles.infoWarning}>{tr('Échec : {message}', { message: plugin.error })}</div>}
-                      {(plugin.instance.options ?? []).map((option, index) => pluginOption(plugin, option, index))}
+                      {pluginSections(plugin)}
                     </details>
                   ))}
                 </>
@@ -1596,6 +1621,8 @@ const styles = {
     color: '#d8dde5', fontSize: '13px', fontFamily: 'system-ui, sans-serif',
   },
   pluginLayer: { position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none' },
+  pluginSection: { marginLeft: '10px' },
+  pluginSectionTitle: { marginTop: '4px', color: '#c4cad3', fontWeight: 600, cursor: 'pointer' },
   pluginTitle: { marginTop: '6px', fontWeight: 600, cursor: 'pointer' },
   numberInput: {
     width: '96px', padding: '3px 6px', borderRadius: '6px', border: '1px solid #3a3f47',
@@ -1657,7 +1684,13 @@ const styles = {
     position: 'absolute', top: '3px', right: '3px', width: '7px', height: '7px',
     borderRadius: '50%', boxShadow: '0 0 0 1px #1b1d22',
   },
-  infoHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' },
+  // Stays at the top while the panel scrolls, so the close button is always
+  // in reach.
+  infoHeader: {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px',
+    position: 'sticky', top: '-10px', zIndex: 1, margin: '-10px -12px 4px', padding: '10px 12px 6px',
+    background: 'rgba(20, 22, 27, 0.98)', borderRadius: '10px 10px 0 0',
+  },
   infoClose: {
     width: '26px', height: '26px', padding: 0, border: '1px solid #444', borderRadius: '7px',
     background: '#292929', color: '#fff', fontSize: '13px',

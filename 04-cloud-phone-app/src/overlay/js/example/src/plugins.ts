@@ -14,6 +14,7 @@
 //   { type: 'action', label, button, run(), disabled?() }
 //   { type: 'buttons', label, buttons: [{ label, run(), disabled?() }] }   a row of small buttons
 //   { type: 'status', label, value(), href?() }    href makes the value a link
+//   { type: 'section', key, label, folded? }       starts a foldable sub-section (folded: default)
 // Any option may have visible?(): shown only when it returns true.
 // Labels are French; the plugin gives English texts with api.addTranslations.
 // api:
