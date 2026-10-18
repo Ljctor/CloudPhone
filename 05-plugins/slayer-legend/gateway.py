@@ -58,6 +58,21 @@ GET  /api/v1/plugins/slayer-legend/gold
      stage, another place, another screen or another app start the window
      again, as does spending gold. `read` is the time of the last reading.
 
+POST /api/v1/plugins/slayer-legend/trace  {x, y, kind[, end: {x, y}]}
+     A tap the user just made in the page (fractions of the screen; kind
+     tap, long or swipe, end: where a swipe ended). If the game is in
+     front, the screen before it (a screenshot at once: the game has not
+     drawn its answer yet) and after it (2 s later, or just before the next
+     tap) are kept as signatures (screen name and a grey thumbnail, see
+     trace.py; never the screenshots) and the tap as an edge between them,
+     in the plugin's data directory. Nothing is ever replayed. 202 at once.
+GET  /api/v1/plugins/slayer-legend/trace
+     {enabled (the gateway has a data directory to record into), nodes,
+     edges, taps, last: {time, from, to, kind} or null}.
+GET  /api/v1/plugins/slayer-legend/trace/graph
+     The recorded graph: {nodes: [{id, screen, count, thumb}], edges:
+     [{from, to, x, y, kind, count[, x2, y2]}]}.
+
 Screens are recognised from a few pixel areas, as fractions of the screen,
 measured on a 360x780 screen (the page's device shapes keep this ratio).
 """
@@ -115,6 +130,10 @@ GOLD = {"samples": [], "pending": None, "text": None, "read": None, "box": None,
         "place": None, "number": None, "odd": 0}
 # The last stage number read in Power Saving Mode: {number, numeral}.
 FARMED = {"number": None}
+# Navigation trace: the graph (trace.py), the tap waiting for its "after"
+# screen {tap, before, task}, and the lock that keeps taps in order.
+TRACE = {"graph": None, "path": None, "pending": None, "lock": None}
+TRACE_AFTER_SECONDS = 2.0
 
 
 def load_sibling(directory, name):
@@ -296,13 +315,25 @@ def setup(context):
         LAUNCH["state"], LAUNCH["message"] = state, message
         logging.info(f"Slayer Legend launch: {state} {message}".rstrip())
 
-    async def hold(shot, point, milliseconds):
+    nav = load_sibling(context.directory, "nav")
+
+    def allowed(screen, move, point, kind="tap"):
+        """Every action goes through the navigation graph's guard first:
+        refused unless it is an allowed move of the screen recognised."""
+        refusal = nav.guard(screen, move, point[0], point[1], kind)
+        if refusal:
+            logging.error(f"Slayer Legend: action refused: {refusal}")
+            raise RuntimeError(f"Action refusée par le garde-fou : {refusal}")
+
+    async def hold(shot, screen, move, point, milliseconds):
+        allowed(screen, move, point, "hold")
         width, height, _ = shot
         x, y = str(round(point[0] * width)), str(round(point[1] * height))
         await context.adb("shell", "input", "swipe", x, y, x, y, str(milliseconds),
                           timeout=milliseconds / 1000 + 10)
 
-    async def tap(shot, point):
+    async def tap(shot, screen, move, point):
+        allowed(screen, move, point)
         width, height, _ = shot
         await context.adb("shell", "input", "tap", str(round(point[0] * width)), str(round(point[1] * height)))
 
@@ -333,7 +364,7 @@ def setup(context):
                     return
                 if screen == "save":
                     # The notice shows the latest save's time; Confirm keeps it.
-                    await tap(shot, CONFIRM_TAP)
+                    await tap(shot, "save_notice", "confirm", CONFIRM_TAP)
                     confirmed = True
                     seen_other = None
                     report("loading", "Dernière sauvegarde confirmée, chargement")
@@ -346,13 +377,13 @@ def setup(context):
                         report("blocked", "Le mode économie d’énergie ne se ferme pas : touche son bouton à la main")
                         return
                     saver_taps += 1
-                    await hold(shot, SAVER_TAP, SAVER_HOLD_MS)
+                    await hold(shot, "saver", "leave", SAVER_TAP, SAVER_HOLD_MS)
                     last_tap = time.monotonic()
                     seen_other = None
                     report("loading", "Sortie du mode économie d’énergie")
                     continue
                 if screen == "title" and time.monotonic() - last_tap > 8:
-                    await tap(shot, START_TAP)
+                    await tap(shot, "title", "start", START_TAP)
                     last_tap = time.monotonic()
                     seen_other = None
                     report("starting", "Écran titre touché, connexion")
@@ -378,11 +409,12 @@ def setup(context):
             logging.info(f"Slayer Legend mine: {state} {message}")
         MINE["state"], MINE["message"] = state, message
 
-    async def mine_step(shot, point, wait=2.5):
-        """Taps point if the game is still in front; the next screenshot."""
+    async def mine_step(shot, screen, move, point, wait=2.5):
+        """Taps point (move of screen) if the game is still in front; the
+        next screenshot."""
         if not await in_focus():
             return None
-        await tap(shot, point)
+        await tap(shot, screen, move, point)
         await asyncio.sleep(wait)
         return await context.screenshot()
 
@@ -402,6 +434,7 @@ def setup(context):
             x = str(round(0.5 * width))
             up = rows[0][1] > floor
             a, b = (0.40, 0.65) if up else (0.65, 0.40)
+            allowed("mine_list", "scroll", (0.5, a), "swipe")
             await context.adb("shell", "input", "swipe", x, str(round(a * height)), x, str(round(b * height)), "600")
             await asyncio.sleep(1.5)
             shot = await context.screenshot()
@@ -410,20 +443,20 @@ def setup(context):
         else:
             mine_report("blocked", f"Étage {floor} introuvable dans la liste")
             return False
-        shot = await mine_step(shot, (0.5, row))
+        shot = await mine_step(shot, "mine_list", "floor", (0.5, row))
         if not shot or not mine.area_popup(shot):
             return False
-        shot = await mine_step(shot, mine.AREA_TAPS[MINE["area"] - 1])
+        shot = await mine_step(shot, "mine_area", "area", mine.AREA_TAPS[MINE["area"] - 1])
         if not shot or not mine.feather_popup(shot):
             return False
-        shot = await mine_step(shot, mine.FEATHER_TAPS[MINE_FEATHERS - 1], 6)
+        shot = await mine_step(shot, "mine_feathers", "feathers", mine.FEATHER_TAPS[MINE_FEATHERS - 1], 6)
         return bool(shot) and mine.in_fight(shot)
 
     async def mine_stop(shot, reason):
         """Unticks "Repeat entry" so that the entry under way is the last.
         True once it is unticked and farming is off."""
         if mine.repeat_ticked(shot):
-            shot = await mine_step(shot, mine.REPEAT_TAP)
+            shot = await mine_step(shot, "mine_fight", "repeat", mine.REPEAT_TAP)
             if not shot or mine.repeat_ticked(shot):
                 mine_report("blocked", f"{reason}, mais « Repeat entry » ne se décoche pas")
                 await alert(MINE["message"])
@@ -468,7 +501,7 @@ def setup(context):
                     # The buffs are hidden: leave Power Saving Mode to see them.
                     if time.monotonic() - last_hold > 60:
                         last_hold = time.monotonic()
-                        await hold(shot, SAVER_TAP, SAVER_HOLD_MS)
+                        await hold(shot, "saver", "leave", SAVER_TAP, SAVER_HOLD_MS)
                     continue
                 timed = MINE["until"] is not None
                 over = timed and time.time() >= MINE["until"]
@@ -836,6 +869,95 @@ def setup(context):
             "box": GOLD["box"],
         })
 
+    trace = load_sibling(context.directory, "trace")
+    # Older gateways give plugins no data directory: then nothing is recorded.
+    data_dir = getattr(context, "data_dir", None)
+    if data_dir:
+        TRACE["path"] = os.path.join(data_dir, "trace.json")
+        TRACE["graph"] = trace.load(TRACE["path"])
+
+    async def trace_signature():
+        """(screen name, thumbnail) of the screen now, or None when the game
+        is not in front."""
+        shot, focus = await asyncio.gather(context.screenshot(), in_focus())
+        if not shot or not focus:
+            return None
+        return classify(shot), trace.thumbnail(shot)
+
+    def trace_finish(pending, after):
+        """Records the pending tap with its after screen and saves."""
+        if TRACE["pending"] is pending:
+            TRACE["pending"] = None
+        # A tap that took the game out of the front (home, another app) is
+        # not an edge of the game's graph: dropped.
+        if pending["before"] is None or after is None:
+            return
+        if TRACE["graph"].record(pending["before"], after, pending["tap"], time.time()):
+            try:
+                trace.save(TRACE["graph"], TRACE["path"])
+            except OSError as e:
+                logging.warning(f"Slayer Legend trace not saved: {e!r}")
+
+    async def trace_after(pending):
+        await asyncio.sleep(TRACE_AFTER_SECONDS)
+        async with TRACE["lock"]:
+            # A newer tap may have finished it already.
+            if TRACE["pending"] is pending:
+                try:
+                    trace_finish(pending, await trace_signature())
+                except Exception as e:
+                    TRACE["pending"] = None
+                    logging.warning(f"Slayer Legend trace failed: {e!r}")
+
+    async def trace_tap(tap):
+        """Takes the screen at once. It is this tap's "before" and also the
+        "after" of a tap still waiting for its 2 s (the screen just before
+        the next tap is what the previous one led to); that earlier tap is
+        recorded now, so taps quicker than 2 s apart chain without a second
+        screenshot. Under a lock: taps are handled one at a time, in
+        order."""
+        async with TRACE["lock"]:
+            try:
+                now = await trace_signature()
+                previous = TRACE["pending"]
+                if previous is not None:
+                    previous["task"].cancel()
+                    trace_finish(previous, now)
+                pending = {"tap": tap, "before": now, "task": None}
+                TRACE["pending"] = pending
+                pending["task"] = asyncio.get_running_loop().create_task(trace_after(pending))
+            except Exception as e:
+                logging.warning(f"Slayer Legend trace failed: {e!r}")
+
+    async def handle_trace(request):
+        if TRACE["graph"] is None:
+            return context.json({"error": "No data directory: nothing is recorded"}, status=503)
+        try:
+            tap = trace.parse_tap(await request.json())
+        except ValueError:
+            tap = None
+        if tap is None:
+            return context.json({"error": "Expected {x, y, kind: tap|long|swipe[, end: {x, y}]}, fractions 0-1"},
+                                status=400)
+        if TRACE["lock"] is None:
+            TRACE["lock"] = asyncio.Lock()
+        asyncio.get_running_loop().create_task(trace_tap(tap))
+        return context.json({"queued": True}, status=202)
+
+    async def handle_trace_state(request):
+        graph = TRACE["graph"]
+        return context.json({
+            "enabled": graph is not None,
+            "nodes": len(graph.nodes) if graph else 0,
+            "edges": len(graph.edges) if graph else 0,
+            "taps": graph.taps() if graph else 0,
+            "last": graph.last if graph else None,
+        })
+
+    async def handle_trace_graph(request):
+        graph = TRACE["graph"]
+        return context.json(graph.public() if graph else {"nodes": [], "edges": []})
+
     context.add_get("/emerald-mask", handle_emerald_mask)
     async def handle_gold_font(request):
         return context.json({"height": len(gold.DIGITS["0"]),
@@ -853,3 +975,6 @@ def setup(context):
     context.add_get("/mode", handle_mode_state)
     context.add_post("/mode", handle_mode)
     context.add_post("/mode/timer", handle_mode_timer)
+    context.add_post("/trace", handle_trace)
+    context.add_get("/trace", handle_trace_state)
+    context.add_get("/trace/graph", handle_trace_graph)

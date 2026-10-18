@@ -29,9 +29,41 @@
 //   screenWidth()         width of the shown screen in CSS pixels
 //   setting(key)          this plugin's stored option (true/false, or text)
 //   refresh()             re-render the options panel (after a status change)
+//   onTap(listener)       calls listener({ x, y, kind[, end] }) after each touch
+//                         the user makes on the Android screen, once the finger
+//                         lifts (it has already reached Android; this only
+//                         observes). x, y: where it started, fractions of the
+//                         screen (0..1 from the top left); kind 'tap', 'long'
+//                         (held 500 ms or more) or 'swipe' (moved), with end:
+//                         { x, y } where a swipe ended. Returns a function that
+//                         stops it; stopped anyway when the plugin is unloaded.
 //   tr, addTranslations
 import { useEffect, useRef, useState } from 'react';
 import { addTranslations, tr } from './i18n';
+
+// Every plugin's onTap listeners; App.tsx calls emitTap at each touch end.
+const tapListeners = new Set();
+
+export function emitTap(tap) {
+  for (const listener of tapListeners) {
+    try {
+      listener(tap);
+    } catch (error) {
+      console.error('Plugin tap listener:', error);
+    }
+  }
+}
+
+function stopTaps(taps) {
+  for (const listener of taps ?? []) tapListeners.delete(listener);
+  taps?.clear();
+}
+
+function unload(item) {
+  item.instance.dispose?.();
+  item.layer?.remove();
+  stopTaps(item.taps);
+}
 
 export function usePlugins({ gatewayUrl, deviceRef, layerRef, screenWidth, settings, postHeaders }) {
   const [plugins, setPlugins] = useState([]);
@@ -60,6 +92,7 @@ export function usePlugins({ gatewayUrl, deviceRef, layerRef, screenWidth, setti
         const layer = document.createElement('div');
         layer.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:1;overflow:hidden';
         layerRef.current?.appendChild(layer);
+        const taps = new Set();
         const api = {
           id: plugin.id,
           title: plugin.title,
@@ -79,21 +112,30 @@ export function usePlugins({ gatewayUrl, deviceRef, layerRef, screenWidth, setti
           screenWidth: () => widthRef.current,
           setting: (key) => settingsRef.current.plugins?.[plugin.id]?.[key] ?? null,
           refresh,
+          onTap: (listener) => {
+            taps.add(listener);
+            tapListeners.add(listener);
+            return () => {
+              taps.delete(listener);
+              tapListeners.delete(listener);
+            };
+          },
           tr,
           addTranslations,
         };
         try {
           const module = await import(/* @vite-ignore */ `${gatewayUrl}${plugin.page}`);
           const instance = module.default(api) ?? {};
-          loaded.push({ ...plugin, instance, layer });
+          loaded.push({ ...plugin, instance, layer, taps });
         } catch (error) {
           console.error(`Plugin ${plugin.id}:`, error);
           layer.remove();
+          stopTaps(taps);
           loaded.push({ ...plugin, instance: { options: [] }, error: String(error?.message ?? error) });
         }
       }
       if (cancelled) {
-        loaded.forEach((item) => { item.instance.dispose?.(); item.layer?.remove(); });
+        loaded.forEach(unload);
         return;
       }
       active.current = loaded;
@@ -101,7 +143,7 @@ export function usePlugins({ gatewayUrl, deviceRef, layerRef, screenWidth, setti
     })();
     return () => {
       cancelled = true;
-      active.current.forEach((item) => { item.instance.dispose?.(); item.layer?.remove(); });
+      active.current.forEach(unload);
       active.current = [];
     };
   }, [gatewayUrl]);

@@ -290,6 +290,7 @@ sudo ./uninstall.sh --purge    # erases the phone permanently
 | `/opt/cloudphone/android-sdk` | Android SDK, pinned emulator, system image | yes |
 | `/var/lib/cloudphone/avd` | **Android's data** | only with `--purge` |
 | `/var/lib/cloudphone/.android` | adb key of the service account | only with `--purge` |
+| `/var/lib/cloudphone/plugins` | Plugins' own data, one directory each (part 05) | only with `--purge` |
 | `/etc/cloudphone` | Configuration and gRPC access policy | only with `--purge` |
 | `/etc/systemd/system/cloudphone-*.service`, `cloudphone-*.path` | Services and the two path units | yes |
 

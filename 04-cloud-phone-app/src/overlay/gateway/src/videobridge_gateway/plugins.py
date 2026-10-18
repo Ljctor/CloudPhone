@@ -10,6 +10,11 @@ The directory belongs to root (an install script puts plugins there), so the
 gateway runs their code like its own. A plugin that fails to load is logged
 and skipped; the gateway and the other plugins keep working.
 
+A plugin may keep files in its own data directory, DATA_DIR/<id>
+(--plugin_data, /var/lib/cloudphone/plugins on a server), created by the
+gateway, owned by its user, mode 700, kept across upgrades: context.data_dir,
+None when the gateway has none.
+
 The page lists plugins with GET /api/v1/plugins and imports each page.js from
 /plugins/<id>/page.js (every top-level *.js file is served there). A plugin's own API lives under /api/v1/plugins/<id>/,
 behind the same origin and page-token checks as the rest of the API.
@@ -31,10 +36,13 @@ SCRIPT_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}\.js$")
 class PluginContext:
     """What a plugin's gateway.py may use. Passed to setup(context)."""
 
-    def __init__(self, app, plugin_id, directory, screenshot, adb, notify=None, title=None):
+    def __init__(self, app, plugin_id, directory, screenshot, adb, notify=None, title=None, data_dir=None):
         self.app = app
         self.id = plugin_id
         self.directory = directory
+        # Where the plugin may write its own files (its code directory
+        # belongs to root), or None.
+        self.data_dir = data_dir
         self.prefix = f"/api/v1/plugins/{plugin_id}"
         self._screenshot = screenshot
         self._adb = adb
@@ -81,8 +89,22 @@ def read_manifest(directory):
     }
 
 
-def load_plugins(app, plugins_dir, screenshot, adb, notify=None):
-    """Registers every plugin found in plugins_dir; returns their manifests."""
+def plugin_data_dir(data_dir, plugin_id):
+    """DATA_DIR/<id>, created if needed, or None (no DATA_DIR, or not writable)."""
+    if not data_dir:
+        return None
+    path = os.path.join(data_dir, plugin_id)
+    try:
+        os.makedirs(path, mode=0o700, exist_ok=True)
+    except OSError as e:
+        logging.warning(f"Plugin {plugin_id}: no data directory {path}: {e}")
+        return None
+    return path
+
+
+def load_plugins(app, plugins_dir, screenshot, adb, notify=None, data_dir=None):
+    """Registers every plugin found in plugins_dir; returns their manifests.
+    data_dir: the parent of the plugins' data directories, or None."""
     loaded = []
     if not plugins_dir or not os.path.isdir(plugins_dir):
         return loaded
@@ -104,7 +126,8 @@ def load_plugins(app, plugins_dir, screenshot, adb, notify=None):
                 spec = importlib.util.spec_from_file_location(f"cloudphone_plugin_{plugin_id.replace('-', '_')}", code)
                 module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(module)
-                module.setup(PluginContext(app, plugin_id, directory, screenshot, adb, notify, manifest.get("title")))
+                module.setup(PluginContext(app, plugin_id, directory, screenshot, adb, notify, manifest.get("title"),
+                                           plugin_data_dir(data_dir, plugin_id)))
             loaded.append(manifest)
             logging.info(f"Plugin {plugin_id} {manifest['version']} loaded")
         except Exception as e:

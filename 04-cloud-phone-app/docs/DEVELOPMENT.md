@@ -186,9 +186,15 @@ checks. The `id` must equal the directory name and match
 top of `plugins.ts` (video element, a drawing layer over the screen, stored
 options, gateway calls) and renders its options (toggle, number, choice, action,
 buttons, status) in Options → Plugins, one foldable section per plugin.
-`context` offers `add_get`/`add_post`, `screenshot()`, `adb(...)`, `json()`
-and `notify(text)`, which sends a phone alert when the user turned them on
-(below).
+`context` offers `add_get`/`add_post`, `screenshot()`, `adb(...)`, `json()`,
+`notify(text)`, which sends a phone alert when the user turned them on
+(below), and `data_dir`: a directory the plugin may write to,
+`/var/lib/cloudphone/plugins/<id>/` (`--plugin_data`, created by the gateway
+as the `cloudphone` user, mode 700, kept by upgrades, removed by
+`uninstall.sh --purge`), or `None` when the gateway has none. On the page,
+`api.onTap(listener)` observes the user's touches on the Android screen once
+the finger lifts (`{ x, y, kind: 'tap' | 'long' | 'swipe', end? }`, fractions
+of the screen); touches reach Android exactly as without it.
 
 ## Emerald counter (part 05 plugin)
 

@@ -1,0 +1,1834 @@
+{
+ "about": "Slayer Legend's screens (nodes) and every known way out of each (moves), allowed or forbidden. Positions are fractions of the screen (x of the width, y of the height). A move is a tap at `tap` (±TOLERANCE), anywhere in `area` [left, top, right, bottom], a `hold` for hold_ms, a `swipe` [x1, y1, x2, y2] or an Android `key`. nav.py's guard refuses any action that is not an allowed move of the current screen, or that falls on a forbidden move.",
+ "tolerance": 0.03,
+ "screens": {
+  "title": {
+   "name": "Title screen",
+   "recognise": "classify() == 'title': SLAYER LEGEND logo, white TAP TO START near the bottom",
+   "source": "explored 2026-10-18",
+   "moves": [
+    {
+     "id": "start",
+     "to": "save_notice",
+     "tap": [
+      0.5,
+      0.836
+     ],
+     "label": "TAP TO START"
+    }
+   ]
+  },
+  "save_notice": {
+   "name": "Save notice",
+   "recognise": "classify() == 'save': dialog 'Notification', 'Last save time'",
+   "source": "explored 2026-10-18",
+   "moves": [
+    {
+     "id": "confirm",
+     "to": "loading",
+     "tap": [
+      0.314,
+      0.745
+     ],
+     "label": "Confirm (keeps the latest save)"
+    },
+    {
+     "id": "exit",
+     "to": "title",
+     "tap": [
+      0.68,
+      0.745
+     ],
+     "label": "Exit",
+     "forbidden": true,
+     "reason": "quits the game"
+    }
+   ]
+  },
+  "loading": {
+   "name": "Loading",
+   "recognise": "dark dragon gate, 'Loading...'; nothing to tap",
+   "source": "explored 2026-10-18",
+   "moves": []
+  },
+  "saver": {
+   "name": "Power Saving Mode",
+   "recognise": "classify() == 'saver': black screen, clock, STAGE n, 'In battle . . .'",
+   "source": "explored 2026-10-18",
+   "moves": [
+    {
+     "id": "leave",
+     "to": "battle",
+     "hold": [
+      0.5,
+      0.88
+     ],
+     "hold_ms": 4000,
+     "label": "Press here to finish Power Saving Mode (hold 4 s)"
+    }
+   ]
+  },
+  "battle": {
+   "name": "Battle screen",
+   "recognise": "classify() == 'battle': top bar with level, emeralds, diamonds; stage name; bottom menu",
+   "source": "explored 2026-10-18",
+   "moves": [
+    {
+     "id": "menu_character",
+     "to": "character_enhance",
+     "tap": [
+      0.073,
+      0.966
+     ],
+     "label": "Character"
+    },
+    {
+     "id": "menu_skill",
+     "to": "skill",
+     "tap": [
+      0.24,
+      0.966
+     ],
+     "label": "Skill"
+    },
+    {
+     "id": "menu_equipment",
+     "to": "equipment_weapon",
+     "tap": [
+      0.41,
+      0.966
+     ],
+     "label": "Equipment"
+    },
+    {
+     "id": "menu_companion",
+     "to": "companion",
+     "tap": [
+      0.585,
+      0.966
+     ],
+     "label": "Companion"
+    },
+    {
+     "id": "menu_adventure",
+     "to": "adventure_map",
+     "tap": [
+      0.755,
+      0.966
+     ],
+     "label": "Adventure"
+    },
+    {
+     "id": "menu_shop",
+     "to": "shop_summon",
+     "tap": [
+      0.925,
+      0.966
+     ],
+     "label": "Shop"
+    },
+    {
+     "id": "stage_select",
+     "to": "stage_select",
+     "tap": [
+      0.3,
+      0.07
+     ],
+     "label": "map icon left of the stage name (no panel open; with a panel open it only closes the panel)"
+    },
+    {
+     "id": "top_menu",
+     "to": "top_menu",
+     "tap": [
+      0.935,
+      0.025
+     ],
+     "label": "≡ menu"
+    },
+    {
+     "id": "quest",
+     "to": "quest_panel",
+     "tap": [
+      0.94,
+      0.09
+     ],
+     "label": "Quest"
+    },
+    {
+     "id": "scroll",
+     "to": "unknown",
+     "tap": [
+      0.94,
+      0.15
+     ],
+     "label": "Scroll (not explored yet)"
+    },
+    {
+     "id": "event",
+     "to": "unknown",
+     "tap": [
+      0.12,
+      0.155
+     ],
+     "label": "EVENT (not explored yet)"
+    },
+    {
+     "id": "back_key",
+     "to": "quit_dialog",
+     "key": "BACK",
+     "label": "Android Back on the battle screen",
+     "forbidden": true,
+     "reason": "opens the game's quit dialog"
+    }
+   ]
+  },
+  "character_enhance": {
+   "name": "Character: Enhance",
+   "recognise": "panel tabs Enhance/Growth/Promotion at y 0.537, Enhance selected",
+   "source": "explored 2026-10-18",
+   "moves": [
+    {
+     "id": "menu_skill",
+     "to": "skill",
+     "tap": [
+      0.24,
+      0.966
+     ],
+     "label": "Skill"
+    },
+    {
+     "id": "menu_equipment",
+     "to": "equipment_weapon",
+     "tap": [
+      0.41,
+      0.966
+     ],
+     "label": "Equipment"
+    },
+    {
+     "id": "menu_companion",
+     "to": "companion",
+     "tap": [
+      0.585,
+      0.966
+     ],
+     "label": "Companion"
+    },
+    {
+     "id": "menu_adventure",
+     "to": "adventure_map",
+     "tap": [
+      0.755,
+      0.966
+     ],
+     "label": "Adventure"
+    },
+    {
+     "id": "menu_shop",
+     "to": "shop_summon",
+     "tap": [
+      0.925,
+      0.966
+     ],
+     "label": "Shop"
+    },
+    {
+     "id": "growth",
+     "to": "character_growth",
+     "tap": [
+      0.31,
+      0.537
+     ],
+     "label": "Growth tab"
+    },
+    {
+     "id": "promotion",
+     "to": "character_promotion",
+     "tap": [
+      0.5,
+      0.537
+     ],
+     "label": "Promotion tab"
+    },
+    {
+     "id": "level_up",
+     "to": "character_enhance",
+     "tap": [
+      0.84,
+      0.595
+     ],
+     "label": "LEVEL UP",
+     "forbidden": true,
+     "reason": "spends resources; user's choice"
+    },
+    {
+     "id": "enhance_stat",
+     "to": "character_enhance",
+     "area": [
+      0.72,
+      0.66,
+      0.96,
+      0.95
+     ],
+     "label": "ATK / HP / HP Recovery gold buttons",
+     "forbidden": true,
+     "reason": "spends gold; user's choice"
+    }
+   ]
+  },
+  "character_growth": {
+   "name": "Character: Growth",
+   "recognise": "Growth tab selected; STR/HP/VIT rows with green +",
+   "source": "explored 2026-10-18",
+   "moves": [
+    {
+     "id": "menu_skill",
+     "to": "skill",
+     "tap": [
+      0.24,
+      0.966
+     ],
+     "label": "Skill"
+    },
+    {
+     "id": "menu_equipment",
+     "to": "equipment_weapon",
+     "tap": [
+      0.41,
+      0.966
+     ],
+     "label": "Equipment"
+    },
+    {
+     "id": "menu_companion",
+     "to": "companion",
+     "tap": [
+      0.585,
+      0.966
+     ],
+     "label": "Companion"
+    },
+    {
+     "id": "menu_adventure",
+     "to": "adventure_map",
+     "tap": [
+      0.755,
+      0.966
+     ],
+     "label": "Adventure"
+    },
+    {
+     "id": "menu_shop",
+     "to": "shop_summon",
+     "tap": [
+      0.925,
+      0.966
+     ],
+     "label": "Shop"
+    },
+    {
+     "id": "enhance",
+     "to": "character_enhance",
+     "tap": [
+      0.15,
+      0.537
+     ],
+     "label": "Enhance tab"
+    },
+    {
+     "id": "promotion",
+     "to": "character_promotion",
+     "tap": [
+      0.5,
+      0.537
+     ],
+     "label": "Promotion tab"
+    },
+    {
+     "id": "stat_plus",
+     "to": "character_growth",
+     "area": [
+      0.85,
+      0.68,
+      0.97,
+      0.95
+     ],
+     "label": "stat +",
+     "forbidden": true,
+     "reason": "spends stat points; user's choice"
+    },
+    {
+     "id": "stat_reset",
+     "to": "unknown",
+     "tap": [
+      0.955,
+      0.632
+     ],
+     "label": "stat point reset",
+     "forbidden": true,
+     "reason": "may spend diamonds"
+    }
+   ]
+  },
+  "character_promotion": {
+   "name": "Character: Promotion",
+   "recognise": "Promotion tab selected; class name, Class and 'Slayer Promotion Additional Ability' buttons",
+   "source": "explored 2026-10-18",
+   "moves": [
+    {
+     "id": "menu_skill",
+     "to": "skill",
+     "tap": [
+      0.24,
+      0.966
+     ],
+     "label": "Skill"
+    },
+    {
+     "id": "menu_equipment",
+     "to": "equipment_weapon",
+     "tap": [
+      0.41,
+      0.966
+     ],
+     "label": "Equipment"
+    },
+    {
+     "id": "menu_companion",
+     "to": "companion",
+     "tap": [
+      0.585,
+      0.966
+     ],
+     "label": "Companion"
+    },
+    {
+     "id": "menu_adventure",
+     "to": "adventure_map",
+     "tap": [
+      0.755,
+      0.966
+     ],
+     "label": "Adventure"
+    },
+    {
+     "id": "menu_shop",
+     "to": "shop_summon",
+     "tap": [
+      0.925,
+      0.966
+     ],
+     "label": "Shop"
+    },
+    {
+     "id": "enhance",
+     "to": "character_enhance",
+     "tap": [
+      0.15,
+      0.537
+     ],
+     "label": "Enhance tab"
+    },
+    {
+     "id": "growth",
+     "to": "character_growth",
+     "tap": [
+      0.31,
+      0.537
+     ],
+     "label": "Growth tab"
+    },
+    {
+     "id": "class",
+     "to": "unknown",
+     "tap": [
+      0.62,
+      0.59
+     ],
+     "label": "Class",
+     "forbidden": true,
+     "reason": "not explored; may change the class"
+    },
+    {
+     "id": "additional_ability",
+     "to": "promotion_bonus",
+     "tap": [
+      0.83,
+      0.59
+     ],
+     "label": "Slayer Promotion Additional Ability",
+     "forbidden": true,
+     "reason": "bonus pages re-rolled with dice: never"
+    }
+   ]
+  },
+  "skill": {
+   "name": "Skill panel",
+   "recognise": "skill presets 1-5 at y 0.531, panel 'Skill' with element icons, skill grid with +",
+   "source": "explored 2026-10-18",
+   "moves": [
+    {
+     "id": "menu_character",
+     "to": "character_enhance",
+     "tap": [
+      0.073,
+      0.966
+     ],
+     "label": "Character"
+    },
+    {
+     "id": "menu_equipment",
+     "to": "equipment_weapon",
+     "tap": [
+      0.41,
+      0.966
+     ],
+     "label": "Equipment"
+    },
+    {
+     "id": "menu_companion",
+     "to": "companion",
+     "tap": [
+      0.585,
+      0.966
+     ],
+     "label": "Companion"
+    },
+    {
+     "id": "menu_adventure",
+     "to": "adventure_map",
+     "tap": [
+      0.755,
+      0.966
+     ],
+     "label": "Adventure"
+    },
+    {
+     "id": "menu_shop",
+     "to": "shop_summon",
+     "tap": [
+      0.925,
+      0.966
+     ],
+     "label": "Shop"
+    },
+    {
+     "id": "preset",
+     "to": "skill",
+     "area": [
+      0.27,
+      0.515,
+      0.7,
+      0.547
+     ],
+     "label": "skill presets 1-5 (x 0.31/0.40/0.49/0.575/0.66)",
+     "forbidden": true,
+     "reason": "changes the user's skill preset; only by the user"
+    },
+    {
+     "id": "skill_plus",
+     "to": "skill",
+     "area": [
+      0.0,
+      0.64,
+      1.0,
+      0.95
+     ],
+     "label": "skill + (level up)",
+     "forbidden": true,
+     "reason": "spends resources"
+    }
+   ]
+  },
+  "equipment_weapon": {
+   "name": "Equipment: Weapon",
+   "recognise": "tabs Weapon/Accessories/Relic/Spirit at y 0.414, Weapon selected, weapon grid, Batch Combine",
+   "source": "explored 2026-10-18",
+   "moves": [
+    {
+     "id": "menu_character",
+     "to": "character_enhance",
+     "tap": [
+      0.073,
+      0.966
+     ],
+     "label": "Character"
+    },
+    {
+     "id": "menu_skill",
+     "to": "skill",
+     "tap": [
+      0.24,
+      0.966
+     ],
+     "label": "Skill"
+    },
+    {
+     "id": "menu_companion",
+     "to": "companion",
+     "tap": [
+      0.585,
+      0.966
+     ],
+     "label": "Companion"
+    },
+    {
+     "id": "menu_adventure",
+     "to": "adventure_map",
+     "tap": [
+      0.755,
+      0.966
+     ],
+     "label": "Adventure"
+    },
+    {
+     "id": "menu_shop",
+     "to": "shop_summon",
+     "tap": [
+      0.925,
+      0.966
+     ],
+     "label": "Shop"
+    },
+    {
+     "id": "accessories",
+     "to": "equipment_accessories",
+     "tap": [
+      0.31,
+      0.414
+     ],
+     "label": "Accessories tab"
+    },
+    {
+     "id": "relic",
+     "to": "equipment_relic",
+     "tap": [
+      0.5,
+      0.414
+     ],
+     "label": "Relic tab"
+    },
+    {
+     "id": "spirit",
+     "to": "spirit",
+     "tap": [
+      0.69,
+      0.414
+     ],
+     "label": "Spirit tab"
+    },
+    {
+     "id": "soul_weapon",
+     "to": "soul_weapon",
+     "tap": [
+      0.92,
+      0.462
+     ],
+     "label": "sword on a beige background: Soul Weapon"
+    },
+    {
+     "id": "batch_combine",
+     "to": "equipment_weapon",
+     "tap": [
+      0.5,
+      0.905
+     ],
+     "label": "Batch Combine",
+     "forbidden": true,
+     "reason": "overwrites or re-rolls the user's equipment"
+    }
+   ]
+  },
+  "equipment_accessories": {
+   "name": "Equipment: Accessories",
+   "recognise": "Accessories tab selected",
+   "source": "explored 2026-10-18",
+   "moves": [
+    {
+     "id": "menu_character",
+     "to": "character_enhance",
+     "tap": [
+      0.073,
+      0.966
+     ],
+     "label": "Character"
+    },
+    {
+     "id": "menu_skill",
+     "to": "skill",
+     "tap": [
+      0.24,
+      0.966
+     ],
+     "label": "Skill"
+    },
+    {
+     "id": "menu_companion",
+     "to": "companion",
+     "tap": [
+      0.585,
+      0.966
+     ],
+     "label": "Companion"
+    },
+    {
+     "id": "menu_adventure",
+     "to": "adventure_map",
+     "tap": [
+      0.755,
+      0.966
+     ],
+     "label": "Adventure"
+    },
+    {
+     "id": "menu_shop",
+     "to": "shop_summon",
+     "tap": [
+      0.925,
+      0.966
+     ],
+     "label": "Shop"
+    },
+    {
+     "id": "weapon",
+     "to": "equipment_weapon",
+     "tap": [
+      0.12,
+      0.414
+     ],
+     "label": "Weapon tab"
+    },
+    {
+     "id": "relic",
+     "to": "equipment_relic",
+     "tap": [
+      0.5,
+      0.414
+     ],
+     "label": "Relic tab"
+    },
+    {
+     "id": "spirit",
+     "to": "spirit",
+     "tap": [
+      0.69,
+      0.414
+     ],
+     "label": "Spirit tab"
+    },
+    {
+     "id": "batch_combine",
+     "to": "equipment_accessories",
+     "tap": [
+      0.5,
+      0.905
+     ],
+     "label": "Batch Combine",
+     "forbidden": true,
+     "reason": "overwrites or re-rolls the user's equipment"
+    }
+   ]
+  },
+  "equipment_relic": {
+   "name": "Equipment: Relic",
+   "recognise": "Relic tab selected, relics with 'Enhance MAX'",
+   "source": "explored 2026-10-18",
+   "moves": [
+    {
+     "id": "menu_character",
+     "to": "character_enhance",
+     "tap": [
+      0.073,
+      0.966
+     ],
+     "label": "Character"
+    },
+    {
+     "id": "menu_skill",
+     "to": "skill",
+     "tap": [
+      0.24,
+      0.966
+     ],
+     "label": "Skill"
+    },
+    {
+     "id": "menu_companion",
+     "to": "companion",
+     "tap": [
+      0.585,
+      0.966
+     ],
+     "label": "Companion"
+    },
+    {
+     "id": "menu_adventure",
+     "to": "adventure_map",
+     "tap": [
+      0.755,
+      0.966
+     ],
+     "label": "Adventure"
+    },
+    {
+     "id": "menu_shop",
+     "to": "shop_summon",
+     "tap": [
+      0.925,
+      0.966
+     ],
+     "label": "Shop"
+    },
+    {
+     "id": "weapon",
+     "to": "equipment_weapon",
+     "tap": [
+      0.12,
+      0.414
+     ],
+     "label": "Weapon tab"
+    },
+    {
+     "id": "accessories",
+     "to": "equipment_accessories",
+     "tap": [
+      0.31,
+      0.414
+     ],
+     "label": "Accessories tab"
+    },
+    {
+     "id": "spirit",
+     "to": "spirit",
+     "tap": [
+      0.69,
+      0.414
+     ],
+     "label": "Spirit tab"
+    },
+    {
+     "id": "enhance",
+     "to": "equipment_relic",
+     "area": [
+      0.72,
+      0.45,
+      0.96,
+      0.95
+     ],
+     "label": "Enhance MAX",
+     "forbidden": true,
+     "reason": "spends relic materials, can fail"
+    }
+   ]
+  },
+  "spirit": {
+   "name": "Spirit (full screen)",
+   "recognise": "title 'Spirit', Accompanying Spirit, spirit grid, Spirit Evolution / X / Summon Spirit at the bottom",
+   "source": "explored 2026-10-18",
+   "moves": [
+    {
+     "id": "close",
+     "to": "equipment_weapon",
+     "tap": [
+      0.5,
+      0.955
+     ],
+     "label": "blue X (back to the last Equipment tab)"
+    },
+    {
+     "id": "preset",
+     "to": "spirit",
+     "area": [
+      0.25,
+      0.45,
+      0.75,
+      0.49
+     ],
+     "label": "spirit presets 1-5",
+     "forbidden": true,
+     "reason": "changes the user's spirits"
+    },
+    {
+     "id": "equip",
+     "to": "spirit",
+     "area": [
+      0.03,
+      0.5,
+      0.97,
+      0.9
+     ],
+     "label": "spirit +/-",
+     "forbidden": true,
+     "reason": "overwrites or re-rolls the user's equipment"
+    },
+    {
+     "id": "evolution",
+     "to": "unknown",
+     "tap": [
+      0.15,
+      0.955
+     ],
+     "label": "Spirit Evolution",
+     "forbidden": true,
+     "reason": "overwrites or re-rolls the user's equipment"
+    },
+    {
+     "id": "summon",
+     "to": "unknown",
+     "tap": [
+      0.85,
+      0.955
+     ],
+     "label": "Summon Spirit",
+     "forbidden": true,
+     "reason": "spends diamonds"
+    }
+   ]
+  },
+  "soul_weapon": {
+   "name": "Soul Weapon",
+   "recognise": "title 'Soul Weapon', weapon list on the left, card with Craft and Breakdown",
+   "source": "seen 2026-10-18",
+   "moves": [
+    {
+     "id": "close",
+     "to": "equipment_weapon",
+     "tap": [
+      0.5,
+      0.95
+     ],
+     "label": "red X"
+    },
+    {
+     "id": "select",
+     "to": "soul_weapon",
+     "area": [
+      0.0,
+      0.55,
+      0.17,
+      0.92
+     ],
+     "label": "weapon in the left list"
+    },
+    {
+     "id": "equip",
+     "to": "soul_weapon",
+     "area": [
+      0.0,
+      0.83,
+      0.17,
+      0.86
+     ],
+     "label": "Equip tag under the selected weapon"
+    },
+    {
+     "id": "engraving",
+     "to": "soul_weapon_engraving",
+     "tap": [
+      0.33,
+      0.636
+     ],
+     "label": "big weapon icon"
+    },
+    {
+     "id": "craft",
+     "to": "unknown",
+     "tap": [
+      0.47,
+      0.841
+     ],
+     "label": "Craft",
+     "forbidden": true,
+     "reason": "overwrites or re-rolls the user's equipment"
+    },
+    {
+     "id": "breakdown",
+     "to": "unknown",
+     "area": [
+      0.66,
+      0.8,
+      0.97,
+      0.88
+     ],
+     "label": "Breakdown",
+     "forbidden": true,
+     "reason": "destroys items for good"
+    }
+   ]
+  },
+  "soul_weapon_engraving": {
+   "name": "Soul Weapon Engraving",
+   "recognise": "black screen, 'Soul Weapon Engraving', 5x5 grid, 8 pieces, Change x 8",
+   "source": "seen 2026-10-18",
+   "moves": [
+    {
+     "id": "close",
+     "to": "soul_weapon",
+     "tap": [
+      0.11,
+      0.955
+     ],
+     "label": "red X"
+    },
+    {
+     "id": "lock",
+     "to": "soul_weapon_engraving",
+     "area": [
+      0.15,
+      0.58,
+      0.9,
+      0.76
+     ],
+     "label": "padlock top right of each piece (first thing to do)"
+    },
+    {
+     "id": "drag_piece",
+     "to": "soul_weapon_engraving",
+     "area": [
+      0.1,
+      0.2,
+      0.9,
+      0.76
+     ],
+     "label": "drag a piece into the grid"
+    },
+    {
+     "id": "settings",
+     "to": "unknown",
+     "tap": [
+      0.87,
+      0.955
+     ],
+     "label": "gear"
+    },
+    {
+     "id": "change",
+     "to": "soul_weapon_engraving",
+     "area": [
+      0.3,
+      0.93,
+      0.7,
+      0.98
+     ],
+     "label": "Change x 8",
+     "forbidden": true,
+     "reason": "re-rolls the engraving pieces"
+    }
+   ]
+  },
+  "companion": {
+   "name": "Companion",
+   "recognise": "tabs Companion/Beast at y 0.466, four companions on wood",
+   "source": "explored 2026-10-18",
+   "moves": [
+    {
+     "id": "menu_character",
+     "to": "character_enhance",
+     "tap": [
+      0.073,
+      0.966
+     ],
+     "label": "Character"
+    },
+    {
+     "id": "menu_skill",
+     "to": "skill",
+     "tap": [
+      0.24,
+      0.966
+     ],
+     "label": "Skill"
+    },
+    {
+     "id": "menu_equipment",
+     "to": "equipment_weapon",
+     "tap": [
+      0.41,
+      0.966
+     ],
+     "label": "Equipment"
+    },
+    {
+     "id": "menu_adventure",
+     "to": "adventure_map",
+     "tap": [
+      0.755,
+      0.966
+     ],
+     "label": "Adventure"
+    },
+    {
+     "id": "menu_shop",
+     "to": "shop_summon",
+     "tap": [
+      0.925,
+      0.966
+     ],
+     "label": "Shop"
+    },
+    {
+     "id": "beast",
+     "to": "beast",
+     "tap": [
+      0.31,
+      0.466
+     ],
+     "label": "Beast tab"
+    },
+    {
+     "id": "advancement",
+     "to": "unknown",
+     "tap": [
+      0.905,
+      0.507
+     ],
+     "label": "Advancement",
+     "forbidden": true,
+     "reason": "not explored; may spend"
+    }
+   ]
+  },
+  "beast": {
+   "name": "Beast (full screen)",
+   "recognise": "title 'Beast', meadow, bottom bar Beast/Mount/Scouting/SHOP/Call",
+   "source": "explored 2026-10-18",
+   "moves": [
+    {
+     "id": "close",
+     "to": "battle",
+     "tap": [
+      0.095,
+      0.955
+     ],
+     "label": "red X"
+    },
+    {
+     "id": "mount",
+     "to": "unknown",
+     "tap": [
+      0.515,
+      0.955
+     ],
+     "label": "Mount (not explored)"
+    },
+    {
+     "id": "scouting",
+     "to": "unknown",
+     "tap": [
+      0.645,
+      0.955
+     ],
+     "label": "Scouting (not explored)"
+    },
+    {
+     "id": "shop",
+     "to": "unknown",
+     "tap": [
+      0.77,
+      0.955
+     ],
+     "label": "SHOP",
+     "forbidden": true,
+     "reason": "purchases"
+    },
+    {
+     "id": "call",
+     "to": "unknown",
+     "tap": [
+      0.895,
+      0.955
+     ],
+     "label": "Call",
+     "forbidden": true,
+     "reason": "likely spends"
+    }
+   ]
+  },
+  "adventure_map": {
+   "name": "Adventure: Adventure",
+   "recognise": "panel 'Adventure', tabs Adventure/Dungeon/Guild at y 0.249, parchment map with CLEAR regions",
+   "source": "explored 2026-10-18",
+   "moves": [
+    {
+     "id": "menu_character",
+     "to": "character_enhance",
+     "tap": [
+      0.073,
+      0.966
+     ],
+     "label": "Character"
+    },
+    {
+     "id": "menu_skill",
+     "to": "skill",
+     "tap": [
+      0.24,
+      0.966
+     ],
+     "label": "Skill"
+    },
+    {
+     "id": "menu_equipment",
+     "to": "equipment_weapon",
+     "tap": [
+      0.41,
+      0.966
+     ],
+     "label": "Equipment"
+    },
+    {
+     "id": "menu_companion",
+     "to": "companion",
+     "tap": [
+      0.585,
+      0.966
+     ],
+     "label": "Companion"
+    },
+    {
+     "id": "menu_shop",
+     "to": "shop_summon",
+     "tap": [
+      0.925,
+      0.966
+     ],
+     "label": "Shop"
+    },
+    {
+     "id": "dungeon",
+     "to": "dungeon_map",
+     "tap": [
+      0.4,
+      0.249
+     ],
+     "label": "Dungeon tab"
+    },
+    {
+     "id": "guild",
+     "to": "guild",
+     "tap": [
+      0.63,
+      0.249
+     ],
+     "label": "Guild tab"
+    },
+    {
+     "id": "region",
+     "to": "adventure_quest",
+     "area": [
+      0.15,
+      0.35,
+      0.95,
+      0.9
+     ],
+     "label": "a region of the map (Land of Hate 0.59,0.39 …)"
+    },
+    {
+     "id": "story",
+     "to": "unknown",
+     "tap": [
+      0.12,
+      0.851
+     ],
+     "label": "Story (not explored)"
+    }
+   ]
+  },
+  "adventure_quest": {
+   "name": "Adventure quest pop-up",
+   "recognise": "'National Adventurers' Guild', WANTED, Quest List I-X",
+   "source": "explored 2026-10-18",
+   "moves": [
+    {
+     "id": "close",
+     "to": "adventure_map",
+     "tap": [
+      0.5,
+      0.94
+     ],
+     "label": "red X"
+    },
+    {
+     "id": "start",
+     "to": "unknown",
+     "tap": [
+      0.5,
+      0.852
+     ],
+     "label": "start the quest",
+     "forbidden": true,
+     "reason": "spends feathers; user's choice"
+    }
+   ]
+  },
+  "dungeon_map": {
+   "name": "Adventure: Dungeon",
+   "recognise": "Dungeon tab selected, map 'Aslan'",
+   "source": "explored 2026-10-18",
+   "moves": [
+    {
+     "id": "menu_character",
+     "to": "character_enhance",
+     "tap": [
+      0.073,
+      0.966
+     ],
+     "label": "Character"
+    },
+    {
+     "id": "menu_skill",
+     "to": "skill",
+     "tap": [
+      0.24,
+      0.966
+     ],
+     "label": "Skill"
+    },
+    {
+     "id": "menu_equipment",
+     "to": "equipment_weapon",
+     "tap": [
+      0.41,
+      0.966
+     ],
+     "label": "Equipment"
+    },
+    {
+     "id": "menu_companion",
+     "to": "companion",
+     "tap": [
+      0.585,
+      0.966
+     ],
+     "label": "Companion"
+    },
+    {
+     "id": "menu_shop",
+     "to": "shop_summon",
+     "tap": [
+      0.925,
+      0.966
+     ],
+     "label": "Shop"
+    },
+    {
+     "id": "adventure",
+     "to": "adventure_map",
+     "tap": [
+      0.16,
+      0.249
+     ],
+     "label": "Adventure tab"
+    },
+    {
+     "id": "guild",
+     "to": "guild",
+     "tap": [
+      0.63,
+      0.249
+     ],
+     "label": "Guild tab"
+    },
+    {
+     "id": "dragon_valley",
+     "to": "raid_camp",
+     "tap": [
+      0.5,
+      0.47
+     ],
+     "label": "Dragon Valley (takes > 3 s)"
+    },
+    {
+     "id": "closed_mine",
+     "to": "mine_list",
+     "tap": [
+      0.31,
+      0.632
+     ],
+     "label": "Closed Mine"
+    },
+    {
+     "id": "shelter",
+     "to": "unknown",
+     "tap": [
+      0.83,
+      0.42
+     ],
+     "label": "Shelter of Sleeping flame (not explored)"
+    },
+    {
+     "id": "rift",
+     "to": "unknown",
+     "tap": [
+      0.66,
+      0.585
+     ],
+     "label": "Dimensional Rift (not explored)"
+    },
+    {
+     "id": "forest",
+     "to": "unknown",
+     "tap": [
+      0.69,
+      0.718
+     ],
+     "label": "Forest of Circulation (not explored)"
+    },
+    {
+     "id": "kingdom",
+     "to": "unknown",
+     "tap": [
+      0.36,
+      0.76
+     ],
+     "label": "Kingdom of Aslan (not explored)"
+    },
+    {
+     "id": "training",
+     "to": "unknown",
+     "tap": [
+      0.76,
+      0.86
+     ],
+     "label": "Training Cave (not explored)"
+    }
+   ]
+  },
+  "raid_camp": {
+   "name": "Dragon Valley: Raid camp",
+   "recognise": "title 'Raid', camp with other players, bottom Raid/Cooking/Special Dish/Bag",
+   "source": "explored 2026-10-18",
+   "moves": [
+    {
+     "id": "back",
+     "to": "dungeon_map",
+     "tap": [
+      0.11,
+      0.96
+     ],
+     "label": "red back arrow"
+    },
+    {
+     "id": "ranking",
+     "to": "unknown",
+     "tap": [
+      0.16,
+      0.195
+     ],
+     "label": "Dragon Valley Ranking (not explored)"
+    },
+    {
+     "id": "raid",
+     "to": "unknown",
+     "tap": [
+      0.54,
+      0.96
+     ],
+     "label": "Raid",
+     "forbidden": true,
+     "reason": "never start a raid: the user does it"
+    },
+    {
+     "id": "cooking",
+     "to": "unknown",
+     "tap": [
+      0.66,
+      0.96
+     ],
+     "label": "Cooking",
+     "forbidden": true,
+     "reason": "never make recipes: the user does it"
+    },
+    {
+     "id": "special_dish",
+     "to": "unknown",
+     "tap": [
+      0.785,
+      0.96
+     ],
+     "label": "Special Dish",
+     "forbidden": true,
+     "reason": "never make recipes: the user does it"
+    },
+    {
+     "id": "bag",
+     "to": "unknown",
+     "tap": [
+      0.9,
+      0.96
+     ],
+     "label": "Bag (not explored)"
+    }
+   ]
+  },
+  "mine_list": {
+   "name": "Closed Mine: floor list",
+   "recognise": "mine.floor_list(): 'Closed Mine' title, yellow '<n> Floor' rows",
+   "source": "plugin code (mine.py)",
+   "moves": [
+    {
+     "id": "floor",
+     "to": "mine_area",
+     "area": [
+      0.3,
+      0.2,
+      0.7,
+      0.9
+     ],
+     "label": "a floor row"
+    },
+    {
+     "id": "scroll",
+     "to": "mine_list",
+     "swipe": [
+      0.5,
+      0.4,
+      0.5,
+      0.65
+     ],
+     "label": "scroll the list (either way, 0.40 <-> 0.65)"
+    }
+   ]
+  },
+  "mine_area": {
+   "name": "Closed Mine: Area pop-up",
+   "recognise": "mine.area_popup(): five grey Area buttons",
+   "source": "plugin code (mine.py)",
+   "moves": [
+    {
+     "id": "area",
+     "to": "mine_feathers",
+     "area": [
+      0.15,
+      0.86,
+      0.85,
+      0.9
+     ],
+     "label": "Area 1-5 (x 0.20/0.35/0.50/0.64/0.79, y 0.879)"
+    }
+   ]
+  },
+  "mine_feathers": {
+   "name": "Closed Mine: feathers pop-up",
+   "recognise": "mine.feather_popup(): three orange feather buttons",
+   "source": "plugin code (mine.py)",
+   "moves": [
+    {
+     "id": "feathers",
+     "to": "mine_fight",
+     "area": [
+      0.1,
+      0.74,
+      0.9,
+      0.79
+     ],
+     "label": "1/2/3 feathers (the plugin always uses 3)"
+    }
+   ]
+  },
+  "mine_fight": {
+   "name": "Closed Mine: fight",
+   "recognise": "mine.in_fight(): 'Repeat entry' top right",
+   "source": "plugin code (mine.py)",
+   "moves": [
+    {
+     "id": "repeat",
+     "to": "mine_fight",
+     "tap": [
+      0.9625,
+      0.1135
+     ],
+     "label": "Repeat entry tick box"
+    }
+   ]
+  },
+  "stage_select": {
+   "name": "Select Region (stage choice)",
+   "recognise": "pop-up 'Select Region', region banner with arrows, stages with orange Move",
+   "source": "explored 2026-10-18",
+   "moves": [
+    {
+     "id": "close",
+     "to": "battle",
+     "tap": [
+      0.5,
+      0.94
+     ],
+     "label": "red X"
+    },
+    {
+     "id": "previous_region",
+     "to": "stage_select",
+     "tap": [
+      0.125,
+      0.345
+     ],
+     "label": "previous region"
+    },
+    {
+     "id": "next_region",
+     "to": "stage_select",
+     "tap": [
+      0.875,
+      0.345
+     ],
+     "label": "next region"
+    },
+    {
+     "id": "scroll",
+     "to": "stage_select",
+     "swipe": [
+      0.5,
+      0.75,
+      0.5,
+      0.45
+     ],
+     "label": "scroll the stages"
+    },
+    {
+     "id": "move",
+     "to": "battle",
+     "area": [
+      0.68,
+      0.42,
+      0.88,
+      0.8
+     ],
+     "label": "Move on a stage row (changes the farmed stage)"
+    },
+    {
+     "id": "info",
+     "to": "unknown",
+     "area": [
+      0.12,
+      0.42,
+      0.2,
+      0.8
+     ],
+     "label": "i (not explored)"
+    }
+   ]
+  },
+  "top_menu": {
+   "name": "Top menu open",
+   "recognise": "≡ opened: trophy, gear and X in the top bar, Mail and battery below",
+   "source": "explored 2026-10-18",
+   "moves": [
+    {
+     "id": "close",
+     "to": "battle",
+     "tap": [
+      0.935,
+      0.027
+     ],
+     "label": "X"
+    },
+    {
+     "id": "ranking",
+     "to": "unknown",
+     "tap": [
+      0.785,
+      0.027
+     ],
+     "label": "Ranking (not explored)"
+    },
+    {
+     "id": "settings",
+     "to": "unknown",
+     "tap": [
+      0.86,
+      0.027
+     ],
+     "label": "Settings (not explored)"
+    },
+    {
+     "id": "mail",
+     "to": "unknown",
+     "tap": [
+      0.86,
+      0.068
+     ],
+     "label": "Mail (not explored)"
+    },
+    {
+     "id": "power_saving",
+     "to": "saver",
+     "tap": [
+      0.935,
+      0.068
+     ],
+     "label": "Power Saving Mode"
+    }
+   ]
+  },
+  "shop_summon": {
+   "name": "Shop: Summon",
+   "recognise": "tabs Summon/Package/Goods/Golden Key/Event at y 0.438, summons priced in diamonds",
+   "source": "explored 2026-10-18",
+   "moves": [
+    {
+     "id": "menu_character",
+     "to": "character_enhance",
+     "tap": [
+      0.073,
+      0.966
+     ],
+     "label": "Character"
+    },
+    {
+     "id": "menu_skill",
+     "to": "skill",
+     "tap": [
+      0.24,
+      0.966
+     ],
+     "label": "Skill"
+    },
+    {
+     "id": "menu_equipment",
+     "to": "equipment_weapon",
+     "tap": [
+      0.41,
+      0.966
+     ],
+     "label": "Equipment"
+    },
+    {
+     "id": "menu_companion",
+     "to": "companion",
+     "tap": [
+      0.585,
+      0.966
+     ],
+     "label": "Companion"
+    },
+    {
+     "id": "menu_adventure",
+     "to": "adventure_map",
+     "tap": [
+      0.755,
+      0.966
+     ],
+     "label": "Adventure"
+    },
+    {
+     "id": "tabs",
+     "to": "unknown",
+     "area": [
+      0.2,
+      0.42,
+      0.98,
+      0.455
+     ],
+     "label": "Package / Goods / Golden Key / Event",
+     "forbidden": true,
+     "reason": "purchases"
+    },
+    {
+     "id": "summon",
+     "to": "unknown",
+     "area": [
+      0.33,
+      0.5,
+      0.97,
+      0.96
+     ],
+     "label": "Summon x1/x11, Ad summon",
+     "forbidden": true,
+     "reason": "spends diamonds"
+    }
+   ]
+  },
+  "quest_panel": {
+   "name": "Quest panel",
+   "recognise": "dark overlay, title 'Quest', tabs Daily/Repeat/Achievement",
+   "source": "seen 2026-10-17",
+   "moves": [
+    {
+     "id": "close",
+     "to": "battle",
+     "tap": [
+      0.9,
+      0.18
+     ],
+     "label": "X"
+    }
+   ]
+  },
+  "guild": {
+   "name": "Guild (Utopia)",
+   "recognise": "title 'Utopia', big tree, players",
+   "source": "seen 2026-10-17",
+   "moves": [
+    {
+     "id": "back",
+     "to": "adventure_map",
+     "tap": [
+      0.11,
+      0.96
+     ],
+     "label": "red back button"
+    }
+   ]
+  },
+  "battle_settings": {
+   "name": "Battle settings",
+   "recognise": "panel 'Battle settings', presets I-V at y 0.304",
+   "source": "seen 2026-10-18",
+   "moves": [
+    {
+     "id": "close",
+     "to": "battle",
+     "tap": [
+      0.09,
+      0.965
+     ],
+     "label": "red X"
+    },
+    {
+     "id": "preset",
+     "to": "battle_settings",
+     "area": [
+      0.1,
+      0.29,
+      0.9,
+      0.32
+     ],
+     "label": "preset I-V (x 0.17/0.32/0.50/0.66/0.83); III is mpw18"
+    }
+   ]
+  },
+  "promotion_bonus": {
+   "name": "Promotion bonus pages",
+   "recognise": "not explored",
+   "source": "user rule",
+   "moves": [
+    {
+     "id": "dice",
+     "to": "promotion_bonus",
+     "area": [
+      0,
+      0,
+      1,
+      1
+     ],
+     "label": "dice re-roll",
+     "forbidden": true,
+     "reason": "never re-roll the promotion bonus pages"
+    }
+   ]
+  },
+  "quit_dialog": {
+   "name": "Quit dialog",
+   "recognise": "game's quit dialog (Back on battle)",
+   "source": "skill notes",
+   "moves": []
+  },
+  "unknown": {
+   "name": "Not explored yet",
+   "recognise": "anything else",
+   "source": "explored 2026-10-18",
+   "moves": []
+  }
+ }
+}

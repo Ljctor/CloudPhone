@@ -1,6 +1,6 @@
 import { LANGUAGES, defaultLanguage, language, setLanguage, tr } from './i18n';
 import { coreOptions, memoryOptions, rendererOptions, sameSettings } from './emulatorSettings';
-import { usePlugins } from './plugins';
+import { emitTap, usePlugins } from './plugins';
 import React, { useEffect, useRef, useState } from 'react';
 import { Emulator, logger } from '../../src';
 import {
@@ -834,6 +834,8 @@ function App() {
   // collapse into the latest one, so a drag never lags behind the finger.
   const touchSender = useRef({ inFlight: false, queue: [], pendingMove: null });
   const touchMarker = useRef(null);
+  // Where and when the current touch started, for plugins' onTap.
+  const touchStart = useRef(null);
   // "data channel" or "HTTP": how the last touch reached Android.
   const inputPath = useRef('–');
   const reconnectTimer = useRef(null);
@@ -1158,7 +1160,9 @@ function App() {
     pointerDown.current = true;
     event.currentTarget.setPointerCapture(event.pointerId);
     showMarker(event, true);
-    queueTouch(touchCoordinates(event), true);
+    const coordinates = touchCoordinates(event);
+    touchStart.current = { ...coordinates, time: performance.now() };
+    queueTouch(coordinates, true);
   };
 
   const moveTouch = (event) => {
@@ -1173,7 +1177,23 @@ function App() {
     event.preventDefault();
     pointerDown.current = false;
     showMarker(event, false);
-    queueTouch(touchCoordinates(event), false);
+    const coordinates = touchCoordinates(event);
+    queueTouch(coordinates, false);
+    tellPlugins(coordinates, event.type === 'pointercancel');
+  };
+
+  // Plugins observe the user's touches (api.onTap), after they were sent:
+  // tap, long press (500 ms, Android's long-press time) or swipe (moved more
+  // than 4 % of the screen's width), as fractions of the screen.
+  const tellPlugins = (end, cancelled) => {
+    const start = touchStart.current;
+    touchStart.current = null;
+    if (!start || cancelled) return;
+    const moved = Math.hypot(end.x - start.x, end.y - start.y) > display.width * 0.04;
+    const kind = moved ? 'swipe' : performance.now() - start.time >= 500 ? 'long' : 'tap';
+    const tap = { x: start.x / display.width, y: start.y / display.height, kind };
+    if (moved) tap.end = { x: end.x / display.width, y: end.y / display.height };
+    emitTap(tap);
   };
 
   const keyButton = (key, label, icon) => (

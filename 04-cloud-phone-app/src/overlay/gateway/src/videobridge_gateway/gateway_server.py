@@ -1129,7 +1129,7 @@ async def cache_middleware(request, handler):
     return response
 
 
-def init_app(videobridge_token, plugins_dir=""):
+def init_app(videobridge_token, plugins_dir="", plugin_data=""):
     app = web.Application(middlewares=[guard_middleware, cache_middleware])
     app["videobridge_token"] = videobridge_token
 
@@ -1155,7 +1155,7 @@ def init_app(videobridge_token, plugins_dir=""):
         app.router.add_get("/", handle_index)
         app.router.add_get("/index.html", handle_index)
         app.router.add_static("/assets", os.path.join(WEB_ROOT, "assets"))
-    load_plugins(app, plugins_dir, read_screenshot, plugin_adb, notify.send)
+    load_plugins(app, plugins_dir, read_screenshot, plugin_adb, notify.send, plugin_data or None)
 
     return app
 
@@ -1251,6 +1251,12 @@ async def main():
         default="",
         help="Directory of installed plugins, one subdirectory each (empty: none).",
     )
+    parser.add_argument(
+        "--plugin_data",
+        type=str,
+        default="",
+        help="Where plugins keep their files, one subdirectory each, created as needed (empty: nowhere).",
+    )
     args = parser.parse_args()
 
     global ADB_PATH, ADB_SERIAL, DISPLAY_REQUEST, DISPLAY_STATUS, EMULATOR_UNIT, DISCOVERY_FILE
@@ -1300,7 +1306,7 @@ async def main():
     # When the emulator itself provides the RTC bridge, reuse its discovery
     # token. Passing the token on the command line would expose it via /proc.
     bridge_token = args.videobridge_token or DISCOVERY_PROPS.get("grpc.token", "")
-    app = init_app(bridge_token, args.plugins_dir)
+    app = init_app(bridge_token, args.plugins_dir, args.plugin_data)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, args.host, args.port)

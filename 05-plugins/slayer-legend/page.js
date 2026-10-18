@@ -1,5 +1,5 @@
 // Slayer Legend plugin, page side: loaded by the Cloud Phone page (see
-// plugins.ts in part 04 for the API). Two features:
+// plugins.ts in part 04 for the API). Among its features:
 // - "Lancer le jeu": the gateway starts the game and brings it to the
 //   battle screen (TAP TO START, then Confirm on the latest save).
 // - The emerald and diamond counters, on this screen only (nothing is sent to Android),
@@ -7,6 +7,9 @@
 //   with the bar's colour and, in the game's font and colour at the game's
 //   size for that many digits, either the digits after its comma (leading
 //   zeros dropped) or a number the user chose are written over it.
+// - "Enregistrer mes parcours" (on by default): each tap the user makes on
+//   the game is sent to the gateway, which records the screen before and
+//   after it, building a graph of the game's screens (never replayed).
 import { AREA, DIAMOND_AREA, findEmeraldMask } from './emerald_mask.js';
 import { FONT, MASKS, shade } from './emerald_font.js';
 
@@ -113,6 +116,13 @@ const ENGLISH = {
   'bleue': 'blue',
   'rouge': 'red',
   'déduite, non vérifiée': 'deduced, not checked',
+  'Navigation': 'Navigation',
+  'Enregistrer mes parcours': 'Record my paths',
+  'Activé': 'On',
+  'Désactivé': 'Off',
+  'Parcours enregistrés': 'Recorded paths',
+  '{nodes} écrans, {taps} appuis': '{nodes} screens, {taps} taps',
+  'indisponible (passerelle sans dossier de données)': 'unavailable (the gateway has no data directory)',
 };
 
 // Ways to copy the video's pixels. Some browsers (Firefox on Android, with
@@ -818,8 +828,9 @@ export default function activate(api) {
       api.tr(MODE_NAMES[current] ?? current).toUpperCase(),
       `(${(current === 'mpw18' || !farm.answer?.until ? api.tr('défaut') : time).toUpperCase()})`,
     ];
-    // Game pixels: the screen is 1040 of them high.
-    const cell = api.layer.offsetHeight / 1040;
+    // As high as the level's text above it (8 game pixels, the screen
+    // being 1040 of them high), not the gold counter's 13.
+    const cell = api.layer.offsetHeight / 1040 * 8 / gold.font.height;
     const key = `${lines.join('|')}@${cell}`;
     if (key !== modeDrawn) {
       drawText(modeLabel, lines, cell);
@@ -863,6 +874,25 @@ export default function activate(api) {
     gold.timer = window.setTimeout(askGold, 10000);
   };
   askGold();
+
+  // Navigation trace: each tap on the game goes to the gateway, which
+  // records the screens before and after it (screen name and a small grey
+  // thumbnail, never a screenshot). On unless the user turned it off.
+  // Fire and forget: a lost tap is only a missing edge.
+  const tracing = () => api.setting('traceTaps') !== 'off';
+  const stopTrace = api.onTap?.((tap) => {
+    if (tracing()) api.post('/trace', tap).catch(() => null);
+  });
+  // The counts, asked only while the panel shows them, at most every 5 s.
+  const traced = { answer: null, at: 0, busy: false };
+  const watchTrace = () => {
+    if (traced.busy || Date.now() - traced.at < 5000) return;
+    traced.busy = true;
+    api.get('/trace').catch(() => null).then((answer) => {
+      Object.assign(traced, { answer, at: Date.now(), busy: false });
+      api.refresh();
+    });
+  };
 
   return {
     options: [
@@ -991,6 +1021,21 @@ export default function activate(api) {
         type: 'choice', key: 'goldOverlay', label: 'Overlay gold/s',
         choices: [{ value: 'on', label: 'Affiché' }, { value: 'off', label: 'Masqué' }],
       },
+      { type: 'section', key: 'navigation', label: 'Navigation', folded: true },
+      {
+        type: 'choice', key: 'traceTaps', label: 'Enregistrer mes parcours',
+        choices: [{ value: 'on', label: 'Activé' }, { value: 'off', label: 'Désactivé' }],
+      },
+      {
+        type: 'status', label: 'Parcours enregistrés',
+        value: () => {
+          watchTrace();
+          const answer = traced.answer;
+          if (!answer) return '…';
+          if (!answer.enabled) return api.tr('indisponible (passerelle sans dossier de données)');
+          return api.tr('{nodes} écrans, {taps} appuis', { nodes: answer.nodes, taps: answer.taps ?? answer.edges });
+        },
+      },
       { type: 'section', key: 'emerald', label: 'Émeraudes', folded: true },
       {
         type: 'choice', key: 'emeraldMode', label: 'Compteur d’émeraudes',
@@ -1043,6 +1088,7 @@ export default function activate(api) {
     dispose: () => {
       setEmerald(false);
       setDiamond(false);
+      stopTrace?.();
       if (poll) window.clearInterval(poll);
       window.clearTimeout(screen.timer);
       window.clearTimeout(farm.timer);

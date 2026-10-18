@@ -62,7 +62,7 @@ for plugin in "${plugins[@]}"; do
   # half-copied plugin.
   rm -rf "$dest.new"
   install -d -m 755 "$dest.new"
-  find "$PART/$plugin" -maxdepth 1 -type f ! -name '*.md' -exec install -m 644 -t "$dest.new" {} +
+  find "$PART/$plugin" -maxdepth 1 -type f ! -name '*.md' ! -name 'test_*' -exec install -m 644 -t "$dest.new" {} +
   rm -rf "$dest.old"
   [ ! -e "$dest" ] || mv -T "$dest" "$dest.old"
   mv -T "$dest.new" "$dest"
