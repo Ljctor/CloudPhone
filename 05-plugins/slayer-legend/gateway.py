@@ -1,7 +1,7 @@
 """Slayer Legend plugin, gateway side (loaded by the gateway's plugin loader).
 
-GET  /api/v1/plugins/slayer-legend/emerald-mask
-     Where the emerald counter is, and the pixels of its digits after the
+GET  /api/v1/plugins/slayer-legend/emerald-mask[?counter=diamond]
+     Where the emerald (or diamond) counter is, and the pixels of its digits after the
      comma, from an emulator screenshot: for browsers that cannot read the
      video's pixels.
 GET  /api/v1/plugins/slayer-legend/screen
@@ -68,6 +68,7 @@ SAVER_TOP = (0.10, 0.10, 0.90, 0.25)  # bottom menu names, white on dark
 
 LAUNCH = {"state": "idle", "message": "", "task": None, "since": 0.0}
 EMERALD = {"time": 0.0, "value": None, "lock": None}
+DIAMOND = {"time": 0.0, "value": None, "lock": None}
 EMERALD_SECONDS = 0.4
 SCREEN = {"time": 0.0, "value": None, "lock": None}
 SCREEN_SECONDS = 2.0
@@ -151,12 +152,11 @@ def classify(shot):
 def setup(context):
     emerald = load_sibling(context.directory, "emerald_mask")
 
-    async def read_emerald_mask():
+    async def read_emerald_mask(area):
         shot = await context.screenshot()
         if not shot:
             return {"mask": None, "reason": "screenshot"}
         width, height, image = shot
-        area = emerald.AREA
         scale = width / 360
         x0, y0 = emerald.js_round(area["x"] * scale), emerald.js_round(area["y"] * scale)
         w, h = emerald.js_round(area["width"] * scale), emerald.js_round(area["height"] * scale)
@@ -166,7 +166,7 @@ def setup(context):
             pixels += image[start:start + w * 3]
         if len(pixels) != w * h * 3:
             return {"mask": None, "reason": "screenshot"}
-        mask, reason = emerald.find_emerald_mask(pixels, w, h, scale, channels=3)
+        mask, reason = emerald.find_emerald_mask(pixels, w, h, scale, channels=3, area=area)
         if mask:
             # The page redraws the digits after the comma: send their pixels.
             box = mask["decimals"]["pixels"]
@@ -184,18 +184,20 @@ def setup(context):
         return {"mask": mask, "reason": reason}
 
     async def handle_emerald_mask(request):
-        if EMERALD["lock"] is None:
-            EMERALD["lock"] = asyncio.Lock()
+        diamond = request.query.get("counter") == "diamond"
+        cache = DIAMOND if diamond else EMERALD
+        if cache["lock"] is None:
+            cache["lock"] = asyncio.Lock()
         loop = asyncio.get_running_loop()
-        async with EMERALD["lock"]:
-            if EMERALD["value"] is None or loop.time() - EMERALD["time"] > EMERALD_SECONDS:
+        async with cache["lock"]:
+            if cache["value"] is None or loop.time() - cache["time"] > EMERALD_SECONDS:
                 try:
-                    EMERALD["value"] = await read_emerald_mask()
+                    cache["value"] = await read_emerald_mask(emerald.DIAMOND_AREA if diamond else emerald.AREA)
                 except Exception as e:
-                    logging.warning(f"Emerald mask: no screenshot: {e!r}")
-                    EMERALD["value"] = {"mask": None, "reason": "screenshot"}
-                EMERALD["time"] = loop.time()
-        return context.json(EMERALD["value"])
+                    logging.warning(f"Counter mask: no screenshot: {e!r}")
+                    cache["value"] = {"mask": None, "reason": "screenshot"}
+                cache["time"] = loop.time()
+        return context.json(cache["value"])
 
     stage = load_sibling(context.directory, "stage")
     with open(os.path.join(context.directory, "stages.json"), encoding="utf-8") as f:

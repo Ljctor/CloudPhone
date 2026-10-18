@@ -2,12 +2,12 @@
 // plugins.ts in part 04 for the API). Two features:
 // - "Lancer le jeu": the gateway starts the game and brings it to the
 //   battle screen (TAP TO START, then Confirm on the latest save).
-// - The emerald counter, on this screen only (nothing is sent to Android),
+// - The emerald and diamond counters, on this screen only (nothing is sent to Android),
 //   either cut at its comma ("284,086" shows "284"), or rewritten: covered
 //   with the bar's colour and, in the game's font and colour at the game's
 //   size for that many digits, either the digits after its comma (leading
 //   zeros dropped) or a number the user chose are written over it.
-import { AREA, findEmeraldMask } from './emerald_mask.js';
+import { AREA, DIAMOND_AREA, findEmeraldMask } from './emerald_mask.js';
 import { FONT, MASKS, shade } from './emerald_font.js';
 
 const ENGLISH = {
@@ -38,6 +38,7 @@ const ENGLISH = {
   'Lancer': 'Launch',
   'Lancement': 'Launch',
   'Compteur d’émeraudes': 'Emerald counter',
+  'Compteur de diamants': 'Diamond counter',
   'Inchangé': 'Unchanged',
   'Coupé à la virgule': 'Cut at the comma',
   'Réécrit': 'Rewritten',
@@ -313,12 +314,20 @@ function drawText(canvas, text, rows, ink, paper) {
   context.putImageData(image, 0, 0);
 }
 
-// Every 250 ms, finds the emerald counter and covers it with the bar's
+// The counters that can be cut or rewritten: where to look, their options,
+// and the gateway's route for browsers that cannot read the video.
+const COUNTERS = {
+  emerald: { area: AREA, mode: 'emeraldMode', count: 'emeraldCount', path: '/emerald-mask' },
+  diamond: { area: DIAMOND_AREA, mode: 'diamondMode', count: 'diamondCount', path: '/emerald-mask?counter=diamond' },
+};
+
+// Every 250 ms, finds the counter (emeralds by default) and covers it with the bar's
 // colour in api.layer, then writes over it, at the game's size for that many
 // digits: the chosen number if there is one, else the digits after the
 // comma, copied from the video, without leading zeros ("284,086" shows 86).
 // Returns a function that stops it.
-function startEmeraldMask(api, state) {
+function startEmeraldMask(api, state, counter = COUNTERS.emerald) {
+  const AREA = counter.area;
   const box = document.createElement('div');
   box.style.cssText = 'position:absolute;display:none;box-sizing:border-box';
   // The digits sit on the game's baseline: bigger digits grow upwards, so
@@ -345,8 +354,8 @@ function startEmeraldMask(api, state) {
   // rgba: the search area's pixels (width areaWidth), or for the gateway's
   // answer the decimals' own pixels as base64 RGB.
   const show = (mask, problem, rgba = null, areaWidth = 0) => {
-    const wanted = String(api.setting('emeraldCount') ?? '').replace(/\D/g, '').replace(/^0+(?=\d)/, '');
-    if (mask && emeraldMode(api) === 'cut') {
+    const wanted = String(api.setting(counter.count) ?? '').replace(/\D/g, '').replace(/^0+(?=\d)/, '');
+    if (mask && modeOf(api, counter) === 'cut') {
       const k = api.screenWidth() / 360;
       copy.style.display = 'none';
       // Half a pixel more on the left: the video's smoothing spreads the
@@ -467,7 +476,7 @@ function startEmeraldMask(api, state) {
       if (server) {
         if (Date.now() - lastServer < SERVER_MS) return;
         lastServer = Date.now();
-        const answer = await api.get('/emerald-mask');
+        const answer = await api.get(counter.path);
         if (!answer) throw new Error('gateway');
         show(answer.mask, answer.mask ? null : `${answer.reason}, serveur`);
         return;
@@ -500,7 +509,7 @@ function startEmeraldMask(api, state) {
         return;
       }
       const why = {};
-      const found = pixels ? findEmeraldMask(pixels, area.width, area.height, scale, why) : null;
+      const found = pixels ? findEmeraldMask(pixels, area.width, area.height, scale, why, AREA) : null;
       if (found) {
         // The finder counts from AREA; the area really starts at a whole
         // pixel. Without this the mask lands up to half a pixel off.
@@ -528,8 +537,12 @@ function startEmeraldMask(api, state) {
 }
 
 // '' (unchanged), 'cut' or 'rewrite'.
+function modeOf(api, counter) {
+  return api.setting(counter.mode) ?? '';
+}
+
 function emeraldMode(api) {
-  return api.setting('emeraldMode') ?? '';
+  return modeOf(api, COUNTERS.emerald);
 }
 
 export default function activate(api) {
@@ -544,6 +557,16 @@ export default function activate(api) {
     }
   };
   setEmerald(Boolean(emeraldMode(api)));
+  const diamond = { found: false, problem: null };
+  let stopDiamond = null;
+  const setDiamond = (on) => {
+    if (on && !stopDiamond) stopDiamond = startEmeraldMask(api, diamond, COUNTERS.diamond);
+    if (!on && stopDiamond) {
+      stopDiamond();
+      stopDiamond = null;
+    }
+  };
+  setDiamond(Boolean(modeOf(api, COUNTERS.diamond)));
 
   // Launch state from the gateway, followed while a launch runs.
   const launch = { state: 'idle', message: '' };
@@ -755,14 +778,34 @@ export default function activate(api) {
         value: () => (emerald.found ? api.tr('détecté')
           : emerald.problem ? `${api.tr('non détecté')} (${emerald.problem})` : api.tr('non détecté')),
       },
+      {
+        type: 'choice', key: 'diamondMode', label: 'Compteur de diamants',
+        choices: [
+          { value: '', label: 'Inchangé' },
+          { value: 'cut', label: 'Coupé à la virgule' },
+          { value: 'rewrite', label: 'Réécrit' },
+        ],
+      },
+      {
+        type: 'number', key: 'diamondCount', label: 'Nombre affiché (vide : après la virgule)', placeholder: '786',
+        visible: () => modeOf(api, COUNTERS.diamond) === 'rewrite',
+      },
+      {
+        type: 'status', label: 'Détection du compteur',
+        visible: () => Boolean(stopDiamond),
+        value: () => (diamond.found ? api.tr('détecté')
+          : diamond.problem ? `${api.tr('non détecté')} (${diamond.problem})` : api.tr('non détecté')),
+      },
     ],
     onSetting: (key, value) => {
       if (key === 'emeraldMode') setEmerald(Boolean(value));
+      if (key === 'diamondMode') setDiamond(Boolean(value));
       if ((key === 'mineFarm' && value) || key === 'mineDuration') until = startClock();
       if (key.startsWith('mine')) sendMine();
     },
     dispose: () => {
       setEmerald(false);
+      setDiamond(false);
       if (poll) window.clearInterval(poll);
       window.clearTimeout(screen.timer);
       window.clearTimeout(farm.timer);

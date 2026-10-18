@@ -10,6 +10,7 @@ import math
 
 # Search area, in 360-wide Android pixels.
 AREA = {"x": 148, "y": 10, "width": 47, "height": 20}
+DIAMOND_AREA = {"x": 207, "y": 10, "width": 50, "height": 20}
 
 BRIGHT = 0.55
 EDGE = 0.3
@@ -22,13 +23,15 @@ def js_round(value):
     return math.floor(value + 0.5)
 
 
-def find_emerald_mask(pixels, width, height, scale, channels=4):
+def find_emerald_mask(pixels, width, height, scale, channels=4, area=None):
     """pixels: bytes of the search area, `channels` bytes per pixel (RGB
     first), `width` x `height` pixels, scaled by `scale` (screen width / 360).
 
     Returns (mask, reason): mask is {x, y, width, height, color} in 360-wide
     Android pixels relative to the screen, or None with the failed step as
-    reason ('flat', 'text', 'comma', 'digits', 'colour')."""
+    reason ('flat', 'text', 'comma', 'digits', 'colour'). `area` is the
+    search area the pixels come from (AREA by default)."""
+    area = area or AREA
 
     def luminance(x, y):
         i = (y * width + x) * channels
@@ -135,15 +138,15 @@ def find_emerald_mask(pixels, width, height, scale, channels=4):
         return None, "colour"
     pad = 1
     return {
-        "x": AREA["x"] + comma / scale,
-        "y": AREA["y"] + top / scale - pad,
+        "x": area["x"] + comma / scale,
+        "y": area["y"] + top / scale - pad,
         "width": (right - comma + 1) / scale + pad,
         "height": (bottom - top + 1 + tail_rows) / scale + 2 * pad,
         "color": f"rgb({js_round(r / n)}, {js_round(g / n)}, {js_round(b / n)})",
         # The whole number, and the digits' height without the comma's tail.
         "number": {
-            "x": AREA["x"] + start / scale - pad,
-            "y": AREA["y"] + top / scale - pad,
+            "x": area["x"] + start / scale - pad,
+            "y": area["y"] + top / scale - pad,
             "width": (right - start + 1) / scale + 2 * pad,
             "height": (bottom - top + 1 + tail_rows) / scale + 2 * pad,
             "digitHeight": (bottom - top + 1) / scale,
@@ -151,7 +154,7 @@ def find_emerald_mask(pixels, width, height, scale, channels=4):
         # The digits after the comma: where they are on screen, and the same
         # box in the search area's pixels (to copy them), one row of margin.
         "decimals": {
-            "x": AREA["x"] + after / scale,
+            "x": area["x"] + after / scale,
             "width": (right - after + 1) / scale,
             "pixels": {
                 "x": after,

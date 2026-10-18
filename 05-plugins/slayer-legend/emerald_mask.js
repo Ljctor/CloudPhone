@@ -8,8 +8,10 @@
 // the only glyph that goes one row below the digits. Coordinates are for a
 // 360 px wide Android screen and scale with the actual width.
 
-// Search area, in 360-wide Android pixels.
+// Search areas, in 360-wide Android pixels: the emeralds, and the diamonds
+// right of them (same bar, same font).
 export const AREA = { x: 148, y: 10, width: 47, height: 20 };
+export const DIAMOND_AREA = { x: 207, y: 10, width: 50, height: 20 };
 
 // Thresholds as fractions between the darkest and the brightest pixel of
 // the area: the game dims the whole screen under its pop-ups. Glyph edges
@@ -30,7 +32,8 @@ function luminance(data, index) {
 // when the counter is not on screen. On null, `why.reason` (when given) says
 // which step failed: 'flat' (no contrast: blank image or no text), 'text',
 // 'comma', 'digits' or 'colour'.
-export function findEmeraldMask(pixels, width, height, scale, why = {}) {
+// `area` is the search area the pixels come from (AREA by default).
+export function findEmeraldMask(pixels, width, height, scale, why = {}, area = AREA) {
   const miss = (reason) => {
     why.reason = reason;
     return null;
@@ -139,15 +142,15 @@ export function findEmeraldMask(pixels, width, height, scale, why = {}) {
   why.reason = null;
   const pad = 1;
   return {
-    x: AREA.x + left / scale,
-    y: AREA.y + best.top / scale - pad,
+    x: area.x + left / scale,
+    y: area.y + best.top / scale - pad,
     width: (right - left + 1) / scale + pad,
     height: (best.bottom - best.top + 1 + tailRows) / scale + 2 * pad,
     color: `rgb(${Math.round(r / n)}, ${Math.round(g / n)}, ${Math.round(b / n)})`,
     // The whole number, and the digits' height without the comma's tail.
     number: {
-      x: AREA.x + start / scale - pad,
-      y: AREA.y + best.top / scale - pad,
+      x: area.x + start / scale - pad,
+      y: area.y + best.top / scale - pad,
       width: (right - start + 1) / scale + 2 * pad,
       height: (best.bottom - best.top + 1 + tailRows) / scale + 2 * pad,
       digitHeight: (best.bottom - best.top + 1) / scale,
@@ -155,7 +158,7 @@ export function findEmeraldMask(pixels, width, height, scale, why = {}) {
     // The digits after the comma: where they are on screen, and the same
     // box in the search area's pixels (to copy them), one row of margin.
     decimals: {
-      x: AREA.x + after / scale,
+      x: area.x + after / scale,
       width: (right - after + 1) / scale,
       pixels: {
         x: after,
