@@ -82,6 +82,14 @@ MINE = {"enabled": False, "floor": None, "area": None, "until": None, "gold": No
         "state": "off", "message": "", "task": None}
 MINE_FEATHERS = 3
 MINE_SECONDS = 10
+# What the game is set to do. "mpw18" (farming a stage with 18 monsters per
+# wave) is the default; the others run until a time, then it goes back to it.
+MODES = ("mpw18", "mpw4", "free", "mine", "analysis")
+MODE = {"mode": "mpw18", "until": None, "stage18": None, "stage4": None, "highest": None,
+        "configured": False, "state": "idle", "message": "", "task": None}
+# Stage analysis: this many of the highest mpw18 stages, this long each.
+ANALYSIS_STAGES = 12
+ANALYSIS_MINUTES = 5
 # Checks in a row without the gold scroll before stopping (an animation
 # can hide it for a moment).
 MINE_NO_GOLD = 2
@@ -545,6 +553,150 @@ def setup(context):
         MINE["until"] = until if until > now + 30 else None
         return context.json(mine_state())
 
+    def stage_list(mpw, highest):
+        """Stages with that many monsters per wave, at most `highest`,
+        highest first: [{number, name, colour}]."""
+        found = []
+        for number in range(min(highest or len(table["stages"]), len(table["stages"])), 0, -1):
+            row = table["stages"][number - 1]
+            if row[1] == mpw:
+                found.append({"number": number, "name": row[0], "colour": row[4]})
+        return found
+
+    async def handle_stages(request):
+        """GET /stages?highest=N: the mpw18 and mpw4 stages up to N."""
+        try:
+            highest = int(request.query.get("highest") or 0) or None
+        except ValueError:
+            highest = None
+        return context.json({"mpw18": stage_list(18, highest), "mpw4": stage_list(4, highest)})
+
+    def mode_report(state, message):
+        if (MODE["state"], MODE["message"]) != (state, message):
+            logging.info(f"Slayer Legend mode {MODE['mode']}: {state} {message}")
+        MODE["state"], MODE["message"] = state, message
+
+    def mode_state():
+        state = {key: MODE[key] for key in ("mode", "until", "stage18", "stage4", "highest", "configured",
+                                             "state", "message")}
+        state["mine"] = mine_state()
+        return state
+
+    async def set_stage(number, mpw):
+        """Brings the game to farming that stage with its loadout. The
+        screens for it are not learned yet: says so instead of tapping."""
+        mode_report("todo", f"Passage au stage {number} (mpw{mpw}) : navigation pas encore apprise, fais-le à la main")
+        await alert(f"À faire à la main : passer au stage {number} (mpw{mpw})")
+        return False
+
+    async def back_to_default(reason):
+        MODE.update(mode="mpw18", until=None)
+        await alert(f"{reason} : retour au farming mpw18" + (f" (stage {MODE['stage18']})" if MODE["stage18"] else ""))
+        if MODE["stage18"]:
+            await set_stage(MODE["stage18"], 18)
+        else:
+            mode_report("idle", "Farming mpw18 : choisis le stage")
+
+    def start_mine(floor, area, until):
+        MINE.update(floor=floor, area=area, until=until)
+        if not MINE["enabled"]:
+            MINE["enabled"] = True
+            MINE["gold"] = None
+            mine_report("waiting", "Surveillance de la mine")
+            task = MINE["task"]
+            if task is None or task.done():
+                MINE["task"] = asyncio.get_running_loop().create_task(farm_mine())
+
+    def stop_mine():
+        if MINE["enabled"]:
+            MINE["enabled"] = False
+            task = MINE["task"]
+            if task is not None and not task.done():
+                task.cancel()
+            mine_report("off", "")
+
+    async def watch_mode():
+        """Ends a timed mode: back to mpw18 farming once its time is up (the
+        mine ends its last entry first)."""
+        try:
+            while MODE["mode"] != "mpw18":
+                await asyncio.sleep(MINE_SECONDS)
+                if MODE["mode"] == "mine":
+                    if not MINE["enabled"]:
+                        await back_to_default("Mine terminée" if MINE["state"] == "stopped" else "Mine arrêtée")
+                    continue
+                if MODE["until"] is not None and time.time() >= MODE["until"]:
+                    await back_to_default("Minuteur écoulé")
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logging.exception("Slayer Legend mode failed")
+            mode_report("failed", f"Erreur : {e!r}"[:200])
+
+    async def handle_mode_state(request):
+        return context.json(mode_state())
+
+    async def handle_mode(request):
+        """POST /mode {mode, until, stage18, stage4, highest, floor, area}."""
+        try:
+            body = await request.json()
+            mode = body.get("mode") or "mpw18"
+            until = float(body["until"]) if body.get("until") is not None else None
+            numbers = {key: int(body.get(key) or 0) or None for key in ("stage18", "stage4", "highest", "floor", "area")}
+        except (ValueError, TypeError, AttributeError):
+            return context.json({"error": "Expected {mode, until, stage18, stage4, highest, floor, area}"}, status=400)
+        if mode not in MODES:
+            return context.json({"error": f"mode: one of {', '.join(MODES)}"}, status=400)
+        if mode == "mine" and not (numbers["floor"] and 1 <= numbers["floor"] <= 9999
+                                   and numbers["area"] and 1 <= numbers["area"] <= 5):
+            return context.json({"error": "The mine needs floor 1-9999 and area 1-5"}, status=400)
+        if mode == "mpw18":
+            until = None
+        elif mode == "analysis" and until is None:
+            until = time.time() + ANALYSIS_STAGES * ANALYSIS_MINUTES * 60
+        changed = mode != MODE["mode"]
+        MODE.update(mode=mode, until=until, configured=True,
+                    **{key: numbers[key] for key in ("stage18", "stage4", "highest")})
+        if mode == "mine":
+            start_mine(numbers["floor"], numbers["area"], until)
+        else:
+            stop_mine()
+        if changed:
+            if mode == "mpw18":
+                if MODE["stage18"]:
+                    await set_stage(MODE["stage18"], 18)
+                else:
+                    mode_report("idle", "Farming mpw18 : choisis le stage")
+            elif mode == "mpw4":
+                if MODE["stage4"]:
+                    await set_stage(MODE["stage4"], 4)
+                else:
+                    mode_report("idle", "Farming mpw4 : choisis le stage")
+            elif mode == "free":
+                mode_report("free", "Jeu libre : rien n’est touché jusqu’à la fin du minuteur")
+            elif mode == "analysis":
+                mode_report("todo", "Analyse des stages : navigation et lecture de l’or pas encore apprises")
+            else:
+                mode_report("mine", "Mine")
+        task = MODE["task"]
+        if mode != "mpw18" and (task is None or task.done()):
+            MODE["task"] = asyncio.get_running_loop().create_task(watch_mode())
+        return context.json(mode_state())
+
+    async def handle_mode_timer(request):
+        """{add: minutes, may be negative}: moves the end of the timed mode
+        (and of the mine); at or before now there is no time limit."""
+        try:
+            add = float((await request.json()).get("add"))
+        except (ValueError, TypeError, AttributeError):
+            return context.json({"error": "Expected {add: minutes}"}, status=400)
+        now = time.time()
+        until = max(MODE["until"] or now, now) + add * 60
+        MODE["until"] = until if until > now + 30 else None
+        if MODE["mode"] == "mine":
+            MINE["until"] = MODE["until"]
+        return context.json(mode_state())
+
     async def handle_launch_state(request):
         return context.json({"state": LAUNCH["state"], "message": LAUNCH["message"]})
 
@@ -563,3 +715,7 @@ def setup(context):
     context.add_get("/mine", handle_mine_state)
     context.add_post("/mine", handle_mine)
     context.add_post("/mine/timer", handle_mine_timer)
+    context.add_get("/stages", handle_stages)
+    context.add_get("/mode", handle_mode_state)
+    context.add_post("/mode", handle_mode)
+    context.add_post("/mode/timer", handle_mode_timer)

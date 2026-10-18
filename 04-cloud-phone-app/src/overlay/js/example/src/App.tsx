@@ -1298,18 +1298,19 @@ function App() {
         <label key={key} style={styles.infoRow}>
           <span style={styles.infoLabel}>{tr(option.label)}</span>
           <input type="text" inputMode="numeric" pattern="[0-9]*" maxLength={12} style={styles.numberInput}
-            placeholder={option.placeholder ?? ''} value={settings.plugins?.[plugin.id]?.[option.key] ?? ''}
+            placeholder={(typeof option.placeholder === 'function' ? option.placeholder() : option.placeholder) ?? ''} value={settings.plugins?.[plugin.id]?.[option.key] ?? ''}
             onChange={(event) => setPluginOption(plugin.id, option.key, event.target.value.replace(/\D/g, ''))} />
         </label>
       );
     }
     if (option.type === 'choice') {
+      const choices = (typeof option.choices === 'function' ? option.choices() : option.choices) ?? [];
       return (
         <label key={key} style={styles.infoRow}>
           <span style={styles.infoLabel}>{tr(option.label)}</span>
-          <select style={styles.select} value={settings.plugins?.[plugin.id]?.[option.key] ?? option.choices?.[0]?.value ?? ''}
+          <select style={styles.select} value={settings.plugins?.[plugin.id]?.[option.key] ?? choices[0]?.value ?? ''}
             onChange={(event) => setPluginOption(plugin.id, option.key, event.target.value)}>
-            {(option.choices ?? []).map((choice) => (
+            {choices.map((choice) => (
               <option key={choice.value} value={choice.value}>{tr(choice.label)}</option>
             ))}
           </select>

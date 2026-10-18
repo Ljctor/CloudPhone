@@ -13,6 +13,17 @@ import { FONT, MASKS, shade } from './emerald_font.js';
 const ENGLISH = {
   'Farmer la mine': 'Farm the mine',
   'Étage à farmer': 'Floor to farm',
+  'Mode': 'Mode',
+  'Farming mpw18 (par défaut)': 'mpw18 farming (default)',
+  'Farming mpw4': 'mpw4 farming',
+  'Jeu libre': 'Free play',
+  'Mine fermée': 'Closed Mine',
+  'Analyse des stages': 'Stage analysis',
+  'Plus haut stage débloqué': 'Highest stage unlocked',
+  'Stage mpw18': 'mpw18 stage',
+  'Stage mpw4': 'mpw4 stage',
+  '— choisir —': '— choose —',
+  'État': 'State',
   'Zone à farmer': 'Area to farm',
   'Minuteur': 'Timer',
   'Ajuster (minutes)': 'Adjust (minutes)',
@@ -629,13 +640,14 @@ export default function activate(api) {
     });
   };
 
-  // Mine farming runs in the gateway; this browser's options are sent to it
-  // when they change, and on load if the gateway has not been told yet
-  // (after its restart). Its state is asked every 10 s while it farms.
-  const farm = { answer: null, timer: null };
-  // This browser's copy of when farming must stop (Unix seconds, null: no
-  // limit), as the gateway last said; sent again when the gateway restarts.
-  const UNTIL = 'cloudphone-slayer-legend-mine-until';
+  // The mode (mpw18 farming by default, or a timed mode: mpw4 farming, free
+  // play, the mine, stage analysis) runs in the gateway; this browser's
+  // options are sent to it when they change, and on load if the gateway has
+  // not been told since it started. Its state is asked every 10 s.
+  const farm = { answer: null, timer: null, stages: null };
+  // This browser's copy of when the timed mode ends (Unix seconds), as the
+  // gateway last said; sent again after a gateway restart.
+  const UNTIL = 'cloudphone-slayer-legend-mode-until';
   const load = (name) => {
     try {
       return window.localStorage.getItem(name);
@@ -651,11 +663,15 @@ export default function activate(api) {
       // Not kept: lost on reload.
     }
   };
-  const mineOptions = () => ({
-    enabled: Boolean(api.setting('mineFarm')) && Boolean(Number(api.setting('mineFloor'))),
-    floor: Number(api.setting('mineFloor')) || 0,
-    area: Number(api.setting('mineArea') || 1),
+  const mode = () => api.setting('mode') || 'mpw18';
+  const modeOptions = () => ({
+    mode: mode(),
     until: farm.answer?.until ?? (Number(load(UNTIL)) || null),
+    stage18: Number(api.setting('stage18')) || null,
+    stage4: Number(api.setting('stage4')) || null,
+    highest: Number(api.setting('highestStage')) || null,
+    floor: Number(api.setting('mineFloor')) || null,
+    area: Number(api.setting('mineArea') || 1),
   });
   const left = () => {
     const seconds = (farm.answer?.until ?? 0) - Date.now() / 1000;
@@ -669,32 +685,48 @@ export default function activate(api) {
     farm.answer = answer;
     if (answer) keep(UNTIL, answer.until);
   };
-  const askMine = async () => {
-    remember(await api.get('/mine').catch(() => null));
+  const askMode = async () => {
+    remember(await api.get('/mode').catch(() => null));
     api.refresh();
     window.clearTimeout(farm.timer);
-    if (farm.answer?.enabled || api.setting('mineFarm')) farm.timer = window.setTimeout(askMine, 10000);
+    farm.timer = window.setTimeout(askMode, 10000);
   };
-  const sendMine = async () => {
-    const result = await api.post('/mine', mineOptions()).catch(() => null);
+  const sendMode = async () => {
+    const result = await api.post('/mode', modeOptions()).catch(() => null);
     if (result?.ok) remember(result.body);
-    await askMine();
+    else if (result) farm.error = result.body?.error ?? `HTTP ${result.status}`;
+    await askMode();
   };
   const moveTimer = async (minutes) => {
-    const result = await api.post('/mine/timer', { add: minutes }).catch(() => null);
+    const result = await api.post('/mode/timer', { add: minutes }).catch(() => null);
     if (result?.ok) remember(result.body);
     api.refresh();
   };
-  api.get('/mine').catch(() => null).then((answer) => {
+  // The mpw18 and mpw4 stages up to the highest one unlocked.
+  const loadStages = async () => {
+    const highest = Number(api.setting('highestStage')) || remembered || '';
+    farm.stages = await api.get(`/stages?highest=${highest}`).catch(() => null);
+    api.refresh();
+  };
+  const DOTS = { green: '🟢', blue: '🔵', red: '🔴' };
+  const stageChoices = (mpw) => [
+    { value: '', label: api.tr('— choisir —') },
+    ...(farm.stages?.[`mpw${mpw}`] ?? []).map((stage) => ({
+      value: String(stage.number),
+      label: `${DOTS[stage.colour] ?? '⚪'} mpw${mpw} · ${stage.number}`,
+    })),
+  ];
+  api.get('/mode').catch(() => null).then((answer) => {
     // After a gateway restart it knows nothing: send this browser's options.
-    if (answer && !answer.enabled && answer.state === 'off' && !answer.until && mineOptions().enabled) {
+    if (answer && !answer.configured) {
       farm.answer = null;
-      sendMine();
+      sendMode();
     } else {
       remember(answer);
-      askMine();
+      askMode();
     }
   });
+  loadStages();
 
   return {
     options: [
@@ -747,24 +779,38 @@ export default function activate(api) {
         visible: () => launch.state !== 'idle',
         value: () => api.tr(launch.message || launch.state),
       },
-      { type: 'toggle', key: 'mineFarm', label: 'Farmer la mine' },
+      {
+        type: 'choice', key: 'mode', label: 'Mode',
+        choices: [
+          { value: 'mpw18', label: 'Farming mpw18 (par défaut)' },
+          { value: 'mpw4', label: 'Farming mpw4' },
+          { value: 'free', label: 'Jeu libre' },
+          { value: 'mine', label: 'Mine fermée' },
+          { value: 'analysis', label: 'Analyse des stages' },
+        ],
+      },
+      {
+        type: 'number', key: 'highestStage', label: 'Plus haut stage débloqué', placeholder: () => String(remembered ?? ''),
+      },
+      { type: 'choice', key: 'stage18', label: 'Stage mpw18', choices: () => stageChoices(18) },
+      { type: 'choice', key: 'stage4', label: 'Stage mpw4', visible: () => mode() === 'mpw4', choices: () => stageChoices(4) },
       {
         type: 'number', key: 'mineFloor', label: 'Étage à farmer', placeholder: '161',
-        visible: () => Boolean(api.setting('mineFarm')),
+        visible: () => mode() === 'mine',
       },
       {
         type: 'choice', key: 'mineArea', label: 'Zone à farmer',
-        visible: () => Boolean(api.setting('mineFarm')),
+        visible: () => mode() === 'mine',
         choices: [1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: String(n) })),
       },
       {
         type: 'status', label: 'Minuteur',
-        visible: () => Boolean(api.setting('mineFarm')),
+        visible: () => mode() !== 'mpw18',
         value: left,
       },
       {
         type: 'buttons', label: 'Ajuster (minutes)',
-        visible: () => Boolean(api.setting('mineFarm')),
+        visible: () => mode() !== 'mpw18',
         buttons: [30, 5, 1, -1, -5, -30].map((m) => ({
           label: m > 0 ? `+${m}` : `−${-m}`,
           run: () => moveTimer(m),
@@ -772,12 +818,17 @@ export default function activate(api) {
         })),
       },
       {
-        type: 'status', label: 'Mine',
-        visible: () => Boolean(api.setting('mineFarm')) || Boolean(farm.answer?.enabled),
+        type: 'status', label: 'État',
         value: () => {
-          if (api.setting('mineFarm') && !Number(api.setting('mineFloor'))) return api.tr('Choisis l’étage et la zone');
-          const warning = farm.answer?.enabled && farm.answer?.gold === false ? ` ⚠ ${api.tr('plus de parchemin doré')}` : '';
-          return api.tr(farm.answer?.message || 'arrêtée') + warning;
+          if (farm.error) return farm.error;
+          if (mode() === 'mine' && !Number(api.setting('mineFloor'))) return api.tr('Choisis l’étage et la zone');
+          const answer = farm.answer;
+          if (!answer) return '…';
+          if (answer.mode === 'mine') {
+            const warning = answer.mine?.gold === false ? ` ⚠ ${api.tr('plus de parchemin doré')}` : '';
+            return api.tr(answer.mine?.message || 'Mine') + warning;
+          }
+          return api.tr(answer.message || 'Farming mpw18');
         },
       },
       {
@@ -820,7 +871,11 @@ export default function activate(api) {
     onSetting: (key, value) => {
       if (key === 'emeraldMode') setEmerald(Boolean(value));
       if (key === 'diamondMode') setDiamond(Boolean(value));
-      if (key.startsWith('mine')) sendMine();
+      if (key === 'highestStage') loadStages();
+      if (['mode', 'stage18', 'stage4', 'highestStage', 'mineFloor', 'mineArea'].includes(key)) {
+        farm.error = null;
+        sendMode();
+      }
     },
     dispose: () => {
       setEmerald(false);

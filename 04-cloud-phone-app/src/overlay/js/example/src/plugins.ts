@@ -10,6 +10,7 @@
 //   { type: 'toggle', key, label }                 stored per plugin, off by default
 //   { type: 'number', key, label, placeholder? }   digits, stored as text
 //   { type: 'choice', key, label, choices: [{ value, label }] }   stored as the value, first one by default
+// choices and placeholder may also be functions, read at each render.
 //   { type: 'action', label, button, run(), disabled?() }
 //   { type: 'buttons', label, buttons: [{ label, run(), disabled?() }] }   a row of small buttons
 //   { type: 'status', label, value(), href?() }    href makes the value a link
