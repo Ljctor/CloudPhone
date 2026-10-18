@@ -128,6 +128,8 @@ const EN = {
   'Couleurs justes, le plus rapide sans carte graphique.': 'Right colours, the fastest without a graphics card.',
   'Rapide, mais certaines couleurs du jeu peuvent être fausses.': 'Fast, but some game colours can be wrong.',
   'Couleurs justes, mais lent et très gourmand.': 'Right colours, but slow and very heavy.',
+  'Logiciel (défaut de l’émulateur)': 'Software (emulator default)',
+  'Rendu logiciel par défaut de l’émulateur.': 'The emulator’s default software renderer.',
   'Cœurs et mémoire': 'Cores and memory',
   'Mémoire Android': 'Android memory',
   'Swap Android': 'Android swap',

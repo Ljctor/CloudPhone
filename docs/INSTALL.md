@@ -150,7 +150,7 @@ too, after saving a copy as `cloudphone.conf.bak-<date>`.
 | `AVD_NAME` | `cloudphone` | Android device to run |
 | `EMULATOR_MEMORY_MB` | `4096` | RAM given to Android |
 | `EMULATOR_CORES` | `4` | CPU cores given to Android |
-| `EMULATOR_GPU` | `swiftshader_indirect` | Renderer, all without a GPU: `lavapipe` (recommended by the page: right colours, the fastest), `swiftshader_indirect` (packaged default), `swangle_indirect` |
+| `EMULATOR_GPU` | `swiftshader` | Renderer, all without a GPU: `lavapipe` (recommended by the page: right colours, the fastest), `swiftshader` (packaged default), `swangle`, `software` (the emulator's default software renderer); the older `swiftshader_indirect` and `swangle_indirect` are still accepted |
 | `EMULATOR_PORT` / `GRPC_PORT` | `5558` / `8554` | Loopback ports of the emulator (it also uses `EMULATOR_PORT` + 1) |
 | `ANDROID_ADB_SERVER_PORT` | `5037` | adb server of this instance |
 | `SCREEN_WIDTH` / `SCREEN_HEIGHT` / `SCREEN_DENSITY` | `480` / `1040` / `213` | Screen of a newly created device |
@@ -175,7 +175,7 @@ WEB_PORT=8100
 AVD_NAME=cloudphone
 EMULATOR_MEMORY_MB=4096
 EMULATOR_CORES=2
-EMULATOR_GPU=swiftshader_indirect
+EMULATOR_GPU=swiftshader
 EMULATOR_PORT=5560
 GRPC_PORT=8556
 ANDROID_ADB_SERVER_PORT=5038

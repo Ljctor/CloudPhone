@@ -104,7 +104,9 @@ DISPLAY_CHANGE_INTERVAL = 120.0
 # rate limit above: each one restarts Android.
 SETTINGS_REQUEST = ""
 SETTINGS_STATUS = ""
-RENDERERS = ("lavapipe", "swiftshader_indirect", "swangle_indirect")
+RENDERERS = ("lavapipe", "swiftshader", "swangle", "software")
+# Older names of the same renderers, still accepted by the emulator.
+LEGACY_RENDERERS = {"swiftshader_indirect": "swiftshader", "swangle_indirect": "swangle"}
 LAST_DISPLAY_CHANGE = {"time": None}
 
 
@@ -446,7 +448,9 @@ def read_emulator_settings(cgroup):
         if "qemu-system" not in args[0]:
             continue
         option = lambda name: args[args.index(name) + 1] if name in args[:-1] else None
-        return {"renderer": option("-gpu"), "cores": option("-cores"), "memoryMb": option("-memory")}
+        renderer = option("-gpu")
+        return {"renderer": LEGACY_RENDERERS.get(renderer, renderer), "cores": option("-cores"),
+                "memoryMb": option("-memory")}
     return None
 
 

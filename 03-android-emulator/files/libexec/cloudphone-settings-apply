@@ -16,7 +16,7 @@ request=/var/lib/cloudphone/settings-request
 status=/run/cloudphone-settings/status
 conf=/etc/cloudphone/cloudphone.conf
 tools=/opt/cloudphone/tools
-renderers=(lavapipe swiftshader_indirect swangle_indirect)
+renderers=(lavapipe swiftshader swangle software)
 
 report() {
   local tmp

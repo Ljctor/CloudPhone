@@ -5,8 +5,9 @@
 // Labels and hints are French source text for tr().
 export const RENDERER_INFO = {
   lavapipe: { label: 'Lavapipe (recommandé)', hint: 'Couleurs justes, le plus rapide sans carte graphique.' },
-  swiftshader_indirect: { label: 'SwiftShader', hint: 'Rapide, mais certaines couleurs du jeu peuvent être fausses.' },
-  swangle_indirect: { label: 'SwANGLE', hint: 'Couleurs justes, mais lent et très gourmand.' },
+  swiftshader: { label: 'SwiftShader', hint: 'Rapide, mais certaines couleurs du jeu peuvent être fausses.' },
+  swangle: { label: 'SwANGLE', hint: 'Couleurs justes, mais lent et très gourmand.' },
+  software: { label: 'Logiciel (défaut de l’émulateur)', hint: 'Rendu logiciel par défaut de l’émulateur.' },
 };
 
 export function rendererOptions(limits) {

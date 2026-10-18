@@ -39,10 +39,12 @@ most one change every 2 minutes.
 ## Performance
 
 Without a GPU (the default target), Android is rendered on the CPU.
-`EMULATOR_GPU` picks the renderer: `swiftshader_indirect` (SwiftShader, the
+`EMULATOR_GPU` picks the renderer: `swiftshader` (SwiftShader, the
 packaged default), `lavapipe` (recommended by the page: right colours and
-the fastest without a GPU) or `swangle_indirect`; the page's Android
-settings switch between them. Measured with SwiftShader at 360×780 with a
+the fastest without a GPU), `swangle` or `software` (the emulator's default
+software renderer); the page's Android settings switch between them. The
+older names `swiftshader_indirect` and `swangle_indirect` are still accepted.
+Measured with SwiftShader at 360×780 with a
 game running:
 
 | What | Measured |
@@ -85,7 +87,7 @@ WEB_PORT=8100
 AVD_NAME=cloudphone
 EMULATOR_MEMORY_MB=4096
 EMULATOR_CORES=2
-EMULATOR_GPU=swiftshader_indirect
+EMULATOR_GPU=swiftshader
 EMULATOR_PORT=5560
 GRPC_PORT=8556
 ANDROID_ADB_SERVER_PORT=5038

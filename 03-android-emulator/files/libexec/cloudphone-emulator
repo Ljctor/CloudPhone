@@ -1,6 +1,14 @@
 #!/bin/sh
 set -eu
 
+# Older configurations name the renderers swiftshader_indirect and
+# swangle_indirect; the emulator now calls them swiftshader and swangle.
+gpu="${EMULATOR_GPU:-swiftshader}"
+case "$gpu" in
+  swiftshader_indirect) gpu=swiftshader ;;
+  swangle_indirect) gpu=swangle ;;
+esac
+
 exec /opt/cloudphone/android-sdk/emulator/emulator \
   -avd "${AVD_NAME:-cloudphone}" \
   -port "${EMULATOR_PORT:-5558}" \
@@ -8,6 +16,6 @@ exec /opt/cloudphone/android-sdk/emulator/emulator \
   -grpc-use-token \
   -grpc-allowlist /etc/cloudphone/emulator_access.json \
   -no-window -no-audio -no-boot-anim -no-snapshot -no-metrics \
-  -gpu "${EMULATOR_GPU:-swiftshader_indirect}" \
+  -gpu "$gpu" \
   -memory "${EMULATOR_MEMORY_MB:-4096}" \
   -cores "${EMULATOR_CORES:-4}"

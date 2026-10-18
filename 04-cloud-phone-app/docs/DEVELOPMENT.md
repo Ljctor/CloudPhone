@@ -94,7 +94,8 @@ HEIGHT DENSITY` to `/var/lib/cloudphone/display-request`;
 `cloudphone-display.path` runs `cloudphone-display-apply`, which runs
 `set-resolution.sh`; status in `/run/cloudphone-display/status`. Numbers
 must be JSON integers (`"360"` is refused with 400). Bounds: renderer in
-`lavapipe`, `swiftshader_indirect`, `swangle_indirect`; cores 1 to the host's
+`lavapipe`, `swiftshader`, `swangle`, `software` (a running emulator
+started with the older `*_indirect` names is reported under the new ones); cores 1 to the host's
 threads; memory a multiple of 512 from 2048 to the host's memory minus
 2 GiB; width and height even, within 240–1440 × 320–3200, density 80–640,
 all three or none. One change per 2 minutes for both routes together (429
