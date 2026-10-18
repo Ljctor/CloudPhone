@@ -8,7 +8,7 @@
 //   size for that many digits, either the digits after its comma (leading
 //   zeros dropped) or a number the user chose are written over it.
 import { AREA, findEmeraldMask } from './emerald_mask.js';
-import { FONT, shade } from './emerald_font.js';
+import { FONT, MASKS, shade } from './emerald_font.js';
 
 const ENGLISH = {
   'Lancer le jeu': 'Launch the game',
@@ -207,6 +207,49 @@ export function isZero(glyph, ink, height) {
   return holeBottom - holeTop + 1 >= (last - first + 1) * 0.45 && rows.slice(y, last + 1).every(Boolean);
 }
 
+// The digits the glyphs show, read against the game's 9-row font: each
+// glyph's ink, resampled to each digit's grid, goes to the closest digit.
+// Null when one is too far from every digit (then the pixels are copied).
+export function readDigits(list, ink, height) {
+  let top = height, bottom = -1;
+  for (const glyph of list) {
+    for (let y = 0; y < height; y++) {
+      for (let x = glyph.from; x <= glyph.to; x++) {
+        if (ink(x, y)) { top = Math.min(top, y); bottom = Math.max(bottom, y); }
+      }
+    }
+  }
+  if (bottom < 0) return null;
+  let text = '';
+  for (const glyph of list) {
+    const w = glyph.to - glyph.from + 1, h = bottom - top + 1;
+    let best = null, distance = Infinity;
+    for (const [digit, mask] of Object.entries(MASKS[9])) {
+      if (digit === ',') continue;
+      const rows = 9, cols = mask[0].length;
+      let d = 0;
+      for (let gy = 0; gy < rows; gy++) {
+        for (let gx = 0; gx < cols; gx++) {
+          // Ink share of the glyph's cell under this mask pixel.
+          let on = 0, all = 0;
+          for (let y = Math.floor((gy * h) / rows); y < Math.max(Math.floor((gy * h) / rows) + 1, Math.floor(((gy + 1) * h) / rows)); y++) {
+            for (let x = Math.floor((gx * w) / cols); x < Math.max(Math.floor((gx * w) / cols) + 1, Math.floor(((gx + 1) * w) / cols)); x++) {
+              all++;
+              if (ink(glyph.from + x, top + y)) on++;
+            }
+          }
+          d += (on / all - (mask[gy][gx] === '#' ? 1 : 0)) ** 2;
+        }
+      }
+      d /= rows * cols;
+      if (d < distance) { best = digit; distance = d; }
+    }
+    if (distance > 0.15) return null;
+    text += best;
+  }
+  return text;
+}
+
 // The chosen number in the game's style: 1,234,567.
 function grouped(value) {
   return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -228,21 +271,18 @@ function inkColour(rgba) {
 }
 
 // Writes `text` (digits and commas) into `canvas` in the game's font, as
-// the game would draw it at 480 px wide with digits `rows` pixels high: ink
-// over `paper`, then enlarged pixel by pixel (no smoothing) when the digits
-// are bigger than the font's 9 rows.
+// the game draws it at 480 px wide with digits `rows` (9 or 10) pixels
+// high: ink over `paper`, by each pixel's coverage.
 function drawText(canvas, text, rows, ink, paper) {
-  const { width, cover } = shade(text);
-  const factor = rows / FONT.digitRows;
-  canvas.width = Math.max(1, Math.round(width * factor));
-  canvas.height = Math.round(FONT.height * factor);
+  const { width, height, cover } = shade(text, rows);
+  canvas.width = width;
+  canvas.height = height;
   const context = canvas.getContext('2d');
-  const image = context.createImageData(canvas.width, canvas.height);
-  for (let y = 0; y < canvas.height; y++) {
-    const sy = Math.min(FONT.height - 1, Math.floor(y / factor));
-    for (let x = 0; x < canvas.width; x++) {
-      const a = cover[sy][Math.min(width - 1, Math.floor(x / factor))];
-      const i = (y * canvas.width + x) * 4;
+  const image = context.createImageData(width, height);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const a = cover[y][x];
+      const i = (y * width + x) * 4;
       for (let c = 0; c < 3; c++) image.data[i + c] = paper[c] + (ink[c] - paper[c]) * a;
       image.data[i + 3] = 255;
     }
@@ -338,11 +378,12 @@ function startEmeraldMask(api, state) {
       return;
     }
     if (wanted) {
-      // The game's font in the colour of the digits it replaces, drawn in
-      // 480 px wide pixels then scaled to the screen like the video.
+      // The game's font at its size for that many digits, in the colour of
+      // the digits it replaces, drawn in 480 px wide pixels then scaled to
+      // the screen like the video.
       const rows = Math.round(heightFor(wanted.length) * FONT.scale);
       drawText(copy, grouped(wanted), rows, inkColour(crop), mask.color.match(/\d+/g).map(Number));
-      const below = Math.round(FONT.below * (rows / FONT.digitRows));
+      const below = FONT.below;
       Object.assign(copy.style, {
         display: 'block',
         left: `${NUMBER_PAD * k}px`,
@@ -353,6 +394,11 @@ function startEmeraldMask(api, state) {
       return;
     }
     const { list, ink } = glyphs(crop, box360.width, box360.height);
+    // The digits after the comma, read and written again in the game's font
+    // at the right size (the game's 5-digit font is not its 6-digit one
+    // enlarged); copied as pixels when they cannot be read.
+    const read = list.length ? readDigits(list, ink, box360.height) : null;
+    if (read && !wanted) return drawDecimals(mask, rgba, areaWidth, heightFor, k, baseline, read.replace(/^0+(?=\d)/, ''));
     let first = 0;
     while (first < list.length - 1 && isZero(list[first], ink, box360.height)) first++;
     if (!list.length) {
