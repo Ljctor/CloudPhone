@@ -14,6 +14,7 @@ const ENGLISH = {
   'Farmer la mine': 'Farm the mine',
   'Étage à farmer': 'Floor to farm',
   'Mode': 'Mode',
+  'défaut': 'default',
   'Configuration : farming mpw18': 'Settings: mpw18 farming',
   'Configuration : farming mpw4': 'Settings: mpw4 farming',
   'Configuration : mine fermée': 'Settings: Closed Mine',
@@ -757,34 +758,77 @@ export default function activate(api) {
     gold.font = font;
     showGold();
   });
-  const drawLabel = (text, cell) => {
-    const glyphs = [...text].map((c) => gold.font.glyphs[c]).filter(Boolean);
+  // Lines of text on a canvas, `cell` CSS pixels per game pixel. Letters
+  // without accents: the font has none.
+  const drawText = (canvas, lines, cell) => {
+    const plain = (text) => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const glyphLines = lines.map((text) => [...plain(text)].map((c) => gold.font.glyphs[c]).filter(Boolean));
     const rows = gold.font.height;
-    // A game pixel of space between glyphs, one round the text for the outline.
-    const width = glyphs.reduce((sum, glyph) => sum + glyph[0].length + 1, 0) + 1;
+    // A game pixel of space between glyphs, one round the text for the
+    // outline, two between lines.
+    const widths = glyphLines.map((glyphs) => glyphs.reduce((sum, glyph) => sum + glyph[0].length + 1, 0) + 1);
+    const width = Math.max(...widths);
+    const height = lines.length * (rows + 2) + (lines.length - 1) * 2;
     const scale = cell * (window.devicePixelRatio || 1);
-    label.width = Math.ceil(width * scale);
-    label.height = Math.ceil((rows + 2) * scale);
-    label.style.width = `${width * cell}px`;
-    label.style.height = `${(rows + 2) * cell}px`;
-    const context = label.getContext('2d');
+    canvas.width = Math.ceil(width * scale);
+    canvas.height = Math.ceil(height * scale);
+    canvas.style.width = `${width * cell}px`;
+    canvas.style.height = `${height * cell}px`;
+    const context = canvas.getContext('2d');
     for (const [colour, grow] of [['#000', 1], ['#ffa31a', 0]]) {
       context.fillStyle = colour;
-      let pen = 1;
-      for (const glyph of glyphs) {
-        glyph.forEach((row, y) => [...row].forEach((ink, x) => {
-          if (ink === '#') {
-            // Whole device pixels: fractional edges leave seams between cells.
-            const left = Math.round((pen + x - grow) * scale);
-            const top = Math.round((1 + y - grow) * scale);
-            context.fillRect(left, top, Math.round((pen + x + 1 + grow) * scale) - left,
-              Math.round((2 + y + grow) * scale) - top);
-          }
-        }));
-        pen += glyph[0].length + 1;
-      }
+      glyphLines.forEach((glyphs, line) => {
+        const base = 1 + line * (rows + 4);
+        let pen = 1;
+        for (const glyph of glyphs) {
+          glyph.forEach((row, y) => [...row].forEach((ink, x) => {
+            if (ink === '#') {
+              // Whole device pixels: fractional edges leave seams between cells.
+              const left = Math.round((pen + x - grow) * scale);
+              const top = Math.round((base + y - grow) * scale);
+              context.fillRect(left, top, Math.round((pen + x + 1 + grow) * scale) - left,
+                Math.round((base + y + 1 + grow) * scale) - top);
+            }
+          }));
+          pen += glyph[0].length + 1;
+        }
+      });
     }
   };
+  // The selected mode, under the player's level (top left), and below it
+  // "(défaut)" or the time left on the timer.
+  const modeLabel = document.createElement('canvas');
+  modeLabel.style.cssText = 'position:absolute;image-rendering:pixelated;left:3%;top:5.6%';
+  const MODE_NAMES = { mpw18: 'Farming mpw18', mpw4: 'Farming mpw4', free: 'Jeu libre', mine: 'Mine fermée' };
+  let modeDrawn = '';
+  const showMode = (shown) => {
+    if (!shown) {
+      modeLabel.remove();
+      modeDrawn = '';
+      return;
+    }
+    if (!modeLabel.isConnected) api.layer.appendChild(modeLabel);
+    const current = farm.answer?.mode ?? mode();
+    const seconds = Math.max(0, Math.round((farm.answer?.until ?? 0) - Date.now() / 1000));
+    const two = (n) => String(n).padStart(2, '0');
+    const time = seconds >= 3600
+      ? `${Math.floor(seconds / 3600)}:${two(Math.floor(seconds / 60) % 60)}:${two(seconds % 60)}`
+      : `${two(Math.floor(seconds / 60))}:${two(seconds % 60)}`;
+    const lines = [
+      api.tr(MODE_NAMES[current] ?? current).toUpperCase(),
+      `(${(current === 'mpw18' || !farm.answer?.until ? api.tr('défaut') : time).toUpperCase()})`,
+    ];
+    // Game pixels: the screen is 1040 of them high.
+    const cell = api.layer.offsetHeight / 1040;
+    const key = `${lines.join('|')}@${cell}`;
+    if (key !== modeDrawn) {
+      drawText(modeLabel, lines, cell);
+      modeDrawn = key;
+    }
+  };
+  const modeTick = window.setInterval(() => {
+    if (modeLabel.isConnected) showMode(true);
+  }, 1000);
   const goldText = () => {
     const answer = gold.answer;
     if (!answer) return '…';
@@ -797,6 +841,7 @@ export default function activate(api) {
     // Only while the counter was read lately: it moves with the game's
     // panels and Power Saving Mode hides it.
     const fresh = box && answer.read && Date.now() / 1000 - answer.read < 25;
+    showMode(Boolean(fresh && gold.font));
     if (api.setting('goldOverlay') === 'off' || !fresh || !gold.font) {
       label.remove();
       return;
@@ -808,7 +853,7 @@ export default function activate(api) {
     label.style.top = `${box[1] * api.layer.offsetHeight - cell}px`;
     // "~" while the 5-minute window is not full yet.
     const partial = answer.span < 285 ? '~' : '';
-    drawLabel(`(${answer.rate_text ? `${partial}${answer.rate_text}/s` : '...'})`, cell);
+    drawText(label, [`(${answer.rate_text ? `${partial}${answer.rate_text}/s` : '...'})`], cell);
   };
   const askGold = async () => {
     gold.answer = await api.get('/gold').catch(() => null);
@@ -1002,7 +1047,9 @@ export default function activate(api) {
       window.clearTimeout(screen.timer);
       window.clearTimeout(farm.timer);
       window.clearTimeout(gold.timer);
+      window.clearInterval(modeTick);
       label.remove();
+      modeLabel.remove();
     },
   };
 }

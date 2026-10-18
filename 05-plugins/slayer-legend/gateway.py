@@ -51,8 +51,10 @@ GET  /api/v1/plugins/slayer-legend/gold
      game is in front (Power Saving Mode hides it: no reading then); a
      value counts once two readings in a row agree. The rate is the slope
      of the last 5 minutes of values (from the second value on, over the
-     `span` seconds there are until then); spending gold starts the window
-     again. `read` is the time of the last reading.
+     `span` seconds there are until then), all on the same stage: the
+     stage name's line on the battle screen must look the same; two
+     readings in a row on another stage or place (or with no stage name)
+     start the window again, as does spending gold. `read` is the time of the last reading.
 
 Screens are recognised from a few pixel areas, as fractions of the screen,
 measured on a 360x780 screen (the page's device shapes keep this ratio).
@@ -107,7 +109,8 @@ MINE_NO_GOLD = 2
 # Gold per second: readings every GOLD_SECONDS, the slope over GOLD_WINDOW.
 GOLD_SECONDS = 10
 GOLD_WINDOW = 300
-GOLD = {"samples": [], "pending": None, "text": None, "read": None, "box": None, "asked": 0.0, "task": None}
+GOLD = {"samples": [], "pending": None, "text": None, "read": None, "box": None, "asked": 0.0, "task": None,
+        "place": None, "odd": 0}
 # The last stage number read in Power Saving Mode: {number, numeral}.
 FARMED = {"number": None}
 
@@ -738,6 +741,33 @@ def setup(context):
             return None
         return max(0.0, sum((t - mean_t) * (v - mean_v) for t, v in samples) / spread)
 
+    def same_place(a, b):
+        """Two inks of the battle screen's stage name line are the same
+        stage (a few pixels differ with what moves behind it)."""
+        if len(a) != len(b) or len(a[0]) != len(b[0]):
+            return False
+        differ = sum(x != y for row_a, row_b in zip(a, b) for x, y in zip(row_a, row_b))
+        ink = max(1, sum(map(sum, a)), sum(map(sum, b)))
+        return differ / ink < 0.2
+
+    def gold_place(shot):
+        """Whether this reading is on the window's stage. Another stage, or
+        no stage name, twice in a row: the window starts again there."""
+        here = stage._ink(stage._crop(shot, stage.BATTLE_NAME))
+        if here is not None and (GOLD["place"] is None or same_place(here, GOLD["place"])):
+            if GOLD["place"] is None:
+                GOLD["place"] = here
+                GOLD["samples"].clear()
+            GOLD["odd"] = 0
+            return True
+        GOLD["odd"] += 1
+        if GOLD["odd"] >= 2:
+            GOLD["samples"].clear()
+            GOLD["place"] = here
+            GOLD["pending"] = None
+            GOLD["odd"] = 0
+        return False
+
     async def watch_gold():
         # Stops 10 minutes after the last page asked.
         while time.monotonic() - GOLD["asked"] < 600:
@@ -749,6 +779,7 @@ def setup(context):
                         now = time.time()
                         GOLD["read"] = now
                         GOLD["box"] = reading["box"]
+                    if reading and gold_place(shot):
                         if GOLD["pending"] == reading["value"]:
                             samples = GOLD["samples"]
                             if samples and reading["value"] < samples[-1][1]:
