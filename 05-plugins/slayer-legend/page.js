@@ -14,7 +14,16 @@ const ENGLISH = {
   'Farmer la mine': 'Farm the mine',
   'Étage à farmer': 'Floor to farm',
   'Zone à farmer': 'Area to farm',
-  'Durée': 'Duration',
+  'Minuteur': 'Timer',
+  'Ajuster (minutes)': 'Adjust (minutes)',
+  'Alertes sur le téléphone (ntfy)': 'Alerts on the phone (ntfy)',
+  'Abonne l’appli ntfy à': 'Subscribe the ntfy app to',
+  'Alerte de test': 'Test alert',
+  'Envoyer': 'Send',
+  'envoyée': 'sent',
+  'échec': 'failed',
+  'plus de parchemin doré': 'no gold scroll',
+  'Combat en cours, sans parchemin doré': 'Fighting, without the gold scroll',
   'Sans limite': 'No limit',
   'reste {time}': '{time} left',
   'Durée écoulée : « Repeat entry » décoché, la mine s’arrête après cette entrée':
@@ -630,57 +639,77 @@ export default function activate(api) {
   // when they change, and on load if the gateway has not been told yet
   // (after its restart). Its state is asked every 10 s while it farms.
   const farm = { answer: null, timer: null };
-  // When farming must stop (Unix seconds), set when farming is switched on
-  // or the duration changes, and kept in this browser so that a reload or a
-  // gateway restart does not start the time again.
+  // This browser's copies: when farming must stop (Unix seconds, null: no
+  // limit), as the gateway last said, and the random ntfy.sh topic for
+  // alerts. Sent again when the gateway restarts.
   const UNTIL = 'cloudphone-slayer-legend-mine-until';
-  const readUntil = () => {
+  const TOPIC = 'cloudphone-slayer-legend-ntfy';
+  const load = (name) => {
     try {
-      return Number(window.localStorage.getItem(UNTIL)) || null;
+      return window.localStorage.getItem(name);
     } catch {
       return null;
     }
   };
-  const startClock = () => {
-    const minutes = Number(api.setting('mineDuration')) || 0;
-    const until = minutes ? Math.round(Date.now() / 1000) + minutes * 60 : null;
+  const keep = (name, value) => {
     try {
-      if (until) window.localStorage.setItem(UNTIL, String(until));
-      else window.localStorage.removeItem(UNTIL);
+      if (value) window.localStorage.setItem(name, String(value));
+      else window.localStorage.removeItem(name);
     } catch {
-      // Not kept: the time starts again after a reload.
+      // Not kept: lost on reload.
     }
-    return until;
   };
-  let until = readUntil();
+  let topic = load(TOPIC);
+  if (!topic) {
+    const bytes = crypto.getRandomValues(new Uint8Array(12));
+    topic = `slayer-${[...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
+    keep(TOPIC, topic);
+  }
   const mineOptions = () => ({
     enabled: Boolean(api.setting('mineFarm')) && Boolean(Number(api.setting('mineFloor'))),
     floor: Number(api.setting('mineFloor')) || 0,
     area: Number(api.setting('mineArea') || 1),
-    until: Number(api.setting('mineDuration')) ? until : null,
+    until: farm.answer?.until ?? (Number(load(UNTIL)) || null),
+    topic: api.setting('mineAlerts') ? topic : null,
   });
   const left = () => {
     const seconds = (farm.answer?.until ?? 0) - Date.now() / 1000;
-    if (!farm.answer?.enabled || !farm.answer?.until || seconds <= 0) return '';
+    if (!farm.answer?.until || seconds <= 0) return api.tr('Sans limite');
     const minutes = Math.ceil(seconds / 60);
     const text = minutes >= 60 ? `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')}` : `${minutes} min`;
-    return ` · ${api.tr('reste {time}', { time: text })}`;
+    const end = new Date(farm.answer.until * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return `${api.tr('reste {time}', { time: text })} (${end})`;
+  };
+  const remember = (answer) => {
+    farm.answer = answer;
+    if (answer) keep(UNTIL, answer.until);
   };
   const askMine = async () => {
-    farm.answer = await api.get('/mine').catch(() => null);
+    remember(await api.get('/mine').catch(() => null));
     api.refresh();
     window.clearTimeout(farm.timer);
     if (farm.answer?.enabled || api.setting('mineFarm')) farm.timer = window.setTimeout(askMine, 10000);
   };
   const sendMine = async () => {
     const result = await api.post('/mine', mineOptions()).catch(() => null);
-    if (result?.ok) farm.answer = result.body;
+    if (result?.ok) remember(result.body);
     await askMine();
   };
+  const moveTimer = async (minutes) => {
+    const result = await api.post('/mine/timer', { add: minutes }).catch(() => null);
+    if (result?.ok) remember(result.body);
+    api.refresh();
+  };
+  const alerts = { state: '' };
   api.get('/mine').catch(() => null).then((answer) => {
-    farm.answer = answer;
-    if (answer && !answer.enabled && answer.state === 'off' && mineOptions().enabled) sendMine();
-    else askMine();
+    // After a gateway restart it knows nothing: send this browser's options.
+    if (answer && !answer.enabled && answer.state === 'off' && !answer.until && mineOptions().enabled) {
+      farm.answer = null;
+      sendMine();
+    } else {
+      remember(answer);
+      askMine();
+    }
   });
 
   return {
@@ -745,19 +774,48 @@ export default function activate(api) {
         choices: [1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: String(n) })),
       },
       {
-        type: 'choice', key: 'mineDuration', label: 'Durée',
+        type: 'status', label: 'Minuteur',
         visible: () => Boolean(api.setting('mineFarm')),
-        choices: [
-          { value: '', label: 'Sans limite' },
-          ...[30, 60, 120, 180, 240, 360, 480].map((m) => ({ value: String(m), label: m < 60 ? `${m} min` : `${m / 60} h` })),
-        ],
+        value: left,
+      },
+      {
+        type: 'buttons', label: 'Ajuster (minutes)',
+        visible: () => Boolean(api.setting('mineFarm')),
+        buttons: [30, 5, 1, -1, -5, -30].map((m) => ({
+          label: m > 0 ? `+${m}` : `−${-m}`,
+          run: () => moveTimer(m),
+          disabled: () => m < 0 && !farm.answer?.until,
+        })),
+      },
+      { type: 'toggle', key: 'mineAlerts', label: 'Alertes sur le téléphone (ntfy)', visible: () => Boolean(api.setting('mineFarm')) },
+      {
+        type: 'status', label: 'Abonne l’appli ntfy à',
+        visible: () => Boolean(api.setting('mineFarm') && api.setting('mineAlerts')),
+        value: () => `ntfy.sh/${topic}`,
+        href: () => `https://ntfy.sh/${topic}`,
+      },
+      {
+        type: 'action', label: 'Alerte de test', button: 'Envoyer',
+        visible: () => Boolean(api.setting('mineFarm') && api.setting('mineAlerts')),
+        run: async () => {
+          await sendMine();
+          const result = await api.post('/mine/test', {}).catch(() => null);
+          alerts.state = result?.ok ? 'envoyée' : 'échec';
+          api.refresh();
+        },
+      },
+      {
+        type: 'status', label: 'Alerte de test',
+        visible: () => Boolean(alerts.state && api.setting('mineAlerts')),
+        value: () => api.tr(alerts.state),
       },
       {
         type: 'status', label: 'Mine',
         visible: () => Boolean(api.setting('mineFarm')) || Boolean(farm.answer?.enabled),
         value: () => {
           if (api.setting('mineFarm') && !Number(api.setting('mineFloor'))) return api.tr('Choisis l’étage et la zone');
-          return api.tr(farm.answer?.message || 'arrêtée') + left();
+          const warning = farm.answer?.enabled && farm.answer?.gold === false ? ` ⚠ ${api.tr('plus de parchemin doré')}` : '';
+          return api.tr(farm.answer?.message || 'arrêtée') + warning;
         },
       },
       {
@@ -800,7 +858,6 @@ export default function activate(api) {
     onSetting: (key, value) => {
       if (key === 'emeraldMode') setEmerald(Boolean(value));
       if (key === 'diamondMode') setDiamond(Boolean(value));
-      if ((key === 'mineFarm' && value) || key === 'mineDuration') until = startClock();
       if (key.startsWith('mine')) sendMine();
     },
     dispose: () => {

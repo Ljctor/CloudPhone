@@ -1223,6 +1223,7 @@ function App() {
   });
   const pluginOption = (plugin, option, index) => {
     const key = `${plugin.id}-${index}`;
+    if (!(option.visible?.() ?? true)) return null;
     if (option.type === 'toggle') {
       return (
         <label key={key} style={styles.infoRow}>
@@ -1233,7 +1234,6 @@ function App() {
       );
     }
     if (option.type === 'number') {
-      if (!(option.visible?.() ?? true)) return null;
       return (
         <label key={key} style={styles.infoRow}>
           <span style={styles.infoLabel}>{tr(option.label)}</span>
@@ -1267,7 +1267,27 @@ function App() {
         </div>
       );
     }
-    if (option.type === 'status' && (option.visible?.() ?? true)) return row2(tr(option.label), option.value?.() ?? '–');
+    if (option.type === 'buttons') {
+      return (
+        <div key={key} style={styles.infoRow}>
+          <span style={styles.infoLabel}>{tr(option.label)}</span>
+          <span style={styles.buttonGroup}>
+            {(option.buttons ?? []).map((button) => (
+              <button key={button.label} style={styles.smallButton} disabled={button.disabled?.() ?? false}
+                onClick={() => Promise.resolve(button.run?.()).catch((error) => console.error(error))}>
+                {tr(button.label)}
+              </button>
+            ))}
+          </span>
+        </div>
+      );
+    }
+    if (option.type === 'status') {
+      const value = option.value?.() ?? '–';
+      const href = option.href?.();
+      return row2(tr(option.label), href
+        ? <a href={href} target="_blank" rel="noreferrer" style={styles.link}>{value}</a> : value);
+    }
     return null;
   };
 
@@ -1544,6 +1564,12 @@ const styles = {
     maxWidth: '60%', padding: '3px 4px', borderRadius: '6px', border: '1px solid #444',
     background: '#292929', color: '#e8ebf0', fontSize: '12px',
   },
+  buttonGroup: { display: 'flex', flexWrap: 'wrap', gap: '4px', justifyContent: 'flex-end' },
+  smallButton: {
+    minWidth: '34px', padding: '4px 6px', borderRadius: '7px', border: '1px solid #4da3ff',
+    background: '#2f5d8f', color: '#fff', fontSize: '12px',
+  },
+  link: { color: '#8cc4ff', wordBreak: 'break-all' },
   panelButton: {
     padding: '4px 10px', borderRadius: '7px', border: '1px solid #4da3ff',
     background: '#2f5d8f', color: '#fff', fontSize: '12px',

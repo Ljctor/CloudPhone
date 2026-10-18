@@ -31,7 +31,14 @@ POST /api/v1/plugins/slayer-legend/mine  {enabled, floor, area, until}
      the reward is multiplied by the feathers used). When the
      gold scroll buff is gone it unticks "Repeat entry" and stops: the
      entry under way ends, no more feathers are spent. It stops the same
-     way at `until` (Unix seconds; null: no time limit). It leaves Power
+     way at `until` (Unix seconds; null: no time limit); with a time limit,
+     a missing gold scroll is only a warning. `topic`: an ntfy.sh topic
+     that gets an alert when the gold scroll goes, when farming stops, and
+     when the game has left the screen for 2 minutes.
+POST /api/v1/plugins/slayer-legend/mine/timer  {add: minutes}
+     Moves the end of farming by that many minutes (may be negative).
+POST /api/v1/plugins/slayer-legend/mine/test
+     Sends a test alert to the topic. It leaves Power
      Saving Mode (4 s press) at most once a minute to see the buffs.
 
 Screens are recognised from a few pixel areas, as fractions of the screen,
@@ -39,12 +46,15 @@ measured on a 360x780 screen (the page's device shapes keep this ratio).
 """
 
 import asyncio
+import re
 import base64
 import importlib.util
 import json
 import logging
 import os
 import time
+
+import aiohttp
 
 PACKAGE = "com.gear2.growslayer"
 ACTIVITY = f"{PACKAGE}/com.google.firebase.MessagingUnityPlayerActivity"
@@ -72,9 +82,12 @@ DIAMOND = {"time": 0.0, "value": None, "lock": None}
 EMERALD_SECONDS = 0.4
 SCREEN = {"time": 0.0, "value": None, "lock": None}
 SCREEN_SECONDS = 2.0
-MINE = {"enabled": False, "floor": None, "area": None, "until": None, "state": "off", "message": "", "task": None}
+MINE = {"enabled": False, "floor": None, "area": None, "until": None, "topic": None, "gold": None,
+        "state": "off", "message": "", "task": None}
 MINE_FEATHERS = 3
 MINE_SECONDS = 10
+# ntfy.sh topic names: long and random, so that nobody else guesses them.
+TOPIC = re.compile(r"[A-Za-z0-9_-]{16,64}")
 # Checks in a row without the gold scroll before stopping (an animation
 # can hide it for a moment).
 MINE_NO_GOLD = 2
@@ -391,22 +404,52 @@ def setup(context):
             shot = await mine_step(shot, mine.REPEAT_TAP)
             if not shot or mine.repeat_ticked(shot):
                 mine_report("blocked", f"{reason}, mais « Repeat entry » ne se décoche pas")
+                await alert(MINE["message"])
                 return False
         MINE["enabled"] = False
         mine_report("stopped", f"{reason} : « Repeat entry » décoché, la mine s’arrête après cette entrée")
         return True
+
+    async def alert(text):
+        """Sends text to the user's phone through ntfy.sh, on the topic the
+        page gave (a random name only that browser knows); nothing without."""
+        topic = MINE["topic"]
+        if not topic:
+            return
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+                async with session.post(f"https://ntfy.sh/{topic}", data=text.encode("utf-8"),
+                                        headers={"Title": "Slayer Legend", "Tags": "pick"}) as response:
+                    if response.status >= 300:
+                        logging.warning(f"Slayer Legend alert: ntfy.sh answered {response.status}")
+        except Exception as e:
+            logging.warning(f"Slayer Legend alert not sent: {e!r}")
 
     async def farm_mine():
         no_gold = 0
         gold_seen = 0.0
         last_hold = 0.0
         failures = 0
+        away_since = None
+        timer_alerted = False
+        place = f"étage {MINE['floor']}, zone {MINE['area']}"
+
+        async def finish(state, message):
+            MINE["enabled"] = False
+            mine_report(state, message)
+            await alert(f"Mine arrêtée ({place}) : {message}")
+
         try:
             while MINE["enabled"]:
                 await asyncio.sleep(MINE_SECONDS)
                 if not await in_focus():
                     mine_report("waiting", "Le jeu n’est pas au premier plan")
+                    away_since = away_since or time.monotonic()
+                    if time.monotonic() - away_since > 120 and away_since > 0:
+                        away_since = -1.0
+                        await alert("Le jeu n’est plus au premier plan depuis 2 minutes (plantage ?)")
                     continue
+                away_since = None
                 shot = await context.screenshot()
                 if not shot:
                     continue
@@ -416,19 +459,30 @@ def setup(context):
                         last_hold = time.monotonic()
                         await hold(shot, SAVER_TAP, SAVER_HOLD_MS)
                     continue
-                over = MINE["until"] is not None and time.time() >= MINE["until"]
+                timed = MINE["until"] is not None
+                over = timed and time.time() >= MINE["until"]
                 if over and mine.in_fight(shot):
                     if await mine_stop(shot, "Durée écoulée"):
+                        await alert(f"Durée écoulée ({place}) : « Repeat entry » décoché, la mine s’arrête après cette entrée")
                         return
                     continue
                 if mine.in_fight(shot):
                     failures = 0
                     if mine.gold_scroll(shot):
                         no_gold, gold_seen = 0, time.monotonic()
+                        MINE["gold"] = True
                         mine_report("farming", "Combat en cours, parchemin doré actif")
                         continue
                     no_gold += 1
                     if no_gold < MINE_NO_GOLD:
+                        continue
+                    if MINE["gold"] is not False:
+                        MINE["gold"] = False
+                        await alert(f"Plus de parchemin doré ({place})"
+                                    + (" : la mine continue jusqu’à la fin du minuteur" if timed else ""))
+                    if timed:
+                        # With a timer, the user chose how long: only warn.
+                        mine_report("farming", "Combat en cours, sans parchemin doré")
                         continue
                     if await mine_stop(shot, "Plus de parchemin doré"):
                         return
@@ -439,35 +493,34 @@ def setup(context):
                     continue
                 # The floor list: the 30 entries are done.
                 if over:
-                    MINE["enabled"] = False
-                    mine_report("stopped", "Durée écoulée : pas de relance")
+                    await finish("stopped", "Durée écoulée : pas de relance")
                     return
-                if time.monotonic() - gold_seen > 5 * 60:
-                    mine_report("stopped" if gold_seen else "waiting",
-                                "Parchemin doré pas vu depuis 5 minutes : pas de relance")
+                if not timed and time.monotonic() - gold_seen > 5 * 60:
                     if gold_seen:
-                        MINE["enabled"] = False
+                        await finish("stopped", "Parchemin doré pas vu depuis 5 minutes : pas de relance")
                         return
+                    mine_report("waiting", "Parchemin doré pas vu depuis 5 minutes : pas de relance")
                     continue
                 if failures >= 3:
-                    MINE["enabled"] = False
-                    mine_report("blocked", "La relance a échoué 3 fois : relance la mine à la main")
+                    await finish("blocked", "La relance a échoué 3 fois : relance la mine à la main")
                     return
                 mine_report("relaunching", f"Relance : étage {MINE['floor']}, zone {MINE['area']}")
                 if await mine_relaunch(shot):
                     failures = 0
                     mine_report("farming", "Mine relancée")
-                elif MINE["state"] != "blocked":
+                elif MINE["state"] == "blocked":
+                    await finish("blocked", MINE["message"])
+                    return
+                else:
                     failures += 1
         except asyncio.CancelledError:
             raise
         except Exception as e:
             logging.exception("Slayer Legend mine failed")
-            MINE["enabled"] = False
-            mine_report("failed", f"Erreur : {e!r}"[:200])
+            await finish("failed", f"Erreur : {e!r}"[:200])
 
     def mine_state():
-        return {key: MINE[key] for key in ("enabled", "floor", "area", "until", "state", "message")}
+        return {key: MINE[key] for key in ("enabled", "floor", "area", "until", "gold", "state", "message")}
 
     async def handle_mine_state(request):
         return context.json(mine_state())
@@ -478,14 +531,18 @@ def setup(context):
             enabled = bool(body.get("enabled"))
             floor, area = int(body.get("floor") or 0), int(body.get("area") or 0)
             until = float(body["until"]) if body.get("until") is not None else None
+            topic = str(body.get("topic") or "") or None
         except (ValueError, TypeError, AttributeError):
             return context.json({"error": "Expected {enabled, floor, area, until}"}, status=400)
         if enabled and not (1 <= floor <= 9999 and 1 <= area <= 5):
             return context.json({"error": "floor 1-9999, area 1-5"}, status=400)
-        MINE.update(floor=floor or None, area=area or None, until=until)
+        if topic is not None and not TOPIC.fullmatch(topic):
+            return context.json({"error": "topic: 16-64 letters, digits, - or _"}, status=400)
+        MINE.update(floor=floor or None, area=area or None, until=until, topic=topic)
         task = MINE["task"]
         if enabled and not MINE["enabled"]:
             MINE["enabled"] = True
+            MINE["gold"] = None
             mine_report("waiting", "Surveillance de la mine")
             if task is None or task.done():
                 MINE["task"] = asyncio.get_running_loop().create_task(farm_mine())
@@ -495,6 +552,24 @@ def setup(context):
                 task.cancel()
             mine_report("off", "")
         return context.json(mine_state())
+
+    async def handle_mine_timer(request):
+        """{add: minutes, may be negative}: moves the end of farming; at or
+        before now there is no time limit any more."""
+        try:
+            add = float((await request.json()).get("add"))
+        except (ValueError, TypeError, AttributeError):
+            return context.json({"error": "Expected {add: minutes}"}, status=400)
+        now = time.time()
+        until = max(MINE["until"] or now, now) + add * 60
+        MINE["until"] = until if until > now + 30 else None
+        return context.json(mine_state())
+
+    async def handle_mine_test(request):
+        if not MINE["topic"]:
+            return context.json({"error": "No topic"}, status=400)
+        await alert("Test : les alertes de la mine arrivent bien")
+        return context.json({"sent": True})
 
     async def handle_launch_state(request):
         return context.json({"state": LAUNCH["state"], "message": LAUNCH["message"]})
@@ -513,3 +588,5 @@ def setup(context):
     context.add_post("/launch", handle_launch)
     context.add_get("/mine", handle_mine_state)
     context.add_post("/mine", handle_mine)
+    context.add_post("/mine/timer", handle_mine_timer)
+    context.add_post("/mine/test", handle_mine_test)

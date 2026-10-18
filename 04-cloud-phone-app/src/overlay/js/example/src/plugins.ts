@@ -8,10 +8,12 @@
 //   activate(api) => { options: Option[], dispose?(), onSetting?(key, value) }
 // where an Option is one of
 //   { type: 'toggle', key, label }                 stored per plugin, off by default
-//   { type: 'number', key, label, placeholder?, visible?() }  digits, stored as text
+//   { type: 'number', key, label, placeholder? }   digits, stored as text
 //   { type: 'choice', key, label, choices: [{ value, label }] }   stored as the value, first one by default
 //   { type: 'action', label, button, run(), disabled?() }
-//   { type: 'status', label, value(), visible?() }
+//   { type: 'buttons', label, buttons: [{ label, run(), disabled?() }] }   a row of small buttons
+//   { type: 'status', label, value(), href?() }    href makes the value a link
+// Any option may have visible?(): shown only when it returns true.
 // Labels are French; the plugin gives English texts with api.addTranslations.
 // api:
 //   id, title
