@@ -13,6 +13,8 @@ built, never committed.
 | `js/src/components/emulator/net/ws_jsep_protocol_driver.ts` | signaling, viewer id, input on the emulator's data channels; waits for the emulator's SDP offer (Firefox) |
 | `js/src/components/emulator/views/webrtc_view.tsx` | `connected` only after a real decoded frame |
 | `gateway/src/videobridge_gateway/gateway_server.py` | serves the page, WebSocket JSEP bridge, HTTP API |
+| `gateway/src/videobridge_gateway/core/viewers.py` | viewers and their signalling sessions, who was disconnected by another viewer, which arrivals and departures are news (no I/O) |
+| `gateway/src/videobridge_gateway/http/viewers.py` | `POST /api/v1/viewers/disconnect-others`, the viewer id of a request, sessions' arrivals and departures as log records |
 | `gateway/src/videobridge_gateway/plugins.py` | loads the installed plugins' `gateway.py`, serves their scripts |
 | `gateway/src/videobridge_gateway/logs.py` | the gateway's log records: journald, the last 500 in memory for `GET /api/v1/logs` |
 | `js/test/*.test.js` | jest unit tests (run by `packaging/build-release.sh`) |

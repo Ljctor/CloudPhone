@@ -46,6 +46,7 @@ from . import events as events_log
 from . import notify
 from . import logs
 from .logs import log
+from .http import viewers
 
 # Records to journald and to GET /api/v1/logs (see logs.py).
 logs.setup()
@@ -71,14 +72,6 @@ DISPLAY_LIMITS = {"width": (240, 1440), "height": (320, 3200), "density": (80, 6
 # Android finished booting, how many viewers are connected and the load.
 EMULATOR_UNIT = ""
 DISCOVERY_FILE = ""
-VIEWERS = {"count": 0}
-# Signalling sessions by viewer id (one per page load), and the viewers that
-# another one disconnected: refused for KICK_SECONDS, so that their page
-# does not simply reconnect.
-SESSIONS = {}
-KICKED = {}
-KICK_SECONDS = 600.0
-CLOSED_BY_OTHER_VIEWER = 4001
 STATE_CACHE = {"time": 0.0, "value": None}
 # Server metrics for the page's server panel, sampled in the background.
 # Android's own figures need adb, so they are read only while a page asks
@@ -525,17 +518,6 @@ async def sample_metrics():
         await asyncio.sleep(METRICS_SECONDS)
 
 
-def viewer_of(request):
-    return request.query.get("viewer", "")[:64]
-
-
-def is_kicked(viewer):
-    now = time.monotonic()
-    for key in [key for key, since in KICKED.items() if now - since > KICK_SECONDS]:
-        del KICKED[key]
-    return bool(viewer) and viewer in KICKED
-
-
 async def handle_notify(request):
     """GET /api/v1/notify: phone alerts through ntfy.sh, {available,
     enabled, topic, url} (see notify.py)."""
@@ -763,29 +745,9 @@ def check_health(unit, booted, display, settings):
             log(level, "gateway", text, notify=alert, **params)
 
 
-async def handle_disconnect_others(request):
-    """
-    POST /api/v1/viewers/disconnect-others {viewer}: ends every signalling
-    session except the caller's, and refuses those viewers for a while.
-    """
-    try:
-        data = await request.json()
-        viewer = str(data.get("viewer", ""))[:64]
-    except (ValueError, TypeError):
-        return web.json_response({"error": "viewer is required"}, status=400)
-    if not viewer:
-        return web.json_response({"error": "viewer is required"}, status=400)
-    closed = 0
-    for ws, other in list(SESSIONS.items()):
-        if other == viewer:
-            continue
-        if other:
-            KICKED[other] = time.monotonic()
-        await ws.close(code=CLOSED_BY_OTHER_VIEWER, message=b"Disconnected by another viewer")
-        closed += 1
-    log("warning", "gateway", "Un appareil a déconnecté les autres ({n})", notify=True, n=closed, viewer=viewer)
+def forget_state():
+    """The next GET /api/v1/state reads everything again."""
     STATE_CACHE["value"] = None
-    return web.json_response({"closed": closed})
 
 
 async def handle_state(request):
@@ -800,13 +762,13 @@ async def handle_state(request):
         STATE_CACHE["value"] = {
             "emulator": unit,
             "android": {"booted": booted},
-            "viewers": VIEWERS["count"],
+            "viewers": viewers.VIEWERS.count,
             "load": read_load(),
             "display": read_display_status(),
             "settings": read_settings_status(),
         }
         STATE_CACHE["time"] = loop.time()
-    value = {**STATE_CACHE["value"], "kicked": is_kicked(viewer_of(request))}
+    value = {**STATE_CACHE["value"], "kicked": viewers.kicked(request)}
     if request.query.get("details") == "1":
         METRICS["android_wanted"] = loop.time()
         value["metrics"] = {key: METRICS[key] for key in ("host", "emulator", "android")}
@@ -1172,44 +1134,6 @@ async def handle_touch(request):
         return web.json_response({"error": str(e)}, status=500)
 
 
-# Viewers (one id per page load) seen lately: a reconnect of the same page
-# (↻, back from background) is not news for the others.
-VIEWERS_SEEN = {}
-VIEWER_GONE_SECONDS = 5.0
-VIEWER_BACK_SECONDS = 60.0
-
-
-def viewer_connected(viewer):
-    now = time.monotonic()
-    last = VIEWERS_SEEN.get(viewer)
-    VIEWERS_SEEN[viewer] = now
-    for key in [key for key, seen in VIEWERS_SEEN.items() if now - seen > KICK_SECONDS]:
-        del VIEWERS_SEEN[key]
-    if last is not None and now - last < VIEWER_BACK_SECONDS:
-        return
-    others = len({other for other in SESSIONS.values() if other != viewer})
-    if others:
-        log("normal", "gateway", "Un autre appareil s’est connecté ({n} en tout)", notify=True,
-            n=others + 1, viewer=viewer)
-    else:
-        log("normal", "gateway", "Un appareil s’est connecté")
-
-
-def viewer_left(viewer):
-    """Said a few seconds later, once the page did not come back."""
-    def check():
-        if viewer in SESSIONS.values():
-            return
-        VIEWERS_SEEN[viewer] = time.monotonic() - VIEWER_BACK_SECONDS
-        remaining = len(set(SESSIONS.values()))
-        if remaining:
-            log("normal", "gateway", "Un autre appareil s’est déconnecté ({n} encore connectés)", notify=True,
-                n=remaining, viewer=viewer)
-        else:
-            log("normal", "gateway", "Plus aucun appareil connecté")
-    asyncio.get_running_loop().call_later(VIEWER_GONE_SECONDS, check)
-
-
 async def handle_websocket_jsep(request):
     """
     GET /api/v1/emulator/ws-jsep (WebSocket Upgrade)
@@ -1218,9 +1142,8 @@ async def handle_websocket_jsep(request):
     ws = web.WebSocketResponse()
     await ws.prepare(request)
     logging.debug("WebSocket connection opened for JSEP signaling.")
-    viewer = viewer_of(request)
-    if is_kicked(viewer):
-        await ws.close(code=CLOSED_BY_OTHER_VIEWER, message=b"Disconnected by another viewer")
+    viewer = viewers.viewer_of(request)
+    if await viewers.refuse_if_kicked(ws, viewer):
         return ws
 
     if not VIDEOBRIDGE_CHANNEL:
@@ -1235,9 +1158,7 @@ async def handle_websocket_jsep(request):
     guid = None
     stream_task = None
     bye_forwarded = False
-    VIEWERS["count"] += 1
-    SESSIONS[ws] = viewer
-    viewer_connected(viewer)
+    viewers.joined(ws, viewer)
 
     try:
         # 1. Build default ICE configuration using public STUN server
@@ -1322,9 +1243,7 @@ async def handle_websocket_jsep(request):
     except Exception as e:
         logging.exception("Error in WebSocket session handler. Reload the video (↻) if it stopped:")
     finally:
-        VIEWERS["count"] -= 1
-        SESSIONS.pop(ws, None)
-        viewer_left(viewer)
+        viewers.left(ws, viewer)
         logging.debug(f"Closing signaling WebSocket session for ID: {guid}")
         # Browsers do not always get a chance to send a final WebSocket frame
         # when a tab is suspended or killed. Explicitly tear down the emulator
@@ -1415,7 +1334,7 @@ def init_app(videobridge_token, plugins_dir="", plugin_data=""):
     app.router.add_get("/api/v1/notify", handle_notify)
     app.router.add_post("/api/v1/notify", handle_set_notify)
     app.router.add_post("/api/v1/notify/test", handle_test_notify)
-    app.router.add_post("/api/v1/viewers/disconnect-others", handle_disconnect_others)
+    app.router.add_post("/api/v1/viewers/disconnect-others", viewers.disconnect_others(forget_state))
     app.router.add_post("/api/v1/display", handle_set_display)
     app.router.add_get("/api/v1/emulator-settings", handle_settings)
     app.router.add_post("/api/v1/emulator-settings", handle_set_settings)
