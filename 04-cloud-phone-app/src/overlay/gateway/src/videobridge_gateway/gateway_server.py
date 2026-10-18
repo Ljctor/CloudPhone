@@ -42,6 +42,7 @@ from .proto import rtc_service_v2_pb2 as rtc
 from .proto import rtc_service_v2_pb2_grpc as rtc_grpc
 from .proto import ice_config_pb2 as ice
 from .plugins import load_plugins, run_adb
+from . import events as events_log
 
 # Configure Logging
 logging.basicConfig(
@@ -555,6 +556,57 @@ async def handle_state(request):
     return web.json_response(value, headers={"Cache-Control": "no-store"})
 
 
+# The Events list (GET /api/v1/events): read on demand, cached a little.
+EVENTS_CACHE = {"time": 0.0, "value": None, "lock": None}
+EVENTS_CACHE_SECONDS = 10.0
+GATEWAY_STARTED = time.time()
+
+
+async def read_events():
+    found = [{"time": GATEWAY_STARTED, "kind": "gateway_start", "app": None, "reason": None}]
+    boot_time = events_log.host_boot_time(read_file("/proc/stat") or "")
+    if EMULATOR_UNIT:
+        try:
+            process = await asyncio.create_subprocess_exec(
+                "systemctl", "show", EMULATOR_UNIT,
+                "--property=ExecMainStartTimestampMonotonic,NRestarts,Result",
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+            )
+            output, _ = await asyncio.wait_for(process.communicate(), timeout=3)
+            unit = events_log.parse_unit(output.decode(errors="replace"), boot_time, "emulator_start")
+            if unit:
+                found.append(unit)
+        except (OSError, asyncio.TimeoutError):
+            pass
+    code, uptime = await plugin_adb("shell", "cat", "/proc/uptime", timeout=5)
+    if code == 0 and uptime.split():
+        try:
+            found.append({"time": time.time() - float(uptime.split()[0]), "kind": "android_boot",
+                          "app": None, "reason": None})
+        except ValueError:
+            pass
+    code, logcat = await plugin_adb("logcat", "-d", "-v", "epoch", "-b", "events,crash", timeout=10)
+    if code == 0:
+        found.extend(events_log.parse_logcat(logcat))
+    found.sort(key=lambda event: event["time"], reverse=True)
+    return {"events": found[:100], "android": code == 0}
+
+
+async def handle_events(request):
+    """
+    GET /api/v1/events: what happened to Android and the server, newest
+    first (see events.py).
+    """
+    if EVENTS_CACHE["lock"] is None:
+        EVENTS_CACHE["lock"] = asyncio.Lock()
+    loop = asyncio.get_running_loop()
+    async with EVENTS_CACHE["lock"]:
+        if EVENTS_CACHE["value"] is None or loop.time() - EVENTS_CACHE["time"] > EVENTS_CACHE_SECONDS:
+            EVENTS_CACHE["value"] = await read_events()
+            EVENTS_CACHE["time"] = loop.time()
+    return web.json_response(EVENTS_CACHE["value"], headers={"Cache-Control": "no-store"})
+
+
 async def read_screenshot():
     """Android's screen as (width, height, RGB888 bytes), or None."""
     if not EMULATOR_CHANNEL:
@@ -1025,6 +1077,7 @@ def init_app(videobridge_token, plugins_dir=""):
     app.router.add_get("/api/v1/ping", handle_ping)
     app.router.add_get("/api/v1/display", handle_display)
     app.router.add_get("/api/v1/state", handle_state)
+    app.router.add_get("/api/v1/events", handle_events)
     app.router.add_post("/api/v1/viewers/disconnect-others", handle_disconnect_others)
     app.router.add_post("/api/v1/display", handle_set_display)
     app.router.add_get("/api/v1/emulator-settings", handle_settings)

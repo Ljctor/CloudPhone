@@ -1,4 +1,4 @@
-import { LANGUAGES, defaultLanguage, setLanguage, tr } from './i18n';
+import { LANGUAGES, defaultLanguage, language, setLanguage, tr } from './i18n';
 import { coreOptions, memoryOptions, rendererOptions, sameSettings } from './emulatorSettings';
 import { usePlugins } from './plugins';
 import React, { useEffect, useRef, useState } from 'react';
@@ -193,6 +193,76 @@ function useEmulatorSettings(gatewayUrl, enabled) {
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [gatewayUrl, enabled, busy, nonce]);
   return [value, () => setNonce((n) => n + 1)];
+}
+
+// What happened to Android and the server (GET /api/v1/events), read while
+// the Server tab is open.
+function useEvents(gatewayUrl, enabled) {
+  const [value, setValue] = useState(null);
+  useEffect(() => {
+    if (!enabled) return undefined;
+    let cancelled = false;
+    const load = () => fetch(`${gatewayUrl}/api/v1/events`, { cache: 'no-store' })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((next) => { if (!cancelled && next) setValue(next); })
+      .catch(() => {});
+    load();
+    const timer = window.setInterval(load, 15000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [gatewayUrl, enabled]);
+  return value;
+}
+
+// One event as a sentence, and its cause in plain words when known.
+function describeEvent(event) {
+  const app = event.app ?? '?';
+  const titles = {
+    crash: tr('{app} a planté', { app }),
+    anr: tr('{app} ne répondait plus (ANR)', { app }),
+    killed: tr('{app} arrêté par Android', { app }),
+    low_memory: tr('Mémoire d’Android insuffisante'),
+    android_boot: tr('Android a démarré'),
+    emulator_start: tr('Le service Android a démarré'),
+    gateway_start: tr('La passerelle a démarré'),
+  };
+  let cause = event.reason ?? '';
+  const update = /^stop (\S+) due to installPackageLI/.exec(cause);
+  if (update) cause = tr('mise à jour de {app} (les applis qui en dépendent s’arrêtent)', { app: update[1] });
+  else if (/low ?mem|lmk|swap/i.test(cause)) cause = tr('mémoire insuffisante ({reason})', { reason: cause });
+  if (event.kind === 'emulator_start') {
+    const parts = [];
+    if (event.restarts) parts.push(tr('{n} redémarrages automatiques', { n: event.restarts }));
+    if (event.reason) parts.push(tr('dernier arrêt : {result}', { result: event.reason }));
+    cause = parts.join(' · ');
+  }
+  return { title: titles[event.kind] ?? event.kind, cause };
+}
+
+function EventList({ events, rowStyle, labelStyle }) {
+  if (!events) return <div style={rowStyle}>…</div>;
+  const list = events.events ?? [];
+  const locale = language() === 'en' ? 'en-GB' : 'fr-FR';
+  return (
+    <>
+      {!events.android && <div style={rowStyle}>{tr('Journaux d’Android illisibles (adb)')}</div>}
+      {list.length === 0 && <div style={rowStyle}>{tr('Aucun événement')}</div>}
+      {list.slice(0, 30).map((event, index) => {
+        const { title, cause } = describeEvent(event);
+        const date = new Date(event.time * 1000);
+        return (
+          <div key={`${event.time}-${index}`} style={{ ...rowStyle, alignItems: 'flex-start' }}>
+            <span style={{ ...labelStyle, whiteSpace: 'nowrap' }}>
+              {date.toLocaleString(locale, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+            </span>
+            <span style={{ textAlign: 'right', overflowWrap: 'anywhere' }}>
+              {title}
+              {cause && <><br /><span style={{ opacity: 0.7, fontSize: '0.9em' }}>{cause}</span></>}
+            </span>
+          </div>
+        );
+      })}
+    </>
+  );
 }
 
 // Renderer, cores, memory and screen Android runs with. Applying restarts
@@ -711,6 +781,7 @@ function App() {
   const stats = useStreamStats(deviceRef, gatewayUrl);
   const server = useServerState(gatewayUrl, serverTab);
   const [emulatorSettings, refreshEmulatorSettings] = useEmulatorSettings(gatewayUrl, serverTab);
+  const events = useEvents(gatewayUrl, serverTab);
   const pluginLayer = useRef(null);
   const plugins = usePlugins({
     gatewayUrl, deviceRef, layerRef: pluginLayer, screenWidth: screen.width, settings, postHeaders,
@@ -1285,6 +1356,8 @@ function App() {
                     labelStyle={styles.infoLabel}
                     buttonStyle={styles.panelButton}
                   />
+                  <div style={styles.infoSection}>{tr('Événements')}</div>
+                  <EventList events={events} rowStyle={styles.infoRow} labelStyle={styles.infoLabel} />
                 </div>
               )}
               {panel === 'info' && infoTab === 'client' && (

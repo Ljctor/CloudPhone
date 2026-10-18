@@ -505,10 +505,28 @@ export default function activate(api) {
     type: 'status', label, visible: () => Boolean(screen.answer?.stage?.name), value,
   });
   const screen = { answer: null, at: 0, busy: false, timer: null };
+  // The last stage number read, kept in this browser so that the gateway
+  // still knows it after a restart (it reads it only in Power Saving Mode).
+  const STORE = 'cloudphone-slayer-legend-stage';
+  let remembered = null;
+  try {
+    remembered = Number(window.localStorage.getItem(STORE)) || null;
+  } catch {
+    remembered = null;
+  }
   const watchScreen = () => {
     if (screen.busy || Date.now() - screen.at < 3000) return;
     screen.busy = true;
-    api.get('/screen').catch(() => null).then((answer) => {
+    api.get(remembered ? `/screen?known=${remembered}` : '/screen').catch(() => null).then((answer) => {
+      const number = answer?.stage?.checked ? answer.stage.number : null;
+      if (number && number !== remembered) {
+        remembered = number;
+        try {
+          window.localStorage.setItem(STORE, String(number));
+        } catch {
+          // Not kept: read again in Power Saving Mode.
+        }
+      }
       Object.assign(screen, { answer, at: Date.now(), busy: false });
       api.refresh();
       window.clearTimeout(screen.timer);

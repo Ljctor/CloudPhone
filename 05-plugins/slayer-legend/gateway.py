@@ -11,7 +11,9 @@ GET  /api/v1/plugins/slayer-legend/screen
      soul_colour_confirmed, checked} or null}, from an emulator screenshot
      at most every 2 s. The number is read in Power Saving Mode; the
      battle screen only confirms it (checked: true when the numeral after
-     the name still matches). The rest comes from stages.json.
+     the name still matches). ?known=N gives the number the page last saw,
+     used while the gateway has not read one since it started. The rest
+     comes from stages.json.
 GET  /api/v1/plugins/slayer-legend/launch
      State of the last launch: {state, message}.
 POST /api/v1/plugins/slayer-legend/launch
@@ -103,6 +105,11 @@ def black(r, g, b):
     return r < 20 and g < 20 and b < 20
 
 
+def light(r, g, b):
+    # The bottom menu's names: light grey, darker under a panel.
+    return min(r, g, b) > 150
+
+
 def green(r, g, b):
     # Relative, so that it also holds when a panel darkens the screen.
     return g >= 64 and g > 1.3 * r and g > 2 * b
@@ -114,7 +121,7 @@ def classify(shot):
     # The top bar's emerald: the battle screen, or one of its panels over it
     # (the bottom menu names then go dark or are covered).
     if share(shot, TOP_EMERALD, green) > 0.15:
-        return "battle" if share(shot, MENU_LABELS, white) > 0.01 else "menu"
+        return "battle" if share(shot, MENU_LABELS, light) > 0.01 else "menu"
     if (share(shot, SAVER_BUTTON, dim_grey) > 0.8 and share(shot, SAVER_TOP, black) > 0.95
             and share(shot, SAVER_TEXT, orange) > 0.08):
         return "saver"
@@ -191,14 +198,14 @@ def setup(context):
             return None
         return stage._roman(last)
 
-    async def read_screen():
+    async def read_screen(remembered):
         if not await in_focus():
             return {"screen": "away", "stage": None}
         shot = await context.screenshot()
         if not shot:
             return {"screen": None, "stage": None}
         screen = classify(shot)
-        known = FARMED["number"]
+        known = FARMED["number"] or remembered
         if screen == "saver":
             number, numeral = stage.read_saver(shot)
             # Trust a number whose numeral agrees with the table.
@@ -211,13 +218,19 @@ def setup(context):
         return {"screen": screen, "stage": stage_info(known, False) if known else None}
 
     async def handle_screen(request):
+        try:
+            remembered = int(request.query.get("known", ""))
+        except ValueError:
+            remembered = None
+        if remembered is not None and not 1 <= remembered <= len(table["stages"]) + 400:
+            remembered = None
         if SCREEN["lock"] is None:
             SCREEN["lock"] = asyncio.Lock()
         loop = asyncio.get_running_loop()
         async with SCREEN["lock"]:
             if SCREEN["value"] is None or loop.time() - SCREEN["time"] > SCREEN_SECONDS:
                 try:
-                    SCREEN["value"] = await read_screen()
+                    SCREEN["value"] = await read_screen(remembered)
                 except Exception as e:
                     logging.warning(f"Slayer Legend screen: no screenshot: {e!r}")
                     SCREEN["value"] = {"screen": None}
