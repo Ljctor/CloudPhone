@@ -343,9 +343,11 @@ Android and Stream sent, then **Android settings**: **Renderer**, **Cores**,
 **Memory**, **Device** and **Resolution** (360p, 480p (default), 720p,
 1080p); one **Apply** restarts Android once with all of them, at most once
 every 2 minutes; **Disconnect** shows only when another device is
-connected). The cog opens **Options**: **Language**, **Show the cursor**,
-**Fold the bar 3 s after entering fullscreen**, and **Plugins** (the options
-of installed plugins). In fullscreen, a fold button hides the bar; a small
+connected). Each tab ends with a log: **Journaux du client** (Client logs)
+and **Journaux du serveur** (Server logs). The cog opens **Options**:
+**Language**, **Show the cursor**, **Fold the bar 3 s after entering
+fullscreen**, **Alertes sur le téléphone** (Phone alerts, step 10) and
+**Plugins** (the options of installed plugins). In fullscreen, a fold button hides the bar; a small
 handle brings it back, and a long press docks the bar instead.
 
 ## 8. First checks
@@ -386,11 +388,36 @@ first`. `--check` instead of `--apply` re-tests without changing anything.
 Nothing launches or relaunches the app for you, by design: after a reboot of
 Android, you open it again from the page.
 
+## 10. Turn on phone alerts (optional, 2 minutes)
+
+The page shows what happens as toasts and in its logs, but only while it is
+open. To hear about a crash or a restart with the page closed, the gateway
+can send alerts to your phone through ntfy.sh, a public notification
+service:
+
+1. Install the **ntfy** app on the phone.
+2. In the page: cog → Options → **Alertes sur le téléphone**, tick **Alertes
+   par ntfy**. An address `ntfy.sh/cloudphone-…` appears under it; copy it
+   with the button beside it.
+3. In the ntfy app: **+** (subscribe to topic), paste the part after
+   `ntfy.sh/`, subscribe.
+4. Back in the page, **Alerte de test** → **Envoyer**: the phone shows a
+   test alert within seconds.
+
+The topic name works like a password: anyone who knows it can read the
+alerts, so do not share it; the page is the only place that shows it. The
+server keeps the setting across restarts and upgrades. Messages only name
+an app and what happened. What triggers an alert, how long toasts stay and
+how to read the logs:
+[INSTALL.md](INSTALL.md#logs-toasts-and-phone-alerts).
+
 ## Install the Slayer Legend plugin (part 05, optional)
 
-Only if you play Slayer Legend: part 05 adds a launch button and an emerald
-counter option to the page. The game must already be installed from Google
-Play and signed in once, in the page. From the workstation:
+Only if you play Slayer Legend: part 05 holds the page's optional plugins,
+and for now its only one, `slayer-legend`, adds a launch button and an
+emerald counter option to the page. The game must already be installed from
+Google Play and signed in once, in the page. From the workstation (every
+plugin):
 
 ```sh
 packaging/deploy.sh "$SERVER" 05
@@ -400,11 +427,16 @@ You should see `==> Installing the slayer-legend plugin`, `==> Restarting
 the gateway to load plugins (Android keeps running)` and `==> Done; reload
 the web page`. Reload the page: cog → **Options** → **Plugins** now shows
 **Slayer Legend**. What its options do:
-[05 README](../05-plugins/slayer-legend/README.md). To remove it:
+[05 README](../05-plugins/slayer-legend/README.md). To remove one plugin
+(or every plugin, without a name):
 
 ```sh
-ssh "$SERVER" "$AS_ROOT $RELEASE/05-plugins/scripts/install.sh --uninstall"
+ssh "$SERVER" "$AS_ROOT $RELEASE/05-plugins/scripts/install.sh --uninstall slayer-legend"
 ```
+
+You should see `==> Removing the slayer-legend plugin` and the gateway
+restarting; reload the page. The plugin's own data is kept until
+`uninstall.sh --purge`. More: [05 README](../05-plugins/README.md).
 
 ## Adding a second device
 
@@ -503,8 +535,12 @@ removes WireGuard or the firewall rules.
 ## Troubleshooting
 
 The page tells you what is wrong. Messages that cover the screen block it;
-the others are banners with a close cross. Server commands below go through
-the same variables as the installation.
+the others are banners with a close cross. Recent events are in
+Information → Server → **Journaux du serveur**, red for errors, each with
+what to do next; the **Niveau** filter keeps only warnings and errors. The
+same on the server:
+`ssh "$SERVER" "$AS_ROOT journalctl -t cloudphone-gateway -p warning"`.
+Server commands below go through the same variables as the installation.
 
 | Message on the page | What to do |
 |---|---|
@@ -534,7 +570,7 @@ the same variables as the installation.
 | A script fails with `Permission denied (publickey)` although `ssh` by hand works | The key is not in `ssh-agent`: run `ssh-add`. The scripts use `BatchMode`, which cannot ask for a passphrase. |
 
 More: [`INSTALL.md`](INSTALL.md) (every setting, running next to another
-emulator), [02 README](../02-wireguard-server/README.md#troubleshooting),
+emulator, logs and alerts, the black-box tests), [02 README](../02-wireguard-server/README.md#troubleshooting),
 [03 README](../03-android-emulator/README.md#performance) (why the image is
 around 20 fps without a GPU).
 

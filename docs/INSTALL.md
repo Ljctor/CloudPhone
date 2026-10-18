@@ -134,7 +134,9 @@ Play as on a new phone.
   **Apply**, which restarts Android with all of them (at most once every 2
   minutes); **Disconnect** appears only when another device is connected.
   The cog opens **Options**: **Language**, **Show the cursor**, **Fold the
-  bar 3 s after entering fullscreen**, **Plugins**.
+  bar 3 s after entering fullscreen**, **Phone alerts**, **Plugins**.
+- Both Information tabs end with a log, and events also show as toasts: see
+  [Logs, toasts and phone alerts](#logs-toasts-and-phone-alerts).
 
 ## Configuration
 
@@ -209,14 +211,59 @@ sudo 05-plugins/scripts/install.sh              # then reload the page
 sudo 05-plugins/scripts/install.sh --uninstall
 ```
 
-It restarts the gateway; Android keeps running. Details:
+For now part 05 has one plugin, `slayer-legend`. `--uninstall` with a name
+removes only that plugin (without a name, every plugin); its own data in
+`/var/lib/cloudphone/plugins/<id>/` is kept until `uninstall.sh --purge`.
+Either way the gateway restarts; Android keeps running. Details:
+[`05-plugins/README.md`](../05-plugins/README.md),
 [`05-plugins/slayer-legend/README.md`](../05-plugins/slayer-legend/README.md).
+
+## Logs, toasts and phone alerts
+
+**Logs.** Information → Client ends with **Journaux du client** (Client
+logs, the page's own records: stream, touches, errors) and Information →
+Server with **Journaux du serveur** (Server logs, the gateway's records:
+Android, the emulator, adb, setting changes, other viewers). Each folds.
+Records are white (normal), orange (warning) or red (error); errors say
+what to do next. One **Niveau** (Level) filter serves both: all, warnings
+and errors, or errors only. The gateway keeps its last 500 records in
+memory; the page keeps the last 200 of each side.
+
+**Toasts.** Events worth your attention also show as toasts at the top of
+the screen: the gateway starting or following a new emulator, Android
+crashing, stopping or restarting, adb going offline, a settings change
+requested, applied or failed, another device connecting or disconnecting
+the others, touches falling back to HTTP. Normal toasts go after 6 s,
+warnings after 12 s; errors stay until you close them. The full list:
+[DEVELOPMENT.md](../04-cloud-phone-app/docs/DEVELOPMENT.md#logs).
+
+The same records reach journald under the identifier `cloudphone-gateway`:
+
+```sh
+journalctl -t cloudphone-gateway -p warning      # warnings and errors only; add -f to follow
+```
+
+**Phone alerts.** With the page closed, the gateway can still alert your
+phone through [ntfy](https://ntfy.sh/): when an app crashes or stops
+responding, when Android or the emulator restarts, and when a plugin sends
+one. Turn them on in cog → Options → **Alertes sur le téléphone** (Phone
+alerts): the page then shows an address `ntfy.sh/cloudphone-…`; subscribe
+the ntfy app on your phone to it, and **Envoyer** (Send) a test alert.
+
+- The topic name is long and random, and anyone who knows it can read the
+  alerts: treat it like a password. It is shown only on the page.
+- The setting and the name are kept on the server
+  (`/var/lib/cloudphone/notify.json`, root and `cloudphone` only), across
+  restarts and upgrades; turning alerts off and on keeps the same name.
+- Messages say nothing private (an app's name, the kind of event) and go
+  through the public ntfy.sh service.
 
 ## Day-to-day operations
 
 ```sh
 systemctl status cloudphone-emulator cloudphone-gateway
 journalctl -u cloudphone-gateway -f                 # follow the streaming logs
+journalctl -t cloudphone-gateway -p warning         # the gateway's warnings and errors
 sudo systemctl restart cloudphone-gateway   # fix streaming; Android keeps running
 sudo systemctl restart cloudphone-emulator          # reboot Android
 ```
@@ -308,3 +355,21 @@ runs the JavaScript (jest) tests, builds the web page and the gateway wheel, che
 that every Python dependency has a wheel for Python 3.10 to 3.13, and writes
 `dist/cloudphone-<version>-linux-x86_64.tar.gz` with its checksum. Downloads
 are cached in `build/cache`. The tarball is reproducible for a given commit.
+
+### Black-box tests
+
+`tests/e2e` holds black-box tests (Rust) that run on a workstation, with
+no server and no phone: each test starts the repository's gateway and page
+in front of a fake emulator on 127.0.0.1, and the `ui_*` tests drive
+Firefox. Prerequisites (Rust, Python 3.10+ with `venv`, Node.js and npm,
+`cpio`, `flock`, Firefox ESR and geckodriver for the browser tests) and
+setup: [`tests/e2e/README.md`](../tests/e2e/README.md).
+
+```sh
+cd tests/e2e
+cargo test
+```
+
+Run one suite at a time on a machine: two `cargo test` runs at once, from
+two checkouts for instance, slow each other down until the browser tests
+time out.

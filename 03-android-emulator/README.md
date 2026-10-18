@@ -58,6 +58,31 @@ The bottleneck is the guest CPU and software rendering, not the video
 encoding or the network: a lower bitrate or a faster link does not raise the
 frame rate; fewer pixels and more host CPU do.
 
+### Lavapipe and a Unity game
+
+Measured on one test host (4 cores, 8 threads, no GPU) with `-gpu lavapipe`
+and Slayer Legend running. These are measurements on that
+host, not a statement about any other server.
+
+- The guest has 4 vCPUs, but Unity reports `Cores = 2` and `2 big (mask
+  0x3)` on its own, from the emulator's fake cpufreq: the game runs one
+  `Job.Worker` thread beside its main thread.
+- The game is an arm64-v8a il2cpp build, run through ARM translation
+  (`ro.dalvik.vm.native.bridge = libndk_translation.so`); no x86_64 build is
+  served. Its main thread at about 100 % of one vCPU is the known ceiling.
+- Host rendering path: the guest's gfxstream GLES encoder → ANGLE on Vulkan
+  → lavapipe (Mesa 25.2.4, bundled with the emulator, `llvmpipe` threads),
+  about 2.9 host cores of rasterisation.
+
+| What | Measured |
+|---|---|
+| Frame rate | ~16.5 fps |
+| Frame time | p50 58 ms, p95 85 ms |
+| Emulator process | ~4.5–5.4 host cores |
+
+Being evaluated, with no recommendation yet: `LP_NUM_THREADS` (lavapipe's
+thread count), thread affinity, and `-force-vulkan` for the game.
+
 Measure on the server, as root, while the app to compare is on screen and
 animating:
 
