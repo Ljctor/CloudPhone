@@ -29,6 +29,8 @@ import re
 
 from aiohttp import web
 
+from . import logs
+
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
 SCRIPT_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}\.js$")
 
@@ -131,7 +133,7 @@ def load_plugins(app, plugins_dir, screenshot, adb, notify=None, data_dir=None):
             loaded.append(manifest)
             logging.info(f"Plugin {plugin_id} {manifest['version']} loaded")
         except Exception as e:
-            logging.error(f"Plugin in {directory} not loaded: {e!r}")
+            logging.error(f"Plugin in {directory} not loaded: {e!r}. Fix or remove it, then restart the gateway.")
 
     async def handle_list(request):
         return web.json_response({"plugins": loaded}, headers={"Cache-Control": "no-store"})
@@ -156,15 +158,16 @@ async def run_adb(adb_path, serial, *args, timeout=10):
     try:
         process = await asyncio.create_subprocess_exec(
             adb_path, "-s", serial, *args,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         )
     except OSError as e:
         logging.warning(f"adb could not start: {e}")
         return -1, ""
     try:
-        out, _ = await asyncio.wait_for(process.communicate(), timeout)
+        out, err = await asyncio.wait_for(process.communicate(), timeout)
     except asyncio.TimeoutError:
         process.kill()
         await process.wait()
         return -1, ""
+    logs.adb_result(process.returncode, err.decode("utf-8", "replace"))
     return process.returncode, out.decode("utf-8", "replace")

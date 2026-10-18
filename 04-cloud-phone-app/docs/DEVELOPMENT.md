@@ -14,6 +14,7 @@ built, never committed.
 | `js/src/components/emulator/views/webrtc_view.tsx` | `connected` only after a real decoded frame |
 | `gateway/src/videobridge_gateway/gateway_server.py` | serves the page, WebSocket JSEP bridge, HTTP API |
 | `gateway/src/videobridge_gateway/plugins.py` | loads the installed plugins' `gateway.py`, serves their scripts |
+| `gateway/src/videobridge_gateway/logs.py` | the gateway's log records: journald, the last 500 in memory for `GET /api/v1/logs` |
 | `js/test/*.test.js` | jest unit tests (run by `packaging/build-release.sh`) |
 
 ## Build
@@ -68,7 +69,8 @@ Android keeps running. Reload the page (the index is never cached).
 | `GET /`, `/index.html`, `/assets/*` | the page |
 | `GET /api/v1/ping` | 204 at once, for the round-trip time |
 | `GET /api/v1/state?viewer=ID[&details=1]` | emulator unit state (`systemctl show`), Android booted, viewers, load, `display` and `settings` change status, `kicked` for this viewer; cached 2 s. `details=1` adds `metrics` (host, emulator, Android) and turns on adb sampling of Android for 30 s. The page polls every 3 s, every 2 s with details while the Server tab is open |
-| `GET /api/v1/events` | what happened to Android and the server, newest first (`events.py`): app crashes, ANRs and apps Android stopped while noticeable (out-of-memory score ≤ 200, e.g. stopped for a Google Play Services update), low memory, from `logcat -b events,crash` (back to Android's last boot at most); Android's boot (`/proc/uptime`), the emulator unit's start, automatic restarts and last result (`systemctl show`), the gateway's start. Each event is `{time, kind, app, reason}`; cached 10 s. The page reads it every 15 s while the Server tab is open (section Events) |
+| `GET /api/v1/events` | what happened to Android and the server, newest first (`events.py`): app crashes, ANRs and apps Android stopped while noticeable (out-of-memory score ≤ 200, e.g. stopped for a Google Play Services update), low memory, from `logcat -b events,crash` (back to Android's last boot at most); Android's boot (`/proc/uptime`), the emulator unit's start, automatic restarts and last result (`systemctl show`), the gateway's start. Each event is `{time, kind, app, reason}`; cached 10 s. Kept for API clients: the page shows the server's log instead, where the gateway turns these events into records (below) |
+| `GET /api/v1/logs?since=CURSOR` | the gateway's log records after `CURSOR`, oldest first: `{cursor, records}` (see "Logs" below). Without a cursor, or with one from an earlier gateway process, every record kept (the last 500). Same origin check as the other GETs; `no-store`. The page reads it every 4 s |
 | `GET /api/v1/notify` | phone alerts through ntfy.sh (`notify.py`): `{available, enabled, topic, url}`; `available` is false without `--notify_file` |
 | `POST /api/v1/notify` | `{enabled[, newTopic]}`: turns them on or off; the first time (or with `newTopic`) the gateway draws a random topic `cloudphone-<24 hex>`, kept with the setting in `/var/lib/cloudphone/notify.json` (mode 600). While on, the gateway alerts every minute on Android's new events (crash, ANR, app stopped while noticeable, Android or emulator restart) and plugins send theirs with `context.notify`. Messages go through the public ntfy.sh service: anyone who knows the topic can read them, so they carry nothing private |
 | `POST /api/v1/notify/test` | one test alert; 502 when ntfy.sh did not take it |
@@ -117,10 +119,13 @@ token); systemd starts it again on the new emulator.
 - Toolbar: power, volume, the ping/fps block (this device's ping above its
   displayed fps) opening **Information**, recents/home/back, the cog opening
   **Options**, `↻`, fullscreen, and in fullscreen only the fold button.
-- Information, tab Client (default): network, display, input path. Tab
-  Server: state, machine, Android and video stream, the **Disconnect** button
-  for other devices when more than one viewer is connected, and Android
-  settings (renderer, cores, memory, shape and resolution, one Apply).
+- Information, tab Client (default): network, display, input path, and the
+  page's log (Journaux du client). Tab Server: state, machine, Android and
+  video stream, the **Disconnect** button for other devices when more than
+  one viewer is connected, Android settings (renderer, cores, memory, shape
+  and resolution, one Apply), and the server's log (Journaux du serveur).
+  Both logs fold, share one level filter (all, warnings and errors, errors)
+  and colour each record by level.
 - Options: language (French/English, default from the browser), cursor (the
   touch marker, setting `touchMarker`), fold 3 s after entering fullscreen,
   and Plugins: each installed plugin's options.
@@ -128,6 +133,104 @@ token); systemd starts it again on the new emulator.
   floating handle unfolds it and can be dragged); long press docks the bar
   so it keeps its own space; a tap then makes it float again.
 - Settings are per browser, in `localStorage` key `cloudphone.settings`.
+
+## Logs
+
+One stream of records, two outputs. A record is
+
+```json
+{"time": 1792360000.12, "level": "error", "source": "emulator",
+ "text": "Android a planté (exit-code) : redémarrage automatique. S’il ne revient pas d’ici deux minutes, relancez-le sur le serveur.",
+ "notify": true, "template": "Android a planté ({result}) : …", "params": {"result": "exit-code"}}
+```
+
+- `level`: `normal`, `warning` or `error`; nothing below normal is kept or
+  shown (the gateway's `logging.debug` lines, such as each JSEP message,
+  go nowhere). Python's INFO is normal, WARNING warning, ERROR and above
+  error.
+- `source`: `gateway`, `emulator` (the unit, Android's boot and its apps),
+  `adb`, or `page` for the page's own records.
+- `notify` (only when true): the page also shows the record as a toast.
+- `template` and `params` (gateway records with parameters): the French
+  text with `{name}` placeholders, so the page translates it with `tr()`;
+  `text` is it filled in. Events the user sees are in French, the page's
+  language; technical lines stay in English.
+- Every error says what to do next, in one sentence after the event (the
+  wording of `diagnose()`'s banners where there is one).
+- The same text from the same source within 30 s is dropped.
+
+What becomes a record (`logs.py`, `watch_health()` every 3 s and
+`watch_events()` every minute in `gateway_server.py`):
+
+| Event | Level | Notify |
+|---|---|---|
+| gateway start | normal | yes |
+| gateway restarting to follow a new emulator process | warning | yes |
+| emulator unit in auto-restart (crash), `failed`, stopped without a request | error | yes |
+| emulator restarted between two looks, or just before the gateway started (abnormal result) | error | yes |
+| Android booted again; Android restarted after a requested change | normal | yes |
+| Android restarted without a request (`/proc/uptime`) | error | yes |
+| Android still booting after 3 minutes | warning | |
+| gRPC silent for 12 s while the unit runs | error | yes |
+| adb offline (`not found`, `offline`... in an adb call's error), and back | error / normal | yes / |
+| app crash / ANR / app stopped by Android / low memory (logcat) | error / warning | |
+| screen size or settings change requested, applied | normal | yes |
+| change refused (400, 403, 409, 429) | warning | |
+| change failed (status `failed`) | error | yes |
+| another viewer connected, disconnected (5 s later, if its page did not come back) | normal | yes |
+| a viewer disconnected the others | warning | yes |
+
+adb is never called just to check it: its state comes from the calls the
+gateway makes anyway (keys, metrics, events, plugins).
+
+**journald.** The gateway writes each record to the journal's socket with
+the native protocol: `PRIORITY` 6, 4 or 3, `SYSLOG_IDENTIFIER=cloudphone-gateway`,
+`CLOUDPHONE_SOURCE`, `CLOUDPHONE_LEVEL`, `CLOUDPHONE_NOTIFY=1` and the code
+location. It does so only when systemd connected its stderr to the journal
+(`JOURNAL_STREAM`); if the socket fails, lines go to stderr prefixed with
+`<N>`, which journald reads as the priority (`SyslogLevelPrefix=yes` in the
+unit, which also sets `SyslogIdentifier`). Outside systemd (tests), plain
+lines on stderr. Warnings and errors only:
+
+```sh
+journalctl -t cloudphone-gateway -p warning      # add -f to follow, -o verbose for the fields
+journalctl -t cloudphone-gateway CLOUDPHONE_SOURCE=adb
+```
+
+**The page.** Its own records (source `page`): stream state changes, each
+new message of `diagnose()` (error, warning for "being fixed", normal for
+"works but worse"), touches falling back to the server path (HTTP, a
+warning with notify) and back, and every `console.warn`/`console.error`
+and uncaught error. Its warnings and errors also reach the browser's
+console at the same level. It reads `GET /api/v1/logs` every 4 s, with
+or without the panel open, and keeps the last 200 records of each side.
+Colours at display time only: normal in the theme's foreground (white),
+warning orange (`#ff9f0a`), error red (`#ff453a`).
+
+Toasts: notify records from either side that arrive after the page's
+first read of the log, stacked at the top of the screen (under a banner
+when one shows, never over the toolbar), above the panels. Each has a
+close cross; normal ones go after 6 s, warnings after 12 s, errors stay.
+The same level, source and text again adds `×2` to the open toast instead
+of a new one; at most 4 are shown. A viewer's own connection is not a
+toast on its own page (`params.viewer`). While the tab is hidden, a system
+notification too, only if the browser already allows notifications for
+the page: the page never asks for the permission.
+
+To see a warning and an error in the panel: open Information → Serveur and
+unfold Journaux du serveur. A screen size the gateway refuses is a
+warning, e.g. from a shell on the VPN (`PAGE` is the page's address):
+
+```sh
+TOKEN=$(curl -s "$PAGE" | sed -n 's/.*cloudphone-token" content="\([^"]*\)".*/\1/p')
+curl -s -H "X-CloudPhone-Token: $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"width": 361, "height": 780, "density": 160}' "$PAGE/api/v1/display"   # 400: a warning record
+```
+
+An error comes with any of the failures above, e.g. on a test instance
+`systemctl stop cloudphone-emulator` (Android stopped without a request:
+an error record and a red toast; start it again afterwards). The level
+filter set to Erreurs keeps only those.
 
 ## Stream behaviour
 

@@ -10,50 +10,188 @@ import Proto from '../../src/proto/emulator_controller_pb';
 
 logger.setLevel('warn');
 
-// The page's own log (Client tab): stream state changes, failed requests,
-// warnings and errors, newest first, the last 100 kept in memory.
-const CLIENT_LOG = [];
-const clientLogListeners = new Set();
-function clientLog(level, text) {
-  CLIENT_LOG.unshift({ time: Date.now() / 1000, level, text });
-  CLIENT_LOG.length = Math.min(CLIENT_LOG.length, 100);
-  clientLogListeners.forEach((listener) => listener());
+// One log, two outputs. Records are {time, level, source, text, notify?}:
+// level 'normal', 'warning' or 'error'; source 'page' for this page's own
+// (Client tab), 'gateway', 'emulator' or 'adb' for the server's (GET
+// /api/v1/logs, Server tab). Both lists are newest first, the last
+// LOG_KEPT kept. Records with notify also show as toasts. The page's
+// warnings and errors also go to the browser's console at their level.
+const LOG_KEPT = 200;
+const PAGE_LOG = [];
+const SERVER_LOG = [];
+const logListeners = new Set();
+const toastListeners = new Set();
+const CONSOLE = { warning: console.warn.bind(console), error: console.error.bind(console) };
+// Colours, at display time only: the theme's foreground, orange, red.
+const LOG_COLORS = { normal: '#fff', warning: '#ff9f0a', error: '#ff453a' };
+
+function keepRecord(list, record) {
+  list.unshift(record);
+  list.length = Math.min(list.length, LOG_KEPT);
 }
-for (const level of ['warn', 'error']) {
-  const original = console[level].bind(console);
-  console[level] = (...args) => {
+
+function logChanged() {
+  logListeners.forEach((listener) => listener());
+}
+
+function pageLog(level, text, { notify = false, toConsole = true } = {}) {
+  const record = { time: Date.now() / 1000, level, source: 'page', text, ...(notify ? { notify: true } : {}) };
+  keepRecord(PAGE_LOG, record);
+  if (toConsole) CONSOLE[level]?.(text);
+  if (notify) toastListeners.forEach((listener) => listener(record));
+  logChanged();
+}
+
+for (const [method, level] of [['warn', 'warning'], ['error', 'error']]) {
+  const original = console[method].bind(console);
+  console[method] = (...args) => {
     original(...args);
-    clientLog(level, args.map((arg) => (arg instanceof Error ? arg.message
-      : typeof arg === 'string' ? arg : (() => { try { return JSON.stringify(arg); } catch { return String(arg); } })())).join(' '));
+    pageLog(level, args.map((arg) => (arg instanceof Error ? arg.message
+      : typeof arg === 'string' ? arg : (() => { try { return JSON.stringify(arg); } catch { return String(arg); } })())).join(' '),
+    { toConsole: false });
   };
 }
-window.addEventListener('error', (event) => clientLog('error', event.message));
-window.addEventListener('unhandledrejection', (event) => clientLog('error', String(event.reason?.message ?? event.reason)));
+window.addEventListener('error', (event) => pageLog('error', event.message, { toConsole: false }));
+window.addEventListener('unhandledrejection',
+  (event) => pageLog('error', String(event.reason?.message ?? event.reason), { toConsole: false }));
 
-function useClientLog(enabled) {
+// The text of a record in the page's language: the server sends French,
+// with a template and its params when it has some.
+function recordText(record) {
+  return record.template ? tr(record.template, record.params) : tr(record.text);
+}
+
+// Reads the server's new records every few seconds, whatever is open: the
+// first answer fills the list, later ones also raise toasts. A restarted
+// gateway answers an old cursor with all its records.
+const SERVER_LOG_MS = 4000;
+function useServerLog(gatewayUrl) {
+  useEffect(() => {
+    let cancelled = false;
+    let cursor = '';
+    let first = true;
+    const load = () => fetch(`${gatewayUrl}/api/v1/logs?since=${encodeURIComponent(cursor)}`, { cache: 'no-store' })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((value) => {
+        if (cancelled || !value) return;
+        cursor = value.cursor ?? '';
+        const records = value.records ?? [];
+        records.forEach((record) => {
+          keepRecord(SERVER_LOG, record);
+          if (!first && record.notify && record.params?.viewer !== VIEWER_ID) {
+            toastListeners.forEach((listener) => listener(record));
+          }
+        });
+        first = false;
+        if (records.length) logChanged();
+      })
+      .catch(() => {});
+    load();
+    const timer = window.setInterval(load, SERVER_LOG_MS);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [gatewayUrl]);
+}
+
+function useLog(enabled) {
   const [, setCount] = useState(0);
   useEffect(() => {
     if (!enabled) return undefined;
     const listener = () => setCount((count) => count + 1);
-    clientLogListeners.add(listener);
-    return () => { clientLogListeners.delete(listener); };
+    logListeners.add(listener);
+    return () => { logListeners.delete(listener); };
   }, [enabled]);
-  return CLIENT_LOG;
+  return { page: PAGE_LOG, server: SERVER_LOG };
 }
 
-function ClientLogList({ entries, rowStyle, labelStyle }) {
+const LOG_FILTERS = [
+  { id: 'all', label: 'Tout', levels: ['normal', 'warning', 'error'] },
+  { id: 'warnings', label: 'Avertissements et erreurs', levels: ['warning', 'error'] },
+  { id: 'errors', label: 'Erreurs', levels: ['error'] },
+];
+
+function LogList({ entries, filter, rowStyle, labelStyle }) {
   const locale = language() === 'en' ? 'en-GB' : 'fr-FR';
-  if (entries.length === 0) return <div style={rowStyle}>{tr('Rien pour l’instant')}</div>;
-  return entries.slice(0, 50).map((entry, index) => (
-    <div key={`${entry.time}-${index}`} style={{ ...rowStyle, alignItems: 'flex-start' }}>
+  const levels = (LOG_FILTERS.find((item) => item.id === filter) ?? LOG_FILTERS[0]).levels;
+  // Newest first by time: the server's first read of Android's logs adds
+  // older events after newer records.
+  const shown = entries.filter((entry) => levels.includes(entry.level)).sort((a, b) => b.time - a.time);
+  if (shown.length === 0) return <div style={rowStyle}>{tr('Rien pour l’instant')}</div>;
+  return shown.slice(0, 100).map((entry, index) => (
+    <div key={`${entry.time}-${index}`} style={{ ...rowStyle, alignItems: 'flex-start' }} data-level={entry.level}>
       <span style={{ ...labelStyle, whiteSpace: 'nowrap' }}>
         {new Date(entry.time * 1000).toLocaleTimeString(locale)}
+        {entry.source !== 'page' && <><br /><span style={{ fontSize: '0.85em' }}>{entry.source}</span></>}
       </span>
-      <span style={{ textAlign: 'right', overflowWrap: 'anywhere', color: entry.level === 'error' ? '#ff8a80' : undefined }}>
-        {entry.text}
+      <span style={{ textAlign: 'right', overflowWrap: 'anywhere', color: LOG_COLORS[entry.level] ?? LOG_COLORS.normal }}>
+        {recordText(entry)}
       </span>
     </div>
   ));
+}
+
+// Toasts for notify records, from both sides: the same text again adds to
+// the open toast instead of a new one; normal ones go after a few seconds,
+// warnings a bit later, errors stay until closed. While the tab is hidden,
+// a system notification too, only if the user already allowed them for
+// this page (the page never asks).
+const TOAST_MS = { normal: 6000, warning: 12000 };
+const TOASTS_SHOWN = 4;
+
+function useToasts() {
+  const [toasts, setToasts] = useState([]);
+  const timers = useRef(new Map());
+  const dismiss = (key) => {
+    window.clearTimeout(timers.current.get(key));
+    timers.current.delete(key);
+    setToasts((list) => list.filter((toast) => toast.key !== key));
+  };
+  useEffect(() => {
+    const show = (record) => {
+      const text = recordText(record);
+      const key = `${record.level}|${record.source}|${text}`;
+      setToasts((list) => {
+        const same = list.find((toast) => toast.key === key);
+        const next = same
+          ? list.map((toast) => (toast.key === key ? { ...toast, count: toast.count + 1 } : toast))
+          : [...list, { key, level: record.level, source: record.source, text, count: 1 }];
+        return next.slice(-TOASTS_SHOWN);
+      });
+      window.clearTimeout(timers.current.get(key));
+      if (TOAST_MS[record.level]) timers.current.set(key, window.setTimeout(() => dismiss(key), TOAST_MS[record.level]));
+      if (document.visibilityState === 'hidden' && typeof Notification !== 'undefined'
+        && Notification.permission === 'granted') {
+        try {
+          new Notification('Cloud Phone', { body: text, tag: key });
+        } catch {
+          // Some mobile browsers only notify from a service worker.
+        }
+      }
+    };
+    toastListeners.add(show);
+    return () => {
+      toastListeners.delete(show);
+      timers.current.forEach((timer) => window.clearTimeout(timer));
+    };
+  }, []);
+  return [toasts, dismiss];
+}
+
+function Toasts({ toasts, dismiss, top }) {
+  if (toasts.length === 0) return null;
+  return (
+    <div style={{ ...styles.toasts, top }} aria-label={tr('Notifications')} aria-live="polite">
+      {toasts.map((toast) => (
+        <div key={toast.key} style={{ ...styles.toast, borderLeft: `4px solid ${LOG_COLORS[toast.level]}` }}
+          data-toast={toast.level}>
+          <span style={{ color: LOG_COLORS[toast.level] }}>
+            {toast.text}{toast.count > 1 && <small style={styles.toastCount}> ×{toast.count}</small>}
+          </span>
+          <button style={styles.bannerClose} onClick={() => dismiss(toast.key)}
+            aria-label={tr('Fermer la notification')}>✕</button>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 const TOOLBAR_WIDTH = 40;
@@ -243,8 +381,6 @@ function useEmulatorSettings(gatewayUrl, enabled) {
   return [value, () => setNonce((n) => n + 1)];
 }
 
-// What happened to Android and the server (GET /api/v1/events), read while
-// the Server tab is open.
 // Copies text. The page is often served over plain http (through
 // WireGuard), where navigator.clipboard does not exist: then through a
 // hidden text field and the older copy command.
@@ -298,74 +434,6 @@ function useNotify(gatewayUrl, enabled) {
     return Boolean(response?.ok);
   };
   return { value, change, test };
-}
-
-function useEvents(gatewayUrl, enabled) {
-  const [value, setValue] = useState(null);
-  useEffect(() => {
-    if (!enabled) return undefined;
-    let cancelled = false;
-    const load = () => fetch(`${gatewayUrl}/api/v1/events`, { cache: 'no-store' })
-      .then((response) => (response.ok ? response.json() : null))
-      .then((next) => { if (!cancelled && next) setValue(next); })
-      .catch(() => {});
-    load();
-    const timer = window.setInterval(load, 15000);
-    return () => { cancelled = true; window.clearInterval(timer); };
-  }, [gatewayUrl, enabled]);
-  return value;
-}
-
-// One event as a sentence, and its cause in plain words when known.
-function describeEvent(event) {
-  const app = event.app ?? '?';
-  const titles = {
-    crash: tr('{app} a planté', { app }),
-    anr: tr('{app} ne répondait plus (ANR)', { app }),
-    killed: tr('{app} arrêté par Android', { app }),
-    low_memory: tr('Mémoire d’Android insuffisante'),
-    android_boot: tr('Android a démarré'),
-    emulator_start: tr('Le service Android a démarré'),
-    gateway_start: tr('La passerelle a démarré'),
-  };
-  let cause = event.reason ?? '';
-  const update = /^stop (\S+) due to installPackageLI/.exec(cause);
-  if (update) cause = tr('mise à jour de {app} (les applis qui en dépendent s’arrêtent)', { app: update[1] });
-  else if (/low ?mem|lmk|swap/i.test(cause)) cause = tr('mémoire insuffisante ({reason})', { reason: cause });
-  if (event.kind === 'emulator_start') {
-    const parts = [];
-    if (event.restarts) parts.push(tr('{n} redémarrages automatiques', { n: event.restarts }));
-    if (event.reason) parts.push(tr('dernier arrêt : {result}', { result: event.reason }));
-    cause = parts.join(' · ');
-  }
-  return { title: titles[event.kind] ?? event.kind, cause };
-}
-
-function EventList({ events, rowStyle, labelStyle }) {
-  if (!events) return <div style={rowStyle}>…</div>;
-  const list = events.events ?? [];
-  const locale = language() === 'en' ? 'en-GB' : 'fr-FR';
-  return (
-    <>
-      {!events.android && <div style={rowStyle}>{tr('Journaux d’Android illisibles (adb)')}</div>}
-      {list.length === 0 && <div style={rowStyle}>{tr('Aucun événement')}</div>}
-      {list.slice(0, 30).map((event, index) => {
-        const { title, cause } = describeEvent(event);
-        const date = new Date(event.time * 1000);
-        return (
-          <div key={`${event.time}-${index}`} style={{ ...rowStyle, alignItems: 'flex-start' }}>
-            <span style={{ ...labelStyle, whiteSpace: 'nowrap' }}>
-              {date.toLocaleString(locale, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-            </span>
-            <span style={{ textAlign: 'right', overflowWrap: 'anywhere' }}>
-              {title}
-              {cause && <><br /><span style={{ opacity: 0.7, fontSize: '0.9em' }}>{cause}</span></>}
-            </span>
-          </div>
-        );
-      })}
-    </>
-  );
 }
 
 // Renderer, cores, memory and screen Android runs with. Applying restarts
@@ -889,8 +957,9 @@ function App() {
   const stats = useStreamStats(deviceRef, gatewayUrl);
   const server = useServerState(gatewayUrl, serverTab);
   const [emulatorSettings, refreshEmulatorSettings] = useEmulatorSettings(gatewayUrl, serverTab);
-  const events = useEvents(gatewayUrl, serverTab);
-  const clientEntries = useClientLog(panel === 'info' && infoTab === 'client');
+  useServerLog(gatewayUrl);
+  const logs = useLog(panel === 'info');
+  const [toasts, dismissToast] = useToasts();
   const alerts = useNotify(gatewayUrl, panel === 'options');
   const [alertNote, setAlertNote] = useState('');
   const [copied, setCopied] = useState(false);
@@ -973,7 +1042,7 @@ function App() {
     if (nextState !== loggedState.current) {
       loggedState.current = nextState;
       const said = { connected: 'Vidéo connectée', connecting: 'Vidéo en connexion…', disconnected: 'Vidéo coupée' }[nextState];
-      clientLog('info', said ? tr(said) : tr('Vidéo : {state}', { state: nextState }));
+      pageLog('normal', said ? tr(said) : tr('Vidéo : {state}', { state: nextState }));
     }
     setState(nextState);
     if (nextState === 'connected' && reconnectTimer.current === null) stopFeedback();
@@ -994,6 +1063,12 @@ function App() {
   const [dismissed, setDismissed] = useState(null);
   useEffect(() => {
     if (dismissed !== null && problem?.text !== dismissed) setDismissed(null);
+    // Each new message also goes to the page's log; errors with what to do.
+    if (problem) {
+      const level = { error: 'error', wait: 'warning', info: 'normal' }[problem.level];
+      const detail = problem.detail ? tr(problem.detail) : level === 'error' ? tr('Touchez ↻ pour réessayer.') : '';
+      pageLog(level, detail ? `${tr(problem.text)} : ${detail}` : tr(problem.text));
+    }
   }, [problem?.text]);
   // Android is usable again (after a crash, a restart or a lost stream):
   // reconnect the video without waiting for the user.
@@ -1128,8 +1203,14 @@ function App() {
     // Use the channel only when no HTTP touch is pending, to keep the order.
     const httpIdle = !sender.inFlight && sender.queue.length === 0 && !sender.pendingMove;
     if (USE_DATA_CHANNEL && httpIdle && sendOverChannel(coordinates, pressed)) {
+      if (inputPath.current === 'HTTP') pageLog('normal', tr('Les touches passent de nouveau par le canal de données'));
       inputPath.current = 'data channel';
       return;
+    }
+    // The session fell back to the server path: slower, worth a toast.
+    if (inputPath.current !== 'HTTP') {
+      pageLog('warning', tr('Les touches passent par le serveur (canal de données fermé) : elles peuvent être plus lentes'),
+        { notify: true });
     }
     inputPath.current = 'HTTP';
     if (move) {
@@ -1357,10 +1438,21 @@ function App() {
         if (now !== folded) updateSettings({ foldedSections: { ...settings.foldedSections, [id]: now } });
       }}>
         <summary style={{ ...styles.infoSection, cursor: 'pointer' }}>{tr(title)}</summary>
-        {content}
+        {!folded && content}
       </details>
     );
   };
+  // Which levels the log lists show, kept with the settings; one choice for
+  // both lists.
+  const logFilter = (
+    <label style={styles.infoRow}>
+      <span style={styles.infoLabel}>{tr('Niveau')}</span>
+      <select value={settings.logFilter ?? 'all'} style={styles.select}
+        onChange={(event) => updateSettings({ logFilter: event.target.value })}>
+        {LOG_FILTERS.map((item) => <option key={item.id} value={item.id}>{tr(item.label)}</option>)}
+      </select>
+    </label>
+  );
   const toggle = (label, key) => (
     <label key={key} style={styles.infoRow}>
       <span style={styles.infoLabel}>{tr(label)}</span>
@@ -1538,6 +1630,8 @@ function App() {
             </div>
           )}
           <div ref={pluginLayer} style={styles.pluginLayer} aria-hidden="true" />
+          <Toasts toasts={toasts} dismiss={dismissToast}
+            top={problem && !problem.blocking && dismissed !== problem.text ? '72px' : '8px'} />
           {panel && (
             <div style={styles.info} role="dialog"
               aria-label={panel === 'info' ? tr('Informations') : tr('Options')}>
@@ -1574,15 +1668,21 @@ function App() {
                     labelStyle={styles.infoLabel}
                     buttonStyle={styles.panelButton}
                   />
-                  {fold('serverLogs', 'Journaux du serveur',
-                    <EventList events={events} rowStyle={styles.infoRow} labelStyle={styles.infoLabel} />)}
+                  {fold('serverLogs', 'Journaux du serveur', <>
+                    {logFilter}
+                    <LogList entries={logs.server} filter={settings.logFilter} rowStyle={styles.infoRow}
+                      labelStyle={styles.infoLabel} />
+                  </>)}
                 </div>
               )}
               {panel === 'info' && infoTab === 'client' && (
                 <div role="tabpanel">
                   {sections(clientSections)}
-                  {fold('clientLogs', 'Journaux du client',
-                    <ClientLogList entries={clientEntries} rowStyle={styles.infoRow} labelStyle={styles.infoLabel} />)}
+                  {fold('clientLogs', 'Journaux du client', <>
+                    {logFilter}
+                    <LogList entries={logs.page} filter={settings.logFilter} rowStyle={styles.infoRow}
+                      labelStyle={styles.infoLabel} />
+                  </>)}
                 </div>
               )}
               {panel === 'options' && (
@@ -1868,6 +1968,19 @@ const styles = {
   // In the corner, with the same padding on both sides: the text stays
   // centred.
   bannerWithClose: { padding: '10px 28px' },
+  // Over the screen only (never the toolbar), above the panels; only the
+  // toasts themselves take touches.
+  toasts: {
+    position: 'absolute', left: '8px', right: '8px', zIndex: 6, pointerEvents: 'none',
+    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px',
+  },
+  toast: {
+    position: 'relative', pointerEvents: 'auto', maxWidth: '100%', boxSizing: 'border-box',
+    padding: '8px 30px 8px 12px', borderRadius: '8px', background: 'rgba(20, 22, 27, 0.94)',
+    border: '1px solid #3b3f47', fontFamily: 'system-ui, sans-serif',
+    fontSize: '13px', lineHeight: 1.35, boxShadow: '0 4px 14px rgba(0, 0, 0, 0.5)', overflowWrap: 'anywhere',
+  },
+  toastCount: { color: '#8a919c' },
   bannerClose: {
     position: 'absolute', top: '4px', right: '4px',
     width: '22px', height: '22px', padding: 0, border: 'none',

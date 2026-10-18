@@ -132,3 +132,27 @@ test('stream loads and refresh creates exactly one replacement session', async (
   expect(signalingSockets).toHaveLength(2);
   expect(browserErrors).toEqual([]);
 });
+
+test('a notify record from the server shows as a closable toast', async ({ browser }) => {
+  // French page, whatever the browser's language.
+  const context = await browser.newContext({ locale: 'fr-FR' });
+  const first = await context.newPage();
+  await first.goto(`${PAGE_URL}?e2e=${Date.now()}`, { waitUntil: 'domcontentloaded' });
+  await expect(first.locator('[aria-label^="Connexion "]')).toHaveCount(1);
+  // The page's first read of the log fills the lists; toasts are for what
+  // comes after it.
+  await first.waitForTimeout(6000);
+
+  // Another device connects: the gateway logs it with notify.
+  const second = await context.newPage();
+  await second.goto(`${PAGE_URL}?e2e=${Date.now()}`, { waitUntil: 'domcontentloaded' });
+  const toast = first.locator('[data-toast]', { hasText: 'Un autre appareil s’est connecté' });
+  await expect(toast).toBeVisible({ timeout: 20000 });
+  await expect(toast).toHaveAttribute('data-toast', 'normal');
+  await expect(toast.locator('span').first()).toHaveCSS('color', 'rgb(255, 255, 255)');
+  await toast.getByRole('button', { name: 'Fermer la notification' }).click();
+  await expect(toast).toHaveCount(0);
+
+  await second.close();
+  await context.close();
+});

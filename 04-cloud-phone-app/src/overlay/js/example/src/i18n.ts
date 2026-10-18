@@ -117,7 +117,6 @@ const EN = {
   'Vidéo en connexion…': 'Video connecting…',
   'Vidéo coupée': 'Video cut',
   'Vidéo : {state}': 'Video: {state}',
-  '{app} a planté': '{app} crashed',
   'Alertes sur le téléphone': 'Phone alerts',
   'Non disponibles sur ce serveur.': 'Not available on this server.',
   'Alertes par ntfy (même page fermée)': 'Alerts through ntfy (even with the page closed)',
@@ -131,17 +130,65 @@ const EN = {
   'Plantages et redémarrages d’Android, et les alertes des plugins. Elles passent par le service public ntfy.sh : quiconque connaît l’adresse peut les lire.':
     'Android crashes and restarts, and the plugins’ alerts. They go through the public ntfy.sh service: anyone who knows the address can read them.',
   '{app} ne répondait plus (ANR)': '{app} stopped responding (ANR)',
-  '{app} arrêté par Android': '{app} stopped by Android',
   'Mémoire d’Android insuffisante': 'Android ran low on memory',
   'Android a démarré': 'Android started',
   'Le service Android a démarré': 'The Android service started',
   'La passerelle a démarré': 'The gateway started',
-  'mise à jour de {app} (les applis qui en dépendent s’arrêtent)': 'update of {app} (apps that depend on it are stopped)',
-  'mémoire insuffisante ({reason})': 'low memory ({reason})',
-  '{n} redémarrages automatiques': '{n} automatic restarts',
-  'dernier arrêt : {result}': 'last stop: {result}',
-  'Journaux d’Android illisibles (adb)': 'Android logs unreadable (adb)',
-  'Aucun événement': 'No events',
+  // Logs and toasts
+  'Niveau': 'Level',
+  'Tout': 'All',
+  'Avertissements et erreurs': 'Warnings and errors',
+  'Erreurs': 'Errors',
+  'Notifications': 'Notifications',
+  'Fermer la notification': 'Close the notification',
+  'Touchez ↻ pour réessayer.': 'Tap ↻ to retry.',
+  'Les touches passent de nouveau par le canal de données': 'Touches go through the data channel again',
+  'Les touches passent par le serveur (canal de données fermé) : elles peuvent être plus lentes':
+    'Touches go through the server (data channel closed): they may be slower',
+  // Server log records (gateway, emulator, adb)
+  'L’émulateur a redémarré : la passerelle redémarre pour le suivre':
+    'The emulator restarted: the gateway restarts to follow it',
+  'Android a redémarré après un arrêt anormal ({result}, {restarts} redémarrages automatiques). S’il ne revient pas d’ici deux minutes, relancez-le sur le serveur.':
+    'Android restarted after an abnormal stop ({result}, {restarts} automatic restarts). If it is not back within two minutes, start it again on the server.',
+  'Changement des réglages d’Android refusé : {error}': 'Android settings change refused: {error}',
+  'Changement de résolution refusé : {error}': 'Resolution change refused: {error}',
+  'Changement des réglages d’Android demandé ({settings}) : Android va redémarrer':
+    'Android settings change requested ({settings}): Android will restart',
+  'Changement de résolution demandé : Android va redémarrer en {size}':
+    'Resolution change requested: Android will restart at {size}',
+  '{app} a planté ({reason}). Relancez l’appli ; si elle replante, regardez la mémoire d’Android (Informations → Serveur).':
+    '{app} crashed ({reason}). Open the app again; if it crashes again, look at Android’s memory (Information → Server).',
+  '{app} arrêté par Android ({reason})': '{app} stopped by Android ({reason})',
+  'Android a redémarré': 'Android restarted',
+  'Android a redémarré sans qu’on le demande. Si cela se répète, regardez la mémoire d’Android (Informations → Serveur) et journalctl -u cloudphone-emulator sur le serveur.':
+    'Android restarted without being asked to. If it happens again, look at Android’s memory (Information → Server) and journalctl -u cloudphone-emulator on the server.',
+  'Android s’est arrêté sur une erreur ({result}). Il ne redémarre pas tout seul : il faut le relancer sur le serveur.':
+    'Android stopped on an error ({result}). It will not restart by itself: it must be started again on the server.',
+  'Android a planté ({result}) : redémarrage automatique. S’il ne revient pas d’ici deux minutes, relancez-le sur le serveur.':
+    'Android crashed ({result}): restarting automatically. If it is not back within two minutes, start it again on the server.',
+  'Android a planté et a été relancé automatiquement. S’il ne revient pas d’ici deux minutes, relancez-le sur le serveur.':
+    'Android crashed and was restarted automatically. If it is not back within two minutes, start it again on the server.',
+  'Android s’arrête pour appliquer le changement': 'Android stops to apply the change',
+  'Android est arrêté. Il faut le démarrer sur le serveur.': 'Android is stopped. It must be started on the server.',
+  'Android met longtemps à démarrer (plus de {minutes} minutes)': 'Android is slow to start (more than {minutes} minutes)',
+  'Le serveur ne joint plus Android (gRPC). S’il ne revient pas d’ici une minute, relancez Android sur le serveur.':
+    'The server no longer reaches Android (gRPC). If it is not back within a minute, restart Android on the server.',
+  'Changement de résolution : Android redémarre…': 'Resolution change: Android is restarting…',
+  'Changement des réglages d’Android : Android redémarre…': 'Android settings change: Android is restarting…',
+  'Changement de résolution appliqué': 'Resolution change applied',
+  'Changement des réglages d’Android appliqué': 'Android settings change applied',
+  'Échec du changement de résolution : {message}. Réessayez ; si cela échoue encore, lisez journalctl -u cloudphone-display sur le serveur.':
+    'Resolution change failed: {message}. Try again; if it fails again, read journalctl -u cloudphone-display on the server.',
+  'Échec du changement des réglages d’Android : {message}. Réessayez ; si cela échoue encore, lisez journalctl -u cloudphone-settings sur le serveur.':
+    'Android settings change failed: {message}. Try again; if it fails again, read journalctl -u cloudphone-settings on the server.',
+  'Un appareil a déconnecté les autres ({n})': 'A device disconnected the others ({n})',
+  'Un autre appareil s’est connecté ({n} en tout)': 'Another device connected ({n} in all)',
+  'Un appareil s’est connecté': 'A device connected',
+  'Un autre appareil s’est déconnecté ({n} encore connectés)': 'Another device disconnected ({n} still connected)',
+  'Plus aucun appareil connecté': 'No device connected any more',
+  'adb ne joint plus Android ({reason}). Si Android ne redémarre pas, relancez-le sur le serveur (systemctl restart cloudphone-emulator).':
+    'adb no longer reaches Android ({reason}). If Android does not restart, start it again on the server (systemctl restart cloudphone-emulator).',
+  'adb joint de nouveau Android': 'adb reaches Android again',
   'Cœurs': 'Cores',
   'Android va redémarrer avec ces réglages.': 'Android will restart with these settings.',
   'Lavapipe (recommandé)': 'Lavapipe (recommended)',

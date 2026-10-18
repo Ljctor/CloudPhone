@@ -14,6 +14,11 @@ EnvironmentFile=/etc/cloudphone/cloudphone.conf
 ExecStart=/opt/cloudphone/current/libexec/cloudphone-gateway
 Restart=on-failure
 RestartSec=5s
+# The gateway writes its records to the journal under this identifier, with
+# their priority (journalctl -t cloudphone-gateway -p warning); lines it
+# writes to stderr when the journal's socket fails start with "<N>".
+SyslogIdentifier=cloudphone-gateway
+SyslogLevelPrefix=yes
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=full

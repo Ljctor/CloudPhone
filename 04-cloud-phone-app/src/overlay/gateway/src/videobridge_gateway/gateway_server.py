@@ -44,13 +44,11 @@ from .proto import ice_config_pb2 as ice
 from .plugins import load_plugins, run_adb
 from . import events as events_log
 from . import notify
+from . import logs
+from .logs import log
 
-# Configure Logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(filename)s:%(lineno)d (%(funcName)s): %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
+# Records to journald and to GET /api/v1/logs (see logs.py).
+logs.setup()
 
 # Properties dictionary populated by parsing the discovery file
 DISCOVERY_PROPS = {}
@@ -109,6 +107,10 @@ RENDERERS = ("lavapipe", "swiftshader", "swangle", "software")
 # Older names of the same renderers, still accepted by the emulator.
 LEGACY_RENDERERS = {"swiftshader_indirect": "swiftshader", "swangle_indirect": "swangle"}
 LAST_DISPLAY_CHANGE = {"time": None}
+# When the page last asked for a change that restarts Android: a restart
+# soon after it is expected, not an error.
+CHANGE = {"requested": 0.0}
+CHANGE_RESTART_SECONDS = 600
 
 
 def parse_discovery_file(path):
@@ -127,7 +129,7 @@ def parse_discovery_file(path):
                     props[k.strip()] = v.strip()
         logging.info(f"Loaded discovery properties from {path}")
     except Exception as e:
-        logging.error(f"Failed to read discovery file: {e}")
+        logging.error(f"Failed to read discovery file: {e}. Restart the emulator (systemctl restart cloudphone-emulator).")
     return props
 
 
@@ -220,6 +222,24 @@ async def handle_settings(request):
     }, headers={"Cache-Control": "no-store"})
 
 
+def change_request(refused):
+    """A screen size or settings request the gateway refuses (invalid,
+    disabled, one already running, too soon) is a warning record."""
+    def wrap(handler):
+        async def handle(request):
+            response = await handler(request)
+            if response.status >= 400:
+                try:
+                    error = json.loads(response.text).get("error", "")
+                except (TypeError, ValueError, AttributeError):
+                    error = str(response.status)
+                log("warning", "gateway", refused, error=error)
+            return response
+        return handle
+    return wrap
+
+
+@change_request("Changement des réglages d’Android refusé : {error}")
 async def handle_set_settings(request):
     """POST /api/v1/emulator-settings {renderer, cores, memoryMb[, width,
     height, density]}: asks the root service to change them, which restarts
@@ -268,7 +288,10 @@ async def handle_set_settings(request):
     with open(temporary, "w") as f:
         f.write(f"{renderer} {cores} {memory}{size}\n")
     os.replace(temporary, SETTINGS_REQUEST)
-    logging.info(f"Emulator settings requested by {request.remote}: {renderer}, {cores} cores, {memory} MiB{size}")
+    CHANGE["requested"] = time.time()
+    log("normal", "gateway", "Changement des réglages d’Android demandé ({settings}) : Android va redémarrer",
+        notify=True, settings=f"{renderer}, {cores} × CPU, {memory} MiB"
+        + (f", {wanted['width']}×{wanted['height']}" if size else ""))
     return web.json_response({"status": "pending"}, status=202)
 
 
@@ -413,13 +436,14 @@ async def read_android_metrics():
     )
     process = await asyncio.create_subprocess_exec(
         ADB_PATH, "-s", ADB_SERIAL, "shell", script,
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
     )
     try:
-        output, _ = await asyncio.wait_for(process.communicate(), timeout=10)
+        output, errors = await asyncio.wait_for(process.communicate(), timeout=10)
     except asyncio.TimeoutError:
         process.kill()
         return None
+    logs.adb_result(process.returncode, errors.decode(errors="replace"))
     meminfo, _, timestats = output.decode(errors="replace").partition("==TIMESTATS==")
     layer = fps = None
     for line in timestats.splitlines():
@@ -547,23 +571,187 @@ async def handle_test_notify(request):
 
 
 async def watch_events():
-    """Every minute, alerts on Android's new events (an app crashed, froze
-    or was stopped while in sight; Android or the emulator restarted)."""
-    seen = {}
+    """Every minute, Android's new events (an app crashed, froze or was
+    stopped while in sight; Android restarted) become log records, and
+    phone alerts when they are on."""
+    seen, alerted = {}, {}
     while True:
         await asyncio.sleep(60)
-        if not notify.STATE["enabled"]:
-            seen.clear()
-            continue
         try:
             found = await read_events()
         except Exception as e:
-            logging.warning(f"Events for alerts: {e!r}")
+            logging.warning(f"Android events not read: {e!r}")
             continue
         if not found["android"]:
             continue
-        for event in notify.new_events(found["events"], seen)[:5]:
+        first = seen.get("time") is None
+        fresh = notify.new_events(found["events"], seen, kinds=EVENT_RECORDS)
+        if first:
+            # Before this gateway started: shown on the page, not journaled again.
+            for event in reversed(found["events"]):
+                if event["kind"] in EVENT_RECORDS and event["kind"] != "android_boot" and event["time"] < GATEWAY_STARTED:
+                    level, text, params = event_record(event)
+                    logs.remember(level, "emulator", text, event["time"], **params)
+        for event in fresh[:10]:
+            level, text, params = event_record(event)
+            log(level, "emulator", text, notify=event["kind"] == "android_boot", **params)
+        if not notify.STATE["enabled"]:
+            alerted.clear()
+            continue
+        for event in notify.new_events(found["events"], alerted)[:5]:
             await notify.send(notify.sentence(event))
+
+
+def change_expected():
+    """True while Android may restart because the page asked for it: a
+    request in the last minutes, one pending or applying, or one finished
+    a moment ago (this gateway may have been restarted by it)."""
+    if time.time() - CHANGE["requested"] < CHANGE_RESTART_SECONDS:
+        return True
+    for status, path in ((read_display_status(), DISPLAY_STATUS), (read_settings_status(), SETTINGS_STATUS)):
+        if status["state"] in ("pending", "applying"):
+            return True
+        if status["state"] in ("done", "failed") and time.time() - status_time(path) < CHANGE_RESTART_SECONDS:
+            return True
+    return False
+
+
+# Android's events (read_events) as records: level, text, params. Errors
+# say what to do next.
+EVENT_RECORDS = ("crash", "anr", "killed", "low_memory", "android_boot")
+
+
+def event_record(event):
+    app = event.get("app") or "?"
+    reason = event.get("reason") or ""
+    kind = event["kind"]
+    if kind == "crash":
+        return ("error", "{app} a planté ({reason}). Relancez l’appli ; si elle replante, "
+                "regardez la mémoire d’Android (Informations → Serveur).", {"app": app, "reason": reason or "?"})
+    if kind == "anr":
+        return "warning", "{app} ne répondait plus (ANR)", {"app": app}
+    if kind == "killed":
+        return "warning", "{app} arrêté par Android ({reason})", {"app": app, "reason": reason or "?"}
+    if kind == "low_memory":
+        return "warning", "Mémoire d’Android insuffisante", {}
+    # android_boot: expected after a change the page asked for.
+    if change_expected():
+        return "normal", "Android a redémarré", {}
+    return ("error", "Android a redémarré sans qu’on le demande. Si cela se répète, regardez la mémoire "
+            "d’Android (Informations → Serveur) et journalctl -u cloudphone-emulator sur le serveur.", {})
+
+
+# What watch_health saw at its last look.
+HEALTH = {"unit": None, "booted": "unknown", "booting_since": None, "slow_boot": False, "lost": 0,
+          "display": None, "settings": None}
+HEALTH_SECONDS = 3
+SLOW_BOOT_SECONDS = 180
+
+
+def unit_record(unit):
+    """The record for the emulator unit's new state, or None."""
+    active, sub = unit["active"], unit["sub"]
+    if active == "failed":
+        return ("error", "Android s’est arrêté sur une erreur ({result}). Il ne redémarre pas tout seul : "
+                "il faut le relancer sur le serveur.", {"result": unit.get("result", "?")})
+    if active == "activating" and sub == "auto-restart":
+        return ("error", "Android a planté ({result}) : redémarrage automatique. S’il ne revient pas d’ici "
+                "deux minutes, relancez-le sur le serveur.", {"result": unit.get("result", "?")})
+    if active in ("inactive", "deactivating"):
+        if change_expected():
+            return "normal", "Android s’arrête pour appliquer le changement", {}
+        return "error", "Android est arrêté. Il faut le démarrer sur le serveur.", {}
+    if active == "active":
+        return "normal", "Le service Android a démarré", {}
+    return None
+
+
+def change_status_record(kind, status):
+    """The record for a screen size or settings request's new status."""
+    what = "de résolution" if kind == "display" else "des réglages d’Android"
+    state = status.get("state")
+    if state == "applying":
+        return "normal", f"Changement {what} : Android redémarre…", {}, False
+    if state == "done":
+        return "normal", f"Changement {what} appliqué", {}, True
+    if state == "failed":
+        unit = "cloudphone-display" if kind == "display" else "cloudphone-settings"
+        return ("error", f"Échec du changement {what} : {{message}}. Réessayez ; si cela échoue encore, "
+                f"lisez journalctl -u {unit} sur le serveur.", {"message": status.get("message") or "?"}, True)
+    return None
+
+
+def status_time(path):
+    try:
+        return os.stat(path).st_mtime
+    except (OSError, TypeError):
+        return 0.0
+
+
+async def watch_health():
+    """Every few seconds, the emulator unit, Android's boot and the change
+    requests: each change of state that matters is a record."""
+    while True:
+        try:
+            unit, booted = await asyncio.gather(read_emulator_unit(), read_android_booted())
+            check_health(unit, booted, read_display_status(), read_settings_status())
+        except Exception as e:
+            logging.warning(f"Health check failed: {e!r}")
+        await asyncio.sleep(HEALTH_SECONDS)
+
+
+def check_health(unit, booted, display, settings):
+    now = time.time()
+    first = HEALTH["unit"] is None and HEALTH["booted"] == "unknown"
+    if unit:
+        before = HEALTH["unit"]
+        changed = before is None or (before["active"], before["sub"]) != (unit["active"], unit["sub"])
+        missed = (before is not None and unit.get("restarts") is not None and before.get("restarts") is not None
+                  and unit["restarts"] > before["restarts"] and not changed)
+        if missed:
+            # Restarted between two looks.
+            log("error", "emulator", "Android a planté et a été relancé automatiquement. S’il ne revient pas "
+                "d’ici deux minutes, relancez-le sur le serveur.", notify=True)
+        elif changed:
+            record = unit_record(unit)
+            # At the gateway's start only what is wrong is worth a record.
+            if record and not (before is None and record[0] == "normal"):
+                level, text, params = record
+                log(level, "emulator", text, notify=level == "error", **params)
+        HEALTH["unit"] = unit
+    if booted != HEALTH["booted"]:
+        if booted is True and HEALTH["booted"] in (False, None):
+            log("normal", "emulator", "Android a démarré", notify=True)
+        elif booted is False:
+            HEALTH["booting_since"] = now
+        HEALTH["booted"] = booted
+        HEALTH["slow_boot"] = False
+        HEALTH["lost"] = 0
+    if booted is False and not HEALTH["slow_boot"] and HEALTH["booting_since"] \
+            and now - HEALTH["booting_since"] > SLOW_BOOT_SECONDS:
+        HEALTH["slow_boot"] = True
+        log("warning", "emulator", "Android met longtemps à démarrer (plus de {minutes} minutes)",
+            minutes=SLOW_BOOT_SECONDS // 60)
+    # gRPC silent while the unit runs: after a few looks, an error.
+    if booted is None and unit and unit["active"] == "active" and not first:
+        HEALTH["lost"] += 1
+        if HEALTH["lost"] == 4:
+            log("error", "emulator", "Le serveur ne joint plus Android (gRPC). S’il ne revient pas d’ici une "
+                "minute, relancez Android sur le serveur.", notify=True)
+    for kind, status, path in (("display", display, DISPLAY_STATUS), ("settings", settings, SETTINGS_STATUS)):
+        key = (status.get("state"), status.get("message"), status.get("width"))
+        before = HEALTH[kind]
+        HEALTH[kind] = key
+        if before == key or status.get("state") in ("idle", "pending", None):
+            continue
+        # At the gateway's start, a status written just before it (the
+        # change restarted Android, then the gateway) is still news.
+        if before is None and now - status_time(path) > 120:
+            continue
+        record = change_status_record(kind, status)
+        if record:
+            level, text, params, alert = record
+            log(level, "gateway", text, notify=alert, **params)
 
 
 async def handle_disconnect_others(request):
@@ -586,7 +774,7 @@ async def handle_disconnect_others(request):
             KICKED[other] = time.monotonic()
         await ws.close(code=CLOSED_BY_OTHER_VIEWER, message=b"Disconnected by another viewer")
         closed += 1
-    logging.info(f"Viewer {viewer} disconnected {closed} other session(s)")
+    log("warning", "gateway", "Un appareil a déconnecté les autres ({n})", notify=True, n=closed, viewer=viewer)
     STATE_CACHE["value"] = None
     return web.json_response({"closed": closed})
 
@@ -622,22 +810,40 @@ EVENTS_CACHE_SECONDS = 10.0
 GATEWAY_STARTED = time.time()
 
 
+async def read_unit_start():
+    """The emulator unit's last start as an emulator_start event, or None."""
+    if not EMULATOR_UNIT:
+        return None
+    boot_time = events_log.host_boot_time(read_file("/proc/stat") or "")
+    try:
+        process = await asyncio.create_subprocess_exec(
+            "systemctl", "show", EMULATOR_UNIT,
+            "--property=ExecMainStartTimestampMonotonic,NRestarts,Result",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+        )
+        output, _ = await asyncio.wait_for(process.communicate(), timeout=3)
+    except (OSError, asyncio.TimeoutError):
+        return None
+    return events_log.parse_unit(output.decode(errors="replace"), boot_time, "emulator_start")
+
+
+async def log_start():
+    """The gateway's start, and an emulator restart just before it: the
+    gateway restarts to follow the emulator, so the previous gateway's
+    records of a crash are only in the journal."""
+    log("normal", "gateway", "La passerelle a démarré", notify=True)
+    unit = await read_unit_start()
+    if unit and time.time() - unit["time"] < 180 and unit.get("reason") and not change_expected():
+        log("error", "emulator", "Android a redémarré après un arrêt anormal ({result}, {restarts} redémarrages "
+            "automatiques). S’il ne revient pas d’ici deux minutes, relancez-le sur le serveur.",
+            notify=True, result=unit["reason"], restarts=unit.get("restarts") or 0)
+
+
 async def read_events():
     found = [{"time": GATEWAY_STARTED, "kind": "gateway_start", "app": None, "reason": None}]
-    boot_time = events_log.host_boot_time(read_file("/proc/stat") or "")
-    if EMULATOR_UNIT:
-        try:
-            process = await asyncio.create_subprocess_exec(
-                "systemctl", "show", EMULATOR_UNIT,
-                "--property=ExecMainStartTimestampMonotonic,NRestarts,Result",
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
-            )
-            output, _ = await asyncio.wait_for(process.communicate(), timeout=3)
-            unit = events_log.parse_unit(output.decode(errors="replace"), boot_time, "emulator_start")
-            if unit:
-                found.append(unit)
-        except (OSError, asyncio.TimeoutError):
-            pass
+    unit = await read_unit_start()
+    if unit:
+        found.append(unit)
     code, uptime = await plugin_adb("shell", "cat", "/proc/uptime", timeout=5)
     if code == 0 and uptime.split():
         try:
@@ -665,6 +871,16 @@ async def handle_events(request):
             EVENTS_CACHE["value"] = await read_events()
             EVENTS_CACHE["time"] = loop.time()
     return web.json_response(EVENTS_CACHE["value"], headers={"Cache-Control": "no-store"})
+
+
+async def handle_logs(request):
+    """
+    GET /api/v1/logs?since=CURSOR: {cursor, records}, the gateway's log
+    records after CURSOR, oldest first (see logs.py); all that are kept
+    without a cursor or with one from an earlier gateway process.
+    """
+    return web.json_response(logs.since(request.query.get("since", "")[:64]),
+                             headers={"Cache-Control": "no-store"})
 
 
 async def read_screenshot():
@@ -706,7 +922,8 @@ async def watch_discovery_file():
         except OSError:
             others = []
         if others:
-            logging.warning("The emulator restarted: restarting the gateway to follow it.")
+            log("warning", "gateway", "L’émulateur a redémarré : la passerelle redémarre pour le suivre",
+                notify=True)
             logging.shutdown()
             os._exit(75)
 
@@ -729,6 +946,7 @@ async def handle_display(request):
     )
 
 
+@change_request("Changement de résolution refusé : {error}")
 async def handle_set_display(request):
     """
     POST /api/v1/display {width, height, density}: asks the root service to
@@ -757,7 +975,9 @@ async def handle_set_display(request):
     with open(temporary, "w") as f:
         f.write(f"{wanted['width']} {wanted['height']} {wanted['density']}\n")
     os.replace(temporary, DISPLAY_REQUEST)
-    logging.info(f"Screen size requested by {request.remote}: {wanted}")
+    CHANGE["requested"] = time.time()
+    log("normal", "gateway", "Changement de résolution demandé : Android va redémarrer en {size}",
+        notify=True, size=f"{wanted['width']}×{wanted['height']}")
     return web.json_response({"status": "pending"}, status=202)
 
 
@@ -823,7 +1043,7 @@ async def handle_status(request):
         }
         return web.json_response(response_data)
     except Exception as e:
-        logging.error(f"Error fetching status from emulator: {e}")
+        logging.error(f"Error fetching status from emulator: {e}. Wait for Android to start; if it does not, restart it on the server.")
         return web.json_response({"error": str(e)}, status=500)
 
 
@@ -852,7 +1072,7 @@ async def handle_gps(request):
         await stub.setPhysicalModel(req, metadata=metadata)
         return web.json_response({"status": "success"})
     except Exception as e:
-        logging.error(f"Error setting GPS on emulator: {e}")
+        logging.error(f"Error setting GPS on emulator: {e}. Retry once Android has started.")
         return web.json_response({"error": str(e)}, status=500)
 
 
@@ -873,7 +1093,7 @@ async def handle_logcat(request):
         res = await stub.getLogcat(req, metadata=metadata)
         return web.json_response({"next": res.next, "contents": res.contents})
     except Exception as e:
-        logging.error(f"Error fetching logcat from emulator: {e}")
+        logging.error(f"Error fetching logcat from emulator: {e}. Retry once Android has started.")
         return web.json_response({"error": str(e)}, status=500)
 
 
@@ -903,11 +1123,13 @@ async def handle_key(request):
             stderr=asyncio.subprocess.PIPE,
         )
         _, stderr = await process.communicate()
+        logs.adb_result(process.returncode, stderr.decode(errors="replace"))
         if process.returncode:
             raise RuntimeError(stderr.decode(errors="replace").strip())
         return web.json_response({"status": "success"})
     except Exception as e:
-        logging.error(f"Error sending key: {e}")
+        logging.error(f"Error sending key: {e}. Check Android in Information → Server; if adb stays offline, "
+                      "restart Android on the server.")
         return web.json_response({"error": str(e)}, status=500)
 
 
@@ -933,8 +1155,46 @@ async def handle_touch(request):
         )
         return web.json_response({"status": "success"})
     except Exception as e:
-        logging.error(f"Error sending touch: {e}")
+        logging.error(f"Error sending touch: {e}. Reload the video (↻); if touches still fail, restart Android on the server.")
         return web.json_response({"error": str(e)}, status=500)
+
+
+# Viewers (one id per page load) seen lately: a reconnect of the same page
+# (↻, back from background) is not news for the others.
+VIEWERS_SEEN = {}
+VIEWER_GONE_SECONDS = 5.0
+VIEWER_BACK_SECONDS = 60.0
+
+
+def viewer_connected(viewer):
+    now = time.monotonic()
+    last = VIEWERS_SEEN.get(viewer)
+    VIEWERS_SEEN[viewer] = now
+    for key in [key for key, seen in VIEWERS_SEEN.items() if now - seen > KICK_SECONDS]:
+        del VIEWERS_SEEN[key]
+    if last is not None and now - last < VIEWER_BACK_SECONDS:
+        return
+    others = len({other for other in SESSIONS.values() if other != viewer})
+    if others:
+        log("normal", "gateway", "Un autre appareil s’est connecté ({n} en tout)", notify=True,
+            n=others + 1, viewer=viewer)
+    else:
+        log("normal", "gateway", "Un appareil s’est connecté")
+
+
+def viewer_left(viewer):
+    """Said a few seconds later, once the page did not come back."""
+    def check():
+        if viewer in SESSIONS.values():
+            return
+        VIEWERS_SEEN[viewer] = time.monotonic() - VIEWER_BACK_SECONDS
+        remaining = len(set(SESSIONS.values()))
+        if remaining:
+            log("normal", "gateway", "Un autre appareil s’est déconnecté ({n} encore connectés)", notify=True,
+                n=remaining, viewer=viewer)
+        else:
+            log("normal", "gateway", "Plus aucun appareil connecté")
+    asyncio.get_running_loop().call_later(VIEWER_GONE_SECONDS, check)
 
 
 async def handle_websocket_jsep(request):
@@ -944,14 +1204,14 @@ async def handle_websocket_jsep(request):
     """
     ws = web.WebSocketResponse()
     await ws.prepare(request)
-    logging.info("WebSocket connection opened for JSEP signaling.")
+    logging.debug("WebSocket connection opened for JSEP signaling.")
     viewer = viewer_of(request)
     if is_kicked(viewer):
         await ws.close(code=CLOSED_BY_OTHER_VIEWER, message=b"Disconnected by another viewer")
         return ws
 
     if not VIDEOBRIDGE_CHANNEL:
-        logging.error("No channel to Video Bridge.")
+        logging.error("No channel to Video Bridge. Restart the gateway (systemctl restart cloudphone-gateway).")
         await ws.close(
             code=web.WSCloseCode.INTERNAL_ERROR, message=b"Video Bridge offline"
         )
@@ -964,6 +1224,7 @@ async def handle_websocket_jsep(request):
     bye_forwarded = False
     VIEWERS["count"] += 1
     SESSIONS[ws] = viewer
+    viewer_connected(viewer)
 
     try:
         # 1. Build default ICE configuration using public STUN server
@@ -976,7 +1237,7 @@ async def handle_websocket_jsep(request):
         # Connect to retrieve stream credentials
         response = await rtc_stub.RequestRtcStream(stream_req, metadata=bridge_metadata)
         guid = response.id.guid
-        logging.info(
+        logging.debug(
             f"Initialized WebRTC stream session with Video Bridge. Connection ID: {guid}"
         )
 
@@ -986,36 +1247,36 @@ async def handle_websocket_jsep(request):
 
         # 3. Spawn background streaming reader to forward gRPC messages -> WebSocket
         async def stream_to_client():
-            logging.info(
+            logging.debug(
                 f"Starting stream_to_client background task for connection: {guid}"
             )
             try:
                 reader_req = rtc.ReceiveJsepMessageRequest(id=rtc.Id(guid=guid))
-                logging.info(
+                logging.debug(
                     f"Subscribing to JSEP message stream from Video Bridge for connection: {guid}"
                 )
                 async for response_msg in rtc_stub.ReceiveJsepMessageStream(
                     reader_req, metadata=bridge_metadata
                 ):
                     msg_text = response_msg.jsep_msg.message
-                    logging.info(
+                    logging.debug(
                         f"Received JSEP message from Video Bridge gRPC stream: '{msg_text}'"
                     )
                     if not msg_text:
-                        logging.info(
+                        logging.debug(
                             "Received empty JSEP message from Video Bridge. Stopping stream reader."
                         )
                         break
                     parsed_jsep = json.loads(msg_text)
-                    logging.info(f"Forwarding JSEP message to browser: {parsed_jsep}")
+                    logging.debug(f"Forwarding JSEP message to browser: {parsed_jsep}")
 
                     # If it's an SDP offer/answer, or an ICE candidate message
                     await ws.send_json(parsed_jsep)
-                logging.info("Video Bridge JSEP stream finished cleanly.")
+                logging.debug("Video Bridge JSEP stream finished cleanly.")
             except asyncio.CancelledError:
-                logging.info(f"stream_to_client task cancelled for connection: {guid}")
+                logging.debug(f"stream_to_client task cancelled for connection: {guid}")
             except Exception as ex:
-                logging.exception("Error in stream_to_client reader loop:")
+                logging.exception("Error in stream_to_client reader loop. Reload the video (↻) if it stopped:")
 
         stream_task = asyncio.create_task(stream_to_client())
 
@@ -1023,7 +1284,7 @@ async def handle_websocket_jsep(request):
         async for ws_msg in ws:
             if ws_msg.type == web.WSMsgType.TEXT:
                 client_data = ws_msg.json()
-                logging.info(
+                logging.debug(
                     f"Received message from Client -> Video Bridge: {client_data}"
                 )
 
@@ -1032,25 +1293,26 @@ async def handle_websocket_jsep(request):
                 send_req.jsep_msg.message = json.dumps(client_data)
 
                 await rtc_stub.SendJsepMessage(send_req, metadata=bridge_metadata)
-                logging.info(
+                logging.debug(
                     f"Successfully forwarded JSEP message to Video Bridge for connection: {guid}"
                 )
 
                 if "bye" in client_data:
                     bye_forwarded = True
-                    logging.info(
+                    logging.debug(
                         f"Received 'bye' signal from client. Tearing down connection: {guid}"
                     )
                     break
             elif ws_msg.type == web.WSMsgType.ERROR:
-                logging.error(f"WebSocket encountered error: {ws.exception()}")
+                logging.error(f"WebSocket encountered error: {ws.exception()}. Reload the video (↻) if it stopped.")
 
     except Exception as e:
-        logging.exception("Error in WebSocket session handler:")
+        logging.exception("Error in WebSocket session handler. Reload the video (↻) if it stopped:")
     finally:
         VIEWERS["count"] -= 1
         SESSIONS.pop(ws, None)
-        logging.info(f"Closing signaling WebSocket session for ID: {guid}")
+        viewer_left(viewer)
+        logging.debug(f"Closing signaling WebSocket session for ID: {guid}")
         # Browsers do not always get a chance to send a final WebSocket frame
         # when a tab is suspended or killed. Explicitly tear down the emulator
         # participant so that the next viewer does not compete with an orphaned
@@ -1061,13 +1323,11 @@ async def handle_websocket_jsep(request):
                 bye_req.jsep_msg.id.guid = guid
                 bye_req.jsep_msg.message = json.dumps({"bye": True})
                 await rtc_stub.SendJsepMessage(bye_req, metadata=bridge_metadata)
-                logging.info(
+                logging.debug(
                     f"Forwarded teardown for abandoned connection: {guid}"
                 )
-            except Exception:
-                logging.exception(
-                    f"Failed to tear down abandoned connection: {guid}"
-                )
+            except Exception as e:
+                logging.warning(f"Failed to tear down abandoned connection {guid}: {e!r}")
         if stream_task:
             stream_task.cancel()
             try:
@@ -1138,6 +1398,7 @@ def init_app(videobridge_token, plugins_dir="", plugin_data=""):
     app.router.add_get("/api/v1/display", handle_display)
     app.router.add_get("/api/v1/state", handle_state)
     app.router.add_get("/api/v1/events", handle_events)
+    app.router.add_get("/api/v1/logs", handle_logs)
     app.router.add_get("/api/v1/notify", handle_notify)
     app.router.add_post("/api/v1/notify", handle_set_notify)
     app.router.add_post("/api/v1/notify/test", handle_test_notify)
@@ -1286,7 +1547,7 @@ async def main():
 
     emulator_port = DISCOVERY_PROPS.get("grpc.port")
     if not emulator_port:
-        logging.error("Failed to discover emulator gRPC port from discovery file.")
+        logging.error("Failed to discover emulator gRPC port from discovery file. Restart the emulator (systemctl restart cloudphone-emulator).")
         sys.exit(1)
 
     emulator_address = f"localhost:{emulator_port}"
@@ -1317,6 +1578,8 @@ async def main():
     watcher = asyncio.create_task(watch_discovery_file())
     sampler = asyncio.create_task(sample_metrics())
     alerts = asyncio.create_task(watch_events())
+    await log_start()
+    health = asyncio.create_task(watch_health())
 
     # Run forever
     try:

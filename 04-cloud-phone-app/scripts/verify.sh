@@ -39,6 +39,10 @@ check "cloudphone-gateway is active" systemctl is-active --quiet cloudphone-gate
 check "no separate cloudphone-web service is left" test ! -e /etc/systemd/system/cloudphone-web.service
 check "web page answers on $host:$WEB_PORT" answers "http://$host:$WEB_PORT/"
 check "gateway answers on $host:$WEB_PORT" answers "http://$host:$WEB_PORT/api/v1/emulator/status"
+check "gateway serves its log records" bash -c \
+  "curl -fsS --max-time 5 http://$host:$WEB_PORT/api/v1/logs | grep -q '\"records\"'"
+check "gateway logs to the journal as cloudphone-gateway" bash -c \
+  "[ \"\$(systemctl show -p SyslogIdentifier --value cloudphone-gateway.service)\" = cloudphone-gateway ]"
 check "page carries a token" bash -c "curl -fsS --max-time 5 http://$host:$WEB_PORT/ | grep -q 'name=\"cloudphone-token\"'"
 check "a POST without the token is refused" bash -c \
   "[ \"\$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -X POST -d '{}' http://$host:$WEB_PORT/api/v1/emulator/key)\" = 403 ]"

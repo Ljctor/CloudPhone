@@ -100,15 +100,16 @@ SENTENCES = {
 }
 
 
-def new_events(events, seen):
-    """The events of `events` (from read_events) not alerted yet, oldest
-    first; updates `seen` ({time, boot}). The first call only takes note."""
+def new_events(events, seen, kinds=SENTENCES):
+    """The events of `events` (from read_events) of these kinds not taken
+    yet, oldest first; updates `seen` ({time, boot}). The first call only
+    takes note."""
     first = seen.get("time") is None
     latest = seen.get("time") or 0.0
     fresh = []
     for event in sorted(events, key=lambda e: e["time"]):
         kind = event.get("kind")
-        if kind not in SENTENCES:
+        if kind not in kinds:
             continue
         if kind == "android_boot":
             # Worked out from Android's uptime on each read: it moves by a
