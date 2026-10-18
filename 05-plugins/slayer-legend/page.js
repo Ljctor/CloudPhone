@@ -759,13 +759,9 @@ export default function activate(api) {
   loadStages();
 
   // Gold per second, measured by the gateway (a reading every 10 s, the
-  // slope over 5 minutes), written in brackets after the game's gold
-  // counter, where the gateway last read it.
-  const gold = { answer: null, timer: null, font: null };
-  // Written in the counter's own pixel font (from the gateway) at its
-  // size: one game pixel is one cell, outlined in black like the game.
-  const label = document.createElement('canvas');
-  label.style.cssText = 'position:absolute;image-rendering:pixelated';
+  // slope over 5 minutes), written top left under the mode in the gold
+  // counter's own pixel font (from the gateway), outlined like the game.
+  const gold = { answer: null, timer: null, font: null, line: '' };
   api.get('/gold-font').catch(() => null).then((font) => {
     gold.font = font;
     showGold();
@@ -807,8 +803,8 @@ export default function activate(api) {
       });
     }
   };
-  // The selected mode, under the player's level (top left), and below it
-  // "(défaut)" or the time left on the timer.
+  // The selected mode, under the player's level (top left), below it
+  // "(défaut)" or the time left on the timer, then the gold per second.
   const modeLabel = document.createElement('canvas');
   modeLabel.style.cssText = 'position:absolute;image-rendering:pixelated;left:3%;top:5.6%';
   const MODE_NAMES = { mpw18: 'Farming mpw18', mpw4: 'Farming mpw4', free: 'Jeu libre', mine: 'Mine fermée' };
@@ -830,6 +826,7 @@ export default function activate(api) {
       api.tr(MODE_NAMES[current] ?? current).toUpperCase(),
       `(${(current === 'mpw18' || !farm.answer?.until ? api.tr('défaut') : time).toUpperCase()})`,
     ];
+    if (gold.line) lines.push(gold.line);
     // As high as the level's text above it (8 game pixels, the screen
     // being 1040 of them high), not the gold counter's 13.
     const cell = api.layer.offsetHeight / 1040 * 8 / gold.font.height;
@@ -854,19 +851,11 @@ export default function activate(api) {
     // Only while the counter was read lately: it moves with the game's
     // panels and Power Saving Mode hides it.
     const fresh = box && answer.read && Date.now() / 1000 - answer.read < 25;
-    showMode(Boolean(fresh && gold.font));
-    if (api.setting('goldOverlay') === 'off' || !fresh || !gold.font) {
-      label.remove();
-      return;
-    }
-    if (!label.isConnected) api.layer.appendChild(label);
-    // One game pixel on this screen: the counter's text is font.height high.
-    const cell = (box[3] - box[1]) * api.layer.offsetHeight / gold.font.height;
-    label.style.left = `${box[2] * api.layer.offsetWidth + 3 * cell}px`;
-    label.style.top = `${box[1] * api.layer.offsetHeight - cell}px`;
     // "~" while the 5-minute window is not full yet.
-    const partial = answer.span < 285 ? '~' : '';
-    drawText(label, [`(${answer.rate_text ? `${partial}${answer.rate_text}/s` : '...'})`], cell);
+    const partial = answer?.span < 285 ? '~' : '';
+    gold.line = api.setting('goldOverlay') === 'off' || !fresh ? ''
+      : `GOLD ${answer.rate_text ? `${partial}${answer.rate_text}/S` : '...'}`;
+    showMode(Boolean(fresh && gold.font));
   };
   const askGold = async () => {
     gold.answer = await api.get('/gold').catch(() => null);
@@ -1098,7 +1087,6 @@ export default function activate(api) {
       window.clearTimeout(farm.timer);
       window.clearTimeout(gold.timer);
       window.clearInterval(modeTick);
-      label.remove();
       modeLabel.remove();
     },
   };
