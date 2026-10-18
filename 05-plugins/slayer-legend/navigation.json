@@ -161,7 +161,9 @@
       0.94,
       0.15
      ],
-     "label": "Scroll (not explored yet)"
+     "label": "Scroll",
+     "forbidden": true,
+     "reason": "using scrolls is manual: the user does it"
     },
     {
      "id": "event",
@@ -1082,9 +1084,7 @@
       0.905,
       0.507
      ],
-     "label": "Advancement",
-     "forbidden": true,
-     "reason": "not explored; may spend"
+     "label": "Advancement (open and look; inside not explored yet)"
     }
    ]
   },
@@ -1730,12 +1730,39 @@
      "area": [
       0.33,
       0.5,
-      0.97,
+      0.84,
       0.96
      ],
-     "label": "Summon x1/x11, Ad summon",
+     "label": "Summon x1/x11",
      "forbidden": true,
      "reason": "spends diamonds"
+    },
+    {
+     "id": "ad_summon_weapon",
+     "to": "unknown",
+     "tap": [
+      0.88,
+      0.54
+     ],
+     "label": "Ad summon (weapon)"
+    },
+    {
+     "id": "ad_summon_accessories",
+     "to": "unknown",
+     "tap": [
+      0.88,
+      0.68
+     ],
+     "label": "Ad summon (accessories)"
+    },
+    {
+     "id": "ad_summon_skill",
+     "to": "unknown",
+     "tap": [
+      0.88,
+      0.82
+     ],
+     "label": "Ad summon (skill card)"
     }
    ]
   },

@@ -31,6 +31,7 @@ class Graph(unittest.TestCase):
             ("raid_camp", "cooking", (0.66, 0.96)),
             ("shop_summon", "summon", (0.70, 0.60)),
             ("equipment_weapon", "batch_combine", (0.50, 0.905)),
+            ("battle", "scroll", (0.94, 0.15)),
         ]:
             self.assertIn("forbidden", nav.guard(screen, move, *point))
 
@@ -39,6 +40,12 @@ class Graph(unittest.TestCase):
         # landing on Breakdown is refused.
         self.assertIsNotNone(nav.guard("soul_weapon", "equip", 0.80, 0.84))
         self.assertIsNone(nav.guard("soul_weapon", "equip", 0.09, 0.847))
+
+    def test_ad_summons(self):
+        # Summons by ad are allowed, the paid ones beside them are not.
+        for name, y in [("weapon", 0.54), ("accessories", 0.68), ("skill", 0.82)]:
+            self.assertIsNone(nav.guard("shop_summon", f"ad_summon_{name}", 0.88, y))
+        self.assertIsNotNone(nav.guard("shop_summon", "ad_summon_weapon", 0.80, 0.54))
 
     def test_refused_by_default(self):
         self.assertIsNotNone(nav.guard("battle", "no_such_move", 0.5, 0.5))
