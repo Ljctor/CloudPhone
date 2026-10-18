@@ -10,6 +10,52 @@ import Proto from '../../src/proto/emulator_controller_pb';
 
 logger.setLevel('warn');
 
+// The page's own log (Client tab): stream state changes, failed requests,
+// warnings and errors, newest first, the last 100 kept in memory.
+const CLIENT_LOG = [];
+const clientLogListeners = new Set();
+function clientLog(level, text) {
+  CLIENT_LOG.unshift({ time: Date.now() / 1000, level, text });
+  CLIENT_LOG.length = Math.min(CLIENT_LOG.length, 100);
+  clientLogListeners.forEach((listener) => listener());
+}
+for (const level of ['warn', 'error']) {
+  const original = console[level].bind(console);
+  console[level] = (...args) => {
+    original(...args);
+    clientLog(level, args.map((arg) => (arg instanceof Error ? arg.message
+      : typeof arg === 'string' ? arg : (() => { try { return JSON.stringify(arg); } catch { return String(arg); } })())).join(' '));
+  };
+}
+window.addEventListener('error', (event) => clientLog('error', event.message));
+window.addEventListener('unhandledrejection', (event) => clientLog('error', String(event.reason?.message ?? event.reason)));
+
+function useClientLog(enabled) {
+  const [, setCount] = useState(0);
+  useEffect(() => {
+    if (!enabled) return undefined;
+    const listener = () => setCount((count) => count + 1);
+    clientLogListeners.add(listener);
+    return () => { clientLogListeners.delete(listener); };
+  }, [enabled]);
+  return CLIENT_LOG;
+}
+
+function ClientLogList({ entries, rowStyle, labelStyle }) {
+  const locale = language() === 'en' ? 'en-GB' : 'fr-FR';
+  if (entries.length === 0) return <div style={rowStyle}>{tr('Rien pour l’instant')}</div>;
+  return entries.slice(0, 50).map((entry, index) => (
+    <div key={`${entry.time}-${index}`} style={{ ...rowStyle, alignItems: 'flex-start' }}>
+      <span style={{ ...labelStyle, whiteSpace: 'nowrap' }}>
+        {new Date(entry.time * 1000).toLocaleTimeString(locale)}
+      </span>
+      <span style={{ textAlign: 'right', overflowWrap: 'anywhere', color: entry.level === 'error' ? '#ff8a80' : undefined }}>
+        {entry.text}
+      </span>
+    </div>
+  ));
+}
+
 const TOOLBAR_WIDTH = 40;
 const STATS_INTERVAL_MS = 1000;
 // Touches and keys go over the emulator's own WebRTC data channels ("touch",
@@ -839,6 +885,7 @@ function App() {
   const server = useServerState(gatewayUrl, serverTab);
   const [emulatorSettings, refreshEmulatorSettings] = useEmulatorSettings(gatewayUrl, serverTab);
   const events = useEvents(gatewayUrl, serverTab);
+  const clientEntries = useClientLog(panel === 'info' && infoTab === 'client');
   const alerts = useNotify(gatewayUrl, panel === 'options');
   const [alertNote, setAlertNote] = useState('');
   const [copied, setCopied] = useState(false);
@@ -915,7 +962,14 @@ function App() {
     }, 1000);
   };
 
+  const loggedState = useRef(null);
   const handleStreamState = (nextState) => {
+    // The stream reports its state often; only changes are logged.
+    if (nextState !== loggedState.current) {
+      loggedState.current = nextState;
+      const said = { connected: 'Vidéo connectée', connecting: 'Vidéo en connexion…', disconnected: 'Vidéo coupée' }[nextState];
+      clientLog('info', said ? tr(said) : tr('Vidéo : {state}', { state: nextState }));
+    }
     setState(nextState);
     if (nextState === 'connected' && reconnectTimer.current === null) stopFeedback();
   };
@@ -1270,6 +1324,20 @@ function App() {
       {rows.map(([label, value]) => row2(tr(label), value))}
     </div>
   ));
+  // A section that folds under its title, folded at first; the state is
+  // kept with the other settings.
+  const fold = (id, title, content) => {
+    const folded = settings.foldedSections?.[id] ?? true;
+    return (
+      <details open={!folded} onToggle={(event) => {
+        const now = !event.currentTarget.open;
+        if (now !== folded) updateSettings({ foldedSections: { ...settings.foldedSections, [id]: now } });
+      }}>
+        <summary style={{ ...styles.infoSection, cursor: 'pointer' }}>{tr(title)}</summary>
+        {content}
+      </details>
+    );
+  };
   const toggle = (label, key) => (
     <label key={key} style={styles.infoRow}>
       <span style={styles.infoLabel}>{tr(label)}</span>
@@ -1462,12 +1530,16 @@ function App() {
                     labelStyle={styles.infoLabel}
                     buttonStyle={styles.panelButton}
                   />
-                  <div style={styles.infoSection}>{tr('Événements')}</div>
-                  <EventList events={events} rowStyle={styles.infoRow} labelStyle={styles.infoLabel} />
+                  {fold('serverLogs', 'Journaux du serveur',
+                    <EventList events={events} rowStyle={styles.infoRow} labelStyle={styles.infoLabel} />)}
                 </div>
               )}
               {panel === 'info' && infoTab === 'client' && (
-                <div role="tabpanel">{sections(clientSections)}</div>
+                <div role="tabpanel">
+                  {sections(clientSections)}
+                  {fold('clientLogs', 'Journaux du client',
+                    <ClientLogList entries={clientEntries} rowStyle={styles.infoRow} labelStyle={styles.infoLabel} />)}
+                </div>
               )}
               {panel === 'options' && (
                 <>
