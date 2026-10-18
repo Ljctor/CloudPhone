@@ -12,8 +12,15 @@ import { FONT, MASKS, shade } from './emerald_font.js';
 
 const ENGLISH = {
   'Farmer la mine': 'Farm the mine',
-  'Étage': 'Floor',
-  'Zone': 'Area',
+  'Étage à farmer': 'Floor to farm',
+  'Zone à farmer': 'Area to farm',
+  'Durée': 'Duration',
+  'Sans limite': 'No limit',
+  'reste {time}': '{time} left',
+  'Durée écoulée : « Repeat entry » décoché, la mine s’arrête après cette entrée':
+    'Time is up: "Repeat entry" unticked, the mine stops after this entry',
+  'Durée écoulée : pas de relance': 'Time is up: no restart',
+  'Durée écoulée, mais « Repeat entry » ne se décoche pas': 'Time is up, but "Repeat entry" does not untick',
   'Mine': 'Mine',
   'Surveillance de la mine': 'Watching the mine',
   'Combat en cours, parchemin doré actif': 'Fighting, gold scroll on',
@@ -600,11 +607,42 @@ export default function activate(api) {
   // when they change, and on load if the gateway has not been told yet
   // (after its restart). Its state is asked every 10 s while it farms.
   const farm = { answer: null, timer: null };
+  // When farming must stop (Unix seconds), set when farming is switched on
+  // or the duration changes, and kept in this browser so that a reload or a
+  // gateway restart does not start the time again.
+  const UNTIL = 'cloudphone-slayer-legend-mine-until';
+  const readUntil = () => {
+    try {
+      return Number(window.localStorage.getItem(UNTIL)) || null;
+    } catch {
+      return null;
+    }
+  };
+  const startClock = () => {
+    const minutes = Number(api.setting('mineDuration')) || 0;
+    const until = minutes ? Math.round(Date.now() / 1000) + minutes * 60 : null;
+    try {
+      if (until) window.localStorage.setItem(UNTIL, String(until));
+      else window.localStorage.removeItem(UNTIL);
+    } catch {
+      // Not kept: the time starts again after a reload.
+    }
+    return until;
+  };
+  let until = readUntil();
   const mineOptions = () => ({
     enabled: Boolean(api.setting('mineFarm')) && Boolean(Number(api.setting('mineFloor'))),
     floor: Number(api.setting('mineFloor')) || 0,
     area: Number(api.setting('mineArea') || 1),
+    until: Number(api.setting('mineDuration')) ? until : null,
   });
+  const left = () => {
+    const seconds = (farm.answer?.until ?? 0) - Date.now() / 1000;
+    if (!farm.answer?.enabled || !farm.answer?.until || seconds <= 0) return '';
+    const minutes = Math.ceil(seconds / 60);
+    const text = minutes >= 60 ? `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')}` : `${minutes} min`;
+    return ` · ${api.tr('reste {time}', { time: text })}`;
+  };
   const askMine = async () => {
     farm.answer = await api.get('/mine').catch(() => null);
     api.refresh();
@@ -675,20 +713,28 @@ export default function activate(api) {
       },
       { type: 'toggle', key: 'mineFarm', label: 'Farmer la mine' },
       {
-        type: 'number', key: 'mineFloor', label: 'Étage', placeholder: '161',
+        type: 'number', key: 'mineFloor', label: 'Étage à farmer', placeholder: '161',
         visible: () => Boolean(api.setting('mineFarm')),
       },
       {
-        type: 'choice', key: 'mineArea', label: 'Zone',
+        type: 'choice', key: 'mineArea', label: 'Zone à farmer',
         visible: () => Boolean(api.setting('mineFarm')),
         choices: [1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: String(n) })),
+      },
+      {
+        type: 'choice', key: 'mineDuration', label: 'Durée',
+        visible: () => Boolean(api.setting('mineFarm')),
+        choices: [
+          { value: '', label: 'Sans limite' },
+          ...[30, 60, 120, 180, 240, 360, 480].map((m) => ({ value: String(m), label: m < 60 ? `${m} min` : `${m / 60} h` })),
+        ],
       },
       {
         type: 'status', label: 'Mine',
         visible: () => Boolean(api.setting('mineFarm')) || Boolean(farm.answer?.enabled),
         value: () => {
           if (api.setting('mineFarm') && !Number(api.setting('mineFloor'))) return api.tr('Choisis l’étage et la zone');
-          return api.tr(farm.answer?.message || 'arrêtée');
+          return api.tr(farm.answer?.message || 'arrêtée') + left();
         },
       },
       {
@@ -712,6 +758,7 @@ export default function activate(api) {
     ],
     onSetting: (key, value) => {
       if (key === 'emeraldMode') setEmerald(Boolean(value));
+      if ((key === 'mineFarm' && value) || key === 'mineDuration') until = startClock();
       if (key.startsWith('mine')) sendMine();
     },
     dispose: () => {

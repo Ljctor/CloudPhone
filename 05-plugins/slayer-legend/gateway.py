@@ -23,14 +23,15 @@ POST /api/v1/plugins/slayer-legend/launch
      any other screen stops it and asks the user.
 
 GET  /api/v1/plugins/slayer-legend/mine
-     State of mine farming: {enabled, floor, area, state, message}.
-POST /api/v1/plugins/slayer-legend/mine  {enabled, floor, area}
+     State of mine farming: {enabled, floor, area, until, state, message}.
+POST /api/v1/plugins/slayer-legend/mine  {enabled, floor, area, until}
      Farms the Closed Mine: while the fight runs with "Repeat entry" ticked
      it only watches; when the game is back on the floor list (after 30
      entries) it taps the floor, the Area and 3 feathers again (always 3:
      the reward is multiplied by the feathers used). When the
      gold scroll buff is gone it unticks "Repeat entry" and stops: the
-     entry under way ends, no more feathers are spent. It leaves Power
+     entry under way ends, no more feathers are spent. It stops the same
+     way at `until` (Unix seconds; null: no time limit). It leaves Power
      Saving Mode (4 s press) at most once a minute to see the buffs.
 
 Screens are recognised from a few pixel areas, as fractions of the screen,
@@ -70,7 +71,7 @@ EMERALD = {"time": 0.0, "value": None, "lock": None}
 EMERALD_SECONDS = 0.4
 SCREEN = {"time": 0.0, "value": None, "lock": None}
 SCREEN_SECONDS = 2.0
-MINE = {"enabled": False, "floor": None, "area": None, "state": "off", "message": "", "task": None}
+MINE = {"enabled": False, "floor": None, "area": None, "until": None, "state": "off", "message": "", "task": None}
 MINE_FEATHERS = 3
 MINE_SECONDS = 10
 # Checks in a row without the gold scroll before stopping (an animation
@@ -381,6 +382,18 @@ def setup(context):
         shot = await mine_step(shot, mine.FEATHER_TAPS[MINE_FEATHERS - 1], 6)
         return bool(shot) and mine.in_fight(shot)
 
+    async def mine_stop(shot, reason):
+        """Unticks "Repeat entry" so that the entry under way is the last.
+        True once it is unticked and farming is off."""
+        if mine.repeat_ticked(shot):
+            shot = await mine_step(shot, mine.REPEAT_TAP)
+            if not shot or mine.repeat_ticked(shot):
+                mine_report("blocked", f"{reason}, mais « Repeat entry » ne se décoche pas")
+                return False
+        MINE["enabled"] = False
+        mine_report("stopped", f"{reason} : « Repeat entry » décoché, la mine s’arrête après cette entrée")
+        return True
+
     async def farm_mine():
         no_gold = 0
         gold_seen = 0.0
@@ -401,6 +414,11 @@ def setup(context):
                         last_hold = time.monotonic()
                         await hold(shot, SAVER_TAP, SAVER_HOLD_MS)
                     continue
+                over = MINE["until"] is not None and time.time() >= MINE["until"]
+                if over and mine.in_fight(shot):
+                    if await mine_stop(shot, "Durée écoulée"):
+                        return
+                    continue
                 if mine.in_fight(shot):
                     failures = 0
                     if mine.gold_scroll(shot):
@@ -410,19 +428,18 @@ def setup(context):
                     no_gold += 1
                     if no_gold < MINE_NO_GOLD:
                         continue
-                    if mine.repeat_ticked(shot):
-                        shot = await mine_step(shot, mine.REPEAT_TAP)
-                        if not shot or mine.repeat_ticked(shot):
-                            mine_report("blocked", "Plus de parchemin doré, mais « Repeat entry » ne se décoche pas")
-                            continue
-                    MINE["enabled"] = False
-                    mine_report("stopped", "Plus de parchemin doré : « Repeat entry » décoché, la mine s’arrête après cette entrée")
-                    return
+                    if await mine_stop(shot, "Plus de parchemin doré"):
+                        return
+                    continue
                 if mine.area_popup(shot) or mine.feather_popup(shot) or not mine.floor_list(shot):
                     # The user's own taps, or a screen this does not know.
                     mine_report("waiting", "Écran autre que la mine : rien à faire")
                     continue
                 # The floor list: the 30 entries are done.
+                if over:
+                    MINE["enabled"] = False
+                    mine_report("stopped", "Durée écoulée : pas de relance")
+                    return
                 if time.monotonic() - gold_seen > 5 * 60:
                     mine_report("stopped" if gold_seen else "waiting",
                                 "Parchemin doré pas vu depuis 5 minutes : pas de relance")
@@ -448,7 +465,7 @@ def setup(context):
             mine_report("failed", f"Erreur : {e!r}"[:200])
 
     def mine_state():
-        return {key: MINE[key] for key in ("enabled", "floor", "area", "state", "message")}
+        return {key: MINE[key] for key in ("enabled", "floor", "area", "until", "state", "message")}
 
     async def handle_mine_state(request):
         return context.json(mine_state())
@@ -458,11 +475,12 @@ def setup(context):
             body = await request.json()
             enabled = bool(body.get("enabled"))
             floor, area = int(body.get("floor") or 0), int(body.get("area") or 0)
+            until = float(body["until"]) if body.get("until") is not None else None
         except (ValueError, TypeError, AttributeError):
-            return context.json({"error": "Expected {enabled, floor, area}"}, status=400)
+            return context.json({"error": "Expected {enabled, floor, area, until}"}, status=400)
         if enabled and not (1 <= floor <= 9999 and 1 <= area <= 5):
             return context.json({"error": "floor 1-9999, area 1-5"}, status=400)
-        MINE.update(floor=floor or None, area=area or None)
+        MINE.update(floor=floor or None, area=area or None, until=until)
         task = MINE["task"]
         if enabled and not MINE["enabled"]:
             MINE["enabled"] = True
