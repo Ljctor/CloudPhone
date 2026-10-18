@@ -59,6 +59,8 @@ class Graph(unittest.TestCase):
     def test_plugin_actions(self):
         self.assertIsNone(nav.guard("title", "start", 0.50, 0.836))
         self.assertIsNone(nav.guard("save_notice", "confirm", 0.314, 0.745))
+        self.assertIsNone(nav.guard("battle", "quest", 0.94, 0.09))
+        self.assertIsNone(nav.guard("quest_panel", "claim", 0.79, 0.29))
         self.assertIsNone(nav.guard("saver", "leave", 0.50, 0.88, "hold"))
         for point in mine.AREA_TAPS:
             self.assertIsNone(nav.guard("mine_area", "area", *point))

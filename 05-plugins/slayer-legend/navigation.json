@@ -152,7 +152,7 @@
       0.94,
       0.09
      ],
-     "label": "Quest"
+     "label": "Quest (claims the finished main quest's reward directly, e.g. Diamond x 10; otherwise opens the panel)"
     },
     {
      "id": "scroll",
@@ -1777,17 +1777,55 @@
   },
   "quest_panel": {
    "name": "Quest panel",
-   "recognise": "dark overlay, title 'Quest', tabs Daily/Repeat/Achievement",
-   "source": "seen 2026-10-17",
+   "recognise": "dark overlay, title 'Quest', tabs Daily Quest / Repeat Quest / Achievement at y 0.225, rows with a reward button on the right",
+   "source": "explored 2026-10-19",
    "moves": [
     {
      "id": "close",
      "to": "battle",
      "tap": [
-      0.9,
-      0.18
+      0.895,
+      0.183
      ],
      "label": "X"
+    },
+    {
+     "id": "daily",
+     "to": "quest_panel",
+     "tap": [
+      0.2,
+      0.225
+     ],
+     "label": "Daily Quest tab"
+    },
+    {
+     "id": "repeat",
+     "to": "quest_panel",
+     "tap": [
+      0.5,
+      0.225
+     ],
+     "label": "Repeat Quest tab (the list scrolls)"
+    },
+    {
+     "id": "achievement",
+     "to": "quest_panel",
+     "tap": [
+      0.79,
+      0.225
+     ],
+     "label": "Achievement tab"
+    },
+    {
+     "id": "claim",
+     "to": "quest_panel",
+     "area": [
+      0.67,
+      0.265,
+      0.9,
+      0.95
+     ],
+     "label": "reward button of a row (diamonds, emeralds, feathers): claim it when the row's bar is full; rows at y 0.29, 0.37, 0.45, 0.53, 0.615, 0.70, 0.775, 0.855"
     }
    ]
   },
