@@ -107,6 +107,7 @@ RENDERERS = ("lavapipe", "swiftshader", "swangle", "software")
 # Older names of the same renderers, still accepted by the emulator.
 LEGACY_RENDERERS = {"swiftshader_indirect": "swiftshader", "swangle_indirect": "swangle"}
 LAST_DISPLAY_CHANGE = {"time": None}
+GRPC_OPTIONS = [("grpc.max_receive_message_length", 32 * 1024 * 1024)]
 # When the page last asked for a change that restarts Android: a restart
 # soon after it is expected, not an error.
 CHANGE = {"requested": 0.0}
@@ -279,11 +280,11 @@ async def handle_set_settings(request):
         size = f" {wanted['width']} {wanted['height']} {wanted['density']}"
     if read_settings_status()["state"] in ("pending", "applying") or read_display_status()["state"] in ("pending", "applying"):
         return web.json_response({"error": "A change is already in progress"}, status=409)
-    last = LAST_DISPLAY_CHANGE["time"]
-    if last is not None and time.monotonic() - last < DISPLAY_CHANGE_INTERVAL:
-        wait = int(DISPLAY_CHANGE_INTERVAL - (time.monotonic() - last)) + 1
+    since = time.time() - last_change()
+    if since < DISPLAY_CHANGE_INTERVAL:
+        wait = int(DISPLAY_CHANGE_INTERVAL - since) + 1
         return web.json_response({"error": f"Wait {wait} s before the next change"}, status=429)
-    LAST_DISPLAY_CHANGE["time"] = time.monotonic()
+    LAST_DISPLAY_CHANGE["time"] = time.time()
     temporary = f"{SETTINGS_REQUEST}.tmp"
     with open(temporary, "w") as f:
         f.write(f"{renderer} {cores} {memory}{size}\n")
@@ -688,6 +689,14 @@ def status_time(path):
         return 0.0
 
 
+def last_change():
+    """When the last screen or emulator change was asked for or done (Unix
+    time). A change restarts the gateway with the emulator, so this process's
+    own memory is not enough: the request and status files keep their time."""
+    files = (DISPLAY_REQUEST, DISPLAY_STATUS, SETTINGS_REQUEST, SETTINGS_STATUS)
+    return max(LAST_DISPLAY_CHANGE["time"] or 0.0, *(status_time(path) for path in files))
+
+
 async def watch_health():
     """Every few seconds, the emulator unit, Android's boot and the change
     requests: each change of state that matters is a record."""
@@ -888,11 +897,15 @@ async def read_screenshot():
     if not EMULATOR_CHANNEL:
         return None
     stub = ec_grpc.EmulatorControllerStub(EMULATOR_CHANNEL)
-    image = await stub.getScreenshot(
-        ec.ImageFormat(format=ec.ImageFormat.RGB888),
-        metadata=get_emulator_metadata(),
-        timeout=3,
-    )
+    try:
+        image = await stub.getScreenshot(
+            ec.ImageFormat(format=ec.ImageFormat.RGB888),
+            metadata=get_emulator_metadata(),
+            timeout=3,
+        )
+    except grpc.RpcError as e:
+        logging.debug(f"No screenshot: {e!r}")
+        return None
     width, height = image.format.width, image.format.height
     if not width or not height or len(image.image) < width * height * 3:
         return None
@@ -966,11 +979,11 @@ async def handle_set_display(request):
         return web.json_response({"error": "width and height must be even"}, status=400)
     if read_display_status()["state"] in ("pending", "applying") or read_settings_status()["state"] in ("pending", "applying"):
         return web.json_response({"error": "A change is already in progress"}, status=409)
-    last = LAST_DISPLAY_CHANGE["time"]
-    if last is not None and time.monotonic() - last < DISPLAY_CHANGE_INTERVAL:
-        wait = int(DISPLAY_CHANGE_INTERVAL - (time.monotonic() - last)) + 1
+    since = time.time() - last_change()
+    if since < DISPLAY_CHANGE_INTERVAL:
+        wait = int(DISPLAY_CHANGE_INTERVAL - since) + 1
         return web.json_response({"error": f"Wait {wait} s before the next change"}, status=429)
-    LAST_DISPLAY_CHANGE["time"] = time.monotonic()
+    LAST_DISPLAY_CHANGE["time"] = time.time()
     temporary = f"{DISPLAY_REQUEST}.tmp"
     with open(temporary, "w") as f:
         f.write(f"{wanted['width']} {wanted['height']} {wanted['density']}\n")
@@ -1554,11 +1567,12 @@ async def main():
     logging.info(f"Connecting to Emulator gRPC service at: {emulator_address}")
 
     global EMULATOR_CHANNEL, VIDEOBRIDGE_CHANNEL
-    EMULATOR_CHANNEL = grpc.aio.insecure_channel(emulator_address)
+    # A 1080p RGB888 screenshot is about 6 MB, over gRPC's default 4 MB.
+    EMULATOR_CHANNEL = grpc.aio.insecure_channel(emulator_address, options=GRPC_OPTIONS)
 
     if args.videobridge:
         logging.info(f"Connecting to Video Bridge gRPC service at: {args.videobridge}")
-        VIDEOBRIDGE_CHANNEL = grpc.aio.insecure_channel(args.videobridge)
+        VIDEOBRIDGE_CHANNEL = grpc.aio.insecure_channel(args.videobridge, options=GRPC_OPTIONS)
     else:
         logging.info("No separate Video Bridge specified; using Emulator gRPC channel directly for Rtc service.")
         VIDEOBRIDGE_CHANNEL = EMULATOR_CHANNEL

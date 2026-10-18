@@ -104,7 +104,10 @@ started with the older `*_indirect` names is reported under the new ones); cores
 threads; memory a multiple of 512 from 2048 to the host's memory minus
 2 GiB; width and height even, within 240–1440 × 320–3200, density 80–640,
 all three or none. One change per 2 minutes for both routes together (429
-otherwise); 409 while either kind is pending or applying.
+otherwise), counted from the request and status files' times, so it holds
+across the gateway restart a change causes; 409 while either kind is pending
+or applying. A page whose POST is refused for its token (the gateway
+restarted) reads the new token from `/` and tries once more.
 
 Other viewers: `disconnect-others` closes every other signaling session with
 WebSocket code 4001 and refuses those viewer ids for 10 minutes. The driver
