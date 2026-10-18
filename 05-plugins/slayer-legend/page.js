@@ -11,6 +11,23 @@ import { AREA, findEmeraldMask } from './emerald_mask.js';
 import { FONT, MASKS, shade } from './emerald_font.js';
 
 const ENGLISH = {
+  'Farmer la mine': 'Farm the mine',
+  'Étage': 'Floor',
+  'Zone': 'Area',
+  'Plumes': 'Feathers',
+  'Mine': 'Mine',
+  'Surveillance de la mine': 'Watching the mine',
+  'Combat en cours, parchemin doré actif': 'Fighting, gold scroll on',
+  'Mine relancée': 'Mine started again',
+  'Le jeu n’est pas au premier plan': 'The game is not in front',
+  'Écran autre que la mine : rien à faire': 'Not a mine screen: nothing to do',
+  'Parchemin doré pas vu depuis 5 minutes : pas de relance': 'Gold scroll not seen for 5 minutes: no restart',
+  'Plus de parchemin doré : « Repeat entry » décoché, la mine s’arrête après cette entrée':
+    'Gold scroll gone: "Repeat entry" unticked, the mine stops after this entry',
+  'Plus de parchemin doré, mais « Repeat entry » ne se décoche pas': 'Gold scroll gone, but "Repeat entry" does not untick',
+  'La relance a échoué 3 fois : relance la mine à la main': 'Restarting failed 3 times: start the mine by hand',
+  'Choisis l’étage et la zone': 'Choose the floor and the area',
+  'arrêtée': 'off',
   'Lancer le jeu': 'Launch the game',
   'Lancer': 'Launch',
   'Lancement': 'Launch',
@@ -580,6 +597,33 @@ export default function activate(api) {
     });
   };
 
+  // Mine farming runs in the gateway; this browser's options are sent to it
+  // when they change, and on load if the gateway has not been told yet
+  // (after its restart). Its state is asked every 10 s while it farms.
+  const farm = { answer: null, timer: null };
+  const mineOptions = () => ({
+    enabled: Boolean(api.setting('mineFarm')) && Boolean(Number(api.setting('mineFloor'))),
+    floor: Number(api.setting('mineFloor')) || 0,
+    area: Number(api.setting('mineArea') || 1),
+    feathers: Number(api.setting('mineFeathers') || 3),
+  });
+  const askMine = async () => {
+    farm.answer = await api.get('/mine').catch(() => null);
+    api.refresh();
+    window.clearTimeout(farm.timer);
+    if (farm.answer?.enabled || api.setting('mineFarm')) farm.timer = window.setTimeout(askMine, 10000);
+  };
+  const sendMine = async () => {
+    const result = await api.post('/mine', mineOptions()).catch(() => null);
+    if (result?.ok) farm.answer = result.body;
+    await askMine();
+  };
+  api.get('/mine').catch(() => null).then((answer) => {
+    farm.answer = answer;
+    if (answer && !answer.enabled && answer.state === 'off' && mineOptions().enabled) sendMine();
+    else askMine();
+  });
+
   return {
     options: [
       {
@@ -631,6 +675,29 @@ export default function activate(api) {
         visible: () => launch.state !== 'idle',
         value: () => api.tr(launch.message || launch.state),
       },
+      { type: 'toggle', key: 'mineFarm', label: 'Farmer la mine' },
+      {
+        type: 'number', key: 'mineFloor', label: 'Étage', placeholder: '161',
+        visible: () => Boolean(api.setting('mineFarm')),
+      },
+      {
+        type: 'choice', key: 'mineArea', label: 'Zone',
+        visible: () => Boolean(api.setting('mineFarm')),
+        choices: [1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: String(n) })),
+      },
+      {
+        type: 'choice', key: 'mineFeathers', label: 'Plumes',
+        visible: () => Boolean(api.setting('mineFarm')),
+        choices: [3, 2, 1].map((n) => ({ value: String(n), label: String(n) })),
+      },
+      {
+        type: 'status', label: 'Mine',
+        visible: () => Boolean(api.setting('mineFarm')) || Boolean(farm.answer?.enabled),
+        value: () => {
+          if (api.setting('mineFarm') && !Number(api.setting('mineFloor'))) return api.tr('Choisis l’étage et la zone');
+          return api.tr(farm.answer?.message || 'arrêtée');
+        },
+      },
       {
         type: 'choice', key: 'emeraldMode', label: 'Compteur d’émeraudes',
         choices: [
@@ -652,11 +719,13 @@ export default function activate(api) {
     ],
     onSetting: (key, value) => {
       if (key === 'emeraldMode') setEmerald(Boolean(value));
+      if (key.startsWith('mine')) sendMine();
     },
     dispose: () => {
       setEmerald(false);
       if (poll) window.clearInterval(poll);
       window.clearTimeout(screen.timer);
+      window.clearTimeout(farm.timer);
     },
   };
 }

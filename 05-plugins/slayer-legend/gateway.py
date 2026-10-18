@@ -22,6 +22,16 @@ POST /api/v1/plugins/slayer-legend/launch
      holds "Press here to finish Power Saving Mode" for 4 s. It never taps anything else;
      any other screen stops it and asks the user.
 
+GET  /api/v1/plugins/slayer-legend/mine
+     State of mine farming: {enabled, floor, area, feathers, state, message}.
+POST /api/v1/plugins/slayer-legend/mine  {enabled, floor, area, feathers}
+     Farms the Closed Mine: while the fight runs with "Repeat entry" ticked
+     it only watches; when the game is back on the floor list (after 30
+     entries) it taps the floor, the Area and the feathers again. When the
+     gold scroll buff is gone it unticks "Repeat entry" and stops: the
+     entry under way ends, no more feathers are spent. It leaves Power
+     Saving Mode (4 s press) at most once a minute to see the buffs.
+
 Screens are recognised from a few pixel areas, as fractions of the screen,
 measured on a 360x780 screen (the page's device shapes keep this ratio).
 """
@@ -59,6 +69,12 @@ EMERALD = {"time": 0.0, "value": None, "lock": None}
 EMERALD_SECONDS = 0.4
 SCREEN = {"time": 0.0, "value": None, "lock": None}
 SCREEN_SECONDS = 2.0
+MINE = {"enabled": False, "floor": None, "area": None, "feathers": 3, "state": "off", "message": "",
+        "task": None}
+MINE_SECONDS = 10
+# Checks in a row without the gold scroll before stopping (an animation
+# can hide it for a moment).
+MINE_NO_GOLD = 2
 # The last stage number read in Power Saving Mode: {number, numeral}.
 FARMED = {"number": None}
 
@@ -316,6 +332,149 @@ def setup(context):
             logging.exception("Slayer Legend launch failed")
             report("failed", f"Erreur : {e!r}"[:200])
 
+    mine = load_sibling(context.directory, "mine")
+
+    def mine_report(state, message):
+        if (MINE["state"], MINE["message"]) != (state, message):
+            logging.info(f"Slayer Legend mine: {state} {message}")
+        MINE["state"], MINE["message"] = state, message
+
+    async def mine_step(shot, point, wait=2.5):
+        """Taps point if the game is still in front; the next screenshot."""
+        if not await in_focus():
+            return None
+        await tap(shot, point)
+        await asyncio.sleep(wait)
+        return await context.screenshot()
+
+    async def mine_relaunch(shot):
+        """From the floor list: floor, Area, feathers. True once the fight
+        shows again."""
+        floor = MINE["floor"]
+        for _ in range(12):
+            rows = mine.floors(shot)
+            row = next((y for y, n in rows if n == floor), None)
+            if row is not None:
+                break
+            if not rows:
+                return False
+            # Scroll by about three rows towards the floor.
+            width, height, _ = shot
+            x = str(round(0.5 * width))
+            up = rows[0][1] > floor
+            a, b = (0.40, 0.65) if up else (0.65, 0.40)
+            await context.adb("shell", "input", "swipe", x, str(round(a * height)), x, str(round(b * height)), "600")
+            await asyncio.sleep(1.5)
+            shot = await context.screenshot()
+            if not shot or not mine.floor_list(shot):
+                return False
+        else:
+            mine_report("blocked", f"Étage {floor} introuvable dans la liste")
+            return False
+        shot = await mine_step(shot, (0.5, row))
+        if not shot or not mine.area_popup(shot):
+            return False
+        shot = await mine_step(shot, mine.AREA_TAPS[MINE["area"] - 1])
+        if not shot or not mine.feather_popup(shot):
+            return False
+        shot = await mine_step(shot, mine.FEATHER_TAPS[MINE["feathers"] - 1], 6)
+        return bool(shot) and mine.in_fight(shot)
+
+    async def farm_mine():
+        no_gold = 0
+        gold_seen = 0.0
+        last_hold = 0.0
+        failures = 0
+        try:
+            while MINE["enabled"]:
+                await asyncio.sleep(MINE_SECONDS)
+                if not await in_focus():
+                    mine_report("waiting", "Le jeu n’est pas au premier plan")
+                    continue
+                shot = await context.screenshot()
+                if not shot:
+                    continue
+                if classify(shot) == "saver":
+                    # The buffs are hidden: leave Power Saving Mode to see them.
+                    if time.monotonic() - last_hold > 60:
+                        last_hold = time.monotonic()
+                        await hold(shot, SAVER_TAP, SAVER_HOLD_MS)
+                    continue
+                if mine.in_fight(shot):
+                    failures = 0
+                    if mine.gold_scroll(shot):
+                        no_gold, gold_seen = 0, time.monotonic()
+                        mine_report("farming", "Combat en cours, parchemin doré actif")
+                        continue
+                    no_gold += 1
+                    if no_gold < MINE_NO_GOLD:
+                        continue
+                    if mine.repeat_ticked(shot):
+                        shot = await mine_step(shot, mine.REPEAT_TAP)
+                        if not shot or mine.repeat_ticked(shot):
+                            mine_report("blocked", "Plus de parchemin doré, mais « Repeat entry » ne se décoche pas")
+                            continue
+                    MINE["enabled"] = False
+                    mine_report("stopped", "Plus de parchemin doré : « Repeat entry » décoché, la mine s’arrête après cette entrée")
+                    return
+                if mine.area_popup(shot) or mine.feather_popup(shot) or not mine.floor_list(shot):
+                    # The user's own taps, or a screen this does not know.
+                    mine_report("waiting", "Écran autre que la mine : rien à faire")
+                    continue
+                # The floor list: the 30 entries are done.
+                if time.monotonic() - gold_seen > 5 * 60:
+                    mine_report("stopped" if gold_seen else "waiting",
+                                "Parchemin doré pas vu depuis 5 minutes : pas de relance")
+                    if gold_seen:
+                        MINE["enabled"] = False
+                        return
+                    continue
+                if failures >= 3:
+                    MINE["enabled"] = False
+                    mine_report("blocked", "La relance a échoué 3 fois : relance la mine à la main")
+                    return
+                mine_report("relaunching", f"Relance : étage {MINE['floor']}, zone {MINE['area']}")
+                if await mine_relaunch(shot):
+                    failures = 0
+                    mine_report("farming", "Mine relancée")
+                elif MINE["state"] != "blocked":
+                    failures += 1
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logging.exception("Slayer Legend mine failed")
+            MINE["enabled"] = False
+            mine_report("failed", f"Erreur : {e!r}"[:200])
+
+    def mine_state():
+        return {key: MINE[key] for key in ("enabled", "floor", "area", "feathers", "state", "message")}
+
+    async def handle_mine_state(request):
+        return context.json(mine_state())
+
+    async def handle_mine(request):
+        try:
+            body = await request.json()
+            enabled = bool(body.get("enabled"))
+            floor, area, feathers = int(body.get("floor") or 0), int(body.get("area") or 0), int(body.get("feathers") or 3)
+        except (ValueError, TypeError, AttributeError):
+            return context.json({"error": "Expected {enabled, floor, area, feathers}"}, status=400)
+        if enabled and not (1 <= floor <= 9999 and 1 <= area <= 5 and 1 <= feathers <= 3):
+            return context.json({"error": "floor 1-9999, area 1-5, feathers 1-3"}, status=400)
+        MINE.update(floor=floor or None, area=area or None, feathers=feathers)
+        task = MINE["task"]
+        if enabled and not MINE["enabled"]:
+            MINE["enabled"] = True
+            mine_report("waiting", "Surveillance de la mine")
+            if task is None or task.done():
+                MINE["task"] = asyncio.get_running_loop().create_task(farm_mine())
+        elif not enabled and MINE["enabled"]:
+            MINE["enabled"] = False
+            if task is not None and not task.done():
+                task.cancel()
+            mine_report("off", "")
+        return context.json(mine_state())
+
     async def handle_launch_state(request):
         return context.json({"state": LAUNCH["state"], "message": LAUNCH["message"]})
 
@@ -331,3 +490,5 @@ def setup(context):
     context.add_get("/screen", handle_screen)
     context.add_get("/launch", handle_launch_state)
     context.add_post("/launch", handle_launch)
+    context.add_get("/mine", handle_mine_state)
+    context.add_post("/mine", handle_mine)

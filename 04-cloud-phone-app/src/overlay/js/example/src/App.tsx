@@ -1377,11 +1377,18 @@ function App() {
                   <div style={styles.infoSection}>{tr('Plugins')}</div>
                   {plugins.length === 0 && <div style={styles.infoNote}>{tr('Aucun plugin installé.')}</div>}
                   {plugins.map((plugin) => (
-                    <div key={plugin.id}>
-                      <div style={styles.pluginTitle}>{plugin.title}</div>
+                    // One foldable section per plugin, folded state kept with the settings.
+                    <details key={plugin.id} open={!settings.foldedPlugins?.[plugin.id]}
+                      onToggle={(event) => {
+                        const folded = !event.currentTarget.open;
+                        if (folded !== Boolean(settings.foldedPlugins?.[plugin.id])) {
+                          updateSettings({ foldedPlugins: { ...settings.foldedPlugins, [plugin.id]: folded } });
+                        }
+                      }}>
+                      <summary style={styles.pluginTitle}>{plugin.title}</summary>
                       {plugin.error && <div style={styles.infoWarning}>{tr('Échec : {message}', { message: plugin.error })}</div>}
                       {(plugin.instance.options ?? []).map((option, index) => pluginOption(plugin, option, index))}
-                    </div>
+                    </details>
                   ))}
                 </>
               )}
@@ -1464,7 +1471,7 @@ const styles = {
     color: '#d8dde5', fontSize: '13px', fontFamily: 'system-ui, sans-serif',
   },
   pluginLayer: { position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none' },
-  pluginTitle: { marginTop: '6px', fontWeight: 600 },
+  pluginTitle: { marginTop: '6px', fontWeight: 600, cursor: 'pointer' },
   numberInput: {
     width: '96px', padding: '3px 6px', borderRadius: '6px', border: '1px solid #3a3f47',
     background: '#1b1d22', color: '#e8ebf0', font: 'inherit', textAlign: 'right',
