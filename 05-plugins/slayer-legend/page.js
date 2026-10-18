@@ -14,7 +14,6 @@ const ENGLISH = {
   'Farmer la mine': 'Farm the mine',
   'Étage': 'Floor',
   'Zone': 'Area',
-  'Plumes': 'Feathers',
   'Mine': 'Mine',
   'Surveillance de la mine': 'Watching the mine',
   'Combat en cours, parchemin doré actif': 'Fighting, gold scroll on',
@@ -605,7 +604,6 @@ export default function activate(api) {
     enabled: Boolean(api.setting('mineFarm')) && Boolean(Number(api.setting('mineFloor'))),
     floor: Number(api.setting('mineFloor')) || 0,
     area: Number(api.setting('mineArea') || 1),
-    feathers: Number(api.setting('mineFeathers') || 3),
   });
   const askMine = async () => {
     farm.answer = await api.get('/mine').catch(() => null);
@@ -684,11 +682,6 @@ export default function activate(api) {
         type: 'choice', key: 'mineArea', label: 'Zone',
         visible: () => Boolean(api.setting('mineFarm')),
         choices: [1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: String(n) })),
-      },
-      {
-        type: 'choice', key: 'mineFeathers', label: 'Plumes',
-        visible: () => Boolean(api.setting('mineFarm')),
-        choices: [3, 2, 1].map((n) => ({ value: String(n), label: String(n) })),
       },
       {
         type: 'status', label: 'Mine',

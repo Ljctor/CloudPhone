@@ -23,11 +23,12 @@ POST /api/v1/plugins/slayer-legend/launch
      any other screen stops it and asks the user.
 
 GET  /api/v1/plugins/slayer-legend/mine
-     State of mine farming: {enabled, floor, area, feathers, state, message}.
-POST /api/v1/plugins/slayer-legend/mine  {enabled, floor, area, feathers}
+     State of mine farming: {enabled, floor, area, state, message}.
+POST /api/v1/plugins/slayer-legend/mine  {enabled, floor, area}
      Farms the Closed Mine: while the fight runs with "Repeat entry" ticked
      it only watches; when the game is back on the floor list (after 30
-     entries) it taps the floor, the Area and the feathers again. When the
+     entries) it taps the floor, the Area and 3 feathers again (always 3:
+     the reward is multiplied by the feathers used). When the
      gold scroll buff is gone it unticks "Repeat entry" and stops: the
      entry under way ends, no more feathers are spent. It leaves Power
      Saving Mode (4 s press) at most once a minute to see the buffs.
@@ -69,8 +70,8 @@ EMERALD = {"time": 0.0, "value": None, "lock": None}
 EMERALD_SECONDS = 0.4
 SCREEN = {"time": 0.0, "value": None, "lock": None}
 SCREEN_SECONDS = 2.0
-MINE = {"enabled": False, "floor": None, "area": None, "feathers": 3, "state": "off", "message": "",
-        "task": None}
+MINE = {"enabled": False, "floor": None, "area": None, "state": "off", "message": "", "task": None}
+MINE_FEATHERS = 3
 MINE_SECONDS = 10
 # Checks in a row without the gold scroll before stopping (an animation
 # can hide it for a moment).
@@ -377,7 +378,7 @@ def setup(context):
         shot = await mine_step(shot, mine.AREA_TAPS[MINE["area"] - 1])
         if not shot or not mine.feather_popup(shot):
             return False
-        shot = await mine_step(shot, mine.FEATHER_TAPS[MINE["feathers"] - 1], 6)
+        shot = await mine_step(shot, mine.FEATHER_TAPS[MINE_FEATHERS - 1], 6)
         return bool(shot) and mine.in_fight(shot)
 
     async def farm_mine():
@@ -447,7 +448,7 @@ def setup(context):
             mine_report("failed", f"Erreur : {e!r}"[:200])
 
     def mine_state():
-        return {key: MINE[key] for key in ("enabled", "floor", "area", "feathers", "state", "message")}
+        return {key: MINE[key] for key in ("enabled", "floor", "area", "state", "message")}
 
     async def handle_mine_state(request):
         return context.json(mine_state())
@@ -456,12 +457,12 @@ def setup(context):
         try:
             body = await request.json()
             enabled = bool(body.get("enabled"))
-            floor, area, feathers = int(body.get("floor") or 0), int(body.get("area") or 0), int(body.get("feathers") or 3)
+            floor, area = int(body.get("floor") or 0), int(body.get("area") or 0)
         except (ValueError, TypeError, AttributeError):
-            return context.json({"error": "Expected {enabled, floor, area, feathers}"}, status=400)
-        if enabled and not (1 <= floor <= 9999 and 1 <= area <= 5 and 1 <= feathers <= 3):
-            return context.json({"error": "floor 1-9999, area 1-5, feathers 1-3"}, status=400)
-        MINE.update(floor=floor or None, area=area or None, feathers=feathers)
+            return context.json({"error": "Expected {enabled, floor, area}"}, status=400)
+        if enabled and not (1 <= floor <= 9999 and 1 <= area <= 5):
+            return context.json({"error": "floor 1-9999, area 1-5"}, status=400)
+        MINE.update(floor=floor or None, area=area or None)
         task = MINE["task"]
         if enabled and not MINE["enabled"]:
             MINE["enabled"] = True
