@@ -18,7 +18,6 @@ const ENGLISH = {
   'Farming mpw4': 'mpw4 farming',
   'Jeu libre': 'Free play',
   'Mine fermée': 'Closed Mine',
-  'Analyse des stages': 'Stage analysis',
   'Plus haut stage débloqué': 'Highest stage unlocked',
   'Stage mpw18': 'mpw18 stage',
   'Stage mpw4': 'mpw4 stage',
@@ -83,7 +82,7 @@ const ENGLISH = {
   'Pas de capture d’écran': 'No screenshot',
   'Menu du jeu': 'Game menu',
   'Autre application': 'Another app',
-  'Stage farmé': 'Farmed stage',
+  'Stage sélectionné': 'Selected stage',
   'vu en mode économie d’énergie, à confirmer': 'seen in Power Saving Mode, to be confirmed',
   'inconnu : passe en mode économie d’énergie pour le lire': 'unknown: go to Power Saving Mode to read it',
   'Monstres par vague': 'Monsters per wave',
@@ -645,7 +644,7 @@ export default function activate(api) {
   };
 
   // The mode (mpw18 farming by default, or a timed mode: mpw4 farming, free
-  // play, the mine, stage analysis) runs in the gateway; this browser's
+  // play, the mine) runs in the gateway; this browser's
   // options are sent to it when they change, and on load if the gateway has
   // not been told since it started. Its state is asked every 10 s.
   const farm = { answer: null, timer: null, stages: null };
@@ -745,7 +744,7 @@ export default function activate(api) {
         },
       },
       {
-        type: 'status', label: 'Stage farmé',
+        type: 'status', label: 'Stage sélectionné',
         visible: () => Boolean(screen.at),
         value: () => {
           const stage = screen.answer?.stage;
@@ -792,7 +791,6 @@ export default function activate(api) {
           { value: 'mpw4', label: 'Farming mpw4' },
           { value: 'free', label: 'Jeu libre' },
           { value: 'mine', label: 'Mine fermée' },
-          { value: 'analysis', label: 'Analyse des stages' },
         ],
       },
       {

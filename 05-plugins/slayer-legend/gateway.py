@@ -84,12 +84,9 @@ MINE_FEATHERS = 3
 MINE_SECONDS = 10
 # What the game is set to do. "mpw18" (farming a stage with 18 monsters per
 # wave) is the default; the others run until a time, then it goes back to it.
-MODES = ("mpw18", "mpw4", "free", "mine", "analysis")
+MODES = ("mpw18", "mpw4", "free", "mine")
 MODE = {"mode": "mpw18", "until": None, "stage18": None, "stage4": None, "highest": None,
         "configured": False, "state": "idle", "message": "", "task": None}
-# Stage analysis: this many of the highest mpw18 stages, this long each.
-ANALYSIS_STAGES = 12
-ANALYSIS_MINUTES = 5
 # Checks in a row without the gold scroll before stopping (an animation
 # can hide it for a moment).
 MINE_NO_GOLD = 2
@@ -652,8 +649,6 @@ def setup(context):
             return context.json({"error": "The mine needs floor 1-9999 and area 1-5"}, status=400)
         if mode == "mpw18":
             until = None
-        elif mode == "analysis" and until is None:
-            until = time.time() + ANALYSIS_STAGES * ANALYSIS_MINUTES * 60
         changed = mode != MODE["mode"]
         MODE.update(mode=mode, until=until, configured=True,
                     **{key: numbers[key] for key in ("stage18", "stage4", "highest")})
@@ -674,8 +669,6 @@ def setup(context):
                     mode_report("idle", "Farming mpw4 : choisis le stage")
             elif mode == "free":
                 mode_report("free", "Jeu libre : rien n’est touché jusqu’à la fin du minuteur")
-            elif mode == "analysis":
-                mode_report("todo", "Analyse des stages : navigation et lecture de l’or pas encore apprises")
             else:
                 mode_report("mine", "Mine")
         task = MODE["task"]
