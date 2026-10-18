@@ -39,6 +39,9 @@ POST /api/v1/plugins/slayer-legend/mine  {enabled, floor, area, until}
      minutes.
 POST /api/v1/plugins/slayer-legend/mine/timer  {add: minutes}
      Moves the end of farming by that many minutes (may be negative).
+GET  /api/v1/plugins/slayer-legend/gold-font
+     The gold counter's pixel font, {height, glyphs: {char: rows of "#"
+     and "."}}: digits, letters and the signs the page writes the rate with.
 GET  /api/v1/plugins/slayer-legend/gold
      Gold earned per second: {text, value, rate, rate_text, span, read,
      box}; box is where the counter was last read ([left, top, right,
@@ -47,8 +50,9 @@ GET  /api/v1/plugins/slayer-legend/gold
      The first call starts reading the gold counter every 10 s while the
      game is in front (Power Saving Mode hides it: no reading then); a
      value counts once two readings in a row agree. The rate is the slope
-     of the last 5 minutes of values (null before 30 s of them); spending
-     gold starts the window again. `read` is the time of the last reading.
+     of the last 5 minutes of values (from the second value on, over the
+     `span` seconds there are until then); spending gold starts the window
+     again. `read` is the time of the last reading.
 
 Screens are recognised from a few pixel areas, as fractions of the screen,
 measured on a 360x780 screen (the page's device shapes keep this ratio).
@@ -721,7 +725,9 @@ def setup(context):
         samples = GOLD["samples"]
         while samples and time.time() - samples[0][0] > GOLD_WINDOW:
             samples.pop(0)
-        if len(samples) < 2 or samples[-1][0] - samples[0][0] < 30:
+        # From the second value on: over what there is until the window
+        # is full (the page marks it as provisional).
+        if len(samples) < 2 or samples[-1][0] - samples[0][0] <= 0:
             return None
         # Least squares: the counter moves by steps of its last digit.
         n = len(samples)
@@ -774,7 +780,12 @@ def setup(context):
         })
 
     context.add_get("/emerald-mask", handle_emerald_mask)
+    async def handle_gold_font(request):
+        return context.json({"height": len(gold.DIGITS["0"]),
+                             "glyphs": {**gold.DIGITS, **gold.LETTERS, **gold.SIGNS}})
+
     context.add_get("/gold", handle_gold)
+    context.add_get("/gold-font", handle_gold_font)
     context.add_get("/screen", handle_screen)
     context.add_get("/launch", handle_launch_state)
     context.add_post("/launch", handle_launch)

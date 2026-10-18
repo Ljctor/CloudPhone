@@ -748,15 +748,47 @@ export default function activate(api) {
   // Gold per second, measured by the gateway (a reading every 10 s, the
   // slope over 5 minutes), written in brackets after the game's gold
   // counter, where the gateway last read it.
-  const gold = { answer: null, timer: null };
-  const label = document.createElement('div');
-  label.style.cssText = 'position:absolute;white-space:nowrap;transform:translateY(-50%);'
-    + 'font-family:system-ui,sans-serif;font-weight:800;color:#ffa31a;'
-    + 'text-shadow:-1px -1px 0 #000,1px -1px 0 #000,-1px 1px 0 #000,1px 1px 0 #000';
+  const gold = { answer: null, timer: null, font: null };
+  // Written in the counter's own pixel font (from the gateway) at its
+  // size: one game pixel is one cell, outlined in black like the game.
+  const label = document.createElement('canvas');
+  label.style.cssText = 'position:absolute;image-rendering:pixelated';
+  api.get('/gold-font').catch(() => null).then((font) => {
+    gold.font = font;
+    showGold();
+  });
+  const drawLabel = (text, cell) => {
+    const glyphs = [...text].map((c) => gold.font.glyphs[c]).filter(Boolean);
+    const rows = gold.font.height;
+    // A game pixel of space between glyphs, one round the text for the outline.
+    const width = glyphs.reduce((sum, glyph) => sum + glyph[0].length + 1, 0) + 1;
+    const scale = cell * (window.devicePixelRatio || 1);
+    label.width = Math.ceil(width * scale);
+    label.height = Math.ceil((rows + 2) * scale);
+    label.style.width = `${width * cell}px`;
+    label.style.height = `${(rows + 2) * cell}px`;
+    const context = label.getContext('2d');
+    for (const [colour, grow] of [['#000', 1], ['#ffa31a', 0]]) {
+      context.fillStyle = colour;
+      let pen = 1;
+      for (const glyph of glyphs) {
+        glyph.forEach((row, y) => [...row].forEach((ink, x) => {
+          if (ink === '#') {
+            // Whole device pixels: fractional edges leave seams between cells.
+            const left = Math.round((pen + x - grow) * scale);
+            const top = Math.round((1 + y - grow) * scale);
+            context.fillRect(left, top, Math.round((pen + x + 1 + grow) * scale) - left,
+              Math.round((2 + y + grow) * scale) - top);
+          }
+        }));
+        pen += glyph[0].length + 1;
+      }
+    }
+  };
   const goldText = () => {
     const answer = gold.answer;
     if (!answer) return '…';
-    if (answer.rate_text) return `${answer.rate_text}/s`;
+    if (answer.rate_text) return `${answer.span < 285 ? '~' : ''}${answer.rate_text}/s`;
     return answer.read ? api.tr('pas encore mesuré') : api.tr('non visible (économie d’énergie ?)');
   };
   const showGold = () => {
@@ -765,16 +797,18 @@ export default function activate(api) {
     // Only while the counter was read lately: it moves with the game's
     // panels and Power Saving Mode hides it.
     const fresh = box && answer.read && Date.now() / 1000 - answer.read < 25;
-    if (api.setting('goldOverlay') === 'off' || !fresh) {
+    if (api.setting('goldOverlay') === 'off' || !fresh || !gold.font) {
       label.remove();
       return;
     }
     if (!label.isConnected) api.layer.appendChild(label);
-    const height = box[3] - box[1];
-    label.style.left = `${(box[2] + height * 0.25 * (api.layer.offsetHeight / Math.max(1, api.layer.offsetWidth))) * 100}%`;
-    label.style.top = `${((box[1] + box[3]) / 2) * 100}%`;
-    label.style.fontSize = `${Math.max(9, Math.round(height * api.layer.offsetHeight * 1.3))}px`;
-    label.textContent = `(${answer.rate_text ? `${answer.rate_text}/s` : '…'})`;
+    // One game pixel on this screen: the counter's text is font.height high.
+    const cell = (box[3] - box[1]) * api.layer.offsetHeight / gold.font.height;
+    label.style.left = `${box[2] * api.layer.offsetWidth + 3 * cell}px`;
+    label.style.top = `${box[1] * api.layer.offsetHeight - cell}px`;
+    // "~" while the 5-minute window is not full yet.
+    const partial = answer.span < 285 ? '~' : '';
+    drawLabel(`(${answer.rate_text ? `${partial}${answer.rate_text}/s` : '...'})`, cell);
   };
   const askGold = async () => {
     gold.answer = await api.get('/gold').catch(() => null);
