@@ -67,7 +67,7 @@ function unload(item) {
   stopTaps(item.taps);
 }
 
-export function usePlugins({ gatewayUrl, deviceRef, layerRef, screenWidth, settings, postHeaders }) {
+export function usePlugins({ gatewayUrl, deviceRef, layerRef, screenWidth, settings, postFetch, postHeaders }) {
   const [plugins, setPlugins] = useState([]);
   const [, setVersion] = useState(0);
   const settingsRef = useRef(settings);
@@ -104,7 +104,7 @@ export function usePlugins({ gatewayUrl, deviceRef, layerRef, screenWidth, setti
             return response.ok ? response.json() : null;
           },
           post: async (path, body = {}) => {
-            const response = await fetch(`${base}${path}`, {
+            const response = await postFetch(`${base}${path}`, {
               method: 'POST', headers: postHeaders(), body: JSON.stringify(body),
             });
             return { ok: response.ok, status: response.status, body: await response.json().catch(() => ({})) };

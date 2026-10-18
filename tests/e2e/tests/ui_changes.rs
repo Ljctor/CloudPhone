@@ -174,8 +174,12 @@ fn the_page_can_still_post_after_a_change_restarted_the_gateway() {
         page.sleep(Duration::from_secs(2)).await;
         let text = page.dialog_text(P).await;
         assert!(!text.contains("403") && !text.to_lowercase().contains("token"), "the page's POST is accepted after the gateway restarted: {text}");
-        let p = phone.clone();
-        blocking(move || p.fake().wait_record("the second request", Duration::from_secs(10), |r| (r["requests"]["settings"].as_array()?.iter().filter(|e| e.get("request").is_some()).count() == 2).then_some(())));
+        // The gateway took the POST with the new token and answered it: one
+        // change per 2 minutes, so this second one is refused for that, with
+        // the time to wait, and nothing reaches Android.
+        assert!(text.contains("Wait") || text.contains("Attendez"), "the 2-minute limit answers the second change: {text}");
+        let requests = phone.fake().record()["requests"]["settings"].as_array().unwrap().iter().filter(|e| e.get("request").is_some()).count();
+        assert_eq!(requests, 1, "the second change was not sent to Android");
     });
 }
 

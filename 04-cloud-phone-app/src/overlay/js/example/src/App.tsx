@@ -421,14 +421,14 @@ function useNotify(gatewayUrl, enabled) {
     return () => { cancelled = true; };
   }, [gatewayUrl, enabled]);
   const change = async (body) => {
-    const response = await fetch(`${gatewayUrl}/api/v1/notify`, {
+    const response = await postFetch(`${gatewayUrl}/api/v1/notify`, {
       method: 'POST', headers: postHeaders(), body: JSON.stringify(body),
     }).catch(() => null);
     if (response?.ok) setValue(await response.json());
     return Boolean(response?.ok);
   };
   const test = async () => {
-    const response = await fetch(`${gatewayUrl}/api/v1/notify/test`, {
+    const response = await postFetch(`${gatewayUrl}/api/v1/notify/test`, {
       method: 'POST', headers: postHeaders(), body: '{}',
     }).catch(() => null);
     return Boolean(response?.ok);
@@ -471,7 +471,7 @@ function EmulatorSettings({ gatewayUrl, settings, refresh, rowStyle, labelStyle,
     if (!window.confirm(message)) return;
     const { renderer, cores, memoryMb } = choice;
     try {
-      const response = await fetch(`${gatewayUrl}/api/v1/emulator-settings`, {
+      const response = await postFetch(`${gatewayUrl}/api/v1/emulator-settings`, {
         method: 'POST',
         headers: postHeaders(),
         body: JSON.stringify({ renderer, cores, memoryMb, ...(sameScreen ? {} : target) }),
@@ -647,6 +647,28 @@ setViewerId(VIEWER_ID);
 function postHeaders() {
   const token = document.querySelector('meta[name="cloudphone-token"]')?.getAttribute('content') ?? '';
   return { 'Content-Type': 'application/json', 'X-CloudPhone-Token': token };
+}
+
+// A POST with the page token. The token changes when the gateway restarts
+// (a screen size or emulator change does that): on a token refusal, read
+// the current one from the page itself (same origin only) and try once more.
+async function postFetch(url, init) {
+  const response = await fetch(url, init);
+  if (response.status !== 403) return response;
+  const refused = await response.clone().json().catch(() => ({}));
+  if (!String(refused.error ?? '').includes('page token')) return response;
+  const page = await fetch(window.location.pathname, { cache: 'no-store' }).then((r) => r.text()).catch(() => '');
+  const token = new DOMParser().parseFromString(page, 'text/html')
+    .querySelector('meta[name="cloudphone-token"]')?.getAttribute('content');
+  if (!token) return response;
+  let meta = document.querySelector('meta[name="cloudphone-token"]');
+  if (!meta) {
+    meta = document.createElement('meta');
+    meta.setAttribute('name', 'cloudphone-token');
+    document.head.appendChild(meta);
+  }
+  meta.setAttribute('content', token);
+  return fetch(url, { ...init, headers: { ...init.headers, 'X-CloudPhone-Token': token } });
 }
 
 // Per-viewer page settings, kept in this browser only.
@@ -965,7 +987,7 @@ function App() {
   const [copied, setCopied] = useState(false);
   const pluginLayer = useRef(null);
   const plugins = usePlugins({
-    gatewayUrl, deviceRef, layerRef: pluginLayer, screenWidth: screen.width, settings, postHeaders,
+    gatewayUrl, deviceRef, layerRef: pluginLayer, screenWidth: screen.width, settings, postFetch, postHeaders,
   });
   const displayState = useDisplayState(gatewayUrl,
     ['pending', 'applying'].includes(emulatorSettings?.request?.state));
@@ -1126,7 +1148,7 @@ function App() {
     };
   }, []);
 
-  const post = (path, body) => fetch(`${gatewayUrl}${path}`, {
+  const post = (path, body) => postFetch(`${gatewayUrl}${path}`, {
     method: 'POST',
     headers: postHeaders(),
     body: JSON.stringify(body),
@@ -1140,7 +1162,7 @@ function App() {
 
   // Keys: the emulator's "keyboard" data channel when open (a keypress with
   // the DOM key name), otherwise the gateway, which uses adb.
-  const disconnectOthers = () => fetch(`${gatewayUrl}/api/v1/viewers/disconnect-others`, {
+  const disconnectOthers = () => postFetch(`${gatewayUrl}/api/v1/viewers/disconnect-others`, {
     method: 'POST',
     headers: postHeaders(),
     body: JSON.stringify({ viewer: VIEWER_ID }),
