@@ -51,10 +51,12 @@ GET  /api/v1/plugins/slayer-legend/gold
      game is in front (Power Saving Mode hides it: no reading then); a
      value counts once two readings in a row agree. The rate is the slope
      of the last 5 minutes of values (from the second value on, over the
-     `span` seconds there are until then), all on the same stage: the
-     stage name's line on the battle screen must look the same; two
-     readings in a row on another stage or place (or with no stage name)
-     start the window again, as does spending gold. `read` is the time of the last reading.
+     `span` seconds there are until then), all on the same stage. Where
+     the game is gets checked at each reading, counter shown or not: the
+     battle screen's stage name line must look the same, Power Saving
+     Mode must show the same stage number; two checks in a row on another
+     stage, another place, another screen or another app start the window
+     again, as does spending gold. `read` is the time of the last reading.
 
 Screens are recognised from a few pixel areas, as fractions of the screen,
 measured on a 360x780 screen (the page's device shapes keep this ratio).
@@ -110,7 +112,7 @@ MINE_NO_GOLD = 2
 GOLD_SECONDS = 10
 GOLD_WINDOW = 300
 GOLD = {"samples": [], "pending": None, "text": None, "read": None, "box": None, "asked": 0.0, "task": None,
-        "place": None, "odd": 0}
+        "place": None, "number": None, "odd": 0}
 # The last stage number read in Power Saving Mode: {number, numeral}.
 FARMED = {"number": None}
 
@@ -750,36 +752,60 @@ def setup(context):
         ink = max(1, sum(map(sum, a)), sum(map(sum, b)))
         return differ / ink < 0.2
 
-    def gold_place(shot):
-        """Whether this reading is on the window's stage. Another stage, or
-        no stage name, twice in a row: the window starts again there."""
-        here = stage._ink(stage._crop(shot, stage.BATTLE_NAME))
-        if here is not None and (GOLD["place"] is None or same_place(here, GOLD["place"])):
-            if GOLD["place"] is None:
-                GOLD["place"] = here
-                GOLD["samples"].clear()
-            GOLD["odd"] = 0
-            return True
+    def gold_restart(place=None):
+        GOLD.update(place=place, number=None, odd=0, pending=None)
+        GOLD["samples"].clear()
+
+    def gold_elsewhere(place=None):
+        """Not on the window's stage, or not known where: twice in a row
+        (an effect can hide the stage name for a moment), the window starts
+        again (at `place` if known)."""
         GOLD["odd"] += 1
         if GOLD["odd"] >= 2:
-            GOLD["samples"].clear()
-            GOLD["place"] = here
-            GOLD["pending"] = None
+            gold_restart(place)
+
+    def gold_where(shot):
+        """Follows where the game is at each reading; True when this shot
+        is on the window's stage (its gold may be counted)."""
+        if classify(shot) == "saver":
+            # Power Saving Mode farms the same stage and writes its number.
+            number, _ = stage.read_saver(shot)
+            if number is None:
+                gold_elsewhere()
+            elif GOLD["number"] is None and GOLD["place"] is not None and GOLD["odd"] == 0:
+                GOLD["number"] = number
+            elif number != GOLD["number"]:
+                gold_elsewhere()
+            else:
+                GOLD["odd"] = 0
+            return False
+        here = stage._ink(stage._crop(shot, stage.BATTLE_NAME))
+        if here is None:
+            gold_elsewhere()
+            return False
+        if GOLD["place"] is None:
+            gold_restart(here)
+            return True
+        if same_place(here, GOLD["place"]):
             GOLD["odd"] = 0
+            return True
+        gold_elsewhere(here)
         return False
 
     async def watch_gold():
         # Stops 10 minutes after the last page asked.
         while time.monotonic() - GOLD["asked"] < 600:
             try:
-                if await in_focus():
-                    shot = await context.screenshot()
-                    reading = gold.read(shot) if shot else None
+                shot = await context.screenshot() if await in_focus() else None
+                if not shot:
+                    gold_elsewhere()  # another app in front: the game stops
+                else:
+                    reading = gold.read(shot)
                     if reading:
-                        now = time.time()
-                        GOLD["read"] = now
+                        GOLD["read"] = time.time()
                         GOLD["box"] = reading["box"]
-                    if reading and gold_place(shot):
+                    if gold_where(shot) and reading:
+                        now = time.time()
                         if GOLD["pending"] == reading["value"]:
                             samples = GOLD["samples"]
                             if samples and reading["value"] < samples[-1][1]:
