@@ -1,0 +1,7 @@
+#!/bin/sh
+# Fake systemctl for the gateway under test: `systemctl show UNIT
+# --property=...` prints the emulator unit's state as the fake sets it.
+case "$1" in
+  show) cat "$FAKE_ROOT/systemctl-show" ;;
+  *) echo "fake systemctl: unsupported: $*" >&2; exit 1 ;;
+esac

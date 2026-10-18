@@ -1,0 +1,125 @@
+//! The plugin host, as the gateway serves it (`--plugins_dir`): the list,
+//! the plugins' page modules, their routes under /api/v1/plugins/<id>/
+//! behind the same checks as the rest of the API, and what a plugin's
+//! gateway code may use (screenshot, adb). With test plugins from
+//! tests/fake-emulator/plugins, nothing game-specific.
+use cloudphone_e2e::*;
+use serde_json::{json, Value};
+use std::time::Duration;
+
+const PROBE: &str = "tests/fake-emulator/plugins/e2e-probe";
+const BROKEN: &str = "tests/fake-emulator/plugins/e2e-broken";
+const MISNAMED: &str = "tests/fake-emulator/plugins/e2e-misnamed";
+
+fn with(plugins: Value) -> CloudPhone {
+    CloudPhone::start_with(json!({"plugins": plugins}))
+}
+
+fn post_without_token(cp: &CloudPhone, path: &str, origin: Option<&str>) -> u16 {
+    let url = cp.url(path);
+    let origin = origin.map(String::from);
+    off_runtime(move || {
+        let mut request = client().post(url).json(&json!({}));
+        if let Some(origin) = origin {
+            request = request.header("Origin", origin);
+        }
+        request.send().unwrap().status().as_u16()
+    })
+}
+
+#[test]
+fn without_plugins_the_list_is_empty() {
+    let cp = CloudPhone::start();
+    let list = cp.get("api/v1/plugins");
+    assert_eq!(list.headers()["cache-control"], "no-store");
+    assert_eq!(list.json().unwrap(), json!({"plugins": []}));
+    assert_eq!(cp.get("api/v1/plugins/e2e-probe/hello").status(), 404);
+}
+
+#[test]
+fn an_installed_plugin_is_listed_with_its_page_module() {
+    let cp = with(json!([PROBE]));
+    assert_eq!(
+        cp.get_json("api/v1/plugins"),
+        json!({"plugins": [{"id": "e2e-probe", "title": "Sonde e2e", "version": "1.2.3", "page": "/plugins/e2e-probe/page.js"}]})
+    );
+}
+
+#[test]
+fn the_plugins_top_level_scripts_are_served_and_nothing_else() {
+    let cp = with(json!([PROBE]));
+    for script in ["page.js", "helper.js"] {
+        let response = cp.get(&format!("plugins/e2e-probe/{script}"));
+        assert_eq!(response.status(), 200, "{script}");
+        let kind = response.headers()["content-type"].to_str().unwrap().to_string();
+        assert!(kind.starts_with("text/javascript"), "{script}: {kind}");
+    }
+    for other in ["gateway.py", "plugin.json", "missing.js", "sub/page.js"] {
+        assert_eq!(cp.get(&format!("plugins/e2e-probe/{other}")).status(), 404, "{other} is not served");
+    }
+}
+
+#[test]
+fn a_plugins_get_route_answers_under_its_prefix() {
+    let cp = with(json!([PROBE]));
+    let response = cp.get("api/v1/plugins/e2e-probe/hello");
+    assert_eq!(response.headers()["cache-control"], "no-store");
+    assert_eq!(response.json().unwrap(), json!({"plugin": "e2e-probe", "prefix": "/api/v1/plugins/e2e-probe"}));
+}
+
+#[test]
+fn a_plugins_post_route_needs_the_page_token_and_the_pages_origin() {
+    let cp = with(json!([PROBE]));
+    assert_eq!(post_without_token(&cp, "api/v1/plugins/e2e-probe/count", None), 403, "no token");
+    assert_eq!(post_without_token(&cp, "api/v1/plugins/e2e-probe/count", Some("http://elsewhere.example")), 403, "foreign origin");
+    assert_eq!(cp.get_json("api/v1/plugins/e2e-probe/count")["count"], 0, "refused POSTs did nothing");
+    let response = cp.post_json("api/v1/plugins/e2e-probe/count", &json!({"by": 2}));
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.json().unwrap()["count"], 2);
+}
+
+#[test]
+fn a_plugin_reads_androids_screen() {
+    let cp = CloudPhone::start_with(json!({"plugins": [PROBE], "display": {"width": 360, "height": 780, "density": 160}}));
+    assert_eq!(cp.get_json("api/v1/plugins/e2e-probe/screen"), json!({"screen": [360, 780], "bytes": 360 * 780 * 3}));
+    cp.fake().control(json!({"grpc": "down"}));
+    std::thread::sleep(Duration::from_millis(300));
+    // plugins.py documents context.screenshot() as "(width, height, RGB888
+    // bytes), or None": with the emulator down it must give None, not raise
+    // (found by this test: the gRPC error reaches the plugin, HTTP 500).
+    let response = cp.get("api/v1/plugins/e2e-probe/screen");
+    assert_eq!(response.status(), 200, "the plugin's route still answers with the emulator down");
+    assert_eq!(response.json().unwrap(), json!({"screen": null}), "no emulator: no screenshot, no error");
+}
+
+#[test]
+fn a_plugin_runs_adb_on_the_emulator() {
+    let cp = with(json!([PROBE]));
+    let response = cp.post_json("api/v1/plugins/e2e-probe/home", &json!({}));
+    assert_eq!(response.json().unwrap(), json!({"code": 0}));
+    let key = cp.fake().wait_record("HOME through adb", Duration::from_secs(5), |r| r["keys"].as_array()?.last().cloned());
+    assert_eq!(key, json!({"key": "HOME", "via": "adb", "time": key["time"]}));
+    let adb = cp.fake().record()["adb"].clone();
+    assert!(adb.as_array().unwrap().iter().any(|l| l == "-s emulator-5558 shell input keyevent HOME"), "on the emulator's serial: {adb}");
+}
+
+#[test]
+fn a_broken_or_misnamed_plugin_is_skipped_and_the_others_work() {
+    let cp = with(json!([PROBE, BROKEN, {"path": MISNAMED, "name": "e2e-misnamed"}]));
+    let list = cp.get_json("api/v1/plugins");
+    let ids: Vec<&str> = list["plugins"].as_array().unwrap().iter().map(|p| p["id"].as_str().unwrap()).collect();
+    // The broken plugin only fails in the browser: the gateway lists it.
+    assert_eq!(ids, ["e2e-broken", "e2e-probe"], "a plugin whose id is not its directory's name is not loaded: {list}");
+    assert_eq!(cp.get("plugins/another-name/page.js").status(), 404);
+    assert_eq!(cp.get_json("api/v1/plugins/e2e-probe/hello")["plugin"], "e2e-probe");
+    assert_eq!(cp.get("api/v1/ping").status(), 204, "the gateway still answers");
+}
+
+#[test]
+fn a_plugin_reads_a_1080p_screen() {
+    // 1080×2340 RGB888 is 7.6 MB, above gRPC's default 4 MiB receive limit.
+    let cp = CloudPhone::start_with(json!({"plugins": [PROBE], "display": {"width": 1080, "height": 2340, "density": 480}}));
+    let response = cp.get("api/v1/plugins/e2e-probe/screen");
+    assert_eq!(response.status(), 200, "the 1080p screenshot reaches the plugin: {:?}", response.text());
+    assert_eq!(response.json().unwrap(), json!({"screen": [1080, 2340], "bytes": 1080 * 2340 * 3}));
+}

@@ -1,0 +1,40 @@
+"""Runs the repository's gateway, unchanged, on the fake emulator's host.
+
+The gateway reads a few host files with no option to point it elsewhere:
+the load (/proc/loadavg), the host's memory (/proc/meminfo) and the
+emulator unit's cgroup (/sys/fs/cgroup/system.slice/UNIT/: its processes,
+CPU and memory, and the command line of its qemu process). This shim
+redirects exactly those paths, for the gateway module only, to the fake's
+files under $FAKE_ROOT/host, then runs the gateway's own main with the
+command line it was given. Everything else (systemctl and adb through PATH
+and --adb, the discovery file, config.ini, the request and status files)
+goes through the gateway's normal options.
+"""
+import builtins
+import os
+import sys
+
+root = os.path.join(os.environ["FAKE_ROOT"], "host")
+cgroup = f"/sys/fs/cgroup/system.slice/{os.environ['FAKE_EMULATOR_UNIT']}/"
+redirect = {
+    "/proc/loadavg": f"{root}/proc/loadavg",
+    "/proc/meminfo": f"{root}/proc/meminfo",
+    f"/proc/{os.environ['FAKE_EMULATOR_PID']}/cmdline": f"{root}/proc/emulator.cmdline",
+}
+
+sys.path.insert(0, os.environ["FAKE_GATEWAY_PATH"])
+from videobridge_gateway import gateway_server  # noqa: E402
+
+
+def fake_host_open(file, *args, **kwargs):
+    path = os.fspath(file) if isinstance(file, (str, os.PathLike)) else file
+    if isinstance(path, str):
+        if path in redirect:
+            path = redirect[path]
+        elif path.startswith(cgroup):
+            path = f"{root}/cgroup/{path[len(cgroup):]}"
+    return builtins.open(path, *args, **kwargs)
+
+
+gateway_server.open = fake_host_open
+gateway_server.run_main()

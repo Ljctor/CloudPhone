@@ -1,0 +1,22 @@
+#!/bin/sh
+# Fake adb for the gateway under test: `adb -s SERIAL shell ...`.
+# Logs every call, answers the Android metrics script with canned output,
+# accepts `input keyevent KEY` and `input tap X Y` (the fake emulator reads
+# the log), `am start` and `dumpsys window` (the launcher has the focus).
+state=$FAKE_ROOT/bin-state
+printf '%s\n' "$*" >>"$state/adb.log"
+if [ -e "$state/adb-fail" ]; then
+  echo "error: device 'emulator-5558' not found" >&2
+  exit 1
+fi
+case "$*" in
+  *"input keyevent"*|*"input tap"*) exit 0 ;;
+  *"am start"*) echo "Starting: Intent { cmp=$(echo "$*" | sed 's/.* -n //') }" ;;
+  *"dumpsys window"*) echo "  mCurrentFocus=Window{0 u0 com.android.launcher3/.Launcher}" ;;
+  *timestats*)
+    cat "$FAKE_ROOT/android/meminfo"
+    echo "==TIMESTATS=="
+    cat "$FAKE_ROOT/android/timestats"
+    ;;
+  *) echo "fake adb: unsupported: $*" >&2; exit 1 ;;
+esac
