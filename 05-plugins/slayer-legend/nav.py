@@ -37,9 +37,10 @@ def connections(screen):
     return SCREENS.get(screen, {}).get("moves", [])
 
 
-def guard(screen, move_id, x=None, y=None, kind="tap"):
+def guard(screen, move_id, x=None, y=None, kind="tap", verified=False):
     """None when the action may be done, else why not. x and y are where it
-    lands (fractions); kind is tap, hold, swipe (x, y: its start) or key."""
+    lands (fractions); kind is tap, hold, swipe (x, y: its start) or key.
+    verified says the caller checked the move's precondition, if it has one."""
     if screen not in SCREENS:
         return f"unknown screen {screen!r}"
     moves = connections(screen)
@@ -51,6 +52,8 @@ def guard(screen, move_id, x=None, y=None, kind="tap"):
     expected = "key" if "key" in move else "swipe" if "swipe" in move else "hold" if "hold" in move else "tap"
     if kind != expected:
         return f"{screen}/{move_id} is a {expected}, not a {kind}"
+    if move.get("precondition") and not verified:
+        return f"{screen}/{move_id} needs a check first: {move['precondition']}"
     if kind == "key":
         return None
     if x is None or y is None or not _covers(move, x, y):
@@ -74,7 +77,15 @@ def check():
             if move.get("forbidden") or "key" in move:
                 continue
             point = move.get("tap") or move.get("hold") or (move["swipe"][:2] if "swipe" in move else None)
-            if point and guard(name, move["id"], point[0], point[1],
-                               "swipe" if "swipe" in move else "hold" if "hold" in move else "tap"):
-                problems.append(f"{name}/{move['id']}: {guard(name, move['id'], *point)}")
+            kind = "swipe" if "swipe" in move else "hold" if "hold" in move else "tap"
+            why = point and guard(name, move["id"], point[0], point[1], kind, verified=True)
+            if why:
+                problems.append(f"{name}/{move['id']}: {why}")
     return problems
+
+
+def preconditions():
+    """Every move the guard lets through only once its precondition was
+    checked: [(screen, move id, precondition)]."""
+    return [(name, move["id"], move["precondition"])
+            for name, screen in SCREENS.items() for move in screen["moves"] if move.get("precondition")]

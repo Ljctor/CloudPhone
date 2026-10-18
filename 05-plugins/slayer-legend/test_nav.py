@@ -51,6 +51,11 @@ class Graph(unittest.TestCase):
             self.assertIsNone(nav.guard("shop_summon", f"ad_summon_{name}", 0.88, y))
         self.assertIsNotNone(nav.guard("shop_summon", "ad_summon_weapon", 0.80, 0.54))
 
+    def test_precondition(self):
+        # A reward is claimed only once its bar was read as full.
+        self.assertIn("check first", nav.guard("quest_panel", "claim", 0.79, 0.29))
+        self.assertIn(("quest_panel", "claim", "the row's reward bar is full, read from pixels"), nav.preconditions())
+
     def test_refused_by_default(self):
         self.assertIsNotNone(nav.guard("battle", "no_such_move", 0.5, 0.5))
         self.assertIsNotNone(nav.guard("no_such_screen", "start", 0.5, 0.836))
@@ -60,7 +65,7 @@ class Graph(unittest.TestCase):
         self.assertIsNone(nav.guard("title", "start", 0.50, 0.836))
         self.assertIsNone(nav.guard("save_notice", "confirm", 0.314, 0.745))
         self.assertIsNone(nav.guard("battle", "quest", 0.94, 0.09))
-        self.assertIsNone(nav.guard("quest_panel", "claim", 0.79, 0.29))
+        self.assertIsNone(nav.guard("quest_panel", "claim", 0.79, 0.29, verified=True))
         self.assertIsNone(nav.guard("saver", "leave", 0.50, 0.88, "hold"))
         for point in mine.AREA_TAPS:
             self.assertIsNone(nav.guard("mine_area", "area", *point))

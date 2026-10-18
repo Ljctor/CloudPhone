@@ -1,5 +1,5 @@
 {
- "about": "Slayer Legend's screens (nodes) and every known way out of each (moves), allowed or forbidden. Positions are fractions of the screen (x of the width, y of the height). A move is a tap at `tap` (±TOLERANCE), anywhere in `area` [left, top, right, bottom], a `hold` for hold_ms, a `swipe` [x1, y1, x2, y2] or an Android `key`. nav.py's guard refuses any action that is not an allowed move of the current screen, or that falls on a forbidden move.",
+ "about": "Slayer Legend's screens (nodes) and every known way out of each (moves), allowed or forbidden. Positions are fractions of the screen (x of the width, y of the height). A move is a tap at `tap` (±TOLERANCE), anywhere in `area` [left, top, right, bottom], a `hold` for hold_ms, a `swipe` [x1, y1, x2, y2] or an Android `key`. nav.py's guard refuses any action that is not an allowed move of the current screen, or that falls on a forbidden move. A move with a `precondition` is refused unless the caller checked it (verified=True); `effect` says what a move does besides moving.",
  "tolerance": 0.03,
  "screens": {
   "title": {
@@ -152,7 +152,8 @@
       0.94,
       0.09
      ],
-     "label": "Quest (claims the finished main quest's reward directly, e.g. Diamond x 10; otherwise opens the panel)"
+     "label": "Quest",
+     "effect": "claims the finished main quest's reward (e.g. Diamond x 10); otherwise opens the panel"
     },
     {
      "id": "scroll",
@@ -1825,7 +1826,18 @@
       0.9,
       0.95
      ],
-     "label": "reward button of a row (diamonds, emeralds, feathers): claim it when the row's bar is full; rows at y 0.29, 0.37, 0.45, 0.53, 0.615, 0.70, 0.775, 0.855"
+     "label": "reward button of a row (diamonds, emeralds, feathers)",
+     "rows": [
+      0.29,
+      0.37,
+      0.45,
+      0.53,
+      0.615,
+      0.7,
+      0.775,
+      0.855
+     ],
+     "precondition": "the row's reward bar is full, read from pixels"
     }
    ]
   },
