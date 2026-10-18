@@ -16,16 +16,6 @@ const ENGLISH = {
   'Zone à farmer': 'Area to farm',
   'Minuteur': 'Timer',
   'Ajuster (minutes)': 'Adjust (minutes)',
-  'Alertes sur le téléphone (ntfy)': 'Alerts on the phone (ntfy)',
-  'Abonne l’appli ntfy à': 'Subscribe the ntfy app to',
-  'Alerte de test': 'Test alert',
-  'Envoyer': 'Send',
-  'Adresse ntfy': 'ntfy address',
-  'Copier': 'Copy',
-  'copiée': 'copied',
-  'copie impossible': 'could not copy',
-  'envoyée': 'sent',
-  'échec': 'failed',
   'plus de parchemin doré': 'no gold scroll',
   'Combat en cours, sans parchemin doré': 'Fighting, without the gold scroll',
   'Sans limite': 'No limit',
@@ -549,32 +539,6 @@ function startEmeraldMask(api, state, counter = COUNTERS.emerald) {
   };
 }
 
-// Copies text to the clipboard. The page is often served over plain http
-// (WireGuard), where navigator.clipboard does not exist: then through a
-// hidden text field and the older copy command.
-async function copyText(text) {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    const field = document.createElement('textarea');
-    field.value = text;
-    field.setAttribute('readonly', '');
-    field.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
-    document.body.appendChild(field);
-    field.select();
-    field.setSelectionRange(0, text.length);
-    let done = false;
-    try {
-      done = document.execCommand('copy');
-    } catch {
-      done = false;
-    }
-    field.remove();
-    return done;
-  }
-}
-
 // '' (unchanged), 'cut' or 'rewrite'.
 function modeOf(api, counter) {
   return api.setting(counter.mode) ?? '';
@@ -669,11 +633,9 @@ export default function activate(api) {
   // when they change, and on load if the gateway has not been told yet
   // (after its restart). Its state is asked every 10 s while it farms.
   const farm = { answer: null, timer: null };
-  // This browser's copies: when farming must stop (Unix seconds, null: no
-  // limit), as the gateway last said, and the random ntfy.sh topic for
-  // alerts. Sent again when the gateway restarts.
+  // This browser's copy of when farming must stop (Unix seconds, null: no
+  // limit), as the gateway last said; sent again when the gateway restarts.
   const UNTIL = 'cloudphone-slayer-legend-mine-until';
-  const TOPIC = 'cloudphone-slayer-legend-ntfy';
   const load = (name) => {
     try {
       return window.localStorage.getItem(name);
@@ -689,18 +651,11 @@ export default function activate(api) {
       // Not kept: lost on reload.
     }
   };
-  let topic = load(TOPIC);
-  if (!topic) {
-    const bytes = crypto.getRandomValues(new Uint8Array(12));
-    topic = `slayer-${[...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
-    keep(TOPIC, topic);
-  }
   const mineOptions = () => ({
     enabled: Boolean(api.setting('mineFarm')) && Boolean(Number(api.setting('mineFloor'))),
     floor: Number(api.setting('mineFloor')) || 0,
     area: Number(api.setting('mineArea') || 1),
     until: farm.answer?.until ?? (Number(load(UNTIL)) || null),
-    topic: api.setting('mineAlerts') ? topic : null,
   });
   const left = () => {
     const seconds = (farm.answer?.until ?? 0) - Date.now() / 1000;
@@ -730,7 +685,6 @@ export default function activate(api) {
     if (result?.ok) remember(result.body);
     api.refresh();
   };
-  const alerts = { state: '', copied: '' };
   api.get('/mine').catch(() => null).then((answer) => {
     // After a gateway restart it knows nothing: send this browser's options.
     if (answer && !answer.enabled && answer.state === 'off' && !answer.until && mineOptions().enabled) {
@@ -816,41 +770,6 @@ export default function activate(api) {
           run: () => moveTimer(m),
           disabled: () => m < 0 && !farm.answer?.until,
         })),
-      },
-      { type: 'toggle', key: 'mineAlerts', label: 'Alertes sur le téléphone (ntfy)', visible: () => Boolean(api.setting('mineFarm')) },
-      {
-        type: 'status', label: 'Abonne l’appli ntfy à',
-        visible: () => Boolean(api.setting('mineFarm') && api.setting('mineAlerts')),
-        value: () => `ntfy.sh/${topic}`,
-        href: () => `https://ntfy.sh/${topic}`,
-      },
-      {
-        type: 'action', label: 'Adresse ntfy', button: 'Copier',
-        visible: () => Boolean(api.setting('mineFarm') && api.setting('mineAlerts')),
-        run: async () => {
-          alerts.copied = await copyText(`https://ntfy.sh/${topic}`) ? 'copiée' : 'copie impossible';
-          api.refresh();
-        },
-      },
-      {
-        type: 'status', label: 'Adresse ntfy',
-        visible: () => Boolean(alerts.copied && api.setting('mineAlerts')),
-        value: () => api.tr(alerts.copied),
-      },
-      {
-        type: 'action', label: 'Alerte de test', button: 'Envoyer',
-        visible: () => Boolean(api.setting('mineFarm') && api.setting('mineAlerts')),
-        run: async () => {
-          await sendMine();
-          const result = await api.post('/mine/test', {}).catch(() => null);
-          alerts.state = result?.ok ? 'envoyée' : 'échec';
-          api.refresh();
-        },
-      },
-      {
-        type: 'status', label: 'Alerte de test',
-        visible: () => Boolean(alerts.state && api.setting('mineAlerts')),
-        value: () => api.tr(alerts.state),
       },
       {
         type: 'status', label: 'Mine',

@@ -43,6 +43,7 @@ from .proto import rtc_service_v2_pb2_grpc as rtc_grpc
 from .proto import ice_config_pb2 as ice
 from .plugins import load_plugins, run_adb
 from . import events as events_log
+from . import notify
 
 # Configure Logging
 logging.basicConfig(
@@ -508,6 +509,61 @@ def is_kicked(viewer):
     for key in [key for key, since in KICKED.items() if now - since > KICK_SECONDS]:
         del KICKED[key]
     return bool(viewer) and viewer in KICKED
+
+
+async def handle_notify(request):
+    """GET /api/v1/notify: phone alerts through ntfy.sh, {available,
+    enabled, topic, url} (see notify.py)."""
+    return web.json_response(notify.describe(), headers={"Cache-Control": "no-store"})
+
+
+async def handle_set_notify(request):
+    """POST /api/v1/notify {enabled[, newTopic]}: turns alerts on or off;
+    the first time (or with newTopic) it makes the random topic."""
+    if not notify.STATE["file"]:
+        return web.json_response({"error": "Alerts are not set up on this server"}, status=409)
+    try:
+        data = await request.json()
+        enabled, new_topic = data["enabled"], data.get("newTopic", False)
+        if not isinstance(enabled, bool) or not isinstance(new_topic, bool):
+            raise TypeError("not booleans")
+    except (ValueError, KeyError, TypeError):
+        return web.json_response({"error": "Expected {enabled: true|false[, newTopic: true]}"}, status=400)
+    try:
+        state = notify.configure(enabled, new_topic)
+    except OSError as e:
+        logging.warning(f"Alerts not saved: {e!r}")
+        return web.json_response({"error": "Could not save the setting"}, status=500)
+    logging.info(f"Phone alerts {'on' if enabled else 'off'} (requested by {request.remote})")
+    return web.json_response(state)
+
+
+async def handle_test_notify(request):
+    """POST /api/v1/notify/test: one test alert."""
+    if not notify.STATE["topic"]:
+        return web.json_response({"error": "No topic yet: turn alerts on first"}, status=409)
+    sent = await notify.send("Test : les alertes du Cloud Phone arrivent bien", force=True)
+    return web.json_response({"sent": sent}, status=200 if sent else 502)
+
+
+async def watch_events():
+    """Every minute, alerts on Android's new events (an app crashed, froze
+    or was stopped while in sight; Android or the emulator restarted)."""
+    seen = {}
+    while True:
+        await asyncio.sleep(60)
+        if not notify.STATE["enabled"]:
+            seen.clear()
+            continue
+        try:
+            found = await read_events()
+        except Exception as e:
+            logging.warning(f"Events for alerts: {e!r}")
+            continue
+        if not found["android"]:
+            continue
+        for event in notify.new_events(found["events"], seen)[:5]:
+            await notify.send(notify.sentence(event))
 
 
 async def handle_disconnect_others(request):
@@ -1082,6 +1138,9 @@ def init_app(videobridge_token, plugins_dir=""):
     app.router.add_get("/api/v1/display", handle_display)
     app.router.add_get("/api/v1/state", handle_state)
     app.router.add_get("/api/v1/events", handle_events)
+    app.router.add_get("/api/v1/notify", handle_notify)
+    app.router.add_post("/api/v1/notify", handle_set_notify)
+    app.router.add_post("/api/v1/notify/test", handle_test_notify)
     app.router.add_post("/api/v1/viewers/disconnect-others", handle_disconnect_others)
     app.router.add_post("/api/v1/display", handle_set_display)
     app.router.add_get("/api/v1/emulator-settings", handle_settings)
@@ -1096,7 +1155,7 @@ def init_app(videobridge_token, plugins_dir=""):
         app.router.add_get("/", handle_index)
         app.router.add_get("/index.html", handle_index)
         app.router.add_static("/assets", os.path.join(WEB_ROOT, "assets"))
-    load_plugins(app, plugins_dir, read_screenshot, plugin_adb)
+    load_plugins(app, plugins_dir, read_screenshot, plugin_adb, notify.send)
 
     return app
 
@@ -1181,6 +1240,12 @@ async def main():
         help="File where the privileged settings service reports progress.",
     )
     parser.add_argument(
+        "--notify_file",
+        type=str,
+        default="",
+        help="Where the phone alerts' setting is kept (empty: no alerts).",
+    )
+    parser.add_argument(
         "--plugins_dir",
         type=str,
         default="",
@@ -1200,6 +1265,7 @@ async def main():
     DISPLAY_STATUS = args.display_status
     SETTINGS_REQUEST = args.settings_request
     SETTINGS_STATUS = args.settings_status
+    notify.load(args.notify_file)
 
     # Parse discovery configuration properties
     global DISCOVERY_PROPS
@@ -1244,6 +1310,7 @@ async def main():
 
     watcher = asyncio.create_task(watch_discovery_file())
     sampler = asyncio.create_task(sample_metrics())
+    alerts = asyncio.create_task(watch_events())
 
     # Run forever
     try:

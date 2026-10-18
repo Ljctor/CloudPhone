@@ -21,4 +21,5 @@ exec /opt/cloudphone/current/venv/bin/videobridge-gateway \
   --display_status /run/cloudphone-display/status \
   --settings_request /var/lib/cloudphone/settings-request \
   --settings_status /run/cloudphone-settings/status \
+  --notify_file /var/lib/cloudphone/notify.json \
   --plugins_dir /opt/cloudphone/plugins

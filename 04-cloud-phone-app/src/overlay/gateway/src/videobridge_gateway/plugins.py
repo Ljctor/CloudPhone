@@ -31,13 +31,15 @@ SCRIPT_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}\.js$")
 class PluginContext:
     """What a plugin's gateway.py may use. Passed to setup(context)."""
 
-    def __init__(self, app, plugin_id, directory, screenshot, adb):
+    def __init__(self, app, plugin_id, directory, screenshot, adb, notify=None, title=None):
         self.app = app
         self.id = plugin_id
         self.directory = directory
         self.prefix = f"/api/v1/plugins/{plugin_id}"
         self._screenshot = screenshot
         self._adb = adb
+        self._notify = notify
+        self._title = title or plugin_id
 
     def add_get(self, path, handler):
         """GET /api/v1/plugins/<id><path>."""
@@ -54,6 +56,11 @@ class PluginContext:
     async def adb(self, *args, timeout=10):
         """Runs `adb -s <emulator> ARGS...`; returns (exit code, stdout)."""
         return await self._adb(*args, timeout=timeout)
+
+    async def notify(self, text):
+        """Sends text to the user's phone when they turned alerts on (ntfy,
+        see notify.py), titled with the plugin's name; True when sent."""
+        return bool(self._notify) and await self._notify(text, title=self._title)
 
     def json(self, value, status=200):
         return web.json_response(value, status=status, headers={"Cache-Control": "no-store"})
@@ -74,7 +81,7 @@ def read_manifest(directory):
     }
 
 
-def load_plugins(app, plugins_dir, screenshot, adb):
+def load_plugins(app, plugins_dir, screenshot, adb, notify=None):
     """Registers every plugin found in plugins_dir; returns their manifests."""
     loaded = []
     if not plugins_dir or not os.path.isdir(plugins_dir):
@@ -97,7 +104,7 @@ def load_plugins(app, plugins_dir, screenshot, adb):
                 spec = importlib.util.spec_from_file_location(f"cloudphone_plugin_{plugin_id.replace('-', '_')}", code)
                 module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(module)
-                module.setup(PluginContext(app, plugin_id, directory, screenshot, adb))
+                module.setup(PluginContext(app, plugin_id, directory, screenshot, adb, notify, manifest.get("title")))
             loaded.append(manifest)
             logging.info(f"Plugin {plugin_id} {manifest['version']} loaded")
         except Exception as e:

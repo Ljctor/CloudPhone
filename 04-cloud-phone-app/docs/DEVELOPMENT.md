@@ -69,6 +69,9 @@ Android keeps running. Reload the page (the index is never cached).
 | `GET /api/v1/ping` | 204 at once, for the round-trip time |
 | `GET /api/v1/state?viewer=ID[&details=1]` | emulator unit state (`systemctl show`), Android booted, viewers, load, `display` and `settings` change status, `kicked` for this viewer; cached 2 s. `details=1` adds `metrics` (host, emulator, Android) and turns on adb sampling of Android for 30 s. The page polls every 3 s, every 2 s with details while the Server tab is open |
 | `GET /api/v1/events` | what happened to Android and the server, newest first (`events.py`): app crashes, ANRs and apps Android stopped while noticeable (out-of-memory score ≤ 200, e.g. stopped for a Google Play Services update), low memory, from `logcat -b events,crash` (back to Android's last boot at most); Android's boot (`/proc/uptime`), the emulator unit's start, automatic restarts and last result (`systemctl show`), the gateway's start. Each event is `{time, kind, app, reason}`; cached 10 s. The page reads it every 15 s while the Server tab is open (section Events) |
+| `GET /api/v1/notify` | phone alerts through ntfy.sh (`notify.py`): `{available, enabled, topic, url}`; `available` is false without `--notify_file` |
+| `POST /api/v1/notify` | `{enabled[, newTopic]}`: turns them on or off; the first time (or with `newTopic`) the gateway draws a random topic `cloudphone-<24 hex>`, kept with the setting in `/var/lib/cloudphone/notify.json` (mode 600). While on, the gateway alerts every minute on Android's new events (crash, ANR, app stopped while noticeable, Android or emulator restart) and plugins send theirs with `context.notify`. Messages go through the public ntfy.sh service: anyone who knows the topic can read them, so they carry nothing private |
+| `POST /api/v1/notify/test` | one test alert; 502 when ntfy.sh did not take it |
 | `GET /api/v1/emulator-settings` | renderer, cores and memory from the running emulator's command line, the configured screen (`display`), limits (`renderers`, `maxCores`, `maxMemoryMb`), state of the last request |
 | `POST /api/v1/emulator-settings` `{renderer, cores, memoryMb[, width, height, density]}` | what the page's Apply sends: change all of them with one restart of Android |
 | `GET /api/v1/display` | running and configured screen size, last change request, limits |
@@ -182,7 +185,10 @@ checks. The `id` must equal the directory name and match
 `page.js`, gives it the API described at the
 top of `plugins.ts` (video element, a drawing layer over the screen, stored
 options, gateway calls) and renders its options (toggle, number, choice, action,
-status) in Options → Plugins.
+buttons, status) in Options → Plugins, one foldable section per plugin.
+`context` offers `add_get`/`add_post`, `screenshot()`, `adb(...)`, `json()`
+and `notify(text)`, which sends a phone alert when the user turned them on
+(below).
 
 ## Emerald counter (part 05 plugin)
 

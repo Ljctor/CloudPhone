@@ -32,29 +32,25 @@ POST /api/v1/plugins/slayer-legend/mine  {enabled, floor, area, until}
      gold scroll buff is gone it unticks "Repeat entry" and stops: the
      entry under way ends, no more feathers are spent. It stops the same
      way at `until` (Unix seconds; null: no time limit); with a time limit,
-     a missing gold scroll is only a warning. `topic`: an ntfy.sh topic
-     that gets an alert when the gold scroll goes, when farming stops, and
-     when the game has left the screen for 2 minutes.
+     a missing gold scroll is only a warning. It leaves Power Saving Mode
+     (4 s press) at most once a minute to see the buffs. With the Cloud
+     Phone's phone alerts on (Options), it alerts when the gold scroll
+     goes, when farming stops, and when the game has left the screen for 2
+     minutes.
 POST /api/v1/plugins/slayer-legend/mine/timer  {add: minutes}
      Moves the end of farming by that many minutes (may be negative).
-POST /api/v1/plugins/slayer-legend/mine/test
-     Sends a test alert to the topic. It leaves Power
-     Saving Mode (4 s press) at most once a minute to see the buffs.
 
 Screens are recognised from a few pixel areas, as fractions of the screen,
 measured on a 360x780 screen (the page's device shapes keep this ratio).
 """
 
 import asyncio
-import re
 import base64
 import importlib.util
 import json
 import logging
 import os
 import time
-
-import aiohttp
 
 PACKAGE = "com.gear2.growslayer"
 ACTIVITY = f"{PACKAGE}/com.google.firebase.MessagingUnityPlayerActivity"
@@ -82,12 +78,10 @@ DIAMOND = {"time": 0.0, "value": None, "lock": None}
 EMERALD_SECONDS = 0.4
 SCREEN = {"time": 0.0, "value": None, "lock": None}
 SCREEN_SECONDS = 2.0
-MINE = {"enabled": False, "floor": None, "area": None, "until": None, "topic": None, "gold": None,
+MINE = {"enabled": False, "floor": None, "area": None, "until": None, "gold": None,
         "state": "off", "message": "", "task": None}
 MINE_FEATHERS = 3
 MINE_SECONDS = 10
-# ntfy.sh topic names: long and random, so that nobody else guesses them.
-TOPIC = re.compile(r"[A-Za-z0-9_-]{16,64}")
 # Checks in a row without the gold scroll before stopping (an animation
 # can hide it for a moment).
 MINE_NO_GOLD = 2
@@ -411,19 +405,8 @@ def setup(context):
         return True
 
     async def alert(text):
-        """Sends text to the user's phone through ntfy.sh, on the topic the
-        page gave (a random name only that browser knows); nothing without."""
-        topic = MINE["topic"]
-        if not topic:
-            return
-        try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
-                async with session.post(f"https://ntfy.sh/{topic}", data=text.encode("utf-8"),
-                                        headers={"Title": "Slayer Legend", "Tags": "pick"}) as response:
-                    if response.status >= 300:
-                        logging.warning(f"Slayer Legend alert: ntfy.sh answered {response.status}")
-        except Exception as e:
-            logging.warning(f"Slayer Legend alert not sent: {e!r}")
+        """The Cloud Phone's phone alerts (ntfy), when the user turned them on."""
+        await context.notify(text)
 
     async def farm_mine():
         no_gold = 0
@@ -531,14 +514,11 @@ def setup(context):
             enabled = bool(body.get("enabled"))
             floor, area = int(body.get("floor") or 0), int(body.get("area") or 0)
             until = float(body["until"]) if body.get("until") is not None else None
-            topic = str(body.get("topic") or "") or None
         except (ValueError, TypeError, AttributeError):
             return context.json({"error": "Expected {enabled, floor, area, until}"}, status=400)
         if enabled and not (1 <= floor <= 9999 and 1 <= area <= 5):
             return context.json({"error": "floor 1-9999, area 1-5"}, status=400)
-        if topic is not None and not TOPIC.fullmatch(topic):
-            return context.json({"error": "topic: 16-64 letters, digits, - or _"}, status=400)
-        MINE.update(floor=floor or None, area=area or None, until=until, topic=topic)
+        MINE.update(floor=floor or None, area=area or None, until=until)
         task = MINE["task"]
         if enabled and not MINE["enabled"]:
             MINE["enabled"] = True
@@ -565,12 +545,6 @@ def setup(context):
         MINE["until"] = until if until > now + 30 else None
         return context.json(mine_state())
 
-    async def handle_mine_test(request):
-        if not MINE["topic"]:
-            return context.json({"error": "No topic"}, status=400)
-        await alert("Test : les alertes de la mine arrivent bien")
-        return context.json({"sent": True})
-
     async def handle_launch_state(request):
         return context.json({"state": LAUNCH["state"], "message": LAUNCH["message"]})
 
@@ -589,4 +563,3 @@ def setup(context):
     context.add_get("/mine", handle_mine_state)
     context.add_post("/mine", handle_mine)
     context.add_post("/mine/timer", handle_mine_timer)
-    context.add_post("/mine/test", handle_mine_test)

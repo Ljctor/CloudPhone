@@ -65,6 +65,8 @@ function toggleFullscreen() {
 // Navigation-bar shapes as on Samsung One UI (chevron back, rounded-square
 // home, three-bar recents) and Material icons (Apache 2.0), 24×24.
 const ICONS = {
+  copy: <g fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 0 1 2-2h8" strokeLinecap="round" /></g>,
+  check: <path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />,
   back: <path d="M14.5 5.5L8 12l6.5 6.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />,
   home: <rect x="6" y="6" width="12" height="12" rx="4" fill="none" stroke="currentColor" strokeWidth="2" />,
   recents: <path d="M7.5 7v10M12 7v10M16.5 7v10" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />,
@@ -197,6 +199,61 @@ function useEmulatorSettings(gatewayUrl, enabled) {
 
 // What happened to Android and the server (GET /api/v1/events), read while
 // the Server tab is open.
+// Copies text. The page is often served over plain http (through
+// WireGuard), where navigator.clipboard does not exist: then through a
+// hidden text field and the older copy command.
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const field = document.createElement('textarea');
+    field.value = text;
+    field.setAttribute('readonly', '');
+    field.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+    document.body.appendChild(field);
+    field.select();
+    field.setSelectionRange(0, text.length);
+    let done = false;
+    try {
+      done = document.execCommand('copy');
+    } catch {
+      done = false;
+    }
+    field.remove();
+    return done;
+  }
+}
+
+// Phone alerts through ntfy.sh (GET/POST /api/v1/notify), read while the
+// options panel is open.
+function useNotify(gatewayUrl, enabled) {
+  const [value, setValue] = useState(null);
+  useEffect(() => {
+    if (!enabled) return undefined;
+    let cancelled = false;
+    fetch(`${gatewayUrl}/api/v1/notify`, { cache: 'no-store' })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((next) => { if (!cancelled) setValue(next); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [gatewayUrl, enabled]);
+  const change = async (body) => {
+    const response = await fetch(`${gatewayUrl}/api/v1/notify`, {
+      method: 'POST', headers: postHeaders(), body: JSON.stringify(body),
+    }).catch(() => null);
+    if (response?.ok) setValue(await response.json());
+    return Boolean(response?.ok);
+  };
+  const test = async () => {
+    const response = await fetch(`${gatewayUrl}/api/v1/notify/test`, {
+      method: 'POST', headers: postHeaders(), body: '{}',
+    }).catch(() => null);
+    return Boolean(response?.ok);
+  };
+  return { value, change, test };
+}
+
 function useEvents(gatewayUrl, enabled) {
   const [value, setValue] = useState(null);
   useEffect(() => {
@@ -782,6 +839,9 @@ function App() {
   const server = useServerState(gatewayUrl, serverTab);
   const [emulatorSettings, refreshEmulatorSettings] = useEmulatorSettings(gatewayUrl, serverTab);
   const events = useEvents(gatewayUrl, serverTab);
+  const alerts = useNotify(gatewayUrl, panel === 'options');
+  const [alertNote, setAlertNote] = useState('');
+  const [copied, setCopied] = useState(false);
   const pluginLayer = useRef(null);
   const plugins = usePlugins({
     gatewayUrl, deviceRef, layerRef: pluginLayer, screenWidth: screen.width, settings, postHeaders,
@@ -1394,6 +1454,50 @@ function App() {
                   </label>
                   {toggle('Afficher le curseur', 'touchMarker')}
                   {toggle('Replier la barre 3 s après l’entrée en plein écran', 'autoFold')}
+                  <div style={styles.infoSection}>{tr('Alertes sur le téléphone')}</div>
+                  {alerts.value && !alerts.value.available && (
+                    <div style={styles.infoNote}>{tr('Non disponibles sur ce serveur.')}</div>
+                  )}
+                  {alerts.value?.available && (
+                    <>
+                      <label style={styles.infoRow}>
+                        <span style={styles.infoLabel}>{tr('Alertes par ntfy (même page fermée)')}</span>
+                        <input type="checkbox" checked={alerts.value.enabled}
+                          onChange={(event) => { setAlertNote(''); alerts.change({ enabled: event.target.checked }); }} />
+                      </label>
+                      {alerts.value.enabled && alerts.value.url && (
+                        <>
+                          <div style={styles.infoRow}>
+                            <span style={styles.infoLabel}>{tr('Abonne l’appli ntfy à')}</span>
+                            <span style={styles.copyRow}>
+                              <a href={alerts.value.url} target="_blank" rel="noreferrer" style={styles.link}>
+                                {alerts.value.url.replace(/^https:\/\//, '')}
+                              </a>
+                              <button style={styles.iconButton} aria-label={tr('Copier l’adresse')} title={tr('Copier l’adresse')}
+                                onClick={async () => {
+                                  const done = await copyText(alerts.value.url);
+                                  setCopied(done);
+                                  setAlertNote(done ? '' : tr('Copie impossible : touche longuement le lien.'));
+                                  if (done) window.setTimeout(() => setCopied(false), 2000);
+                                }}>
+                                <Icon name={copied ? 'check' : 'copy'} />
+                              </button>
+                            </span>
+                          </div>
+                          <div style={styles.infoRow}>
+                            <span style={styles.infoLabel}>{tr('Alerte de test')}</span>
+                            <button style={styles.panelButton} onClick={async () => {
+                              setAlertNote(await alerts.test() ? tr('Envoyée.') : tr('Échec de l’envoi.'));
+                            }}>{tr('Envoyer')}</button>
+                          </div>
+                          <div style={styles.infoNote}>
+                            {tr('Plantages et redémarrages d’Android, et les alertes des plugins. Elles passent par le service public ntfy.sh : quiconque connaît l’adresse peut les lire.')}
+                          </div>
+                        </>
+                      )}
+                      {alertNote && <div style={styles.infoNote}>{alertNote}</div>}
+                    </>
+                  )}
                   <div style={styles.infoSection}>{tr('Plugins')}</div>
                   {plugins.length === 0 && <div style={styles.infoNote}>{tr('Aucun plugin installé.')}</div>}
                   {plugins.map((plugin) => (
@@ -1570,6 +1674,11 @@ const styles = {
     background: '#2f5d8f', color: '#fff', fontSize: '12px',
   },
   link: { color: '#8cc4ff', wordBreak: 'break-all' },
+  copyRow: { display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 },
+  iconButton: {
+    flex: 'none', width: '30px', height: '30px', padding: '3px', borderRadius: '7px',
+    border: '1px solid #4da3ff', background: '#2f5d8f', color: '#fff',
+  },
   panelButton: {
     padding: '4px 10px', borderRadius: '7px', border: '1px solid #4da3ff',
     background: '#2f5d8f', color: '#fff', fontSize: '12px',
