@@ -1460,9 +1460,20 @@ function App() {
       );
     }
     if (option.type === 'dialog') {
+      // select: a radio button before the label, one of a group sharing
+      // the stored key (the first of the group when nothing is stored).
+      const select = option.select;
+      const stored = select && settings.plugins?.[plugin.id]?.[select.key];
       return (
         <div key={key} style={styles.infoRow}>
-          <span style={styles.infoLabel}>{tr(option.label)}</span>
+          {select ? (
+            <label style={{ ...styles.infoLabel, display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <input type="radio" name={`${plugin.id}-${select.key}`}
+                checked={(stored ?? select.default) === select.value}
+                onChange={() => setPluginOption(plugin.id, select.key, select.value)} />
+              {tr(option.label)}
+            </label>
+          ) : <span style={styles.infoLabel}>{tr(option.label)}</span>}
           <button style={styles.panelButton} onClick={() => setPluginDialog({ plugin, option })}>
             {tr(option.button ?? 'Configurer')}
           </button>

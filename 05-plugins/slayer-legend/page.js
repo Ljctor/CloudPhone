@@ -36,7 +36,8 @@ const ENGLISH = {
   'Farming mpw18': 'mpw18 farming',
   'Jeu libre': 'Free play',
   'Mine fermée': 'Closed Mine',
-  'Plus haut stage débloqué': 'Highest stage unlocked',
+  'Configuration : jeu libre': 'Settings: free play',
+  'Minuteur par défaut (minutes)': 'Default timer (minutes)',
   'Stage mpw18': 'mpw18 stage',
   'Stage mpw4': 'mpw4 stage',
   '— choisir —': '— choose —',
@@ -692,12 +693,13 @@ export default function activate(api) {
     }
   };
   const mode = () => api.setting('mode') || 'mpw18';
+  // Free play starts with this timer unless set in its dialog.
+  const FREE_MINUTES = 60;
   const modeOptions = () => ({
     mode: mode(),
     until: farm.answer?.until ?? (Number(load(UNTIL)) || null),
     stage18: Number(api.setting('stage18')) || null,
     stage4: Number(api.setting('stage4')) || null,
-    highest: Number(api.setting('highestStage')) || null,
     floor: Number(api.setting('mineFloor')) || null,
     area: Number(api.setting('mineArea') || 1),
   });
@@ -730,10 +732,10 @@ export default function activate(api) {
     if (result?.ok) remember(result.body);
     api.refresh();
   };
-  // The mpw18 and mpw4 stages up to the highest one unlocked.
+  // The mpw18 and mpw4 stages up to the highest one the gateway saw
+  // farmed (all of them when it knows none).
   const loadStages = async () => {
-    const highest = Number(api.setting('highestStage')) || remembered || '';
-    farm.stages = await api.get(`/stages?highest=${highest}`).catch(() => null);
+    farm.stages = await api.get(remembered ? `/stages?known=${remembered}` : '/stages').catch(() => null);
     api.refresh();
   };
   const DOTS = { green: '🟢', blue: '🔵', red: '🔴' };
@@ -947,37 +949,36 @@ export default function activate(api) {
         value: () => api.tr(launch.message || launch.state),
       },
       { type: 'section', key: 'mode', label: 'Mode et farming' },
+      // One row per mode: a radio button chooses it, Configurer opens its
+      // settings.
       {
-        type: 'choice', key: 'mode', label: 'Mode',
-        choices: [
-          { value: 'mpw18', label: 'Farming mpw18 (par défaut)' },
-          { value: 'mpw4', label: 'Farming mpw4' },
-          { value: 'free', label: 'Jeu libre' },
-          { value: 'mine', label: 'Mine fermée' },
-        ],
-      },
-      // Each mode's settings, apart from choosing the mode: in a dialog.
-      {
-        type: 'dialog', label: 'Farming mpw18', title: 'Configuration : farming mpw18',
+        type: 'dialog', label: 'Farming mpw18 (par défaut)', title: 'Configuration : farming mpw18',
+        select: { key: 'mode', value: 'mpw18', default: 'mpw18' },
         options: [
-          {
-            type: 'number', key: 'highestStage', label: 'Plus haut stage débloqué', placeholder: () => String(remembered ?? ''),
-          },
           { type: 'choice', key: 'stage18', label: 'Stage mpw18', choices: () => stageChoices(18) },
           { type: 'status', label: 'Arme, gravure, réglages de combat', value: () => api.tr('à venir') },
         ],
       },
       {
         type: 'dialog', label: 'Farming mpw4', title: 'Configuration : farming mpw4',
+        select: { key: 'mode', value: 'mpw4', default: 'mpw18' },
         options: [
-          {
-            type: 'number', key: 'highestStage', label: 'Plus haut stage débloqué', placeholder: () => String(remembered ?? ''),
-          },
           { type: 'choice', key: 'stage4', label: 'Stage mpw4', choices: () => stageChoices(4) },
         ],
       },
       {
+        type: 'dialog', label: 'Jeu libre', title: 'Configuration : jeu libre',
+        select: { key: 'mode', value: 'free', default: 'mpw18' },
+        options: [
+          {
+            type: 'number', key: 'freeMinutes', label: 'Minuteur par défaut (minutes)',
+            placeholder: String(FREE_MINUTES),
+          },
+        ],
+      },
+      {
         type: 'dialog', label: 'Mine fermée', title: 'Configuration : mine fermée',
+        select: { key: 'mode', value: 'mine', default: 'mpw18' },
         options: [
           { type: 'number', key: 'mineFloor', label: 'Étage à farmer', placeholder: '161' },
           {
@@ -1078,9 +1079,12 @@ export default function activate(api) {
     onSetting: (key, value) => {
       if (key === 'emeraldMode') setEmerald(Boolean(value));
       if (key === 'diamondMode') setDiamond(Boolean(value));
-      if (key === 'highestStage') loadStages();
       if (key === 'goldOverlay') showGold();
-      if (['mode', 'stage18', 'stage4', 'highestStage', 'mineFloor', 'mineArea'].includes(key)) {
+      if (key === 'mode' && value === 'free') {
+        const minutes = Number(api.setting('freeMinutes')) || FREE_MINUTES;
+        farm.answer = { ...farm.answer, until: Date.now() / 1000 + minutes * 60 };
+      }
+      if (['mode', 'stage18', 'stage4', 'mineFloor', 'mineArea'].includes(key)) {
         farm.error = null;
         sendMode();
       }

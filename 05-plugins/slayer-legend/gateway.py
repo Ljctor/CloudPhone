@@ -285,6 +285,7 @@ def setup(context):
             # Trust a number whose numeral agrees with the table.
             if number and (numeral is None or name_numeral(number) in (None, numeral)):
                 FARMED["number"] = number
+                note_highest(number)
                 return {"screen": screen, "stage": stage_info(number, True)}
         elif screen in ("battle", "menu") and known:
             numeral = stage.read_battle(shot)
@@ -606,6 +607,28 @@ def setup(context):
         MINE["until"] = until if until > now + 30 else None
         return context.json(mine_state())
 
+    # The highest stage seen farmed: the game only farms unlocked stages.
+    # Kept in the plugin's data directory; None until one is read.
+    highest_file = os.path.join(context.data_dir, "highest.json") if context.data_dir else None
+    HIGHEST = {"number": None}
+    try:
+        with open(highest_file, encoding="utf-8") as f:
+            HIGHEST["number"] = int(json.load(f)["number"]) or None
+    except (TypeError, OSError, ValueError, KeyError):
+        pass
+
+    def note_highest(number):
+        if not number or (HIGHEST["number"] and number <= HIGHEST["number"]):
+            return
+        HIGHEST["number"] = number
+        if highest_file:
+            try:
+                with open(f"{highest_file}.tmp", "w", encoding="utf-8") as f:
+                    json.dump({"number": number}, f)
+                os.replace(f"{highest_file}.tmp", highest_file)
+            except OSError as e:
+                logging.warning(f"Slayer Legend: highest stage not kept: {e}")
+
     def stage_list(mpw, highest):
         """Stages with that many monsters per wave, at most `highest`,
         highest first: [{number, name, colour}]."""
@@ -617,12 +640,15 @@ def setup(context):
         return found
 
     async def handle_stages(request):
-        """GET /stages?highest=N: the mpw18 and mpw4 stages up to N."""
+        """GET /stages[?known=N]: the mpw18 and mpw4 stages up to the highest
+        one seen farmed (N: the highest the page saw), all of them when
+        none is known."""
         try:
-            highest = int(request.query.get("highest") or 0) or None
+            note_highest(int(request.query.get("known") or 0) or None)
         except ValueError:
-            highest = None
-        return context.json({"mpw18": stage_list(18, highest), "mpw4": stage_list(4, highest)})
+            pass
+        highest = HIGHEST["number"]
+        return context.json({"highest": highest, "mpw18": stage_list(18, highest), "mpw4": stage_list(4, highest)})
 
     def mode_report(state, message):
         if (MODE["state"], MODE["message"]) != (state, message):
