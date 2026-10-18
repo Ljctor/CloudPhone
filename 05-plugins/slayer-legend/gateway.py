@@ -40,7 +40,10 @@ POST /api/v1/plugins/slayer-legend/mine  {enabled, floor, area, until}
 POST /api/v1/plugins/slayer-legend/mine/timer  {add: minutes}
      Moves the end of farming by that many minutes (may be negative).
 GET  /api/v1/plugins/slayer-legend/gold
-     Gold earned per second: {text, value, rate, rate_text, span, read}.
+     Gold earned per second: {text, value, rate, rate_text, span, read,
+     box}; box is where the counter was last read ([left, top, right,
+     bottom], fractions of the screen), for the page to write the rate
+     after it.
      The first call starts reading the gold counter every 10 s while the
      game is in front (Power Saving Mode hides it: no reading then); a
      value counts once two readings in a row agree. The rate is the slope
@@ -100,7 +103,7 @@ MINE_NO_GOLD = 2
 # Gold per second: readings every GOLD_SECONDS, the slope over GOLD_WINDOW.
 GOLD_SECONDS = 10
 GOLD_WINDOW = 300
-GOLD = {"samples": [], "pending": None, "text": None, "read": None, "asked": 0.0, "task": None}
+GOLD = {"samples": [], "pending": None, "text": None, "read": None, "box": None, "asked": 0.0, "task": None}
 # The last stage number read in Power Saving Mode: {number, numeral}.
 FARMED = {"number": None}
 
@@ -739,6 +742,7 @@ def setup(context):
                     if reading:
                         now = time.time()
                         GOLD["read"] = now
+                        GOLD["box"] = reading["box"]
                         if GOLD["pending"] == reading["value"]:
                             samples = GOLD["samples"]
                             if samples and reading["value"] < samples[-1][1]:
@@ -766,6 +770,7 @@ def setup(context):
             "rate_text": gold.rate_text(rate),
             "span": samples[-1][0] - samples[0][0] if samples else 0,
             "read": GOLD["read"],
+            "box": GOLD["box"],
         })
 
     context.add_get("/emerald-mask", handle_emerald_mask)

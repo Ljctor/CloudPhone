@@ -110,6 +110,7 @@ const EN = {
   'Réglages d’Android': 'Android settings',
   'Événements': 'Events',
   'Journaux du serveur': 'Server logs',
+  'Configurer': 'Configure',
   'Journaux du client': 'Client logs',
   'Rien pour l’instant': 'Nothing yet',
   'Vidéo connectée': 'Video connected',

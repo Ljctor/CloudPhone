@@ -15,6 +15,8 @@
 //   { type: 'buttons', label, buttons: [{ label, run(), disabled?() }] }   a row of small buttons
 //   { type: 'status', label, value(), href?() }    href makes the value a link
 //   { type: 'section', key, label, folded? }       starts a foldable sub-section (folded: default)
+//   { type: 'dialog', label, button?, title?, options: Option[] }   a button opening these
+//                                                  options in a dialog over the panel
 // Any option may have visible?(): shown only when it returns true.
 // Labels are French; the plugin gives English texts with api.addTranslations.
 // api:
@@ -24,9 +26,6 @@
 //   post(path, body)      POST with the page token: { ok, status, body }
 //   video()               the <video> element showing Android, or null
 //   layer                 a <div> over the screen for drawing, pointer-events none
-//   float                 a <div> over the screen and its touch surface, pointer-events
-//                         none: children with pointer-events auto take touches
-//                         (draggable labels) instead of Android
 //   screenWidth()         width of the shown screen in CSS pixels
 //   setting(key)          this plugin's stored option (true/false, or text)
 //   refresh()             re-render the options panel (after a status change)
@@ -34,7 +33,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { addTranslations, tr } from './i18n';
 
-export function usePlugins({ gatewayUrl, deviceRef, layerRef, floatRef, screenWidth, settings, postHeaders }) {
+export function usePlugins({ gatewayUrl, deviceRef, layerRef, screenWidth, settings, postHeaders }) {
   const [plugins, setPlugins] = useState([]);
   const [, setVersion] = useState(0);
   const settingsRef = useRef(settings);
@@ -61,9 +60,6 @@ export function usePlugins({ gatewayUrl, deviceRef, layerRef, floatRef, screenWi
         const layer = document.createElement('div');
         layer.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:1;overflow:hidden';
         layerRef.current?.appendChild(layer);
-        const float = document.createElement('div');
-        float.style.cssText = 'position:absolute;inset:0;pointer-events:none;overflow:hidden';
-        floatRef.current?.appendChild(float);
         const api = {
           id: plugin.id,
           title: plugin.title,
@@ -80,7 +76,6 @@ export function usePlugins({ gatewayUrl, deviceRef, layerRef, floatRef, screenWi
           },
           video: () => deviceRef.current?.querySelector('video') ?? null,
           layer,
-          float,
           screenWidth: () => widthRef.current,
           setting: (key) => settingsRef.current.plugins?.[plugin.id]?.[key] ?? null,
           refresh,
@@ -90,16 +85,15 @@ export function usePlugins({ gatewayUrl, deviceRef, layerRef, floatRef, screenWi
         try {
           const module = await import(/* @vite-ignore */ `${gatewayUrl}${plugin.page}`);
           const instance = module.default(api) ?? {};
-          loaded.push({ ...plugin, instance, layer, float });
+          loaded.push({ ...plugin, instance, layer });
         } catch (error) {
           console.error(`Plugin ${plugin.id}:`, error);
           layer.remove();
-          float.remove();
           loaded.push({ ...plugin, instance: { options: [] }, error: String(error?.message ?? error) });
         }
       }
       if (cancelled) {
-        loaded.forEach((item) => { item.instance.dispose?.(); item.layer?.remove(); item.float?.remove(); });
+        loaded.forEach((item) => { item.instance.dispose?.(); item.layer?.remove(); });
         return;
       }
       active.current = loaded;
@@ -107,7 +101,7 @@ export function usePlugins({ gatewayUrl, deviceRef, layerRef, floatRef, screenWi
     })();
     return () => {
       cancelled = true;
-      active.current.forEach((item) => { item.instance.dispose?.(); item.layer?.remove(); item.float?.remove(); });
+      active.current.forEach((item) => { item.instance.dispose?.(); item.layer?.remove(); });
       active.current = [];
     };
   }, [gatewayUrl]);

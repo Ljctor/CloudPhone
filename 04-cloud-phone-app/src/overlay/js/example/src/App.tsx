@@ -814,6 +814,9 @@ function App() {
   // Open panel over the screen: 'info' (from the ping/fps block, with a
   // client and a server tab) or 'options' (from the cog).
   const [panel, setPanel] = useState(null);
+  // A plugin's dialog open over the options panel: { plugin, option }.
+  const [pluginDialog, setPluginDialog] = useState(null);
+  useEffect(() => { if (panel !== 'options') setPluginDialog(null); }, [panel]);
   const [infoTab, setInfoTab] = useState('client');
   const serverTab = panel === 'info' && infoTab === 'server';
   const foldPress = useRef({ timer: null, long: false });
@@ -890,9 +893,8 @@ function App() {
   const [alertNote, setAlertNote] = useState('');
   const [copied, setCopied] = useState(false);
   const pluginLayer = useRef(null);
-  const pluginFloat = useRef(null);
   const plugins = usePlugins({
-    gatewayUrl, deviceRef, layerRef: pluginLayer, floatRef: pluginFloat, screenWidth: screen.width, settings, postHeaders,
+    gatewayUrl, deviceRef, layerRef: pluginLayer, screenWidth: screen.width, settings, postHeaders,
   });
   const displayState = useDisplayState(gatewayUrl,
     ['pending', 'applying'].includes(emulatorSettings?.request?.state));
@@ -1437,6 +1439,16 @@ function App() {
         </div>
       );
     }
+    if (option.type === 'dialog') {
+      return (
+        <div key={key} style={styles.infoRow}>
+          <span style={styles.infoLabel}>{tr(option.label)}</span>
+          <button style={styles.panelButton} onClick={() => setPluginDialog({ plugin, option })}>
+            {tr(option.button ?? 'Configurer')}
+          </button>
+        </div>
+      );
+    }
     if (option.type === 'status') {
       const value = option.value?.() ?? '–';
       const href = option.href?.();
@@ -1617,6 +1629,15 @@ function App() {
               )}
             </div>
           )}
+          {panel === 'options' && pluginDialog && (
+            <div style={styles.pluginDialog} role="dialog" aria-label={tr(pluginDialog.option.title ?? pluginDialog.option.label)}>
+              <div style={styles.infoHeader}>
+                <strong>{tr(pluginDialog.option.title ?? pluginDialog.option.label)}</strong>
+                <button style={styles.infoClose} onClick={() => setPluginDialog(null)} aria-label={tr('Fermer')}>✕</button>
+              </div>
+              {(pluginDialog.option.options ?? []).map((option, index) => pluginOption(pluginDialog.plugin, option, `dialog-${index}`))}
+            </div>
+          )}
           <div ref={touchMarker} style={styles.touchMarker} aria-hidden="true" />
           <div
             style={styles.touchLayer}
@@ -1626,7 +1647,6 @@ function App() {
             onPointerUp={endTouch}
             onPointerCancel={endTouch}
           />
-          <div ref={pluginFloat} style={styles.pluginFloat} />
         </div>
       </section>
       {fullscreen && barFolded && (
@@ -1695,8 +1715,14 @@ const styles = {
     color: '#d8dde5', fontSize: '13px', fontFamily: 'system-ui, sans-serif',
   },
   pluginLayer: { position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none' },
-  // Above the touch surface, below the panels.
-  pluginFloat: { position: 'absolute', inset: 0, zIndex: 3, pointerEvents: 'none' },
+  // A plugin's dialog, over the options panel.
+  pluginDialog: {
+    position: 'absolute', left: '20px', right: '20px', top: '48px', zIndex: 5,
+    maxHeight: 'calc(100% - 64px)', overflowY: 'auto', touchAction: 'pan-y', boxSizing: 'border-box',
+    padding: '10px 12px', borderRadius: '10px', background: '#1c1f26',
+    border: '1px solid #4a505a', boxShadow: '0 8px 24px rgba(0, 0, 0, 0.6)',
+    fontFamily: 'system-ui, sans-serif', fontSize: '13px', display: 'flex', flexDirection: 'column', gap: '4px',
+  },
   pluginSection: { marginLeft: '10px' },
   pluginSectionTitle: { marginTop: '4px', color: '#c4cad3', fontWeight: 600, cursor: 'pointer' },
   pluginTitle: { marginTop: '6px', fontWeight: 600, cursor: 'pointer' },

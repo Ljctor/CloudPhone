@@ -14,17 +14,22 @@ const ENGLISH = {
   'Farmer la mine': 'Farm the mine',
   'Étage à farmer': 'Floor to farm',
   'Mode': 'Mode',
-  'Or': 'Gold',
-  'Or par seconde': 'Gold per second',
-  'Overlay or/s': 'Gold/s overlay',
+  'Configuration : farming mpw18': 'Settings: mpw18 farming',
+  'Configuration : farming mpw4': 'Settings: mpw4 farming',
+  'Configuration : mine fermée': 'Settings: Closed Mine',
+  'Arme, gravure, réglages de combat': 'Weapon, engraving, battle settings',
+  'à venir': 'coming',
+  'Plumes': 'Feathers',
+  'Gold': 'Gold',
+  'Gold par seconde': 'Gold per second',
+  'Overlay gold/s': 'Gold/s overlay',
   'Affiché': 'Shown',
   'Masqué': 'Hidden',
-  'Remettre l’overlay à sa place': 'Put the overlay back',
-  'Replacer': 'Reset',
   'pas encore mesuré': 'not measured yet',
-  'compteur d’or invisible (économie d’énergie ?)': 'gold counter not visible (Power Saving Mode?)',
+  'non visible (économie d’énergie ?)': 'not visible (Power Saving Mode?)',
   'Farming mpw18 (par défaut)': 'mpw18 farming (default)',
   'Farming mpw4': 'mpw4 farming',
+  'Farming mpw18': 'mpw18 farming',
   'Jeu libre': 'Free play',
   'Mine fermée': 'Closed Mine',
   'Plus haut stage débloqué': 'Highest stage unlocked',
@@ -741,69 +746,35 @@ export default function activate(api) {
   loadStages();
 
   // Gold per second, measured by the gateway (a reading every 10 s, the
-  // slope over 5 minutes), shown over the screen in a label the user can
-  // drag; its place (fractions of the screen) is kept in this browser.
-  const GOLD_PLACE = 'cloudphone-slayer-legend-gold-place';
-  const DEFAULT_PLACE = { x: 0.02, y: 0.095 };
+  // slope over 5 minutes), written in brackets after the game's gold
+  // counter, where the gateway last read it.
   const gold = { answer: null, timer: null };
   const label = document.createElement('div');
-  label.style.cssText = 'position:absolute;pointer-events:auto;touch-action:none;cursor:grab;user-select:none;'
-    + 'font:700 14px system-ui,sans-serif;color:#ff3d00;white-space:nowrap;padding:2px 4px;'
+  label.style.cssText = 'position:absolute;white-space:nowrap;transform:translateY(-50%);'
+    + 'font-family:system-ui,sans-serif;font-weight:800;color:#ffa31a;'
     + 'text-shadow:-1px -1px 0 #000,1px -1px 0 #000,-1px 1px 0 #000,1px 1px 0 #000';
-  let place = DEFAULT_PLACE;
-  try {
-    const saved = JSON.parse(load(GOLD_PLACE) || 'null');
-    if (Number.isFinite(saved?.x) && Number.isFinite(saved?.y)) place = saved;
-  } catch {
-    place = DEFAULT_PLACE;
-  }
-  const putLabel = () => {
-    label.style.left = `${place.x * 100}%`;
-    label.style.top = `${place.y * 100}%`;
-    label.style.fontSize = `${Math.max(11, Math.round((api.screenWidth() || 360) * 0.04))}px`;
-  };
-  label.addEventListener('pointerdown', (event) => {
-    event.preventDefault();
-    label.setPointerCapture(event.pointerId);
-    const box = api.float.getBoundingClientRect();
-    const start = { x: event.clientX, y: event.clientY, place };
-    label.style.cursor = 'grabbing';
-    const move = (next) => {
-      const width = label.offsetWidth / box.width;
-      const height = label.offsetHeight / box.height;
-      place = {
-        x: Math.min(1 - width, Math.max(0, start.place.x + (next.clientX - start.x) / box.width)),
-        y: Math.min(1 - height, Math.max(0, start.place.y + (next.clientY - start.y) / box.height)),
-      };
-      putLabel();
-    };
-    const end = () => {
-      label.removeEventListener('pointermove', move);
-      label.removeEventListener('pointerup', end);
-      label.removeEventListener('pointercancel', end);
-      label.style.cursor = 'grab';
-      keep(GOLD_PLACE, JSON.stringify(place));
-    };
-    label.addEventListener('pointermove', move);
-    label.addEventListener('pointerup', end);
-    label.addEventListener('pointercancel', end);
-  });
   const goldText = () => {
     const answer = gold.answer;
     if (!answer) return '…';
     if (answer.rate_text) return `${answer.rate_text}/s`;
-    return answer.read ? api.tr('pas encore mesuré') : api.tr('compteur d’or invisible (économie d’énergie ?)');
+    return answer.read ? api.tr('pas encore mesuré') : api.tr('non visible (économie d’énergie ?)');
   };
   const showGold = () => {
-    const shown = api.setting('goldOverlay') !== 'off';
-    if (shown && !label.isConnected) api.float.appendChild(label);
-    if (!shown) label.remove();
-    putLabel();
     const answer = gold.answer;
-    label.textContent = answer?.rate_text ? `${answer.rate_text}/s` : '…/s';
-    // Faded while the counter has not been read for a minute.
-    label.style.opacity = answer?.read && Date.now() / 1000 - answer.read < 60 ? '1' : '0.5';
-    label.title = goldText();
+    const box = answer?.box;
+    // Only while the counter was read lately: it moves with the game's
+    // panels and Power Saving Mode hides it.
+    const fresh = box && answer.read && Date.now() / 1000 - answer.read < 25;
+    if (api.setting('goldOverlay') === 'off' || !fresh) {
+      label.remove();
+      return;
+    }
+    if (!label.isConnected) api.layer.appendChild(label);
+    const height = box[3] - box[1];
+    label.style.left = `${(box[2] + height * 0.25 * (api.layer.offsetHeight / Math.max(1, api.layer.offsetWidth))) * 100}%`;
+    label.style.top = `${((box[1] + box[3]) / 2) * 100}%`;
+    label.style.fontSize = `${Math.max(9, Math.round(height * api.layer.offsetHeight * 1.3))}px`;
+    label.textContent = `(${answer.rate_text ? `${answer.rate_text}/s` : '…'})`;
   };
   const askGold = async () => {
     gold.answer = await api.get('/gold').catch(() => null);
@@ -876,19 +847,36 @@ export default function activate(api) {
           { value: 'mine', label: 'Mine fermée' },
         ],
       },
+      // Each mode's settings, apart from choosing the mode: in a dialog.
       {
-        type: 'number', key: 'highestStage', label: 'Plus haut stage débloqué', placeholder: () => String(remembered ?? ''),
+        type: 'dialog', label: 'Farming mpw18', title: 'Configuration : farming mpw18',
+        options: [
+          {
+            type: 'number', key: 'highestStage', label: 'Plus haut stage débloqué', placeholder: () => String(remembered ?? ''),
+          },
+          { type: 'choice', key: 'stage18', label: 'Stage mpw18', choices: () => stageChoices(18) },
+          { type: 'status', label: 'Arme, gravure, réglages de combat', value: () => api.tr('à venir') },
+        ],
       },
-      { type: 'choice', key: 'stage18', label: 'Stage mpw18', choices: () => stageChoices(18) },
-      { type: 'choice', key: 'stage4', label: 'Stage mpw4', visible: () => mode() === 'mpw4', choices: () => stageChoices(4) },
       {
-        type: 'number', key: 'mineFloor', label: 'Étage à farmer', placeholder: '161',
-        visible: () => mode() === 'mine',
+        type: 'dialog', label: 'Farming mpw4', title: 'Configuration : farming mpw4',
+        options: [
+          {
+            type: 'number', key: 'highestStage', label: 'Plus haut stage débloqué', placeholder: () => String(remembered ?? ''),
+          },
+          { type: 'choice', key: 'stage4', label: 'Stage mpw4', choices: () => stageChoices(4) },
+        ],
       },
       {
-        type: 'choice', key: 'mineArea', label: 'Zone à farmer',
-        visible: () => mode() === 'mine',
-        choices: [1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: String(n) })),
+        type: 'dialog', label: 'Mine fermée', title: 'Configuration : mine fermée',
+        options: [
+          { type: 'number', key: 'mineFloor', label: 'Étage à farmer', placeholder: '161' },
+          {
+            type: 'choice', key: 'mineArea', label: 'Zone à farmer',
+            choices: [1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: String(n) })),
+          },
+          { type: 'status', label: 'Plumes', value: () => '3' },
+        ],
       },
       {
         type: 'status', label: 'Minuteur',
@@ -918,19 +906,11 @@ export default function activate(api) {
           return api.tr(answer.message || 'Farming mpw18');
         },
       },
-      { type: 'section', key: 'gold', label: 'Or' },
-      { type: 'status', label: 'Or par seconde', value: goldText },
+      { type: 'section', key: 'gold', label: 'Gold' },
+      { type: 'status', label: 'Gold par seconde', value: goldText },
       {
-        type: 'choice', key: 'goldOverlay', label: 'Overlay or/s',
+        type: 'choice', key: 'goldOverlay', label: 'Overlay gold/s',
         choices: [{ value: 'on', label: 'Affiché' }, { value: 'off', label: 'Masqué' }],
-      },
-      {
-        type: 'action', label: 'Remettre l’overlay à sa place', button: 'Replacer',
-        run: () => {
-          place = DEFAULT_PLACE;
-          keep(GOLD_PLACE, null);
-          showGold();
-        },
       },
       { type: 'section', key: 'emerald', label: 'Émeraudes', folded: true },
       {

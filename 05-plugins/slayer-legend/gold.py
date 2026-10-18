@@ -104,34 +104,31 @@ LETTERS = {
 }
 
 
-def _text(pixels, i):
-    return pixels[i] >= 245 and pixels[i + 1] >= 245 and pixels[i + 2] >= 245
-
-
-def _outline(pixels, i):
-    return pixels[i] < 40 and pixels[i + 1] < 40 and pixels[i + 2] < 40
+def _grey(pixels, i, low, high):
+    r, g, b = pixels[i], pixels[i + 1], pixels[i + 2]
+    return max(r, g, b) - min(r, g, b) <= 4 and low <= r <= high
 
 
 def _coin(r, g, b):
     return r > 220 and 120 < g < 215 and b < 90
 
 
-def _ink(shot, x0, y0, x1, y1):
-    """White pixels touching a black one (the outlined text; white clouds
-    behind have no outline)."""
+def _ink(shot, x0, y0, x1, y1, low=140):
+    """The counter's text: light grey to white pixels (from `low`) within
+    2 px of a near-black one. Text and outline are pure greys (r = g = b;
+    the game scales its font, so edges are mid greys); the background is
+    tinted."""
     width, height, pixels = shot
     ink = []
     for y in range(y0, y1):
         row = []
         for x in range(x0, x1):
-            i = (y * width + x) * 3
             on = False
-            if _text(pixels, i):
-                # Strokes are 2-3 px thick: their middle is 2 px from the outline.
+            if _grey(pixels, (y * width + x) * 3, low, 255):
                 for dy in (-2, -1, 0, 1, 2):
                     for dx in (-2, -1, 0, 1, 2):
                         if 0 <= x + dx < width and 0 <= y + dy < height \
-                                and _outline(pixels, ((y + dy) * width + x + dx) * 3):
+                                and _grey(pixels, ((y + dy) * width + x + dx) * 3, 0, 60):
                             on = True
             row.append(on)
         ink.append(row)
@@ -158,12 +155,16 @@ def _glyphs(ink, top, bottom):
 
 
 def read(shot):
-    """The counter as {text: "111F", value: 1.11e20}, or None when it is not
-    on screen or not readable."""
+    """The counter as {text: "111F", value: 1.11e20, box: [left, top, right,
+    bottom] as fractions of the screen}, or None when it is not on screen
+    or not readable."""
     width, height, pixels = shot
     x0, y0 = int(BAND[0] * width), int(BAND[1] * height)
     x1, y1 = int(BAND[2] * width), int(BAND[3] * height)
     ink = _ink(shot, x0, y0, x1, y1)
+    # Pure white only: the mid grey edges join neighbouring glyphs, so
+    # glyphs are cut apart on this, and read on all the ink.
+    core = _ink(shot, x0, y0, x1, y1, 245)
     line = TEXT_HEIGHT * height
     counts = [sum(row) for row in ink]
     y = 0
@@ -177,7 +178,11 @@ def read(shot):
         bottom = y - 1
         if not 0.8 * line <= bottom - top + 1 <= 1.25 * line:
             continue
-        glyphs = [g for g in _glyphs(ink, top, bottom) if g[3] - g[2] + 1 >= 0.15 * line]
+        glyphs = []
+        for left, right, _, _ in _glyphs(core, top, bottom):
+            ys = [row for row in range(top, bottom + 1) if any(ink[row][left:right + 1])]
+            if ys and ys[-1] - ys[0] + 1 >= 0.15 * line:
+                glyphs.append((left, right, ys[0], ys[-1]))
         # Glyphs belong together when the gaps are small; keep the group
         # with a coin just left of it.
         groups, group = [], []
@@ -223,19 +228,24 @@ def _read_group(shot, ink, group, x0, y0, top, bottom, line):
         return None
     if not number.replace(".", "").isdigit():
         return None
-    return {"text": text, "value": float(number) * 1000.0 ** (ord(unit) - ord("A") + 1)}
+    box = [(x0 + group[0][0]) / width, (y0 + top) / height, (x0 + group[-1][1] + 1) / width, (y0 + bottom + 1) / height]
+    return {"text": text, "value": float(number) * 1000.0 ** (ord(unit) - ord("A") + 1), "box": box}
 
 
 def rate_text(per_second):
-    """Gold per second in the game's notation, 3 significant digits."""
+    """Gold per second in the game's notation: 3 digits, wherever the
+    point falls, and a letter for each factor of 1000 (A is 10^3, B 10^6…)."""
     if per_second is None:
         return None
     if per_second <= 0:
-        return "0"
+        return "0.00"
     power, value = 0, per_second
-    while value >= 1000 and power < 26:
+    while True:
+        digits = 0 if value >= 99.95 else 1 if value >= 9.995 else 2
+        text = f"{value:.{digits}f}"
+        # 999.6 rounds to "1000": one more letter instead.
+        if float(text) < 1000 or power == 26:
+            break
         value /= 1000
         power += 1
-    unit = chr(ord("A") + power - 1) if power else ""
-    digits = 0 if value >= 100 else 1 if value >= 10 else 2
-    return f"{value:.{digits}f}{unit}"
+    return text + (chr(ord("A") + power - 1) if power else "")
