@@ -890,8 +890,9 @@ function App() {
   const [alertNote, setAlertNote] = useState('');
   const [copied, setCopied] = useState(false);
   const pluginLayer = useRef(null);
+  const pluginFloat = useRef(null);
   const plugins = usePlugins({
-    gatewayUrl, deviceRef, layerRef: pluginLayer, screenWidth: screen.width, settings, postHeaders,
+    gatewayUrl, deviceRef, layerRef: pluginLayer, floatRef: pluginFloat, screenWidth: screen.width, settings, postHeaders,
   });
   const displayState = useDisplayState(gatewayUrl,
     ['pending', 'applying'].includes(emulatorSettings?.request?.state));
@@ -1625,6 +1626,7 @@ function App() {
             onPointerUp={endTouch}
             onPointerCancel={endTouch}
           />
+          <div ref={pluginFloat} style={styles.pluginFloat} />
         </div>
       </section>
       {fullscreen && barFolded && (
@@ -1693,6 +1695,8 @@ const styles = {
     color: '#d8dde5', fontSize: '13px', fontFamily: 'system-ui, sans-serif',
   },
   pluginLayer: { position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none' },
+  // Above the touch surface, below the panels.
+  pluginFloat: { position: 'absolute', inset: 0, zIndex: 3, pointerEvents: 'none' },
   pluginSection: { marginLeft: '10px' },
   pluginSectionTitle: { marginTop: '4px', color: '#c4cad3', fontWeight: 600, cursor: 'pointer' },
   pluginTitle: { marginTop: '6px', fontWeight: 600, cursor: 'pointer' },

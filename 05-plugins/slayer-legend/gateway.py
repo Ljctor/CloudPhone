@@ -39,6 +39,13 @@ POST /api/v1/plugins/slayer-legend/mine  {enabled, floor, area, until}
      minutes.
 POST /api/v1/plugins/slayer-legend/mine/timer  {add: minutes}
      Moves the end of farming by that many minutes (may be negative).
+GET  /api/v1/plugins/slayer-legend/gold
+     Gold earned per second: {text, value, rate, rate_text, span, read}.
+     The first call starts reading the gold counter every 10 s while the
+     game is in front (Power Saving Mode hides it: no reading then); a
+     value counts once two readings in a row agree. The rate is the slope
+     of the last 5 minutes of values (null before 30 s of them); spending
+     gold starts the window again. `read` is the time of the last reading.
 
 Screens are recognised from a few pixel areas, as fractions of the screen,
 measured on a 360x780 screen (the page's device shapes keep this ratio).
@@ -90,6 +97,10 @@ MODE = {"mode": "mpw18", "until": None, "stage18": None, "stage4": None, "highes
 # Checks in a row without the gold scroll before stopping (an animation
 # can hide it for a moment).
 MINE_NO_GOLD = 2
+# Gold per second: readings every GOLD_SECONDS, the slope over GOLD_WINDOW.
+GOLD_SECONDS = 10
+GOLD_WINDOW = 300
+GOLD = {"samples": [], "pending": None, "text": None, "read": None, "asked": 0.0, "task": None}
 # The last stage number read in Power Saving Mode: {number, numeral}.
 FARMED = {"number": None}
 
@@ -701,7 +712,64 @@ def setup(context):
         logging.info(f"Slayer Legend launch requested by {request.remote}")
         return context.json({"state": "starting"}, status=202)
 
+    gold = load_sibling(context.directory, "gold")
+
+    def gold_rate():
+        samples = GOLD["samples"]
+        while samples and time.time() - samples[0][0] > GOLD_WINDOW:
+            samples.pop(0)
+        if len(samples) < 2 or samples[-1][0] - samples[0][0] < 30:
+            return None
+        # Least squares: the counter moves by steps of its last digit.
+        n = len(samples)
+        mean_t = sum(t for t, _ in samples) / n
+        mean_v = sum(v for _, v in samples) / n
+        spread = sum((t - mean_t) ** 2 for t, _ in samples)
+        if not spread:
+            return None
+        return max(0.0, sum((t - mean_t) * (v - mean_v) for t, v in samples) / spread)
+
+    async def watch_gold():
+        # Stops 10 minutes after the last page asked.
+        while time.monotonic() - GOLD["asked"] < 600:
+            try:
+                if await in_focus():
+                    shot = await context.screenshot()
+                    reading = gold.read(shot) if shot else None
+                    if reading:
+                        now = time.time()
+                        GOLD["read"] = now
+                        if GOLD["pending"] == reading["value"]:
+                            samples = GOLD["samples"]
+                            if samples and reading["value"] < samples[-1][1]:
+                                samples.clear()  # gold was spent
+                            samples.append((now, reading["value"]))
+                            while samples and now - samples[0][0] > GOLD_WINDOW:
+                                samples.pop(0)
+                            GOLD["text"] = reading["text"]
+                        GOLD["pending"] = reading["value"]
+            except Exception as e:
+                logging.warning(f"Gold reading failed: {e!r}")
+            await asyncio.sleep(GOLD_SECONDS)
+        GOLD["task"] = None
+
+    async def handle_gold(request):
+        GOLD["asked"] = time.monotonic()
+        if GOLD["task"] is None:
+            GOLD["task"] = asyncio.get_running_loop().create_task(watch_gold())
+        rate = gold_rate()
+        samples = GOLD["samples"]
+        return context.json({
+            "text": GOLD["text"],
+            "value": samples[-1][1] if samples else None,
+            "rate": rate,
+            "rate_text": gold.rate_text(rate),
+            "span": samples[-1][0] - samples[0][0] if samples else 0,
+            "read": GOLD["read"],
+        })
+
     context.add_get("/emerald-mask", handle_emerald_mask)
+    context.add_get("/gold", handle_gold)
     context.add_get("/screen", handle_screen)
     context.add_get("/launch", handle_launch_state)
     context.add_post("/launch", handle_launch)
