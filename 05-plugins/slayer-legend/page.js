@@ -20,6 +20,10 @@ const ENGLISH = {
   'Abonne l’appli ntfy à': 'Subscribe the ntfy app to',
   'Alerte de test': 'Test alert',
   'Envoyer': 'Send',
+  'Adresse ntfy': 'ntfy address',
+  'Copier': 'Copy',
+  'copiée': 'copied',
+  'copie impossible': 'could not copy',
   'envoyée': 'sent',
   'échec': 'failed',
   'plus de parchemin doré': 'no gold scroll',
@@ -545,6 +549,32 @@ function startEmeraldMask(api, state, counter = COUNTERS.emerald) {
   };
 }
 
+// Copies text to the clipboard. The page is often served over plain http
+// (WireGuard), where navigator.clipboard does not exist: then through a
+// hidden text field and the older copy command.
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const field = document.createElement('textarea');
+    field.value = text;
+    field.setAttribute('readonly', '');
+    field.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+    document.body.appendChild(field);
+    field.select();
+    field.setSelectionRange(0, text.length);
+    let done = false;
+    try {
+      done = document.execCommand('copy');
+    } catch {
+      done = false;
+    }
+    field.remove();
+    return done;
+  }
+}
+
 // '' (unchanged), 'cut' or 'rewrite'.
 function modeOf(api, counter) {
   return api.setting(counter.mode) ?? '';
@@ -700,7 +730,7 @@ export default function activate(api) {
     if (result?.ok) remember(result.body);
     api.refresh();
   };
-  const alerts = { state: '' };
+  const alerts = { state: '', copied: '' };
   api.get('/mine').catch(() => null).then((answer) => {
     // After a gateway restart it knows nothing: send this browser's options.
     if (answer && !answer.enabled && answer.state === 'off' && !answer.until && mineOptions().enabled) {
@@ -793,6 +823,19 @@ export default function activate(api) {
         visible: () => Boolean(api.setting('mineFarm') && api.setting('mineAlerts')),
         value: () => `ntfy.sh/${topic}`,
         href: () => `https://ntfy.sh/${topic}`,
+      },
+      {
+        type: 'action', label: 'Adresse ntfy', button: 'Copier',
+        visible: () => Boolean(api.setting('mineFarm') && api.setting('mineAlerts')),
+        run: async () => {
+          alerts.copied = await copyText(`https://ntfy.sh/${topic}`) ? 'copiée' : 'copie impossible';
+          api.refresh();
+        },
+      },
+      {
+        type: 'status', label: 'Adresse ntfy',
+        visible: () => Boolean(alerts.copied && api.setting('mineAlerts')),
+        value: () => api.tr(alerts.copied),
       },
       {
         type: 'action', label: 'Alerte de test', button: 'Envoyer',
