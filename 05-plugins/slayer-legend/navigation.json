@@ -728,6 +728,15 @@
      "label": "Batch Combine",
      "forbidden": true,
      "reason": "overwrites or re-rolls the user's equipment"
+    },
+    {
+     "id": "black_orb",
+     "to": "black_orb",
+     "tap": [
+      0.93,
+      0.462
+     ],
+     "label": "Black Orb (purple icon, middle right)"
     }
    ]
   },
@@ -1856,6 +1865,118 @@
    "recognise": "anything else",
    "source": "explored 2026-10-18",
    "moves": []
+  },
+  "black_orb": {
+   "name": "Equipment: Accessories: Black Orb",
+   "recognise": "title 'Black Orb' top left, elemental accessories around a big black orb, bottom bar X / Summon x30 / Obtain",
+   "source": "seen 2026-10-19 on a screenshot (the user was on it); the big orb was hidden by a pop-up",
+   "moves": [
+    {
+     "id": "close",
+     "to": "equipment_accessories",
+     "tap": [
+      0.09,
+      0.963
+     ],
+     "label": "close X"
+    },
+    {
+     "id": "accessory_left",
+     "to": "black_orb_accessory",
+     "tap": [
+      0.15,
+      0.57
+     ],
+     "label": "elemental accessory (left), to read its bonus"
+    },
+    {
+     "id": "accessory_right",
+     "to": "black_orb_accessory",
+     "tap": [
+      0.85,
+      0.57
+     ],
+     "label": "elemental accessory (right), to read its bonus"
+    },
+    {
+     "id": "orb",
+     "to": "unknown",
+     "area": [
+      0.25,
+      0.45,
+      0.75,
+      0.88
+     ],
+     "label": "big Black Orb (Obtain) in the middle",
+     "forbidden": true,
+     "reason": "spends Black Orb: the user does it"
+    },
+    {
+     "id": "summon",
+     "to": "unknown",
+     "area": [
+      0.25,
+      0.935,
+      0.75,
+      0.99
+     ],
+     "label": "Summon x30",
+     "forbidden": true,
+     "reason": "spends Black Orb: the user does it"
+    },
+    {
+     "id": "obtain",
+     "to": "unknown",
+     "area": [
+      0.79,
+      0.93,
+      0.99,
+      0.995
+     ],
+     "label": "Obtain",
+     "forbidden": true,
+     "reason": "spends Black Orb: the user does it"
+    }
+   ]
+  },
+  "black_orb_accessory": {
+   "name": "Black Orb: accessory card",
+   "recognise": "pop-up with the accessory name, grade, level, 4 coloured bonus lines and Bonus Effect; Awaken button under it",
+   "source": "seen 2026-10-19 on a screenshot",
+   "moves": [
+    {
+     "id": "close",
+     "to": "black_orb",
+     "key": "BACK",
+     "label": "Android Back closes the card (to check)"
+    },
+    {
+     "id": "awaken",
+     "to": "unknown",
+     "area": [
+      0.33,
+      0.75,
+      0.67,
+      0.82
+     ],
+     "label": "Awaken",
+     "forbidden": true,
+     "reason": "spends Black Orb shards and changes the accessory"
+    },
+    {
+     "id": "reroll",
+     "to": "unknown",
+     "area": [
+      0.7,
+      0.74,
+      0.82,
+      0.82
+     ],
+     "label": "re-roll the bonus lines",
+     "forbidden": true,
+     "reason": "re-rolls the user's equipment"
+    }
+   ]
   }
  }
 }
