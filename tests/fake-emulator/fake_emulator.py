@@ -375,7 +375,10 @@ class Emulator:
         self.gateway_restarting = False
         self.gateway_event = asyncio.Event()
         self.closing = False
-        self.web_port = args.web_port or free_port()
+        # The gateway's port, held by this fake for its whole life (see
+        # reserve_port); a --web_port given on the command line is used as it is.
+        self.web_socket = None if args.web_port else reserve_port()
+        self.web_port = args.web_port or self.web_socket.getsockname()[1]
         for name in ("running", "avd", "host/proc", "host/cgroup", "android", "bin-state"):
             (self.work / name).mkdir(parents=True, exist_ok=True)
         self.write_avd_config()
@@ -856,12 +859,19 @@ class Emulator:
         }
 
 
-def free_port():
+def reserve_port():
+    """A port for the gateway that no other process can take: bound here on
+    port 0 (the kernel picks a free one) with SO_REUSEPORT, and held, not
+    listening, as long as the fake runs. Each gateway the fake starts
+    listens on it beside this socket (gateway_shim.py binds with
+    reuse_port); between two gateways nothing listens, so connections are
+    refused, as with a stopped gateway, and the port stays this fake's."""
     import socket
 
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+    s = socket.socket()
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+    s.bind(("127.0.0.1", 0))
+    return s
 
 
 def make_services(emulator):

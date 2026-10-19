@@ -22,10 +22,10 @@ use fantoccini::elements::{Element, ElementRef};
 use fantoccini::{Client, ClientBuilder, Locator};
 use serde_json::{json, Value};
 use std::future::Future;
-use std::net::TcpListener;
 use std::os::unix::process::CommandExt;
 use std::panic::AssertUnwindSafe;
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -154,9 +154,19 @@ struct Driver {
     log: std::path::PathBuf,
 }
 
+/// The geckodrivers this test process started, for their log files' names.
+static DRIVERS: AtomicUsize = AtomicUsize::new(0);
+
+/// The port geckodriver says it listens on, in its log ("geckodriver INFO
+/// Listening on 127.0.0.1:PORT"), once it has said it.
+fn listening_port(log: &std::path::Path) -> Option<u16> {
+    let text = std::fs::read_to_string(log).ok()?;
+    let line = text.lines().find(|line| line.contains("geckodriver") && line.contains("Listening on "))?;
+    line.rsplit(':').next()?.trim().parse().ok()
+}
+
 impl Driver {
     fn start() -> Driver {
-        let port = TcpListener::bind("127.0.0.1:0").and_then(|l| l.local_addr()).expect("a free local port").port();
         let binary = std::env::var("CLOUDPHONE_GECKODRIVER").unwrap_or_else(|_| "geckodriver".into());
         let mut libs: Vec<String> = Vec::new();
         if let Ok(firefox) = std::env::var("CLOUDPHONE_FIREFOX") {
@@ -169,23 +179,36 @@ impl Driver {
                 libs.extend(value.split(':').filter(|s| !s.is_empty()).map(String::from));
             }
         }
-        let log = std::env::temp_dir().join(format!("cloudphone-e2e-geckodriver-{}-{port}.log", std::process::id()));
+        let number = DRIVERS.fetch_add(1, Ordering::Relaxed);
+        let log = std::env::temp_dir().join(format!("cloudphone-e2e-geckodriver-{}-{number}.log", std::process::id()));
         let log_file = std::fs::File::create(&log).expect("geckodriver log file");
         let mut command = Command::new(&binary);
+        // Port 0: geckodriver binds a port the kernel picks and says which in
+        // its log (at info), so no other process can take it in between.
         command
-            .args(["--port", &port.to_string(), "--log", "warn"])
+            .args(["--port", "0", "--log", "info"])
             .env("LD_LIBRARY_PATH", libs.join(":"))
             .stdin(Stdio::null())
             .stdout(log_file.try_clone().unwrap())
             .stderr(log_file)
             .process_group(0);
-        let child = command.spawn().unwrap_or_else(|e| {
+        let mut child = command.spawn().unwrap_or_else(|e| {
             panic!("cannot start geckodriver ({binary}): {e}. Set CLOUDPHONE_GECKODRIVER, see tests/e2e/README.md")
         });
         let started = Instant::now();
+        let port = loop {
+            if let Some(port) = listening_port(&log) {
+                break port;
+            }
+            if let Ok(Some(status)) = child.try_wait() {
+                panic!("geckodriver exited ({status}) before listening: {}", std::fs::read_to_string(&log).unwrap_or_default());
+            }
+            assert!(started.elapsed() < Duration::from_secs(20), "geckodriver did not say where it listens");
+            std::thread::sleep(Duration::from_millis(50));
+        };
         while std::net::TcpStream::connect(("127.0.0.1", port)).is_err() {
             assert!(started.elapsed() < Duration::from_secs(20), "geckodriver did not listen on {port}");
-            std::thread::sleep(Duration::from_millis(100));
+            std::thread::sleep(Duration::from_millis(50));
         }
         Driver { child, port, log }
     }
