@@ -12,6 +12,7 @@
 //   after it, building a graph of the game's screens (never replayed).
 import counters from './page_counters.js';
 import launch from './page_launch.js';
+import mode from './page_mode.js';
 import screen from './page_screen.js';
 import trace from './page_trace.js';
 
@@ -134,96 +135,7 @@ export default function activate(api) {
 
   const launchPart = launch(api);
   const screenPart = screen(api);
-  // The mode (mpw18 farming by default, or a timed mode: mpw4 farming, free
-  // play, the mine) runs in the gateway; this browser's
-  // options are sent to it when they change, and on load if the gateway has
-  // not been told since it started. Its state is asked every 10 s.
-  const farm = { answer: null, timer: null, stages: null };
-  // This browser's copy of when the timed mode ends (Unix seconds), as the
-  // gateway last said; sent again after a gateway restart.
-  const UNTIL = 'cloudphone-slayer-legend-mode-until';
-  const load = (name) => {
-    try {
-      return window.localStorage.getItem(name);
-    } catch {
-      return null;
-    }
-  };
-  const keep = (name, value) => {
-    try {
-      if (value) window.localStorage.setItem(name, String(value));
-      else window.localStorage.removeItem(name);
-    } catch {
-      // Not kept: lost on reload.
-    }
-  };
-  const mode = () => api.setting('mode') || 'mpw18';
-  // Free play starts with this timer unless set in its dialog.
-  const FREE_MINUTES = 60;
-  const modeOptions = () => ({
-    mode: mode(),
-    until: farm.answer?.until ?? (Number(load(UNTIL)) || null),
-    stage18: Number(api.setting('stage18')) || null,
-    stage4: Number(api.setting('stage4')) || null,
-    floor: Number(api.setting('mineFloor')) || null,
-    area: Number(api.setting('mineArea') || 1),
-  });
-  const left = () => {
-    const seconds = (farm.answer?.until ?? 0) - Date.now() / 1000;
-    if (!farm.answer?.until || seconds <= 0) return api.tr('Sans limite');
-    const minutes = Math.ceil(seconds / 60);
-    const text = minutes >= 60 ? `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')}` : `${minutes} min`;
-    const end = new Date(farm.answer.until * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    return `${api.tr('reste {time}', { time: text })} (${end})`;
-  };
-  const remember = (answer) => {
-    farm.answer = answer;
-    if (answer) keep(UNTIL, answer.until);
-  };
-  const askMode = async () => {
-    remember(await api.get('/mode').catch(() => null));
-    api.refresh();
-    window.clearTimeout(farm.timer);
-    farm.timer = window.setTimeout(askMode, 10000);
-  };
-  const sendMode = async () => {
-    const result = await api.post('/mode', modeOptions()).catch(() => null);
-    if (result?.ok) remember(result.body);
-    else if (result) farm.error = result.body?.error ?? `HTTP ${result.status}`;
-    await askMode();
-  };
-  const moveTimer = async (minutes) => {
-    const result = await api.post('/mode/timer', { add: minutes }).catch(() => null);
-    if (result?.ok) remember(result.body);
-    api.refresh();
-  };
-  // The mpw18 and mpw4 stages up to the highest one the gateway saw
-  // farmed (all of them when it knows none).
-  const loadStages = async () => {
-    const remembered = screenPart.known();
-    farm.stages = await api.get(remembered ? `/stages?known=${remembered}` : '/stages').catch(() => null);
-    api.refresh();
-  };
-  const DOTS = { green: '🟢', blue: '🔵', red: '🔴' };
-  const stageChoices = (mpw) => [
-    { value: '', label: api.tr('— choisir —') },
-    ...(farm.stages?.[`mpw${mpw}`] ?? []).map((stage) => ({
-      value: String(stage.number),
-      label: `${DOTS[stage.colour] ?? '⚪'} mpw${mpw} · ${stage.number}`,
-    })),
-  ];
-  api.get('/mode').catch(() => null).then((answer) => {
-    // After a gateway restart it knows nothing: send this browser's options.
-    if (answer && !answer.configured) {
-      farm.answer = null;
-      sendMode();
-    } else {
-      remember(answer);
-      askMode();
-    }
-  });
-  loadStages();
-
+  const modePart = mode(api, { known: screenPart.known });
   // Gold per second, measured by the gateway (a reading every 10 s, the
   // slope over 5 minutes), written top left under the mode in the gold
   // counter's own pixel font (from the gateway), outlined like the game.
@@ -273,7 +185,6 @@ export default function activate(api) {
   // "(défaut)" or the time left on the timer, then the gold per second.
   const modeLabel = document.createElement('canvas');
   modeLabel.style.cssText = 'position:absolute;image-rendering:pixelated;left:3%;top:5.6%';
-  const MODE_NAMES = { mpw18: 'Farming mpw18', mpw4: 'Farming mpw4', free: 'Jeu libre', mine: 'Mine fermée' };
   let modeDrawn = '';
   const showMode = (shown) => {
     if (!shown) {
@@ -282,16 +193,7 @@ export default function activate(api) {
       return;
     }
     if (!modeLabel.isConnected) api.layer.appendChild(modeLabel);
-    const current = farm.answer?.mode ?? mode();
-    const seconds = Math.max(0, Math.round((farm.answer?.until ?? 0) - Date.now() / 1000));
-    const two = (n) => String(n).padStart(2, '0');
-    const time = seconds >= 3600
-      ? `${Math.floor(seconds / 3600)}:${two(Math.floor(seconds / 60) % 60)}:${two(seconds % 60)}`
-      : `${two(Math.floor(seconds / 60))}:${two(seconds % 60)}`;
-    const lines = [
-      api.tr(MODE_NAMES[current] ?? current).toUpperCase(),
-      `(${(current === 'mpw18' || !farm.answer?.until ? api.tr('défaut') : time).toUpperCase()})`,
-    ];
+    const lines = modePart.overlay();
     if (gold.line) lines.push(gold.line);
     // As high as the level's text above it (8 game pixels, the screen
     // being 1040 of them high), not the gold counter's 13.
@@ -337,74 +239,7 @@ export default function activate(api) {
     options: [
       ...screenPart.options,
       ...launchPart.options,
-      { type: 'section', key: 'mode', label: 'Mode et farming' },
-      // One row per mode: a radio button chooses it, Configurer opens its
-      // settings.
-      {
-        type: 'dialog', label: 'Farming mpw18 (par défaut)', title: 'Configuration : farming mpw18',
-        select: { key: 'mode', value: 'mpw18', default: 'mpw18' },
-        options: [
-          { type: 'choice', key: 'stage18', label: 'Stage mpw18', choices: () => stageChoices(18) },
-          { type: 'status', label: 'Arme, gravure, réglages de combat', value: () => api.tr('à venir') },
-        ],
-      },
-      {
-        type: 'dialog', label: 'Farming mpw4', title: 'Configuration : farming mpw4',
-        select: { key: 'mode', value: 'mpw4', default: 'mpw18' },
-        options: [
-          { type: 'choice', key: 'stage4', label: 'Stage mpw4', choices: () => stageChoices(4) },
-        ],
-      },
-      {
-        type: 'dialog', label: 'Jeu libre', title: 'Configuration : jeu libre',
-        select: { key: 'mode', value: 'free', default: 'mpw18' },
-        options: [
-          {
-            type: 'number', key: 'freeMinutes', label: 'Minuteur par défaut (minutes)',
-            placeholder: String(FREE_MINUTES),
-          },
-        ],
-      },
-      {
-        type: 'dialog', label: 'Mine fermée', title: 'Configuration : mine fermée',
-        select: { key: 'mode', value: 'mine', default: 'mpw18' },
-        options: [
-          { type: 'number', key: 'mineFloor', label: 'Étage à farmer', placeholder: '161' },
-          {
-            type: 'choice', key: 'mineArea', label: 'Zone à farmer',
-            choices: [1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: String(n) })),
-          },
-          { type: 'status', label: 'Plumes', value: () => '3' },
-        ],
-      },
-      {
-        type: 'status', label: 'Minuteur',
-        visible: () => mode() !== 'mpw18',
-        value: left,
-      },
-      {
-        type: 'buttons', label: 'Ajuster (minutes)',
-        visible: () => mode() !== 'mpw18',
-        buttons: [30, 5, 1, -1, -5, -30].map((m) => ({
-          label: m > 0 ? `+${m}` : `−${-m}`,
-          run: () => moveTimer(m),
-          disabled: () => m < 0 && !farm.answer?.until,
-        })),
-      },
-      {
-        type: 'status', label: 'État',
-        value: () => {
-          if (farm.error) return farm.error;
-          if (mode() === 'mine' && !Number(api.setting('mineFloor'))) return api.tr('Choisis l’étage et la zone');
-          const answer = farm.answer;
-          if (!answer) return '…';
-          if (answer.mode === 'mine') {
-            const warning = answer.mine?.gold === false ? ` ⚠ ${api.tr('plus de parchemin doré')}` : '';
-            return api.tr(answer.mine?.message || 'Mine') + warning;
-          }
-          return api.tr(answer.message || 'Farming mpw18');
-        },
-      },
+      ...modePart.options,
       { type: 'section', key: 'gold', label: 'Gold' },
       { type: 'status', label: 'Gold par seconde', value: goldText },
       {
@@ -417,21 +252,14 @@ export default function activate(api) {
     onSetting: (key, value) => {
       counterPart.onSetting(key, value);
       if (key === 'goldOverlay') showGold();
-      if (key === 'mode' && value === 'free') {
-        const minutes = Number(api.setting('freeMinutes')) || FREE_MINUTES;
-        farm.answer = { ...farm.answer, until: Date.now() / 1000 + minutes * 60 };
-      }
-      if (['mode', 'stage18', 'stage4', 'mineFloor', 'mineArea'].includes(key)) {
-        farm.error = null;
-        sendMode();
-      }
+      modePart.onSetting(key, value);
     },
     dispose: () => {
       counterPart.dispose();
       tracePart.dispose();
       launchPart.dispose();
       screenPart.dispose();
-      window.clearTimeout(farm.timer);
+      modePart.dispose();
       window.clearTimeout(gold.timer);
       window.clearInterval(modeTick);
       modeLabel.remove();
