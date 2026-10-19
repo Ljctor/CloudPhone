@@ -1,4 +1,4 @@
-import { LANGUAGES, defaultLanguage, setLanguage, tr } from './i18n';
+import { tr } from './i18n';
 import { usePlugins } from './plugins';
 import { useEffect, useRef, useState } from 'react';
 import { Emulator, logger } from '../../src';
@@ -17,6 +17,7 @@ import { useInput } from './useInput';
 import { Toolbar, useBarFold } from './toolbar';
 import { infoSections } from './infoRows';
 import { PluginDialog, PluginList, usePluginDialog } from './pluginOptions';
+import { ViewerOptions, loadSettings, useViewerSettings } from './viewerSettings';
 
 logger.setLevel('warn');
 
@@ -58,31 +59,6 @@ function fittedScreen(display = DEFAULT_DISPLAY, folded = false, docked = false)
   return below.width > side.width ? { ...below, toolbar: 'below' } : { ...side, toolbar: 'side' };
 }
 
-// Per-viewer page settings, kept in this browser only.
-const SETTINGS_KEY = 'cloudphone.settings';
-const DEFAULT_SETTINGS = {
-  touchMarker: true, autoFold: true, barDocked: false, language: null,
-  // Plugin options: { <plugin id>: { <key>: true } }.
-  plugins: {},
-};
-
-
-function loadSettings() {
-  try {
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(window.localStorage.getItem(SETTINGS_KEY) || '{}') };
-  } catch {
-    return { ...DEFAULT_SETTINGS };
-  }
-}
-
-function saveSettings(settings) {
-  try {
-    window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-  } catch {
-    // Private mode or blocked storage: settings last for this page only.
-  }
-}
-
 // What this browser's device offers and what Android sends, as label/value
 // rows: CSS pixels (layout) and physical pixels (CSS × devicePixelRatio).
 function deviceInfo(shownScreen) {
@@ -109,14 +85,8 @@ function App() {
   const [pluginDialog, setPluginDialog] = usePluginDialog(panel);
   const [infoTab, setInfoTab] = useState('client');
   const serverTab = panel === 'info' && infoTab === 'server';
-  const [settings, setSettings] = useState(loadSettings);
-  // Before any tr() of this render: null means the browser's language.
-  setLanguage(settings.language ?? defaultLanguage());
-  const updateSettings = (change) => setSettings((current) => {
-    const next = { ...current, ...change };
-    saveSettings(next);
-    return next;
-  });
+  // Before any tr() of this render: sets the page's language.
+  const [settings, updateSettings] = useViewerSettings();
   const reconnectTimer = useRef(null);
   const [display, setDisplay] = useState(DEFAULT_DISPLAY);
   const barFold = useBarFold(loadSettings);
@@ -328,13 +298,6 @@ function App() {
   const logFilter = (
     <LogFilter value={settings.logFilter} onChange={(logFilter) => updateSettings({ logFilter })} />
   );
-  const toggle = (label, key) => (
-    <label key={key} style={styles.infoRow}>
-      <span style={styles.infoLabel}>{tr(label)}</span>
-      <input type="checkbox" checked={settings[key]}
-        onChange={(event) => updateSettings({ [key]: event.target.checked })} />
-    </label>
-  );
 
   return (
     <main style={{ ...styles.app, flexDirection: row ? 'row' : 'column' }}>
@@ -420,15 +383,7 @@ function App() {
               )}
               {panel === 'options' && (
                 <>
-                  <label style={styles.infoRow}>
-                    <span style={styles.infoLabel}>{tr('Langue')}</span>
-                    <select value={settings.language ?? defaultLanguage()} style={styles.select}
-                      onChange={(event) => updateSettings({ language: event.target.value })}>
-                      {LANGUAGES.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-                    </select>
-                  </label>
-                  {toggle('Afficher le curseur', 'touchMarker')}
-                  {toggle('Replier la barre 3 s après l’entrée en plein écran', 'autoFold')}
+                  <ViewerOptions settings={settings} updateSettings={updateSettings} />
                   <AlertsPanel alerts={alerts} />
                   <PluginList plugins={plugins} settings={settings} updateSettings={updateSettings}
                     openDialog={setPluginDialog} />
