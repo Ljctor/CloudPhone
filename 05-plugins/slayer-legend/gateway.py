@@ -107,11 +107,6 @@ MODE = {"mode": "mpw18", "until": None, "stage18": None, "stage4": None, "highes
 # Checks in a row without the gold scroll before stopping (an animation
 # can hide it for a moment).
 MINE_NO_GOLD = 2
-# Gold per second: readings every GOLD_SECONDS, the slope over GOLD_WINDOW.
-GOLD_SECONDS = 10
-GOLD_WINDOW = 300
-GOLD = {"samples": [], "pending": None, "text": None, "read": None, "box": None, "asked": 0.0, "task": None,
-        "place": None, "number": None, "odd": 0}
 
 
 def load_sibling(directory, name):
@@ -139,6 +134,7 @@ def setup(context):
         feature("screen").screen(ports, screens, stage, feature("screen_rules"), values, table),
         feature("launch").launch(ports, screens, feature("launch_rules")),
         feature("trace").trace(ports, screens, load_sibling(context.directory, "trace")),
+        feature("gold").gold(ports, screens, stage, load_sibling(context.directory, "gold"), feature("gold_rules")),
     ]
 
     tap, hold, in_focus = ports.tap, ports.hold, ports.focused
@@ -649,137 +645,11 @@ def setup(context):
                           "mine": ("mine", "Mine")}.get(MODE["mode"], ("idle", f"Farming {MODE['mode']}")))
             MODE["task"] = loop.create_task(watch_mode())
 
-    gold = load_sibling(context.directory, "gold")
-
-    def gold_rate():
-        samples = GOLD["samples"]
-        while samples and time.time() - samples[0][0] > GOLD_WINDOW:
-            samples.pop(0)
-        # From the second value on: over what there is until the window
-        # is full (the page marks it as provisional).
-        if len(samples) < 2 or samples[-1][0] - samples[0][0] <= 0:
-            return None
-        # Least squares: the counter moves by steps of its last digit.
-        n = len(samples)
-        mean_t = sum(t for t, _ in samples) / n
-        mean_v = sum(v for _, v in samples) / n
-        spread = sum((t - mean_t) ** 2 for t, _ in samples)
-        if not spread:
-            return None
-        return max(0.0, sum((t - mean_t) * (v - mean_v) for t, v in samples) / spread)
-
-    def same_place(a, b):
-        """Two inks of the battle screen's stage name line are the same
-        stage (a few pixels differ with what moves behind it)."""
-        if len(a) != len(b) or len(a[0]) != len(b[0]):
-            return False
-        differ = sum(x != y for row_a, row_b in zip(a, b) for x, y in zip(row_a, row_b))
-        ink = max(1, sum(map(sum, a)), sum(map(sum, b)))
-        return differ / ink < 0.2
-
-    def gold_restart(place=None):
-        GOLD.update(place=place, number=None, odd=0, pending=None)
-        GOLD["samples"].clear()
-
-    def gold_elsewhere(place=None):
-        """Not on the window's stage, or not known where: twice in a row
-        (an effect can hide the stage name for a moment), the window starts
-        again (at `place` if known)."""
-        GOLD["odd"] += 1
-        if GOLD["odd"] >= 2:
-            gold_restart(place)
-
-    def gold_facts(shot):
-        """The gold counter's reading and where the game is: ("saver",
-        stage number) or ("battle", ink of the stage name line)."""
-        reading = gold.read(shot)
-        if screens.classify(shot) == "saver":
-            return reading, ("saver", stage.read_saver(shot)[0])
-        return reading, ("battle", stage._ink(stage._crop(shot, stage.BATTLE_NAME)))
-
-    def gold_where(where):
-        """Follows where the game is at each reading; True when the shot
-        was on the window's stage (its gold may be counted)."""
-        kind, here = where
-        if kind == "saver":
-            # Power Saving Mode farms the same stage and writes its number.
-            number = here
-            if number is None:
-                gold_elsewhere()
-            elif GOLD["number"] is None and GOLD["place"] is not None and GOLD["odd"] == 0:
-                GOLD["number"] = number
-            elif number != GOLD["number"]:
-                gold_elsewhere()
-            else:
-                GOLD["odd"] = 0
-            return False
-        if here is None:
-            gold_elsewhere()
-            return False
-        if GOLD["place"] is None:
-            gold_restart(here)
-            return True
-        if same_place(here, GOLD["place"]):
-            GOLD["odd"] = 0
-            return True
-        gold_elsewhere(here)
-        return False
-
-    async def watch_gold():
-        # Stops 10 minutes after the last page asked.
-        while time.monotonic() - GOLD["asked"] < 600:
-            try:
-                shot = await context.screenshot(max_age=GOLD_SECONDS) if await in_focus() else None
-                if not shot:
-                    gold_elsewhere()  # another app in front: the game stops
-                else:
-                    reading, where = await context.analyse(gold_facts, shot)
-                    if reading:
-                        GOLD["read"] = time.time()
-                        GOLD["box"] = reading["box"]
-                    if gold_where(where) and reading:
-                        now = time.time()
-                        if GOLD["pending"] == reading["value"]:
-                            samples = GOLD["samples"]
-                            if samples and reading["value"] < samples[-1][1]:
-                                samples.clear()  # gold was spent
-                            samples.append((now, reading["value"]))
-                            while samples and now - samples[0][0] > GOLD_WINDOW:
-                                samples.pop(0)
-                            GOLD["text"] = reading["text"]
-                        GOLD["pending"] = reading["value"]
-            except Exception as e:
-                logging.warning(f"Gold reading failed: {e!r}")
-            await asyncio.sleep(GOLD_SECONDS)
-        GOLD["task"] = None
-
-    async def handle_gold(request):
-        GOLD["asked"] = time.monotonic()
-        if GOLD["task"] is None:
-            GOLD["task"] = asyncio.get_running_loop().create_task(watch_gold())
-        rate = gold_rate()
-        samples = GOLD["samples"]
-        return context.json({
-            "text": GOLD["text"],
-            "value": samples[-1][1] if samples else None,
-            "rate": rate,
-            "rate_text": gold.rate_text(rate),
-            "span": samples[-1][0] - samples[0][0] if samples else 0,
-            "read": GOLD["read"],
-            "box": GOLD["box"],
-        })
-
     ports.store.flush()
     context.app.on_startup.append(resume)
     for part in features:
         for method, path, handler in part["routes"]:
             (context.add_get if method == "GET" else context.add_post)(path, handler)
-    async def handle_gold_font(request):
-        return context.json({"height": len(gold.DIGITS["0"]),
-                             "glyphs": {**gold.DIGITS, **gold.LETTERS, **gold.SIGNS}})
-
-    context.add_get("/gold", handle_gold)
-    context.add_get("/gold-font", handle_gold_font)
     context.add_get("/mine", handle_mine_state)
     context.add_post("/mine", handle_mine)
     context.add_post("/mine/timer", handle_mine_timer)
