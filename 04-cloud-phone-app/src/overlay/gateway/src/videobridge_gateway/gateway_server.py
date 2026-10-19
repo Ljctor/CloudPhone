@@ -48,7 +48,8 @@ from . import logs
 from .logs import log
 from .http import viewers
 from .http import display
-from .core.display import LIMITS as DISPLAY_LIMITS, json_int, size_error
+from .http import settings
+from .core import settings as settings_rules
 from .adapters import host_files
 from .adapters.host_files import read_file
 
@@ -88,15 +89,8 @@ STATE_CACHE_SECONDS = 2.0
 PAGE_TOKEN = secrets.token_urlsafe(32)
 TOKEN_HEADER = "X-CloudPhone-Token"
 WEB_ROOT = ""
-# Emulator settings (renderer, cores, memory) work like the screen size: the
-# gateway writes "RENDERER CORES MEMORY_MB" to SETTINGS_REQUEST and a root
-# service applies it, reporting in SETTINGS_STATUS. Changes of either kind
-# share one limit (core/display.py): each one restarts Android.
-SETTINGS_REQUEST = ""
-SETTINGS_STATUS = ""
-RENDERERS = ("lavapipe", "swiftshader", "swangle", "software")
-# Older names of the same renderers, still accepted by the emulator.
-LEGACY_RENDERERS = {"swiftshader_indirect": "swiftshader", "swangle_indirect": "swangle"}
+# Emulator settings (renderer, cores, memory) work like the screen size:
+# see http/settings.py.
 GRPC_OPTIONS = [("grpc.max_receive_message_length", 32 * 1024 * 1024)]
 # When the page last asked for a change that restarts Android: a restart
 # soon after it is expected, not an error.
@@ -168,94 +162,6 @@ def read_avd_config(avd_dir):
         }
     except (OSError, KeyError, ValueError):
         return {}
-
-
-def read_settings_status():
-    """Returns the state of the last emulator settings request."""
-    if host_files.exists(SETTINGS_REQUEST):
-        return {"state": "pending"}
-    words = (read_file(SETTINGS_STATUS) or "").split() if SETTINGS_STATUS else []
-    if not words or words[0] not in ("applying", "done", "failed"):
-        return {"state": "idle"}
-    if words[0] == "failed":
-        return {"state": "failed", "message": " ".join(words[1:])[:200]}
-    result = {"state": words[0]}
-    if len(words) in (4, 7):
-        result.update(renderer=words[1], cores=words[2], memoryMb=words[3])
-    if len(words) == 7:
-        result.update(width=words[4], height=words[5], density=words[6])
-    return result
-
-
-def settings_limits():
-    """What the page may ask for: renderers, at most every host thread, and
-    the host's memory minus 2 GiB."""
-    meminfo = read_meminfo(read_file("/proc/meminfo") or "")
-    return {
-        "renderers": list(RENDERERS),
-        "maxCores": os.cpu_count() or 1,
-        "maxMemoryMb": (meminfo.get("MemTotal", 0) // 1024 - 2048) // 512 * 512,
-    }
-
-
-async def handle_settings(request):
-    """GET /api/v1/emulator-settings: the settings Android runs with, the
-    allowed choices and the state of the last change."""
-    cgroup = f"/sys/fs/cgroup/system.slice/{EMULATOR_UNIT}" if EMULATOR_UNIT else None
-    return web.json_response({
-        "canChange": bool(SETTINGS_REQUEST),
-        "current": read_emulator_settings(cgroup),
-        "display": read_avd_config(AVD_DIR),
-        "limits": settings_limits(),
-        "request": read_settings_status(),
-    }, headers={"Cache-Control": "no-store"})
-
-
-@display.change_request("Changement des réglages d’Android refusé : {error}")
-async def handle_set_settings(request):
-    """POST /api/v1/emulator-settings {renderer, cores, memoryMb[, width,
-    height, density]}: asks the root service to change them, which restarts
-    Android once (data is kept). The screen size is optional and all three
-    of its values come together."""
-    if not SETTINGS_REQUEST:
-        return web.json_response({"error": "Emulator settings changes are disabled"}, status=403)
-    try:
-        data = await request.json()
-        renderer, cores, memory = data["renderer"], json_int(data["cores"]), json_int(data["memoryMb"])
-        if not isinstance(renderer, str):
-            raise TypeError("renderer is not a string")
-    except (ValueError, KeyError, TypeError):
-        return web.json_response({"error": "renderer, cores and memoryMb are required"}, status=400)
-    limits = settings_limits()
-    if renderer not in RENDERERS:
-        return web.json_response({"error": f"renderer must be one of {', '.join(RENDERERS)}"}, status=400)
-    if not 1 <= cores <= limits["maxCores"]:
-        return web.json_response({"error": f"cores must be between 1 and {limits['maxCores']}"}, status=400)
-    if not 2048 <= memory <= limits["maxMemoryMb"] or memory % 512:
-        return web.json_response(
-            {"error": f"memoryMb must be a multiple of 512 between 2048 and {limits['maxMemoryMb']}"}, status=400)
-    size = ""
-    given = [key for key in DISPLAY_LIMITS if data.get(key) is not None]
-    if given:
-        try:
-            if len(given) != len(DISPLAY_LIMITS):
-                raise ValueError
-            wanted = {key: json_int(data[key]) for key in DISPLAY_LIMITS}
-        except (ValueError, TypeError):
-            return web.json_response({"error": "width, height and density go together"}, status=400)
-        error = size_error(wanted)
-        if error:
-            return web.json_response({"error": error}, status=400)
-        size = f" {wanted['width']} {wanted['height']} {wanted['density']}"
-    refused = display.change_refused(read_settings_status(), (SETTINGS_REQUEST, SETTINGS_STATUS))
-    if refused is not None:
-        return refused
-    host_files.write_request(SETTINGS_REQUEST, f"{renderer} {cores} {memory}{size}\n")
-    change_requested()
-    log("normal", "gateway", "Changement des réglages d’Android demandé ({settings}) : Android va redémarrer",
-        notify=True, settings=f"{renderer}, {cores} × CPU, {memory} MiB"
-        + (f", {wanted['width']}×{wanted['height']}" if size else ""))
-    return web.json_response({"status": "pending"}, status=202)
 
 
 async def read_emulator_unit():
@@ -347,6 +253,15 @@ def read_meminfo(text):
     return values
 
 
+def host_meminfo():
+    """The host's /proc/meminfo, kB values by name."""
+    return read_meminfo(read_file("/proc/meminfo") or "")
+
+
+def emulator_cgroup():
+    return f"/sys/fs/cgroup/system.slice/{EMULATOR_UNIT}" if EMULATOR_UNIT else None
+
+
 def memory_summary(values):
     """MiB figures from meminfo values."""
     mib = lambda name: round(values[name] / 1024) if name in values else None
@@ -402,12 +317,9 @@ def read_emulator_settings(cgroup):
                 args = f.read().decode(errors="replace").split("\0")
         except OSError:
             continue
-        if "qemu-system" not in args[0]:
-            continue
-        option = lambda name: args[args.index(name) + 1] if name in args[:-1] else None
-        renderer = option("-gpu")
-        return {"renderer": LEGACY_RENDERERS.get(renderer, renderer), "cores": option("-cores"),
-                "memoryMb": option("-memory")}
+        found = settings_rules.from_command_line(args)
+        if found is not None:
+            return found
     return None
 
 
@@ -415,7 +327,7 @@ async def sample_metrics():
     """Host CPU and memory, the emulator unit's CPU and memory (its cgroup),
     and Android's figures while a page wants them."""
     loop = asyncio.get_running_loop()
-    cgroup = f"/sys/fs/cgroup/system.slice/{EMULATOR_UNIT}" if EMULATOR_UNIT else None
+    cgroup = emulator_cgroup()
     previous = None
     last_android = 0.0
     while True:
@@ -529,7 +441,7 @@ def change_expected():
     a moment ago (this gateway may have been restarted by it)."""
     if time.time() - CHANGE["requested"] < CHANGE_RESTART_SECONDS:
         return True
-    for status, path in ((display.status(), display.STATUS), (read_settings_status(), SETTINGS_STATUS)):
+    for status, path in ((display.status(), display.STATUS), (settings.status(), settings.STATUS)):
         if status["state"] in ("pending", "applying"):
             return True
         if status["state"] in ("done", "failed") and time.time() - host_files.mtime(path) < CHANGE_RESTART_SECONDS:
@@ -608,13 +520,13 @@ async def watch_health():
     while True:
         try:
             unit, booted = await asyncio.gather(read_emulator_unit(), read_android_booted())
-            check_health(unit, booted, display.status(), read_settings_status())
+            check_health(unit, booted, display.status(), settings.status())
         except Exception as e:
             logging.warning(f"Health check failed: {e!r}")
         await asyncio.sleep(HEALTH_SECONDS)
 
 
-def check_health(unit, booted, display_status, settings):
+def check_health(unit, booted, display_status, settings_status):
     now = time.time()
     first = HEALTH["unit"] is None and HEALTH["booted"] == "unknown"
     if unit:
@@ -652,7 +564,7 @@ def check_health(unit, booted, display_status, settings):
         if HEALTH["lost"] == 4:
             log("error", "emulator", "Le serveur ne joint plus Android (gRPC). S’il ne revient pas d’ici une "
                 "minute, relancez Android sur le serveur.", notify=True)
-    for kind, status, path in (("display", display_status, display.STATUS), ("settings", settings, SETTINGS_STATUS)):
+    for kind, status, path in (("display", display_status, display.STATUS), ("settings", settings_status, settings.STATUS)):
         key = (status.get("state"), status.get("message"), status.get("width"))
         before = HEALTH[kind]
         HEALTH[kind] = key
@@ -688,7 +600,7 @@ async def handle_state(request):
             "viewers": viewers.VIEWERS.count,
             "load": read_load(),
             "display": display.status(),
-            "settings": read_settings_status(),
+            "settings": settings.status(),
         }
         STATE_CACHE["time"] = loop.time()
     value = {**STATE_CACHE["value"], "kicked": viewers.kicked(request)}
@@ -1208,9 +1120,10 @@ def init_app(videobridge_token, plugins_dir="", plugin_data=""):
     app.router.add_post("/api/v1/notify/test", handle_test_notify)
     app.router.add_post("/api/v1/viewers/disconnect-others", viewers.disconnect_others(forget_state))
     app.router.add_post("/api/v1/display", display.set_display(
-        read_settings_status, lambda: (SETTINGS_REQUEST, SETTINGS_STATUS), change_requested))
-    app.router.add_get("/api/v1/emulator-settings", handle_settings)
-    app.router.add_post("/api/v1/emulator-settings", handle_set_settings)
+        settings.status, settings.files, change_requested))
+    app.router.add_get("/api/v1/emulator-settings", settings.get_settings(
+        lambda: read_emulator_settings(emulator_cgroup()), lambda: read_avd_config(AVD_DIR), host_meminfo))
+    app.router.add_post("/api/v1/emulator-settings", settings.set_settings(host_meminfo, change_requested))
     app.router.add_get("/api/v1/emulator/status", handle_status)
     app.router.add_post("/api/v1/emulator/gps", handle_gps)
     app.router.add_get("/api/v1/emulator/logcat", handle_logcat)
@@ -1326,7 +1239,6 @@ async def main():
     args = parser.parse_args()
 
     global ADB_PATH, ADB_SERIAL, EMULATOR_UNIT, DISCOVERY_FILE
-    global SETTINGS_REQUEST, SETTINGS_STATUS
     EMULATOR_UNIT = args.emulator_unit
     global WEB_ROOT
     WEB_ROOT = args.web_root
@@ -1335,8 +1247,8 @@ async def main():
     ADB_SERIAL = args.adb_serial
     display.REQUEST = args.display_request
     display.STATUS = args.display_status
-    SETTINGS_REQUEST = args.settings_request
-    SETTINGS_STATUS = args.settings_status
+    settings.REQUEST = args.settings_request
+    settings.STATUS = args.settings_status
     notify.load(args.notify_file)
 
     # Parse discovery configuration properties
