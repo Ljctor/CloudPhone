@@ -65,6 +65,7 @@ the browser and the gateway; `App.tsx` only assembles them.
 | `gateway/src/videobridge_gateway/core/alerts.py` | phone alerts: the saved state, the random topic, which events are new, their sentences (no I/O) |
 | `gateway/src/videobridge_gateway/http/notify.py` | `GET`/`POST /api/v1/notify`, `POST /api/v1/notify/test`, `send()` for the events and the plugins |
 | `gateway/src/videobridge_gateway/adapters/host_files.py` | every host file the gateway reads or writes: the request and status files the root-path units share with it, their times, the alerts' state (mode 600), `/proc`, `/sys`, the emulator's cgroup and command line |
+| `gateway/src/videobridge_gateway/adapters/adb.py` | every adb command (keys, Android's metrics and events, the plugins'), its path and serial, and whether adb still reaches Android from its error text |
 | `gateway/src/videobridge_gateway/adapters/ntfy.py` | the alert's HTTP post to ntfy.sh |
 | `gateway/src/videobridge_gateway/adapters/systemd.py` | `systemctl show` of the emulator unit |
 | `gateway/src/videobridge_gateway/plugins.py` | loads the installed plugins' `gateway.py`, serves their scripts |

@@ -206,21 +206,20 @@ def remember(level, source, text, at, **params):
     _remember(level, source, text.format(**params) if params else text, False, at, fields)
 
 
-# adb's reachability, from the error messages of the calls the gateway
-# makes anyway (keys, metrics, events, plugins): no extra adb call.
+# adb's reachability, from the calls the gateway makes anyway (keys,
+# metrics, events, plugins): see adapters/adb.py.
 ADB = {"offline": None}
-OFFLINE_MARKERS = ("not found", "offline", "no devices", "unauthorized", "cannot connect", "closed")
 
 
-def adb_result(code, error_text=""):
-    """Notes the outcome of one adb call; a change of reachability is a
+def adb_reached(reached, error_text=""):
+    """Notes whether one adb call reached Android (True), was told it
+    cannot (False) or neither (None); a change of reachability is a
     record."""
-    text = (error_text or "").lower()
-    if code == 0:
+    if reached:
         if ADB["offline"]:
             log("normal", "adb", "adb joint de nouveau Android")
         ADB["offline"] = False
-    elif any(marker in text for marker in OFFLINE_MARKERS):
+    elif reached is False:
         if not ADB["offline"]:
             log("error", "adb", "adb ne joint plus Android ({reason}). Si Android ne redémarre pas, "
                 "relancez-le sur le serveur (systemctl restart cloudphone-emulator).",

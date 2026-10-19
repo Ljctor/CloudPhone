@@ -45,8 +45,6 @@ import re
 
 from aiohttp import web
 
-from . import logs
-
 # The plugin API's major version (see "api" above).
 API_VERSION = 1
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
@@ -259,22 +257,3 @@ def page_handler(path):
         return web.Response(text=body, content_type="text/javascript", headers={"Cache-Control": "no-cache"})
     return handle
 
-
-async def run_adb(adb_path, serial, *args, timeout=10):
-    """(exit code, stdout) of an adb command, or (-1, "") on timeout/error."""
-    try:
-        process = await asyncio.create_subprocess_exec(
-            adb_path, "-s", serial, *args,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-        )
-    except OSError as e:
-        logging.warning(f"adb could not start: {e}")
-        return -1, ""
-    try:
-        out, err = await asyncio.wait_for(process.communicate(), timeout)
-    except asyncio.TimeoutError:
-        process.kill()
-        await process.wait()
-        return -1, ""
-    logs.adb_result(process.returncode, err.decode("utf-8", "replace"))
-    return process.returncode, out.decode("utf-8", "replace")

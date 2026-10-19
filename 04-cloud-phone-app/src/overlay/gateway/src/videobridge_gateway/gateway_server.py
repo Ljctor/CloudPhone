@@ -32,7 +32,7 @@ proto_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "proto")
 sys.path.insert(0, proto_dir)
 from .proto import emulator_controller_pb2 as ec
 from .proto import emulator_controller_pb2_grpc as ec_grpc
-from .plugins import load_plugins, plugin_stats, run_adb
+from .plugins import load_plugins, plugin_stats
 from . import logs
 from .logs import log
 from .http import viewers
@@ -44,7 +44,7 @@ from .http import session
 from .core import settings as settings_rules
 from .core.session import bearer
 from .core import metrics as host_metrics
-from .adapters import host_files, systemd
+from .adapters import adb, host_files, systemd
 from .adapters.host_files import read_file
 
 # Records to journald and to GET /api/v1/logs (see logs.py).
@@ -54,8 +54,6 @@ logs.setup()
 DISCOVERY_PROPS = {}
 EMULATOR_CHANNEL = None
 VIDEOBRIDGE_CHANNEL = None
-ADB_PATH = "/opt/android-sdk/platform-tools/adb"
-ADB_SERIAL = "emulator-5558"
 # Android display size in pixels, read from the running AVD's config.ini.
 DISPLAY_WIDTH = 480
 DISPLAY_HEIGHT = 1040
@@ -213,17 +211,12 @@ async def read_android_metrics():
         " dumpsys SurfaceFlinger --timestats -dump -maxlayers 1;"
         " dumpsys SurfaceFlinger --timestats -clear >/dev/null"
     )
-    process = await asyncio.create_subprocess_exec(
-        ADB_PATH, "-s", ADB_SERIAL, "shell", script,
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-    )
-    try:
-        output, errors = await asyncio.wait_for(process.communicate(), timeout=10)
-    except asyncio.TimeoutError:
-        process.kill()
+    code, output, errors = await adb.run("shell", script, timeout=10)
+    if code is None:
+        raise OSError(errors)
+    if code == -1:
         return None
-    logs.adb_result(process.returncode, errors.decode(errors="replace"))
-    return host_metrics.android_metrics(output.decode(errors="replace"))
+    return host_metrics.android_metrics(output)
 
 
 def read_emulator_settings(cgroup):
@@ -459,8 +452,14 @@ async def read_screenshot():
     return width, height, image.image
 
 
-async def plugin_adb(*args, timeout=10):
-    return await run_adb(ADB_PATH, ADB_SERIAL, *args, timeout=timeout)
+async def adb_output(*args, timeout=10):
+    """(exit code, stdout) of an adb command, or (-1, "") on timeout or
+    when adb could not start: what the events and the plugins get."""
+    code, output, errors = await adb.run(*args, timeout=timeout)
+    if code is None:
+        logging.warning(f"adb could not start: {errors}")
+        return -1, ""
+    return code, output
 
 
 async def watch_discovery_file():
@@ -614,16 +613,11 @@ async def handle_key(request):
             "AudioVolumeUp": "VOLUME_UP",
             "AudioVolumeDown": "VOLUME_DOWN",
         }
-        process = await asyncio.create_subprocess_exec(
-            ADB_PATH,
-            "-s", ADB_SERIAL, "shell", "input", "keyevent", keycodes[key],
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        _, stderr = await process.communicate()
-        logs.adb_result(process.returncode, stderr.decode(errors="replace"))
-        if process.returncode:
-            raise RuntimeError(stderr.decode(errors="replace").strip())
+        code, _, errors = await adb.run("shell", "input", "keyevent", keycodes[key], timeout=None)
+        if code is None:
+            raise OSError(errors)
+        if code:
+            raise RuntimeError(errors.strip())
         return web.json_response({"status": "success"})
     except Exception as e:
         logging.error(f"Error sending key: {e}. Check Android in Information → Server; if adb stays offline, "
@@ -680,7 +674,7 @@ def init_app(videobridge_token, plugins_dir="", plugin_data=""):
     app.router.add_get("/api/v1/display", display.get_display(
         lambda: {"width": DISPLAY_WIDTH, "height": DISPLAY_HEIGHT}, lambda: read_avd_config(AVD_DIR)))
     app.router.add_get("/api/v1/state", handle_state)
-    app.router.add_get("/api/v1/events", events.get_events(plugin_adb))
+    app.router.add_get("/api/v1/events", events.get_events(adb_output))
     app.router.add_get("/api/v1/logs", handle_logs)
     app.router.add_get("/api/v1/notify", notify.get_notify)
     app.router.add_post("/api/v1/notify", notify.set_notify)
@@ -702,7 +696,7 @@ def init_app(videobridge_token, plugins_dir="", plugin_data=""):
         app.router.add_get("/", index)
         app.router.add_get("/index.html", index)
         app.router.add_static("/assets", os.path.join(WEB_ROOT, "assets"))
-    load_plugins(app, plugins_dir, read_screenshot, plugin_adb, notify.send, plugin_data or None)
+    load_plugins(app, plugins_dir, read_screenshot, adb_output, notify.send, plugin_data or None)
 
     return app
 
@@ -724,13 +718,13 @@ async def main():
         "--adb",
         type=str,
         default="/opt/android-sdk/platform-tools/adb",
-        help="Path to the adb binary used for hardware key events.",
+        help="Path to the adb binary (hardware keys, Android metrics and events, plugins).",
     )
     parser.add_argument(
         "--adb_serial",
         type=str,
         default="emulator-5558",
-        help="adb serial of the emulator receiving hardware key events.",
+        help="adb serial of the emulator.",
     )
     parser.add_argument(
         "--videobridge",
@@ -806,14 +800,13 @@ async def main():
     )
     args = parser.parse_args()
 
-    global ADB_PATH, ADB_SERIAL, EMULATOR_UNIT, DISCOVERY_FILE
+    global EMULATOR_UNIT, DISCOVERY_FILE
     EMULATOR_UNIT = args.emulator_unit
     events.UNIT = EMULATOR_UNIT
     global WEB_ROOT
     WEB_ROOT = args.web_root
     DISCOVERY_FILE = args.discovery_file or ""
-    ADB_PATH = args.adb
-    ADB_SERIAL = args.adb_serial
+    adb.configure(args.adb, args.adb_serial)
     display.REQUEST = args.display_request
     display.STATUS = args.display_status
     settings.REQUEST = args.settings_request
@@ -864,7 +857,7 @@ async def main():
 
     watcher = asyncio.create_task(watch_discovery_file())
     sampler = asyncio.create_task(sample_metrics())
-    alerts = asyncio.create_task(events.watch(plugin_adb, change_expected))
+    alerts = asyncio.create_task(events.watch(adb_output, change_expected))
     await events.log_start(change_expected)
     health = asyncio.create_task(watch_health())
 
