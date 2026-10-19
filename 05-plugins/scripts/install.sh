@@ -3,10 +3,10 @@
 # directory each under 05-plugins/ (for now: slayer-legend). They show in
 # the page's options panel under "Plugins". Re-running it upgrades in place.
 #
-# Each plugin's files (plugin.json, page.js, gateway.py, ...; not its
-# README) are copied to /opt/cloudphone/plugins/<id>, then the gateway
-# restarts to load them (Android keeps running, the page reconnects by
-# itself).
+# Each plugin's files (plugin.json, page.js, gateway.py, features/, ...;
+# not its README nor its tests) are copied to /opt/cloudphone/plugins/<id>,
+# then the gateway restarts to load them (Android keeps running, the page
+# reconnects by itself).
 set -euo pipefail
 
 TREE=$(cd "$(dirname "$0")/../.." && pwd)
@@ -63,6 +63,15 @@ for plugin in "${plugins[@]}"; do
   rm -rf "$dest.new"
   install -d -m 755 "$dest.new"
   find "$PART/$plugin" -maxdepth 1 -type f ! -name '*.md' ! -name 'test_*' -exec install -m 644 -t "$dest.new" {} +
+  # Its subdirectories one level down (e.g. features/), without caches.
+  for sub in "$PART/$plugin"/*/; do
+    [ -d "$sub" ] || continue
+    name=$(basename "$sub")
+    [ "$name" != __pycache__ ] || continue
+    install -d -m 755 "$dest.new/$name"
+    find "$sub" -maxdepth 1 -type f ! -name '*.md' ! -name 'test_*' ! -name '*.pyc' \
+      -exec install -m 644 -t "$dest.new/$name" {} +
+  done
   rm -rf "$dest.old"
   [ ! -e "$dest" ] || mv -T "$dest" "$dest.old"
   mv -T "$dest.new" "$dest"

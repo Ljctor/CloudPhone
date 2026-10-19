@@ -83,15 +83,11 @@ measured on a 360x780 screen (the page's device shapes keep this ratio).
 """
 
 import asyncio
-import base64
 import importlib.util
 import json
 import logging
 import os
 import time
-
-PACKAGE = "com.gear2.growslayer"
-ACTIVITY = f"{PACKAGE}/com.google.firebase.MessagingUnityPlayerActivity"
 
 # Areas as (left, top, right, bottom) fractions of the screen.
 START_TEXT = (0.30, 0.80, 0.70, 0.87)   # "TAP TO START", white on dark
@@ -111,9 +107,6 @@ SAVER_TEXT = (0.40, 0.465, 0.60, 0.48)
 SAVER_TOP = (0.10, 0.10, 0.90, 0.25)  # bottom menu names, white on dark
 
 LAUNCH = {"state": "idle", "message": "", "task": None, "since": 0.0}
-EMERALD = {"time": 0.0, "value": None, "lock": None}
-DIAMOND = {"time": 0.0, "value": None, "lock": None}
-EMERALD_SECONDS = 0.4
 SCREEN = {"time": 0.0, "value": None, "lock": None}
 SCREEN_SECONDS = 2.0
 MINE = {"enabled": False, "floor": None, "area": None, "until": None, "gold": None,
@@ -148,7 +141,8 @@ TRACE_AFTER_SECONDS = 2.0
 
 
 def load_sibling(directory, name):
-    spec = importlib.util.spec_from_file_location(f"cloudphone_plugin_slayer_legend_{name}",
+    """A module beside this file ("mine") or in features/ ("features/mine")."""
+    spec = importlib.util.spec_from_file_location(f"cloudphone_plugin_slayer_legend_{name.replace('/', '_')}",
                                                   os.path.join(directory, f"{name}.py"))
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -215,57 +209,12 @@ def classify(shot):
 
 
 def setup(context):
-    emerald = load_sibling(context.directory, "emerald_mask")
+    def feature(name):
+        return load_sibling(context.directory, f"features/{name}")
 
-    async def read_emerald_mask(area):
-        shot = await context.screenshot(max_age=EMERALD_SECONDS)
-        if not shot:
-            return {"mask": None, "reason": "screenshot"}
-        return await context.analyse(emerald_mask_of, shot, area)
-
-    def emerald_mask_of(shot, area):
-        width, height, image = shot
-        scale = width / 360
-        x0, y0 = emerald.js_round(area["x"] * scale), emerald.js_round(area["y"] * scale)
-        w, h = emerald.js_round(area["width"] * scale), emerald.js_round(area["height"] * scale)
-        pixels = bytearray()
-        for y in range(y0, y0 + h):
-            start = (y * width + x0) * 3
-            pixels += image[start:start + w * 3]
-        if len(pixels) != w * h * 3:
-            return {"mask": None, "reason": "screenshot"}
-        mask, reason = emerald.find_emerald_mask(pixels, w, h, scale, channels=3, area=area)
-        if mask:
-            # The page redraws the digits after the comma: send their pixels.
-            box = mask["decimals"]["pixels"]
-            crop = bytearray()
-            for y in range(box["y"], box["y"] + box["height"]):
-                start = (y * w + box["x"]) * 3
-                crop += pixels[start:start + box["width"] * 3]
-            box["rgb"] = base64.b64encode(bytes(crop)).decode("ascii")
-            # The finder counts from AREA; the crop starts at a whole pixel.
-            dx, dy = x0 / scale - area["x"], y0 / scale - area["y"]
-            for part in (mask, mask["number"]):
-                part["x"] += dx
-                part["y"] += dy
-            mask["decimals"]["x"] += dx
-        return {"mask": mask, "reason": reason}
-
-    async def handle_emerald_mask(request):
-        diamond = request.query.get("counter") == "diamond"
-        cache = DIAMOND if diamond else EMERALD
-        if cache["lock"] is None:
-            cache["lock"] = asyncio.Lock()
-        loop = asyncio.get_running_loop()
-        async with cache["lock"]:
-            if cache["value"] is None or loop.time() - cache["time"] > EMERALD_SECONDS:
-                try:
-                    cache["value"] = await read_emerald_mask(emerald.DIAMOND_AREA if diamond else emerald.AREA)
-                except Exception as e:
-                    logging.warning(f"Counter mask: no screenshot: {e!r}")
-                    cache["value"] = {"mask": None, "reason": "screenshot"}
-                cache["time"] = loop.time()
-        return context.json(cache["value"])
+    nav = load_sibling(context.directory, "nav")
+    ports = feature("ports").build(context, nav)
+    features = [feature("counters").counters(ports, load_sibling(context.directory, "emerald_mask"))]
 
     stage = load_sibling(context.directory, "stage")
     with open(os.path.join(context.directory, "stages.json"), encoding="utf-8") as f:
@@ -340,37 +289,12 @@ def setup(context):
         LAUNCH["state"], LAUNCH["message"] = state, message
         logging.info(f"Slayer Legend launch: {state} {message}".rstrip())
 
-    nav = load_sibling(context.directory, "nav")
-
-    def allowed(screen, move, point, kind="tap"):
-        """Every action goes through the navigation graph's guard first:
-        refused unless it is an allowed move of the screen recognised."""
-        refusal = nav.guard(screen, move, point[0], point[1], kind)
-        if refusal:
-            logging.error(f"Slayer Legend: action refused: {refusal}")
-            raise RuntimeError(f"Action refusée par le garde-fou : {refusal}")
-
-    async def hold(shot, screen, move, point, milliseconds):
-        allowed(screen, move, point, "hold")
-        width, height, _ = shot
-        x, y = str(round(point[0] * width)), str(round(point[1] * height))
-        await context.adb("shell", "input", "swipe", x, y, x, y, str(milliseconds),
-                          timeout=milliseconds / 1000 + 10)
-
-    async def tap(shot, screen, move, point):
-        allowed(screen, move, point)
-        width, height, _ = shot
-        await context.adb("shell", "input", "tap", str(round(point[0] * width)), str(round(point[1] * height)))
-
-    async def in_focus():
-        code, out = await context.adb("shell", "dumpsys", "window")
-        return code == 0 and any("mCurrentFocus" in line and PACKAGE in line for line in out.splitlines())
+    tap, hold, in_focus = ports.tap, ports.hold, ports.focused
 
     async def launch():
         try:
             report("starting", "Ouverture du jeu")
-            code, _ = await context.adb("shell", "am", "start", "-n", ACTIVITY, timeout=20)
-            if code != 0:
+            if not await ports.start_game():
                 report("failed", "Android ne répond pas")
                 return
             deadline = time.monotonic() + 180
@@ -456,12 +380,9 @@ def setup(context):
             if not rows:
                 return False
             # Scroll by about three rows towards the floor.
-            width, height, _ = shot
-            x = str(round(0.5 * width))
             up = rows[0][1] > floor
             a, b = (0.40, 0.65) if up else (0.65, 0.40)
-            allowed("mine_list", "scroll", (0.5, a), "swipe")
-            await context.adb("shell", "input", "swipe", x, str(round(a * height)), x, str(round(b * height)), "600")
+            await ports.swipe(shot, "mine_list", "scroll", (0.5, a), (0.5, b), 600)
             await asyncio.sleep(1.5)
             shot = await context.screenshot()
             if not shot or not await context.analyse(mine.floor_list, shot):
@@ -913,12 +834,7 @@ def setup(context):
         save_state()
         return context.json(mode_state())
 
-    async def game_running():
-        """False when the game's process is gone, None when adb cannot tell."""
-        code, out = await context.adb("shell", "pidof", PACKAGE)
-        if code == 0 and out.strip():
-            return True
-        return False if code == 1 and not out.strip() else None
+    game_running = ports.running
 
     def stop_facts(shot):
         return classify(shot), mine_facts(shot)
@@ -1246,7 +1162,9 @@ def setup(context):
         return context.json(graph.public() if graph else {"nodes": [], "edges": []})
 
     context.app.on_startup.append(resume)
-    context.add_get("/emerald-mask", handle_emerald_mask)
+    for part in features:
+        for method, path, handler in part["routes"]:
+            (context.add_get if method == "GET" else context.add_post)(path, handler)
     async def handle_gold_font(request):
         return context.json({"height": len(gold.DIGITS["0"]),
                              "glyphs": {**gold.DIGITS, **gold.LETTERS, **gold.SIGNS}})
