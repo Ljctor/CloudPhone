@@ -724,7 +724,7 @@ class Emulator:
                        "--discovery_file", str(found[0]), "--emulator_unit", EMULATOR_UNIT,
                        "--display_request", self.path("display-request"), "--display_status", self.path("display-status"),
                        "--settings_request", self.path("settings-request"), "--settings_status", self.path("settings-status"),
-                       "--plugins_dir", self.install_plugins()]
+                       "--plugins_dir", self.install_plugins(), "--plugin_data", self.path("plugin-data")]
             self.gateway = await asyncio.create_subprocess_exec(
                 *command, stdin=asyncio.subprocess.DEVNULL, stdout=log_file, stderr=log_file, env=env,
                 preexec_fn=die_with_parent)

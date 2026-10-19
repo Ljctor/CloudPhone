@@ -73,6 +73,11 @@ GET  /api/v1/plugins/slayer-legend/trace/graph
      The recorded graph: {nodes: [{id, screen, count, thumb}], edges:
      [{from, to, x, y, kind, count[, x2, y2]}]}.
 
+The mode and its timer, the mine's floor, area, timer and on/off, and the
+highest stage seen farmed are kept in the plugin's data directory
+(state.json, written when they change) and restored when the gateway
+starts: farming and a timed mode go on after a gateway restart.
+
 Screens are recognised from a few pixel areas, as fractions of the screen,
 measured on a 360x780 screen (the page's device shapes keep this ratio).
 """
@@ -422,6 +427,7 @@ def setup(context):
         if (MINE["state"], MINE["message"]) != (state, message):
             logging.info(f"Slayer Legend mine: {state} {message}")
         MINE["state"], MINE["message"] = state, message
+        save_state()
 
     async def mine_step(shot, screen, move, point, wait=2.5):
         """Taps point (move of screen) if the game is still in front; the
@@ -618,6 +624,7 @@ def setup(context):
             if task is not None and not task.done():
                 task.cancel()
             mine_report("off", "")
+        save_state()
         return context.json(mine_state())
 
     async def handle_mine_timer(request):
@@ -630,29 +637,87 @@ def setup(context):
         now = time.time()
         until = max(MINE["until"] or now, now) + add * 60
         MINE["until"] = until if until > now + 30 else None
+        save_state()
         return context.json(mine_state())
 
     # The highest stage seen farmed: the game only farms unlocked stages.
-    # Kept in the plugin's data directory; None until one is read.
-    highest_file = os.path.join(context.data_dir, "highest.json") if context.data_dir else None
+    # None until one is read.
     HIGHEST = {"number": None}
-    try:
-        with open(highest_file, encoding="utf-8") as f:
-            HIGHEST["number"] = int(json.load(f)["number"]) or None
-    except (TypeError, OSError, ValueError, KeyError):
-        pass
+
+    # What a gateway restart must not lose, so that farming meant to run
+    # with the page closed goes on: the mode and its timer, the mine's
+    # floor, area and timer, the highest stage. In the plugin's data
+    # directory (state.json), rewritten whole when it changes.
+    state_file = os.path.join(context.data_dir, "state.json") if context.data_dir else None
+    SAVED = {"text": None}
+
+    def save_state():
+        if not state_file:
+            return
+        text = json.dumps({
+            "mode": {key: MODE[key] for key in ("mode", "until", "stage18", "stage4", "highest", "configured")},
+            "mine": {key: MINE[key] for key in ("enabled", "floor", "area", "until")},
+            "highest": HIGHEST["number"],
+        }, sort_keys=True)
+        if text == SAVED["text"]:
+            return
+        try:
+            with open(f"{state_file}.tmp", "w", encoding="utf-8") as f:
+                f.write(text)
+            os.replace(f"{state_file}.tmp", state_file)
+            SAVED["text"] = text
+        except OSError as e:
+            logging.warning(f"Slayer Legend: state not kept: {e}")
+
+    def number_or_none(value, top):
+        return value if isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= top else None
+
+    def time_or_none(value):
+        return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+    def restore_state():
+        """Reads state.json; the first time, highest.json of earlier
+        versions instead (then removed)."""
+        if not state_file:
+            return
+        try:
+            with open(state_file, encoding="utf-8") as f:
+                saved = json.load(f)
+        except FileNotFoundError:
+            old = os.path.join(context.data_dir, "highest.json")
+            try:
+                with open(old, encoding="utf-8") as f:
+                    HIGHEST["number"] = number_or_none(json.load(f).get("number"), 99999)
+            except (OSError, ValueError, AttributeError):
+                return
+            save_state()
+            if SAVED["text"]:
+                try:
+                    os.remove(old)
+                except OSError:
+                    pass
+            return
+        except (OSError, ValueError) as e:
+            logging.warning(f"Slayer Legend: state not read: {e!r}")
+            return
+        if not isinstance(saved, dict):
+            return
+        mode, mined = saved.get("mode") or {}, saved.get("mine") or {}
+        HIGHEST["number"] = number_or_none(saved.get("highest"), 99999)
+        MODE.update(mode=mode.get("mode") if mode.get("mode") in MODES else "mpw18",
+                    until=time_or_none(mode.get("until")), configured=mode.get("configured") is True,
+                    **{key: number_or_none(mode.get(key), 99999) for key in ("stage18", "stage4", "highest")})
+        floor, area = number_or_none(mined.get("floor"), 9999), number_or_none(mined.get("area"), 5)
+        MINE.update(enabled=mined.get("enabled") is True and bool(floor and area), floor=floor, area=area,
+                    until=time_or_none(mined.get("until")))
 
     def note_highest(number):
         if not number or (HIGHEST["number"] and number <= HIGHEST["number"]):
             return
         HIGHEST["number"] = number
-        if highest_file:
-            try:
-                with open(f"{highest_file}.tmp", "w", encoding="utf-8") as f:
-                    json.dump({"number": number}, f)
-                os.replace(f"{highest_file}.tmp", highest_file)
-            except OSError as e:
-                logging.warning(f"Slayer Legend: highest stage not kept: {e}")
+        save_state()
+
+    restore_state()
 
     def stage_list(mpw, highest):
         """Stages with that many monsters per wave, at most `highest`,
@@ -679,6 +744,7 @@ def setup(context):
         if (MODE["state"], MODE["message"]) != (state, message):
             logging.info(f"Slayer Legend mode {MODE['mode']}: {state} {message}")
         MODE["state"], MODE["message"] = state, message
+        save_state()
 
     def mode_state():
         state = {key: MODE[key] for key in ("mode", "until", "stage18", "stage4", "highest", "configured",
@@ -781,6 +847,7 @@ def setup(context):
         task = MODE["task"]
         if mode != "mpw18" and (task is None or task.done()):
             MODE["task"] = asyncio.get_running_loop().create_task(watch_mode())
+        save_state()
         return context.json(mode_state())
 
     async def handle_mode_timer(request):
@@ -795,7 +862,20 @@ def setup(context):
         MODE["until"] = until if until > now + 30 else None
         if MODE["mode"] == "mine":
             MINE["until"] = MODE["until"]
+        save_state()
         return context.json(mode_state())
+
+    async def resume(app):
+        """At the gateway's start: the farming and timed mode state.json
+        kept go on."""
+        loop = asyncio.get_running_loop()
+        if MINE["enabled"]:
+            mine_report("waiting", "Surveillance de la mine (reprise après un redémarrage de la passerelle)")
+            MINE["task"] = loop.create_task(farm_mine())
+        if MODE["mode"] != "mpw18":
+            mode_report(*{"free": ("free", "Jeu libre : rien n’est touché jusqu’à la fin du minuteur"),
+                          "mine": ("mine", "Mine")}.get(MODE["mode"], ("idle", f"Farming {MODE['mode']}")))
+            MODE["task"] = loop.create_task(watch_mode())
 
     async def handle_launch_state(request):
         return context.json({"state": LAUNCH["state"], "message": LAUNCH["message"]})
@@ -1021,6 +1101,7 @@ def setup(context):
         graph = TRACE["graph"]
         return context.json(graph.public() if graph else {"nodes": [], "edges": []})
 
+    context.app.on_startup.append(resume)
     context.add_get("/emerald-mask", handle_emerald_mask)
     async def handle_gold_font(request):
         return context.json({"height": len(gold.DIGITS["0"]),

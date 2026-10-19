@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 const PROBE: &str = "tests/fake-emulator/plugins/e2e-probe";
 const BROKEN: &str = "tests/fake-emulator/plugins/e2e-broken";
 const MISNAMED: &str = "tests/fake-emulator/plugins/e2e-misnamed";
+const SLAYER_LEGEND: &str = "05-plugins/slayer-legend";
 
 fn with(plugins: Value) -> CloudPhone {
     CloudPhone::start_with(json!({"plugins": plugins}))
@@ -174,4 +175,40 @@ fn a_plugins_analysis_does_not_hold_the_gateway() {
     assert!(answered < analysed, "the state was asked while the analysis ran");
     let took = answered - asked;
     assert!(took < Duration::from_millis(700), "GET /api/v1/state took {took:?} during a 2 s analysis");
+}
+
+#[test]
+fn slayer_legends_mode_and_mine_come_back_after_a_gateway_restart() {
+    // Only routes that need no game screen: the mode, its timer, the mine's
+    // floor and area, the highest stage. Kept in the plugin's data directory.
+    let cp = with(json!([SLAYER_LEGEND]));
+    let until = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs_f64() + 3600.0;
+    let set = cp.post_json(
+        "api/v1/plugins/slayer-legend/mode",
+        &json!({"mode": "mine", "until": until, "floor": 12, "area": 3, "stage18": 40}),
+    );
+    assert_eq!(set.status(), 200, "{:?}", set.text());
+    assert_eq!(cp.get_json("api/v1/plugins/slayer-legend/stages?known=45")["highest"], 45);
+    let before = cp.get_json("api/v1/plugins/slayer-legend/mode");
+    assert_eq!(before["mine"]["enabled"], true, "{before}");
+
+    let token = cp.page_token();
+    cp.fake().action("restart_gateway");
+    cp.wait_new_token(&token, Duration::from_secs(20));
+    let after = cp.get_json("api/v1/plugins/slayer-legend/mode");
+    for key in ["mode", "until", "stage18", "configured"] {
+        assert_eq!(after[key], before[key], "{key}: {after}");
+    }
+    for key in ["enabled", "floor", "area", "until"] {
+        assert_eq!(after["mine"][key], before["mine"][key], "mine {key}: {after}");
+    }
+    assert_eq!(after["mine"]["state"], "waiting", "the mine watches again: {after}");
+    assert_eq!(cp.get_json("api/v1/plugins/slayer-legend/stages")["highest"], 45);
+    // Turned off, it stays off across the next restart.
+    assert_eq!(cp.post_json("api/v1/plugins/slayer-legend/mode", &json!({"mode": "mpw18"})).status(), 200);
+    let token = cp.page_token();
+    cp.fake().action("restart_gateway");
+    cp.wait_new_token(&token, Duration::from_secs(20));
+    let off = cp.get_json("api/v1/plugins/slayer-legend/mode");
+    assert_eq!((off["mode"].clone(), off["mine"]["enabled"].clone()), (json!("mpw18"), json!(false)), "{off}");
 }
