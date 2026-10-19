@@ -117,7 +117,10 @@ EMERALD_SECONDS = 0.4
 SCREEN = {"time": 0.0, "value": None, "lock": None}
 SCREEN_SECONDS = 2.0
 MINE = {"enabled": False, "floor": None, "area": None, "until": None, "gold": None,
-        "state": "off", "message": "", "task": None}
+        "state": "off", "message": "", "task": None, "stopper": None}
+# A mine whose timer ended while the gateway was down, in a fight: how long
+# its stop pass looks for the fight to untick "Repeat entry".
+MINE_STOP_SECONDS = 180
 MINE_FEATHERS = 3
 MINE_SECONDS = 10
 # What the game is set to do. "mpw18" (farming a stage with 18 monsters per
@@ -633,6 +636,7 @@ def setup(context):
         MINE.update(floor=floor or None, area=area or None, until=until)
         task = MINE["task"]
         if enabled and not MINE["enabled"]:
+            cancel_stopper()
             MINE["enabled"] = True
             MINE["gold"] = None
             mine_report("waiting", "Surveillance de la mine")
@@ -675,7 +679,7 @@ def setup(context):
             return
         text = json.dumps({
             "mode": {key: MODE[key] for key in ("mode", "until", "stage18", "stage4", "highest", "configured")},
-            "mine": {key: MINE[key] for key in ("enabled", "floor", "area", "until")},
+            "mine": {key: MINE[key] for key in ("enabled", "floor", "area", "until", "state")},
             "highest": HIGHEST["number"],
         }, sort_keys=True)
         if text == SAVED["text"]:
@@ -739,11 +743,17 @@ def setup(context):
         if MINE["enabled"] and MINE["until"] is not None and MINE["until"] <= now:
             ended.append("mine")
             MINE["enabled"] = False
+            # In a fight, "Repeat entry" goes on spending feathers: a stop
+            # pass unticks it first (resume).
+            MINE["state"] = "stopping" if mined.get("state") == "farming" else "off"
+        elif mined.get("state") == "stopping":
+            MINE["state"] = "stopping"  # restarted during a stop pass
         if MODE["mode"] == "mine" and not MINE["enabled"]:
             MODE.update(mode="mpw18", until=None)
         if ended:
             logging.info(f"Slayer Legend: timer ended while the gateway was stopped ({', '.join(ended)}): "
-                         "back to mpw18 farming, mine off")
+                         "back to mpw18 farming, mine off"
+                         + (" once Repeat entry is unticked" if MINE["state"] == "stopping" else ""))
 
     def note_highest(number):
         if not number or (HIGHEST["number"] and number <= HIGHEST["number"]):
@@ -804,6 +814,7 @@ def setup(context):
     def start_mine(floor, area, until):
         MINE.update(floor=floor, area=area, until=until)
         if not MINE["enabled"]:
+            cancel_stopper()
             MINE["enabled"] = True
             MINE["gold"] = None
             mine_report("waiting", "Surveillance de la mine")
@@ -899,10 +910,54 @@ def setup(context):
         save_state()
         return context.json(mode_state())
 
+    async def stop_after_restart():
+        """The stop pass of a mine whose timer ended while the gateway was
+        down, during a fight: it only looks (a screenshot at once each time)
+        and, on the mine fight, unticks "Repeat entry" through the guard as
+        mine_stop does; Power Saving Mode is left as the mine loop leaves
+        it. Gives up after MINE_STOP_SECONDS without seeing the fight."""
+        mine_report("stopping", "Durée écoulée pendant un redémarrage : décoche « Repeat entry »")
+        deadline = time.monotonic() + MINE_STOP_SECONDS
+        last_hold = 0.0
+        try:
+            while time.monotonic() < deadline:
+                await asyncio.sleep(MINE_SECONDS)
+                if not await in_focus():
+                    continue
+                shot = await context.screenshot(max_age=0)
+                if not shot:
+                    continue
+                facts = await context.analyse(mine_facts, shot)
+                if facts["saver"] and time.monotonic() - last_hold > 60:
+                    last_hold = time.monotonic()
+                    await hold(shot, "saver", "leave", SAVER_TAP, SAVER_HOLD_MS)
+                elif facts.get("fight"):
+                    if await mine_stop(shot, "Durée écoulée pendant un redémarrage de la passerelle"):
+                        logging.info("Slayer Legend mine: timer ended during a restart, Repeat entry unticked")
+                    return
+            mine_report("blocked", "Durée écoulée pendant un redémarrage, combat de la mine pas vu en "
+                        f"{MINE_STOP_SECONDS // 60} minutes : « Repeat entry » est peut-être encore coché")
+            logging.warning("Slayer Legend mine: timer ended during a restart, fight not seen: "
+                            "Repeat entry may still be ticked")
+            await alert(MINE["message"])
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logging.exception("Slayer Legend mine stop failed")
+            mine_report("failed", f"Erreur : {e!r}"[:200])
+
+    def cancel_stopper():
+        """The user starts the mine: no stop pass any more."""
+        stopper = MINE["stopper"]
+        if stopper is not None and not stopper.done():
+            stopper.cancel()
+
     async def resume(app):
         """At the gateway's start: the farming and timed mode state.json
-        kept go on."""
+        kept go on, or the stop pass of a mine that ended meanwhile."""
         loop = asyncio.get_running_loop()
+        if MINE["state"] == "stopping":
+            MINE["stopper"] = loop.create_task(stop_after_restart())
         if MINE["enabled"]:
             mine_report("waiting", "Surveillance de la mine (reprise après un redémarrage de la passerelle)")
             MINE["task"] = loop.create_task(farm_mine())
