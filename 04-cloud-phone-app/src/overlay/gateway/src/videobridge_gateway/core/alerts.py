@@ -9,85 +9,71 @@ messages say nothing private. They go through the public ntfy.sh service.
 The gateway sends alerts for Android's events (an app crashed or froze,
 Android or the emulator restarted) and plugins send their own through
 PluginContext.notify().
+
+No I/O: the saved file's text, the state ({enabled, topic}) and the events
+come in; what to save, show and send comes out.
 """
 
-import asyncio
 import json
-import logging
-import os
 import re
 import secrets
 
-import aiohttp
-
 SERVER = "https://ntfy.sh"
 TOPIC = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
-STATE = {"file": "", "enabled": False, "topic": None}
 
 
-def load(path):
-    """Reads the saved state; a missing or broken file means off."""
-    STATE["file"] = path or ""
-    if not path:
-        return
+def parse_saved(text):
+    """{enabled, topic} from the saved file's text; a missing (None) or
+    broken file means off."""
     try:
-        with open(path, encoding="utf-8") as f:
-            saved = json.load(f)
-    except (OSError, ValueError):
-        return
+        saved = json.loads(text) if text is not None else None
+    except ValueError:
+        saved = None
+    if saved is None:
+        return {"enabled": False, "topic": None}
     topic = saved.get("topic")
-    STATE["topic"] = topic if isinstance(topic, str) and TOPIC.match(topic) else None
-    STATE["enabled"] = bool(saved.get("enabled")) and STATE["topic"] is not None
+    topic = topic if isinstance(topic, str) and TOPIC.match(topic) else None
+    return {"enabled": bool(saved.get("enabled")) and topic is not None, "topic": topic}
 
 
-def _save():
-    if not STATE["file"]:
-        return
-    temporary = f"{STATE['file']}.tmp"
-    with open(temporary, "w", encoding="utf-8") as f:
-        json.dump({"enabled": STATE["enabled"], "topic": STATE["topic"]}, f)
-    os.chmod(temporary, 0o600)
-    os.replace(temporary, STATE["file"])
+def saved_text(state):
+    return json.dumps({"enabled": state["enabled"], "topic": state["topic"]})
 
 
-def describe():
-    topic = STATE["topic"]
+def describe(state, available):
+    topic = state["topic"]
     return {
-        "available": bool(STATE["file"]),
-        "enabled": STATE["enabled"],
+        "available": available,
+        "enabled": state["enabled"],
         "topic": topic,
         "url": f"{SERVER}/{topic}" if topic else None,
     }
 
 
-def configure(enabled, new_topic=False):
-    """Turns alerts on or off; makes a topic the first time, or a new one
-    when asked (the old name stops getting alerts)."""
-    if enabled and (STATE["topic"] is None or new_topic):
-        STATE["topic"] = f"cloudphone-{secrets.token_hex(12)}"
-    STATE["enabled"] = bool(enabled)
-    _save()
-    return describe()
+def configure(state, enabled, new_topic=False):
+    """The state with alerts on or off; a topic is made the first time, or a
+    new one when asked (the old name stops getting alerts)."""
+    topic = state["topic"]
+    if enabled and (topic is None or new_topic):
+        topic = f"cloudphone-{secrets.token_hex(12)}"
+    return {"enabled": bool(enabled), "topic": topic}
 
 
-async def send(text, title="Cloud Phone", tags=None, force=False):
-    """Posts one alert; True when ntfy.sh took it. Never raises."""
-    topic = STATE["topic"]
-    if not topic or not (STATE["enabled"] or force):
-        return False
-    headers = {"Title": title.encode("utf-8").decode("latin-1", "replace")}
+def url(state, force=False):
+    """Where to post an alert, or None when alerts are off (force: even
+    then, as long as there is a topic)."""
+    topic = state["topic"]
+    if not topic or not (state["enabled"] or force):
+        return None
+    return f"{SERVER}/{topic}"
+
+
+def headers(title, tags=None):
+    """ntfy's headers; HTTP headers are Latin-1."""
+    result = {"Title": title.encode("utf-8").decode("latin-1", "replace")}
     if tags:
-        headers["Tags"] = tags
-    try:
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
-            async with session.post(f"{SERVER}/{topic}", data=text.encode("utf-8"), headers=headers) as response:
-                if response.status >= 300:
-                    logging.warning(f"Alert not taken: ntfy.sh answered {response.status}")
-                    return False
-                return True
-    except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
-        logging.warning(f"Alert not sent: {e!r}")
-        return False
+        result["Tags"] = tags
+    return result
 
 
 # Android's events worth an alert, and their sentence.

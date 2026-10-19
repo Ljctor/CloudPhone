@@ -6,6 +6,9 @@ Android's side comes from logcat's "events" and "crash" buffers, which only
 go back to Android's last boot (and a few hours at most). The server's side
 comes from "systemctl show", which needs no privilege. Every event is
 {time (Unix seconds), kind, app, reason}; the page writes the sentence.
+
+No I/O: the texts of logcat, /proc and systemctl come in (see
+http/events.py for who reads them).
 """
 
 import re
@@ -100,3 +103,51 @@ def host_boot_time(proc_stat):
         if line.startswith("btime "):
             return int(line.split()[1])
     return None
+
+
+def gateway_start(started):
+    return {"time": started, "kind": "gateway_start", "app": None, "reason": None}
+
+
+def android_boot(now, uptime):
+    """Android's boot from its /proc/uptime text read at now, or None."""
+    if not uptime.split():
+        return None
+    try:
+        return {"time": now - float(uptime.split()[0]), "kind": "android_boot", "app": None, "reason": None}
+    except ValueError:
+        return None
+
+
+def newest_first(found, android):
+    """The answer of GET /api/v1/events: the last 100 events, newest first;
+    android is False when Android did not answer."""
+    found.sort(key=lambda event: event["time"], reverse=True)
+    return {"events": found[:100], "android": android}
+
+
+# Android's events as records: level, text, params. Errors say what to do
+# next.
+RECORDS = ("crash", "anr", "killed", "low_memory", "android_boot")
+
+
+def event_record(event, expected):
+    """The record of an event; expected: Android restarted because the page
+    asked for it (for android_boot)."""
+    app = event.get("app") or "?"
+    reason = event.get("reason") or ""
+    kind = event["kind"]
+    if kind == "crash":
+        return ("error", "{app} a planté ({reason}). Relancez l’appli ; si elle replante, "
+                "regardez la mémoire d’Android (Informations → Serveur).", {"app": app, "reason": reason or "?"})
+    if kind == "anr":
+        return "warning", "{app} ne répondait plus (ANR)", {"app": app}
+    if kind == "killed":
+        return "warning", "{app} arrêté par Android ({reason})", {"app": app, "reason": reason or "?"}
+    if kind == "low_memory":
+        return "warning", "Mémoire d’Android insuffisante", {}
+    # android_boot: expected after a change the page asked for.
+    if expected:
+        return "normal", "Android a redémarré", {}
+    return ("error", "Android a redémarré sans qu’on le demande. Si cela se répète, regardez la mémoire "
+            "d’Android (Informations → Serveur) et journalctl -u cloudphone-emulator sur le serveur.", {})

@@ -20,7 +20,13 @@ built, never committed.
 | `gateway/src/videobridge_gateway/core/settings.py` | renderers, the cores and memory the host allows, the last settings request's state, the settings in the emulator's command line (no I/O) |
 | `gateway/src/videobridge_gateway/http/settings.py` | `GET`/`POST /api/v1/emulator-settings`, sharing the screen size's change limit |
 | `gateway/src/videobridge_gateway/core/metrics.py` | the server panel's figures from `/proc`, cgroup and adb texts: load, CPU, memory, Android's frame rate (no I/O) |
-| `gateway/src/videobridge_gateway/adapters/host_files.py` | every host file the gateway reads or writes: the request and status files the root-path units share with it, their times, `/proc`, `/sys`, the emulator's cgroup and command line |
+| `gateway/src/videobridge_gateway/core/events.py` | Android's and the server's events from logcat, `/proc/uptime` and `systemctl show` texts, and the record of each (no I/O) |
+| `gateway/src/videobridge_gateway/http/events.py` | `GET /api/v1/events`, Android's new events as records and alerts every minute, the gateway's start record |
+| `gateway/src/videobridge_gateway/core/alerts.py` | phone alerts: the saved state, the random topic, which events are new, their sentences (no I/O) |
+| `gateway/src/videobridge_gateway/http/notify.py` | `GET`/`POST /api/v1/notify`, `POST /api/v1/notify/test`, `send()` for the events and the plugins |
+| `gateway/src/videobridge_gateway/adapters/host_files.py` | every host file the gateway reads or writes: the request and status files the root-path units share with it, their times, the alerts' state (mode 600), `/proc`, `/sys`, the emulator's cgroup and command line |
+| `gateway/src/videobridge_gateway/adapters/ntfy.py` | the alert's HTTP post to ntfy.sh |
+| `gateway/src/videobridge_gateway/adapters/systemd.py` | `systemctl show` of the emulator unit |
 | `gateway/src/videobridge_gateway/plugins.py` | loads the installed plugins' `gateway.py`, serves their scripts |
 | `gateway/src/videobridge_gateway/logs.py` | the gateway's log records: journald, the last 500 in memory for `GET /api/v1/logs` |
 | `js/test/*.test.js` | jest unit tests (run by `packaging/build-release.sh`) |
@@ -77,9 +83,9 @@ Android keeps running. Reload the page (the index is never cached).
 | `GET /`, `/index.html`, `/assets/*` | the page |
 | `GET /api/v1/ping` | 204 at once, for the round-trip time |
 | `GET /api/v1/state?viewer=ID[&details=1]` | emulator unit state (`systemctl show`), Android booted, viewers, load, `display` and `settings` change status, `kicked` for this viewer; cached 2 s. `details=1` adds `metrics` (host, emulator, Android) and `plugins` (`{id: {screenshots}}`: the screenshots each plugin's gateway code took since the gateway started), and turns on adb sampling of Android for 30 s. The page polls every 3 s, every 2 s with details while the Server tab is open |
-| `GET /api/v1/events` | what happened to Android and the server, newest first (`events.py`): app crashes, ANRs and apps Android stopped while noticeable (out-of-memory score ≤ 200, e.g. stopped for a Google Play Services update), low memory, from `logcat -b events,crash` (back to Android's last boot at most); Android's boot (`/proc/uptime`), the emulator unit's start, automatic restarts and last result (`systemctl show`), the gateway's start. Each event is `{time, kind, app, reason}`; cached 10 s. Kept for API clients: the page shows the server's log instead, where the gateway turns these events into records (below) |
+| `GET /api/v1/events` | what happened to Android and the server, newest first (`core/events.py`, `http/events.py`): app crashes, ANRs and apps Android stopped while noticeable (out-of-memory score ≤ 200, e.g. stopped for a Google Play Services update), low memory, from `logcat -b events,crash` (back to Android's last boot at most); Android's boot (`/proc/uptime`), the emulator unit's start, automatic restarts and last result (`systemctl show`), the gateway's start. Each event is `{time, kind, app, reason}`; cached 10 s. Kept for API clients: the page shows the server's log instead, where the gateway turns these events into records (below) |
 | `GET /api/v1/logs?since=CURSOR` | the gateway's log records after `CURSOR`, oldest first: `{cursor, records}` (see "Logs" below). Without a cursor, or with one from an earlier gateway process, every record kept (the last 500). Same origin check as the other GETs; `no-store`. The page reads it every 4 s |
-| `GET /api/v1/notify` | phone alerts through ntfy.sh (`notify.py`): `{available, enabled, topic, url}`; `available` is false without `--notify_file` |
+| `GET /api/v1/notify` | phone alerts through ntfy.sh (`core/alerts.py`, `http/notify.py`): `{available, enabled, topic, url}`; `available` is false without `--notify_file` |
 | `POST /api/v1/notify` | `{enabled[, newTopic]}`: turns them on or off; the first time (or with `newTopic`) the gateway draws a random topic `cloudphone-<24 hex>`, kept with the setting in `/var/lib/cloudphone/notify.json` (mode 600). While on, the gateway alerts every minute on Android's new events (crash, ANR, app stopped while noticeable, Android or emulator restart) and plugins send theirs with `context.notify`. Messages go through the public ntfy.sh service: anyone who knows the topic can read them, so they carry nothing private |
 | `POST /api/v1/notify/test` | one test alert; 502 when ntfy.sh did not take it |
 | `GET /api/v1/emulator-settings` | renderer, cores and memory from the running emulator's command line, the configured screen (`display`), limits (`renderers`, `maxCores`, `maxMemoryMb`), state of the last request |
@@ -171,7 +177,7 @@ One stream of records, two outputs. A record is
 - The same text from the same source within 30 s is dropped.
 
 What becomes a record (`logs.py`, `watch_health()` every 3 s and
-`watch_events()` every minute in `gateway_server.py`):
+`watch()` every minute in `http/events.py`):
 
 | Event | Level | Notify |
 |---|---|---|

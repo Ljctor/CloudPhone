@@ -146,7 +146,7 @@ class PluginContext:
 
     async def notify(self, text):
         """Sends text to the user's phone when they turned alerts on (ntfy,
-        see notify.py), titled with the plugin's name; True when sent."""
+        see http/notify.py), titled with the plugin's name; True when sent."""
         return bool(self._notify) and await self._notify(text, title=self._title)
 
     def json(self, value, status=200):

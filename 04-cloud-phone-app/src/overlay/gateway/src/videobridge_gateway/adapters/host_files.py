@@ -1,7 +1,7 @@
 """The host's files: the request and status files the gateway shares with
 the root-path units (cloudphone-display, cloudphone-settings) and the times
-they keep, and the host's own (/proc, /sys, the emulator's cgroup and its
-command line).
+they keep, the alerts' saved state, and the host's own (/proc, /sys, the
+emulator's cgroup and its command line).
 
 The core never opens a file: it gets what these functions return. Every
 host file the gateway reads goes through here, so the fake emulator's shim
@@ -12,10 +12,10 @@ this module's open alone.
 import os
 
 
-def read_file(path, size=-1):
+def read_file(path, size=-1, encoding=None):
     """The file's text (at most size characters), or None."""
     try:
-        with open(path, "r") as f:
+        with open(path, "r", encoding=encoding) as f:
             return f.read(size)
     except OSError:
         return None
@@ -54,4 +54,13 @@ def write_request(path, line):
     temporary = f"{path}.tmp"
     with open(temporary, "w") as f:
         f.write(line)
+    os.replace(temporary, path)
+
+
+def write_private(path, text):
+    """Writes a file whole, readable by this user only (mode 600)."""
+    temporary = f"{path}.tmp"
+    with open(temporary, "w", encoding="utf-8") as f:
+        f.write(text)
+    os.chmod(temporary, 0o600)
     os.replace(temporary, path)

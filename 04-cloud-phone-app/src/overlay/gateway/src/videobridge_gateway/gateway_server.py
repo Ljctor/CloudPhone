@@ -42,16 +42,16 @@ from .proto import rtc_service_v2_pb2 as rtc
 from .proto import rtc_service_v2_pb2_grpc as rtc_grpc
 from .proto import ice_config_pb2 as ice
 from .plugins import load_plugins, plugin_stats, run_adb
-from . import events as events_log
-from . import notify
 from . import logs
 from .logs import log
 from .http import viewers
 from .http import display
 from .http import settings
+from .http import events
+from .http import notify
 from .core import settings as settings_rules
 from .core import metrics as host_metrics
-from .adapters import host_files
+from .adapters import host_files, systemd
 from .adapters.host_files import read_file
 
 # Records to journald and to GET /api/v1/logs (see logs.py).
@@ -169,18 +169,10 @@ async def read_emulator_unit():
     """Returns the emulator unit's systemd state, or None if unknown."""
     if not EMULATOR_UNIT:
         return None
-    try:
-        process = await asyncio.create_subprocess_exec(
-            "systemctl", "show", EMULATOR_UNIT,
-            "--property=ActiveState,SubState,NRestarts,Result",
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
-        )
-        output, _ = await asyncio.wait_for(process.communicate(), timeout=3)
-    except (OSError, asyncio.TimeoutError):
+    output = await systemd.show(EMULATOR_UNIT, ("ActiveState", "SubState", "NRestarts", "Result"))
+    if output is None:
         return None
-    values = dict(
-        line.split("=", 1) for line in output.decode(errors="replace").splitlines() if "=" in line
-    )
+    values = dict(line.split("=", 1) for line in output.splitlines() if "=" in line)
     return {
         "active": values.get("ActiveState", "unknown"),
         "sub": values.get("SubState", "unknown"),
@@ -299,73 +291,6 @@ async def sample_metrics():
         await asyncio.sleep(METRICS_SECONDS)
 
 
-async def handle_notify(request):
-    """GET /api/v1/notify: phone alerts through ntfy.sh, {available,
-    enabled, topic, url} (see notify.py)."""
-    return web.json_response(notify.describe(), headers={"Cache-Control": "no-store"})
-
-
-async def handle_set_notify(request):
-    """POST /api/v1/notify {enabled[, newTopic]}: turns alerts on or off;
-    the first time (or with newTopic) it makes the random topic."""
-    if not notify.STATE["file"]:
-        return web.json_response({"error": "Alerts are not set up on this server"}, status=409)
-    try:
-        data = await request.json()
-        enabled, new_topic = data["enabled"], data.get("newTopic", False)
-        if not isinstance(enabled, bool) or not isinstance(new_topic, bool):
-            raise TypeError("not booleans")
-    except (ValueError, KeyError, TypeError):
-        return web.json_response({"error": "Expected {enabled: true|false[, newTopic: true]}"}, status=400)
-    try:
-        state = notify.configure(enabled, new_topic)
-    except OSError as e:
-        logging.warning(f"Alerts not saved: {e!r}")
-        return web.json_response({"error": "Could not save the setting"}, status=500)
-    logging.info(f"Phone alerts {'on' if enabled else 'off'} (requested by {request.remote})")
-    return web.json_response(state)
-
-
-async def handle_test_notify(request):
-    """POST /api/v1/notify/test: one test alert."""
-    if not notify.STATE["topic"]:
-        return web.json_response({"error": "No topic yet: turn alerts on first"}, status=409)
-    sent = await notify.send("Test : les alertes du Cloud Phone arrivent bien", force=True)
-    return web.json_response({"sent": sent}, status=200 if sent else 502)
-
-
-async def watch_events():
-    """Every minute, Android's new events (an app crashed, froze or was
-    stopped while in sight; Android restarted) become log records, and
-    phone alerts when they are on."""
-    seen, alerted = {}, {}
-    while True:
-        await asyncio.sleep(60)
-        try:
-            found = await read_events()
-        except Exception as e:
-            logging.warning(f"Android events not read: {e!r}")
-            continue
-        if not found["android"]:
-            continue
-        first = seen.get("time") is None
-        fresh = notify.new_events(found["events"], seen, kinds=EVENT_RECORDS)
-        if first:
-            # Before this gateway started: shown on the page, not journaled again.
-            for event in reversed(found["events"]):
-                if event["kind"] in EVENT_RECORDS and event["kind"] != "android_boot" and event["time"] < GATEWAY_STARTED:
-                    level, text, params = event_record(event)
-                    logs.remember(level, "emulator", text, event["time"], **params)
-        for event in fresh[:10]:
-            level, text, params = event_record(event)
-            log(level, "emulator", text, notify=event["kind"] == "android_boot", **params)
-        if not notify.STATE["enabled"]:
-            alerted.clear()
-            continue
-        for event in notify.new_events(found["events"], alerted)[:5]:
-            await notify.send(notify.sentence(event))
-
-
 def change_expected():
     """True while Android may restart because the page asked for it: a
     request in the last minutes, one pending or applying, or one finished
@@ -378,31 +303,6 @@ def change_expected():
         if status["state"] in ("done", "failed") and time.time() - host_files.mtime(path) < CHANGE_RESTART_SECONDS:
             return True
     return False
-
-
-# Android's events (read_events) as records: level, text, params. Errors
-# say what to do next.
-EVENT_RECORDS = ("crash", "anr", "killed", "low_memory", "android_boot")
-
-
-def event_record(event):
-    app = event.get("app") or "?"
-    reason = event.get("reason") or ""
-    kind = event["kind"]
-    if kind == "crash":
-        return ("error", "{app} a planté ({reason}). Relancez l’appli ; si elle replante, "
-                "regardez la mémoire d’Android (Informations → Serveur).", {"app": app, "reason": reason or "?"})
-    if kind == "anr":
-        return "warning", "{app} ne répondait plus (ANR)", {"app": app}
-    if kind == "killed":
-        return "warning", "{app} arrêté par Android ({reason})", {"app": app, "reason": reason or "?"}
-    if kind == "low_memory":
-        return "warning", "Mémoire d’Android insuffisante", {}
-    # android_boot: expected after a change the page asked for.
-    if change_expected():
-        return "normal", "Android a redémarré", {}
-    return ("error", "Android a redémarré sans qu’on le demande. Si cela se répète, regardez la mémoire "
-            "d’Android (Informations → Serveur) et journalctl -u cloudphone-emulator sur le serveur.", {})
 
 
 # What watch_health saw at its last look.
@@ -540,75 +440,6 @@ async def handle_state(request):
         value["metrics"] = {key: METRICS[key] for key in ("host", "emulator", "android")}
         value["plugins"] = plugin_stats(request.app)
     return web.json_response(value, headers={"Cache-Control": "no-store"})
-
-
-# The Events list (GET /api/v1/events): read on demand, cached a little.
-EVENTS_CACHE = {"time": 0.0, "value": None, "lock": None}
-EVENTS_CACHE_SECONDS = 10.0
-GATEWAY_STARTED = time.time()
-
-
-async def read_unit_start():
-    """The emulator unit's last start as an emulator_start event, or None."""
-    if not EMULATOR_UNIT:
-        return None
-    boot_time = events_log.host_boot_time(read_file("/proc/stat") or "")
-    try:
-        process = await asyncio.create_subprocess_exec(
-            "systemctl", "show", EMULATOR_UNIT,
-            "--property=ExecMainStartTimestampMonotonic,NRestarts,Result",
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
-        )
-        output, _ = await asyncio.wait_for(process.communicate(), timeout=3)
-    except (OSError, asyncio.TimeoutError):
-        return None
-    return events_log.parse_unit(output.decode(errors="replace"), boot_time, "emulator_start")
-
-
-async def log_start():
-    """The gateway's start, and an emulator restart just before it: the
-    gateway restarts to follow the emulator, so the previous gateway's
-    records of a crash are only in the journal."""
-    log("normal", "gateway", "La passerelle a démarré", notify=True)
-    unit = await read_unit_start()
-    if unit and time.time() - unit["time"] < 180 and unit.get("reason") and not change_expected():
-        log("error", "emulator", "Android a redémarré après un arrêt anormal ({result}, {restarts} redémarrages "
-            "automatiques). S’il ne revient pas d’ici deux minutes, relancez-le sur le serveur.",
-            notify=True, result=unit["reason"], restarts=unit.get("restarts") or 0)
-
-
-async def read_events():
-    found = [{"time": GATEWAY_STARTED, "kind": "gateway_start", "app": None, "reason": None}]
-    unit = await read_unit_start()
-    if unit:
-        found.append(unit)
-    code, uptime = await plugin_adb("shell", "cat", "/proc/uptime", timeout=5)
-    if code == 0 and uptime.split():
-        try:
-            found.append({"time": time.time() - float(uptime.split()[0]), "kind": "android_boot",
-                          "app": None, "reason": None})
-        except ValueError:
-            pass
-    code, logcat = await plugin_adb("logcat", "-d", "-v", "epoch", "-b", "events,crash", timeout=10)
-    if code == 0:
-        found.extend(events_log.parse_logcat(logcat))
-    found.sort(key=lambda event: event["time"], reverse=True)
-    return {"events": found[:100], "android": code == 0}
-
-
-async def handle_events(request):
-    """
-    GET /api/v1/events: what happened to Android and the server, newest
-    first (see events.py).
-    """
-    if EVENTS_CACHE["lock"] is None:
-        EVENTS_CACHE["lock"] = asyncio.Lock()
-    loop = asyncio.get_running_loop()
-    async with EVENTS_CACHE["lock"]:
-        if EVENTS_CACHE["value"] is None or loop.time() - EVENTS_CACHE["time"] > EVENTS_CACHE_SECONDS:
-            EVENTS_CACHE["value"] = await read_events()
-            EVENTS_CACHE["time"] = loop.time()
-    return web.json_response(EVENTS_CACHE["value"], headers={"Cache-Control": "no-store"})
 
 
 async def handle_logs(request):
@@ -1044,11 +875,11 @@ def init_app(videobridge_token, plugins_dir="", plugin_data=""):
     app.router.add_get("/api/v1/display", display.get_display(
         lambda: {"width": DISPLAY_WIDTH, "height": DISPLAY_HEIGHT}, lambda: read_avd_config(AVD_DIR)))
     app.router.add_get("/api/v1/state", handle_state)
-    app.router.add_get("/api/v1/events", handle_events)
+    app.router.add_get("/api/v1/events", events.get_events(plugin_adb))
     app.router.add_get("/api/v1/logs", handle_logs)
-    app.router.add_get("/api/v1/notify", handle_notify)
-    app.router.add_post("/api/v1/notify", handle_set_notify)
-    app.router.add_post("/api/v1/notify/test", handle_test_notify)
+    app.router.add_get("/api/v1/notify", notify.get_notify)
+    app.router.add_post("/api/v1/notify", notify.set_notify)
+    app.router.add_post("/api/v1/notify/test", notify.test_notify)
     app.router.add_post("/api/v1/viewers/disconnect-others", viewers.disconnect_others(forget_state))
     app.router.add_post("/api/v1/display", display.set_display(
         settings.status, settings.files, change_requested))
@@ -1171,6 +1002,7 @@ async def main():
 
     global ADB_PATH, ADB_SERIAL, EMULATOR_UNIT, DISCOVERY_FILE
     EMULATOR_UNIT = args.emulator_unit
+    events.UNIT = EMULATOR_UNIT
     global WEB_ROOT
     WEB_ROOT = args.web_root
     DISCOVERY_FILE = args.discovery_file or ""
@@ -1226,8 +1058,8 @@ async def main():
 
     watcher = asyncio.create_task(watch_discovery_file())
     sampler = asyncio.create_task(sample_metrics())
-    alerts = asyncio.create_task(watch_events())
-    await log_start()
+    alerts = asyncio.create_task(events.watch(plugin_adb, change_expected))
+    await events.log_start(change_expected)
     health = asyncio.create_task(watch_health())
 
     # Run forever
