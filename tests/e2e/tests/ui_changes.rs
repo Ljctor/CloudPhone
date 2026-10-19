@@ -70,7 +70,9 @@ async fn wait_reload(page: &Page, timeout: Duration) {
 
 #[test]
 fn a_new_resolution_is_one_request_and_the_page_reloads_at_the_new_size() {
-    let cp = CloudPhone::start_with(json!({"settings": {"cores": 2}}));
+    // Applying for 3 s: longer than a state poll plus the gateway's state
+    // cache (2 s each), so the page always sees it.
+    let cp = CloudPhone::start_with(json!({"settings": {"cores": 2}, "options": {"apply_seconds": 3}}));
     let phone = cp.clone();
     browser_test(&cp, Options::default(), |page| async move {
         open_form(&page).await;
@@ -263,7 +265,9 @@ fn a_failed_change_is_reported_in_the_form() {
         click_apply(&page).await;
         page.wait_js("the failure", Duration::from_secs(30),
             "const d = document.querySelector('[role=dialog]'); return !!d && d.innerText.includes('Échec : renderer swangle missing')", vec![]).await;
-        // Android keeps running; the form is usable again.
+        // Android keeps running; the form is usable again. The cover goes
+        // with the next state poll (the form polls its own route).
+        page.wait_no_status("Changement des réglages", Duration::from_secs(10)).await;
         assert!(page.banners().await.is_empty(), "{:?}", page.banners().await);
         let disabled = page.js("return [...document.querySelectorAll('[role=dialog] select')].some(s => s.disabled)", vec![]).await;
         assert_eq!(disabled, json!(false));
