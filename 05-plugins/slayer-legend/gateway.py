@@ -112,10 +112,6 @@ GOLD_SECONDS = 10
 GOLD_WINDOW = 300
 GOLD = {"samples": [], "pending": None, "text": None, "read": None, "box": None, "asked": 0.0, "task": None,
         "place": None, "number": None, "odd": 0}
-# Navigation trace: the graph (trace.py), the tap waiting for its "after"
-# screen {tap, before, task}, and the lock that keeps taps in order.
-TRACE = {"graph": None, "path": None, "pending": None, "lock": None}
-TRACE_AFTER_SECONDS = 2.0
 
 
 def load_sibling(directory, name):
@@ -142,6 +138,7 @@ def setup(context):
         feature("counters").counters(ports, load_sibling(context.directory, "emerald_mask")),
         feature("screen").screen(ports, screens, stage, feature("screen_rules"), values, table),
         feature("launch").launch(ports, screens, feature("launch_rules")),
+        feature("trace").trace(ports, screens, load_sibling(context.directory, "trace")),
     ]
 
     tap, hold, in_focus = ports.tap, ports.hold, ports.focused
@@ -772,99 +769,6 @@ def setup(context):
             "box": GOLD["box"],
         })
 
-    trace = load_sibling(context.directory, "trace")
-    # Older gateways give plugins no data directory: then nothing is recorded.
-    data_dir = getattr(context, "data_dir", None)
-    if data_dir:
-        TRACE["path"] = os.path.join(data_dir, "trace.json")
-        TRACE["graph"] = trace.load(TRACE["path"])
-
-    async def trace_signature():
-        """(screen name, thumbnail) of the screen now, or None when the game
-        is not in front."""
-        # Taken at once: a tap's screen, never one from before it.
-        shot, focus = await asyncio.gather(context.screenshot(max_age=0), in_focus())
-        if not shot or not focus:
-            return None
-        return await context.analyse(signature, shot)
-
-    def signature(shot):
-        return screens.classify(shot), trace.thumbnail(shot)
-
-    def trace_finish(pending, after):
-        """Records the pending tap with its after screen and saves."""
-        if TRACE["pending"] is pending:
-            TRACE["pending"] = None
-        # A tap that took the game out of the front (home, another app) is
-        # not an edge of the game's graph: dropped.
-        if pending["before"] is None or after is None:
-            return
-        if TRACE["graph"].record(pending["before"], after, pending["tap"], time.time()):
-            try:
-                trace.save(TRACE["graph"], TRACE["path"])
-            except OSError as e:
-                logging.warning(f"Slayer Legend trace not saved: {e!r}")
-
-    async def trace_after(pending):
-        await asyncio.sleep(TRACE_AFTER_SECONDS)
-        async with TRACE["lock"]:
-            # A newer tap may have finished it already.
-            if TRACE["pending"] is pending:
-                try:
-                    trace_finish(pending, await trace_signature())
-                except Exception as e:
-                    TRACE["pending"] = None
-                    logging.warning(f"Slayer Legend trace failed: {e!r}")
-
-    async def trace_tap(tap):
-        """Takes the screen at once. It is this tap's "before" and also the
-        "after" of a tap still waiting for its 2 s (the screen just before
-        the next tap is what the previous one led to); that earlier tap is
-        recorded now, so taps quicker than 2 s apart chain without a second
-        screenshot. Under a lock: taps are handled one at a time, in
-        order."""
-        async with TRACE["lock"]:
-            try:
-                now = await trace_signature()
-                previous = TRACE["pending"]
-                if previous is not None:
-                    previous["task"].cancel()
-                    trace_finish(previous, now)
-                pending = {"tap": tap, "before": now, "task": None}
-                TRACE["pending"] = pending
-                pending["task"] = asyncio.get_running_loop().create_task(trace_after(pending))
-            except Exception as e:
-                logging.warning(f"Slayer Legend trace failed: {e!r}")
-
-    async def handle_trace(request):
-        if TRACE["graph"] is None:
-            return context.json({"error": "No data directory: nothing is recorded"}, status=503)
-        try:
-            tap = trace.parse_tap(await request.json())
-        except ValueError:
-            tap = None
-        if tap is None:
-            return context.json({"error": "Expected {x, y, kind: tap|long|swipe[, end: {x, y}]}, fractions 0-1"},
-                                status=400)
-        if TRACE["lock"] is None:
-            TRACE["lock"] = asyncio.Lock()
-        asyncio.get_running_loop().create_task(trace_tap(tap))
-        return context.json({"queued": True}, status=202)
-
-    async def handle_trace_state(request):
-        graph = TRACE["graph"]
-        return context.json({
-            "enabled": graph is not None,
-            "nodes": len(graph.nodes) if graph else 0,
-            "edges": len(graph.edges) if graph else 0,
-            "taps": graph.taps() if graph else 0,
-            "last": graph.last if graph else None,
-        })
-
-    async def handle_trace_graph(request):
-        graph = TRACE["graph"]
-        return context.json(graph.public() if graph else {"nodes": [], "edges": []})
-
     ports.store.flush()
     context.app.on_startup.append(resume)
     for part in features:
@@ -882,6 +786,3 @@ def setup(context):
     context.add_get("/mode", handle_mode_state)
     context.add_post("/mode", handle_mode)
     context.add_post("/mode/timer", handle_mode_timer)
-    context.add_post("/trace", handle_trace)
-    context.add_get("/trace", handle_trace_state)
-    context.add_get("/trace/graph", handle_trace_graph)
