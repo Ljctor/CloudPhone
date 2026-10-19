@@ -32,10 +32,21 @@ in its manifest) with:
 
 | File | Role |
 |---|---|
-| `plugin.json` | `{"id": "<id>", "title": "...", "version": "..."}` |
+| `plugin.json` | `{"id": "<id>", "title": "...", "version": "...", "api": 1}` |
 | `page.js` | optional ES module for the page; may import the other `*.js` beside it |
 | `gateway.py` | optional, `setup(context)` adds routes under `/api/v1/plugins/<id>/` |
 | `README.md` | what it does, for humans (not installed) |
+
+`api` is the version of the plugin API the plugin is written for: the
+gateway's `API_VERSION` in `plugins.py`, now `1` (a number, or
+`"major.minor"`; without `api`, 1). The gateway refuses a plugin whose major
+differs from its own: it runs none of its code and serves none of its
+scripts, logs why, and `GET /api/v1/plugins` lists it with an `error` and no
+`page`, as any plugin that failed to load once its manifest was read; the
+options panel shows the error. Additions to the API (such as
+`screenshot(max_age=...)` and `analyse(...)`) keep the major; a change that
+breaks existing plugins raises it, and the plugins of the release move to it
+in the same commit.
 
 The API is described at the top of
 `04-cloud-phone-app/src/overlay/js/example/src/plugins.ts` (page) and

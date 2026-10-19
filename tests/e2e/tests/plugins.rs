@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 const PROBE: &str = "tests/fake-emulator/plugins/e2e-probe";
 const BROKEN: &str = "tests/fake-emulator/plugins/e2e-broken";
 const MISNAMED: &str = "tests/fake-emulator/plugins/e2e-misnamed";
+const FUTURE: &str = "tests/fake-emulator/plugins/e2e-future";
 const SLAYER_LEGEND: &str = "05-plugins/slayer-legend";
 
 fn with(plugins: Value) -> CloudPhone {
@@ -211,4 +212,23 @@ fn slayer_legends_mode_and_mine_come_back_after_a_gateway_restart() {
     cp.wait_new_token(&token, Duration::from_secs(20));
     let off = cp.get_json("api/v1/plugins/slayer-legend/mode");
     assert_eq!((off["mode"].clone(), off["mine"]["enabled"].clone()), (json!("mpw18"), json!(false)), "{off}");
+}
+
+#[test]
+fn a_plugin_for_another_api_is_refused_and_listed_with_its_error() {
+    let cp = with(json!([PROBE, FUTURE]));
+    let list = cp.get_json("api/v1/plugins");
+    let plugins = list["plugins"].as_array().unwrap();
+    assert_eq!(plugins.len(), 2, "{list}");
+    let future = &plugins[0];
+    assert_eq!(future["id"], "e2e-future", "{list}");
+    assert_eq!(future["title"], "Greffon futur");
+    assert!(future.get("page").is_none(), "no page module for the page to import: {future}");
+    let error = future["error"].as_str().unwrap_or_default();
+    assert!(error.contains("API 2"), "the error says why: {error}");
+    assert_eq!(cp.get("api/v1/plugins/e2e-future/hello").status(), 404, "its gateway code did not run");
+    assert_eq!(cp.get("plugins/e2e-future/page.js").status(), 404, "its scripts are not served");
+    assert_eq!(plugins[1]["id"], "e2e-probe");
+    assert!(plugins[1].get("error").is_none(), "{list}");
+    assert_eq!(cp.get_json("api/v1/plugins/e2e-probe/hello")["plugin"], "e2e-probe");
 }

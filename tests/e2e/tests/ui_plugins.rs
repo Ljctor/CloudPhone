@@ -10,6 +10,7 @@ use std::time::Duration;
 
 const PROBE: &str = "tests/fake-emulator/plugins/e2e-probe";
 const BROKEN: &str = "tests/fake-emulator/plugins/e2e-broken";
+const FUTURE: &str = "tests/fake-emulator/plugins/e2e-future";
 const O: &str = fr::OPTIONS_PANEL;
 
 async fn open_plugins(page: &Page) {
@@ -132,6 +133,17 @@ fn a_plugin_that_fails_to_start_is_reported_and_the_others_still_work() {
         assert!(text.contains("Échec : e2e-broken refuses to start"), "with its error: {text}");
         assert!(page.banners().await.is_empty(), "no banner for it: {:?}", page.banners().await);
         page.wait_for_video(Duration::from_secs(20)).await;
+    });
+}
+
+#[test]
+fn a_plugin_the_gateway_refused_is_shown_with_its_error() {
+    let cp = CloudPhone::start_with(json!({"plugins": [PROBE, FUTURE]}));
+    browser_test(&cp, Options::default(), |page| async move {
+        open_plugins(&page).await;
+        let text = page.dialog_text(O).await;
+        assert!(text.contains("Greffon futur"), "the refused plugin is named: {text}");
+        assert!(text.contains("Échec : written for plugin API 2"), "with the gateway's error: {text}");
     });
 }
 

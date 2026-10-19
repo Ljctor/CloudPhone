@@ -41,7 +41,7 @@ release's `uninstall.sh` removes them with the rest of `/opt/cloudphone`.
 
 | File | Role |
 |---|---|
-| `plugin.json` | id, title, version |
+| `plugin.json` | id, title, version, plugin API (`api`) |
 | `page.js` | page side: options, the emerald overlay, the launch button |
 | `emerald_mask.js` | finds the emerald counter on the video |
 | `emerald_font.js` | the game's counter font at 480 px wide, for the rewritten number |

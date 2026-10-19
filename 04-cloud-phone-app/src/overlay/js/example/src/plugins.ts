@@ -89,7 +89,14 @@ export function usePlugins({ gatewayUrl, deviceRef, layerRef, screenWidth, setti
       }
       const loaded = [];
       for (const plugin of list) {
-        if (!plugin.page || cancelled) continue;
+        if (cancelled) continue;
+        // Refused by the gateway (another plugin API, gateway code failing):
+        // shown with its error, nothing to import.
+        if (plugin.error) {
+          loaded.push({ ...plugin, instance: { options: [] } });
+          continue;
+        }
+        if (!plugin.page) continue;
         const base = `${gatewayUrl}/api/v1/plugins/${plugin.id}`;
         const layer = document.createElement('div');
         layer.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:1;overflow:hidden';

@@ -1,14 +1,21 @@
 """
 Optional features installed beside the app, one directory per plugin:
 
-    PLUGINS_DIR/<id>/plugin.json   {"id": "<id>", "title": "...", "version": "..."}
+    PLUGINS_DIR/<id>/plugin.json   {"id": "<id>", "title": "...", "version": "...", "api": 1}
     PLUGINS_DIR/<id>/page.js       optional ES module loaded by the page; it
                                    may import the other *.js files beside it
     PLUGINS_DIR/<id>/gateway.py    optional, defines setup(context)
 
 The directory belongs to root (an install script puts plugins there), so the
 gateway runs their code like its own. A plugin that fails to load is logged
-and skipped; the gateway and the other plugins keep working.
+and skipped; the gateway and the other plugins keep working. When its
+manifest could be read, GET /api/v1/plugins still lists it, with "error" and
+without "page".
+
+"api" is the plugin API the plugin was written for, API_VERSION here (a
+number, or a "major.minor" string): a plugin whose major differs is refused.
+Without it, 1 (the API before the field existed). Additions to the API keep
+the major; a change that breaks plugins raises it.
 
 Plugins share one screenshot: context.screenshot(max_age=S) gives the last
 capture when it is younger than S seconds, or joins the capture under way,
@@ -40,6 +47,8 @@ from aiohttp import web
 
 from . import logs
 
+# The plugin API's major version (see "api" above).
+API_VERSION = 1
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
 SCRIPT_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}\.js$")
 # Worker threads for the plugins' pixel analysis, shared by every plugin.
@@ -156,7 +165,17 @@ def read_manifest(directory):
         "id": plugin_id,
         "title": str(manifest.get("title", plugin_id))[:64],
         "version": str(manifest.get("version", ""))[:32],
+        "api": manifest.get("api", 1),
     }
+
+
+def api_major(api):
+    """The major of a manifest's "api" (1, or "1.2"), or None if malformed."""
+    if isinstance(api, int) and not isinstance(api, bool):
+        return api
+    if isinstance(api, str) and re.match(r"^[0-9]{1,4}(\.[0-9]{1,4})?$", api):
+        return int(api.split(".")[0])
+    return None
 
 
 def plugin_data_dir(data_dir, plugin_id):
@@ -184,9 +203,14 @@ def load_plugins(app, plugins_dir, screenshot, adb, notify=None, data_dir=None):
         directory = os.path.join(plugins_dir, name)
         if not os.path.isdir(directory):
             continue
+        manifest = None
         try:
             manifest = read_manifest(directory)
             plugin_id = manifest["id"]
+            api = manifest.pop("api")
+            if api_major(api) != API_VERSION:
+                raise ValueError(f"written for plugin API {api!r}, this gateway has API {API_VERSION}: "
+                                 "install the plugin from the same release")
             for script in sorted(os.listdir(directory)):
                 if SCRIPT_RE.match(script) and os.path.isfile(os.path.join(directory, script)):
                     app.router.add_get(f"/plugins/{plugin_id}/{script}",
@@ -205,6 +229,10 @@ def load_plugins(app, plugins_dir, screenshot, adb, notify=None, data_dir=None):
             logging.info(f"Plugin {plugin_id} {manifest['version']} loaded")
         except Exception as e:
             logging.error(f"Plugin in {directory} not loaded: {e!r}. Fix or remove it, then restart the gateway.")
+            if manifest is not None:
+                manifest.pop("api", None)
+                manifest.pop("page", None)
+                loaded.append({**manifest, "error": (str(e) or repr(e))[:200]})
 
     async def handle_list(request):
         return web.json_response({"plugins": loaded}, headers={"Cache-Control": "no-store"})

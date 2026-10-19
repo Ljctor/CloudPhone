@@ -81,7 +81,7 @@ Android keeps running. Reload the page (the index is never cached).
 | `GET /api/v1/display` | running and configured screen size, last change request, limits |
 | `POST /api/v1/display` `{width, height, density}` | screen size only (reboots Android); kept for API clients, the page no longer calls it |
 | `POST /api/v1/viewers/disconnect-others` `{viewer}` | close the other viewers' sessions |
-| `GET /api/v1/plugins` | installed plugins (id, title, version, page script) |
+| `GET /api/v1/plugins` | installed plugins (id, title, version, page script); one the gateway refused has `error` and no page script |
 | `GET /api/v1/emulator/status` | emulator status and screen size |
 | `POST /api/v1/emulator/touch`, `/key` | input fallback (gRPC touch, adb key) |
 | `POST /api/v1/emulator/gps`, `GET /api/v1/emulator/logcat` | upstream helpers |
@@ -281,10 +281,13 @@ Information → Client tab shows which path the last touch took.
 ## Plugins
 
 Game-specific features are plugins, never part of the page or the gateway.
-`/opt/cloudphone/plugins/<id>/` holds `plugin.json` (id, title, version), an
+`/opt/cloudphone/plugins/<id>/` holds `plugin.json` (id, title, version, `api`), an
 optional `page.js` (ES module, may import the other `*.js` beside it) and an
 optional `gateway.py` (`setup(context)`). The gateway (`--plugins_dir`)
-loads them at start, logs and skips one that fails, serves its scripts at
+loads them at start, logs and skips one that fails (still listed, with
+`error`, when its manifest was read; the options panel shows the error),
+refuses one whose `api` major differs from `API_VERSION` in `plugins.py`
+(no `api`: 1), serves its scripts at
 `/plugins/<id>/` and lists them at `GET /api/v1/plugins`; a plugin's own
 routes live under `/api/v1/plugins/<id>/`, behind the usual origin and token
 checks. The `id` must equal the directory name and match
