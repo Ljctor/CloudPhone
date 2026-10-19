@@ -11,19 +11,22 @@ None at the moment.
 In order of value. One worktree per track; never two black-box suites on
 the machine at once (wrap `cargo test` in `flock` on one shared lock file).
 
-1. Plugin hardening: one shared screenshot in the plugin context with a
-   per-caller maximum age and a capture count in `/api/v1/state?details=1`;
-   pixel analysis in a thread executor (`context.analyse`); plugin state
-   (mode, timers, mine floor and area, highest stage) kept in the plugin's
-   data directory across gateway restarts; manifest `"api": 1` checked by
-   the loader; the trust model written down in part 05's README.
-2. Contract run against the live instance (one extra viewer, no input; needs
-   the user's go): fix the fake emulator where it differs and remove its
-   UNVERIFIED marks.
-3. Docs: logs panel and toasts, ntfy alerts, plugin install and removal, the
-   black-box suite on a workstation; part 03's performance facts from fps
-   phase A.
-4. fps phase B readiness: scripts dry-run, part 03 deployed at the first
-   emulator restart; launch-only runs first (-force-vulkan, -force-gles20,
-   -job-worker-count 3).
-5. Hexagonal refactor: gateway domains, then the page, then the plugin.
+1. fps uptime run (planned for 2026-10-20, with the emulator up about 24 h):
+   steady state first; then relaunch the game only, wait the settle time,
+   measure; then restart the emulator, relaunch, wait, measure. Same scene,
+   same regime, three numbers: they say whether a scheduled game relaunch
+   or a scheduled emulator restart (with no viewer connected) restores the
+   frame rate. A relaunch costs about 5 minutes near 20 fps plus sign-in.
+2. fps B7: the game's 30 fps cap through Game Mode (`cmd game set --mode 3
+   --fps 30`), measured in both regimes (the first 5 minutes, where the
+   paced steps become 30/15/10, and steady state); the worst-10 s column
+   decides.
+3. What the viewer sees: the browser's inbound-rtp stats (framesReceived,
+   framesDecoded, framesDropped, framesPerSecond) beside SurfaceFlinger
+   timestats in the same 60 s, on a battle and on a light screen. Needs the
+   page open in the user's browser.
+4. `packaging/deploy.sh` refuses a tarball built from another commit than
+   HEAD (unless `--force`), or builds it first: it once shipped a stale
+   build.
+5. Hexagonal refactor: gateway domains (display next, with
+   `adapters/host_files.py`), then the page, then the plugin.
