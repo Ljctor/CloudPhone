@@ -25,6 +25,27 @@ script copies each plugin's files (not its README) to
 at start (Android keeps running). Reload the page afterwards. Upgrading part
 04 keeps installed plugins.
 
+## Trust
+
+A plugin is not sandboxed: installing one gives it everything the Cloud
+Phone app has.
+
+- Its `gateway.py` runs inside the gateway process, with the gateway's
+  rights: the `cloudphone` user and its files (the alerts' topic, every
+  plugin's data directory), the emulator's gRPC token (the screen, touches
+  and keys) and adb on Android (any app, any setting, the signed-in
+  accounts).
+- Its `page.js` runs in the page, on the page's origin: it sees the video,
+  reads the page token and can send any request the user can, to the
+  gateway's API and to every plugin's routes.
+
+So the only plugins are those of the release (this directory), reviewed like
+the gateway's own code before they enter the repository, and installed by
+root with `05-plugins/scripts/install.sh` into `/opt/cloudphone/plugins/`,
+which belongs to root and which the gateway cannot write. There is no remote
+install: no route, page or plugin adds, changes or downloads a plugin, and
+none may be added. The gateway loads plugins only at start.
+
 ## Writing a plugin
 
 A directory `<id>/` (lowercase letters, digits, dashes; the same as the id
