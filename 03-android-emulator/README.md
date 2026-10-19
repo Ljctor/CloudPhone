@@ -44,19 +44,19 @@ packaged default), `lavapipe` (recommended by the page: right colours and
 the fastest without a GPU), `swangle` or `software` (the emulator's default
 software renderer); the page's Android settings switch between them. The
 older names `swiftshader_indirect` and `swangle_indirect` are still accepted.
-An earlier measurement, not comparable with the lavapipe figures below:
-SwiftShader, 360×780, 2 guest cores, a game running:
+Every frame-rate figure measured so far, with its conditions. Only rows with
+the same conditions compare; fps is the game layer's SurfaceFlinger frames.
 
-| What | Measured |
-|---|---|
-| Frames rendered inside Android (SurfaceFlinger timestats) | ~20 fps |
-| Busiest guest vCPU | ~86 % of a core |
-| SwiftShader worker threads | ~1.8 cores |
-| Video encoder | ~6 % of a core |
+| Date | Renderer | Screen | Guest cores / RAM | Regime | Emulator | fps | Notes |
+|---|---|---|---|---|---|---|---|
+| 2026-10-17 or earlier | SwiftShader | 360×780 | 2 / 4 GB | not recorded | – | ~20 | busiest vCPU 86 %, SwiftShader 1.8 cores, encoder 6 % of a core |
+| 2026-10-18 (fps phase A) | lavapipe | 480×1040 | 4 / 8 GB | not recorded | uptime not recorded | ~16.5 | frame time p50 58 ms, p95 85 ms; emulator 4.5–5.4 host cores |
+| 2026-10-19 | lavapipe | 480×1040 | 4 / 8 GB | first 5 minutes | freshly restarted | 19.6–19.8 | the series of launch options below |
+| 2026-10-19 | lavapipe | 480×1040 | 4 / 8 GB | steady state | freshly restarted | 30.6 (worst 10 s 28.7) | p95 53 ms, p99 61 ms; main thread 94 % of one vCPU; emulator ~4.8 host cores |
 
-The bottleneck is the guest CPU and software rendering, not the video
-encoding or the network: a lower bitrate or a faster link does not raise the
-frame rate; fewer pixels and more host CPU do.
+With SwiftShader the bottleneck was the guest CPU and software rendering, not
+the video encoding or the network: a lower bitrate or a faster link did not
+raise the frame rate; fewer pixels and more host CPU did.
 
 ### Lavapipe and a Unity game
 
@@ -90,13 +90,6 @@ game. fps per minute, from the game layer's SurfaceFlinger frames:
 Method rule: a steady-state measurement starts at least 6 minutes after TAP
 TO START (7 on a loaded host), and every table says which regime it
 measured.
-
-| What (steady state, fresh emulator) | Measured |
-|---|---|
-| Frame rate | 30.6 fps (worst 10 s 28.7) |
-| Frame time | p95 53 ms, p99 61 ms |
-| Game main thread | 94 % of one vCPU |
-| Emulator process | ~4.8 host cores |
 
 The present-to-present histogram in steady state is continuous (peak 26–33
 ms, nothing clustered on 16.7 ms multiples), so the display's 60 Hz vsync
