@@ -211,10 +211,8 @@ async def read_android_metrics():
         " dumpsys SurfaceFlinger --timestats -dump -maxlayers 1;"
         " dumpsys SurfaceFlinger --timestats -clear >/dev/null"
     )
-    code, output, errors = await adb.run("shell", script, timeout=10)
-    if code is None:
-        raise OSError(errors)
-    if code == -1:
+    code, output, _ = await adb.run("shell", script, timeout=10)
+    if code is None or code == -1:
         return None
     return host_metrics.android_metrics(output)
 
@@ -455,11 +453,8 @@ async def read_screenshot():
 async def adb_output(*args, timeout=10):
     """(exit code, stdout) of an adb command, or (-1, "") on timeout or
     when adb could not start: what the events and the plugins get."""
-    code, output, errors = await adb.run(*args, timeout=timeout)
-    if code is None:
-        logging.warning(f"adb could not start: {errors}")
-        return -1, ""
-    return code, output
+    code, output, _ = await adb.run(*args, timeout=timeout)
+    return (-1 if code is None else code), output
 
 
 async def watch_discovery_file():

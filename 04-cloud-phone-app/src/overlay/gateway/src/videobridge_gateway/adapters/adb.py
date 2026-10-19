@@ -31,14 +31,16 @@ def reached(code, error_text):
 
 async def run(*args, timeout=10):
     """(exit code, stdout, stderr) of "adb -s SERIAL ARGS...". The code is
-    None when adb could not start (stderr then says why), -1 when it did
-    not finish within timeout seconds (it is then killed; None: no limit)."""
+    None when adb could not start (stderr then says why, and adb does not
+    reach Android), -1 when it did not finish within timeout seconds (it
+    is then killed; None: no limit)."""
     try:
         process = await asyncio.create_subprocess_exec(
             PATH, "-s", SERIAL, *args,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         )
     except OSError as e:
+        logs.adb_reached(False, str(e))
         return None, "", str(e)
     try:
         out, err = await asyncio.wait_for(process.communicate(), timeout)

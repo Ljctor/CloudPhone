@@ -12,7 +12,8 @@ and plays everything around it:
   page writes touches and keys to;
 - the discovery file (pid_*.ini), the AVD's config.ini, the emulator's
   systemd unit as `systemctl show` reports it (fake `systemctl` on PATH),
-  `adb` (fake binary given with --adb), the host's /proc/loadavg and
+  `adb` (fake binary given with --adb, through a link under the fake's
+  root), the host's /proc/loadavg and
   /proc/meminfo and the unit's cgroup (redirected by gateway_shim.py);
 - the root services of part 03 that apply screen size and settings
   requests (cloudphone-display-apply, cloudphone-settings-apply): same
@@ -92,6 +93,7 @@ DEFAULTS = {
         "touch_fails": False,      # gRPC sendTouch fails (HTTP touch fallback)
         "adb_fails": False,        # the fake adb fails (keys, Android metrics)
         "adb_hangs": False,        # the fake adb never answers a key (input keyevent)
+        "adb_missing": False,      # the gateway's --adb path is gone (adb cannot start)
         "hold_requests": False,    # leave request files pending (path units stalled)
         "status_lcd": False,       # getStatus platformConfig carries hw.lcd.* (real 36.6.11 omits them: checked against a live emulator, 2026-10)
         "apply_seconds": 0.5,      # time spent "applying" before stopping Android
@@ -380,7 +382,7 @@ class Emulator:
         # reserve_port); a --web_port given on the command line is used as it is.
         self.web_socket = None if args.web_port else reserve_port()
         self.web_port = args.web_port or self.web_socket.getsockname()[1]
-        for name in ("running", "avd", "host/proc", "host/cgroup", "android", "bin-state"):
+        for name in ("running", "avd", "host/proc", "host/cgroup", "android", "bin-state", "bin"):
             (self.work / name).mkdir(parents=True, exist_ok=True)
         self.write_avd_config()
         self.write_host()
@@ -445,6 +447,13 @@ class Emulator:
             write_atomic(self.path("bin-state/adb-hang"), "1\n")
         elif os.path.exists(self.path("bin-state/adb-hang")):
             os.remove(self.path("bin-state/adb-hang"))
+        # The gateway's --adb: a link to the fake adb, removed while adb_missing.
+        link = self.path("bin/adb")
+        if self.options["adb_missing"]:
+            if os.path.lexists(link):
+                os.remove(link)
+        elif not os.path.lexists(link):
+            os.symlink(HERE / "bin" / "adb", link)
 
     def write_discovery(self):
         """A new emulator process: new pid file, new token."""
@@ -731,7 +740,7 @@ class Emulator:
                        FAKE_EMULATOR_PID=str(FAKE_EMULATOR_PID), PYTHONDONTWRITEBYTECODE="1")
             command = [gateway_python, str(HERE / "gateway_shim.py"),
                        "--host", "127.0.0.1", "--port", str(self.web_port), "--web_root", self.args.web_root,
-                       "--adb", str(HERE / "bin" / "adb"), "--adb_serial", "emulator-5558",
+                       "--adb", self.path("bin/adb"), "--adb_serial", "emulator-5558",
                        "--discovery_file", str(found[0]), "--emulator_unit", EMULATOR_UNIT,
                        "--display_request", self.path("display-request"), "--display_status", self.path("display-status"),
                        "--settings_request", self.path("settings-request"), "--settings_status", self.path("settings-status"),
@@ -794,7 +803,7 @@ class Emulator:
         for key in ("options",):
             if key in body:
                 deep_update(self.options, body[key])
-        for key in ("data_channels", "offer", "frames", "touch_fails", "adb_fails", "adb_hangs", "hold_requests", "status_lcd",
+        for key in ("data_channels", "offer", "frames", "touch_fails", "adb_fails", "adb_hangs", "adb_missing", "hold_requests", "status_lcd",
                     "apply_seconds", "stop_seconds", "boot_seconds", "crash_seconds", "gateway_restart_seconds"):
             if key in body:
                 self.options[key] = body[key]

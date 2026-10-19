@@ -67,6 +67,29 @@ fn a_failing_adb_leaves_android_metrics_empty_and_the_rest_working() {
 }
 
 #[test]
+fn an_adb_that_cannot_start_empties_android_metrics_and_says_adb_is_offline() {
+    let cp = CloudPhone::start();
+    wait_for("Android's metrics", Duration::from_secs(30), || {
+        cp.get_json("api/v1/state?details=1")["metrics"]["android"]["fps"].is_number().then_some(())
+    });
+    cp.fake().control(json!({"adb_missing": true}));
+    let state = wait_for("Android's metrics gone", Duration::from_secs(30), || {
+        let state = cp.get_json("api/v1/state?details=1");
+        state["metrics"]["android"].is_null().then_some(state)
+    });
+    assert!(state["metrics"]["host"]["cpu"].is_number(), "the rest still there: {state}");
+    let offline = wait_for("the adb offline record", Duration::from_secs(20), || {
+        cp.get_json("api/v1/logs")["records"].as_array()?.iter()
+            .find(|r| r["level"] == "error" && r["source"] == "adb" && r["text"].as_str().unwrap_or("").contains("adb ne joint plus Android"))
+            .cloned()
+    });
+    assert_eq!(offline["notify"], true, "{offline}");
+    // No stale figures come back while adb cannot start.
+    std::thread::sleep(Duration::from_secs(6));
+    assert!(cp.get_json("api/v1/state?details=1")["metrics"]["android"].is_null());
+}
+
+#[test]
 fn the_emulator_units_states_are_reported_as_systemd_gives_them() {
     let cp = CloudPhone::start();
     for (active, sub, result) in [("failed", "failed", "exit-code"), ("activating", "auto-restart", "exit-code"), ("inactive", "dead", "success"), ("activating", "start", "success")] {
