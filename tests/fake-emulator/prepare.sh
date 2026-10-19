@@ -91,6 +91,12 @@ find "$package" -maxdepth 1 -type l ! -exec test -e {} \; -delete
 for source in "$OVERLAY"/gateway/src/videobridge_gateway/*.py; do
   ln -sfn "$source" "$package/$(basename "$source")"
 done
+# Its subpackages (core/, http/...), linked whole; proto comes from the build.
+for source in "$OVERLAY"/gateway/src/videobridge_gateway/*/; do
+  name=$(basename "$source")
+  case $name in proto | __pycache__) continue ;; esac
+  ln -sfn "${source%/}" "$package/$name"
+done
 rm -rf "$package/proto"
 cp -R "$BASE/proto" "$package/proto"
 
