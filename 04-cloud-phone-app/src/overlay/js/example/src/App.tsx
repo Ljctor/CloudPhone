@@ -12,6 +12,8 @@ import { VIEWER_ID, postFetch, postHeaders } from './api';
 import { LogFilter, LogList, Toasts, pageLog, useLog, useServerLog, useToasts } from './logs';
 import { Icon } from './icons';
 import { AlertsPanel, useAlerts } from './notify';
+import { formatValue, serverSections } from './serverInfo';
+import { ServerPanel } from './serverPanel';
 
 logger.setLevel('warn');
 
@@ -73,10 +75,6 @@ function pingColor(ms) {
   return '#ff453a';
 }
 
-function formatValue(value) {
-  return value === null || value === undefined ? '–' : String(Math.round(value));
-}
-
 // Android screen shapes (height / width, portrait) and resolutions offered
 // on the page. Density follows the width (160 dpi per 360 px), so Android's
 // layout looks the same at every resolution: "Haute" only adds pixels, for
@@ -128,10 +126,6 @@ function matchPresets(size) {
   const shape = DEVICE_SHAPES.find((item) => item.ratio && Math.abs(item.ratio - ratio) / ratio < 0.015);
   const resolution = RESOLUTIONS.find((item) => item.width === size.width);
   return { shape: shape?.id ?? 'window', resolution: resolution?.id ?? DEFAULT_RESOLUTION };
-}
-
-function shortSide(size) {
-  return size?.width ? `${Math.min(size.width, size.height)}p` : '–';
 }
 
 // Polls the gateway for the screen size and the state of a size change:
@@ -362,13 +356,6 @@ function diagnose({ server, stream, connectingFor, touchFailures }) {
 }
 
 const LEVEL_COLORS = { error: '#ff453a', wait: '#ff9f0a', info: '#ffd60a' };
-
-function describeUnit(unit) {
-  if (!unit) return '–';
-  const restarts = unit.restarts
-    ? `, ${tr(unit.restarts > 1 ? '{n} redémarrages' : '{n} redémarrage', { n: unit.restarts })}` : '';
-  return `${unit.active} (${unit.sub})${restarts}`;
-}
 
 const LONG_PRESS_MS = 500;
 
@@ -861,12 +848,6 @@ function App() {
 
   // Keys: the emulator's "keyboard" data channel when open (a keypress with
   // the DOM key name), otherwise the gateway, which uses adb.
-  const disconnectOthers = () => postFetch(`${gatewayUrl}/api/v1/viewers/disconnect-others`, {
-    method: 'POST',
-    headers: postHeaders(),
-    body: JSON.stringify({ viewer: VIEWER_ID }),
-  }).catch((error) => console.error('Disconnect others:', error));
-
   const sendKey = (key) => {
     if (USE_DATA_CHANNEL) {
       const event = new Proto.KeyboardEvent();
@@ -1082,51 +1063,9 @@ function App() {
       <span>{value}</span>
     </div>
   );
-  const configured = displayState?.configured;
-  const load = server.value?.load;
-  const metrics = server.value?.metrics;
-  const mib = (value) => (value === null || value === undefined ? '–'
-    : value >= 1024 ? `${(value / 1024).toFixed(1)} ${tr('Go')}` : `${value} ${tr('Mo')}`);
-  const memoryRow = (memory) => (memory?.total
-    ? tr('{used} utilisés / {total}', { used: mib(memory.total - memory.available), total: mib(memory.total) }) : '–');
-  const swapRow = (memory) => (memory?.swapTotal ? `${mib(memory.swapUsed)} / ${mib(memory.swapTotal)}` : '–');
-  const host = metrics?.host;
-  const emulator = metrics?.emulator;
-  const android = metrics?.android;
-  const serverSections = [
-    ['État', [
-      ['Serveur', server.failures >= 2 ? tr('injoignable') : server.value ? tr('joignable') : '…'],
-      ['Service Android', describeUnit(server.value?.emulator)],
-      ['Android démarré', server.value?.android?.booted === true ? tr('oui')
-        : server.value?.android?.booted === false ? tr('en cours') : tr('sans réponse')],
-      ['Appareils connectés', formatValue(server.value?.viewers)],
-      ['Charge du serveur', load ? (load.cores ? tr('{load} tâches pour {cpus} threads ({cores} cœurs)', { load: load.one.toFixed(1), cpus: load.cpus, cores: load.cores })
-        : tr('{load} tâches pour {cpus} threads', { load: load.one.toFixed(1), cpus: load.cpus })) : '–'],
-    ]],
-    ['Machine', [
-      ['Processeur', host ? tr('{cpu} % de {cpus} threads', { cpu: host.cpu, cpus: host.cpus }) : '–'],
-      ['Fréquence', host?.mhz ? `${host.mhz} MHz${host.governor ? ` (${host.governor})` : ''}` : '–'],
-      ['Mémoire', memoryRow(host?.memory)],
-      ['Émulateur', emulator?.cpu === null || emulator?.cpu === undefined ? '–'
-        : tr('{cores} cœurs · {memory}', { cores: (emulator.cpu / 100).toFixed(1), memory: mib(emulator.memory) })],
-    ]],
-    ['Android', [
-      ['Écran Android', configured?.width ? `${configured.width}×${configured.height} px` : `${display.width}×${display.height} px`],
-      ['Moteur de rendu', emulator?.settings?.renderer ?? '–'],
-      ['Cœurs et mémoire', emulator?.settings
-        ? tr('{cores} cœurs · {memory}', { cores: emulator.settings.cores ?? '?', memory: mib(Number(emulator.settings.memoryMb)) }) : '–'],
-      ['Images/s du jeu', android?.fps === null || android?.fps === undefined ? '–'
-        : `${android.fps}${android.app ? ` (${android.app})` : ''}`],
-      ['Mémoire Android', memoryRow(android?.memory)],
-      ['Swap Android', swapRow(android?.memory)],
-    ]],
-    ['Flux envoyé', [
-      ['Flux vidéo', stats.video ? `${stats.video.width}×${stats.video.height} px (${shortSide(stats.video)})` : '–'],
-      ['Images envoyées', `${formatValue(stats.server)} /s`],
-      ['Débit vidéo', stats.bitrate === null ? '–' : `${Math.round(stats.bitrate)} kbit/s`],
-      ['Codec', stats.codec ?? '–'],
-    ]],
-  ];
+  const serverRows = serverSections({
+    server, configured: displayState?.configured, display, stats,
+  });
   const clientSections = [
     ['Réseau', [
       ['Ping', stats.ping === null ? '–' : `${Math.round(stats.ping)} ms (${stats.pingSource})`],
@@ -1363,31 +1302,26 @@ function App() {
                 </div>
               )}
               {panel === 'info' && infoTab === 'server' && (
-                <div role="tabpanel">
-                  {sections(serverSections)}
-                  {server.value?.viewers > 1 && (
-                    <div style={styles.infoRow}>
-                      <span style={styles.infoLabel}>{tr('Autres appareils')}</span>
-                      <button style={styles.panelButton} onClick={disconnectOthers}>
-                        {tr('Déconnecter')}
-                      </button>
-                    </div>
+                <ServerPanel
+                  sections={sections(serverRows)}
+                  viewers={server.value?.viewers}
+                  gatewayUrl={gatewayUrl}
+                  settingsForm={(
+                    <EmulatorSettings
+                      gatewayUrl={gatewayUrl}
+                      settings={emulatorSettings}
+                      refresh={refreshEmulatorSettings}
+                      rowStyle={styles.infoRow}
+                      labelStyle={styles.infoLabel}
+                      buttonStyle={styles.panelButton}
+                    />
                   )}
-                  <div style={styles.infoSection}>{tr('Réglages d’Android')}</div>
-                  <EmulatorSettings
-                    gatewayUrl={gatewayUrl}
-                    settings={emulatorSettings}
-                    refresh={refreshEmulatorSettings}
-                    rowStyle={styles.infoRow}
-                    labelStyle={styles.infoLabel}
-                    buttonStyle={styles.panelButton}
-                  />
-                  {fold('serverLogs', 'Journaux du serveur', <>
+                  logs={fold('serverLogs', 'Journaux du serveur', <>
                     {logFilter}
                     <LogList entries={logs.server} filter={settings.logFilter} rowStyle={styles.infoRow}
                       labelStyle={styles.infoLabel} />
                   </>)}
-                </div>
+                />
               )}
               {panel === 'info' && infoTab === 'client' && (
                 <div role="tabpanel">
