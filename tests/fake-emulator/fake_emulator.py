@@ -762,6 +762,20 @@ class Emulator:
         self.gateway_wanted = True
         self.gateway_event.set()
 
+    def pause_gateway(self, seconds):
+        """A stalled gateway: SIGSTOP, then SIGCONT after `seconds`. Its port
+        still accepts connections, but nothing answers until it resumes."""
+        process = self.gateway
+        if not process or process.returncode is not None:
+            raise web.HTTPConflict(text="the gateway is not running")
+        process.send_signal(signal.SIGSTOP)
+
+        async def resume():
+            await asyncio.sleep(seconds)
+            if process.returncode is None:
+                process.send_signal(signal.SIGCONT)
+        asyncio.create_task(resume())
+
     # ---- control ----
 
     async def control(self, body):
@@ -806,6 +820,8 @@ class Emulator:
             self.start_gateway()
         elif action == "restart_gateway":
             await self.restart_gateway("asked by the test")
+        elif action == "pause_gateway":
+            self.pause_gateway(float(body.get("seconds", 1.0)))
         elif action == "reset_record":
             self.read_adb_log()
             self.record.reset()

@@ -133,7 +133,8 @@ impl Fake {
     /// `data_channels`, `offer`, `touch_fails`, `adb_fails`,
     /// `hold_requests`, `fail_next`, timings...) and/or runs an `action`
     /// (`drop_streams`, `crash`, `restart`, `replace_discovery`,
-    /// `stop_gateway`, `start_gateway`, `restart_gateway`, `reset_record`).
+    /// `stop_gateway`, `start_gateway`, `restart_gateway`, `reset_record`,
+    /// `pause_gateway` with `seconds`: SIGSTOP, then SIGCONT).
     pub fn control(&self, body: Value) -> Value {
         let url = format!("{}control", self.control);
         crate::off_runtime(move || {

@@ -79,7 +79,7 @@ Its control API (127.0.0.1, random port), wrapped by `src/fake.rs`:
 |---|---|
 | `GET /record` | everything received: touches (with the channel or `grpc`), keys (`keyboard` channel, `adb`, `grpc`), data channel messages, gRPC calls, JSEP messages each way, display/settings requests and status lines, WebRTC sessions, gateway starts and exits, adb calls |
 | `GET /state` | the fake's state: display, settings, unit, booted, gRPC up/down, sessions, gateway |
-| `POST /control` | `options` (`data_channels`, `offer`, `touch_fails`, `adb_fails`, `hold_requests`, `status_lcd`, timings), `fail_next`, `load`, `unit`, `booted`, `grpc`, and one `action`: `drop_streams` (`bye`), `crash`, `restart`, `replace_discovery`, `stop_gateway`, `start_gateway`, `restart_gateway`, `reset_record` |
+| `POST /control` | `options` (`data_channels`, `offer`, `touch_fails`, `adb_fails`, `hold_requests`, `status_lcd`, timings), `fail_next`, `load`, `unit`, `booted`, `grpc`, and one `action`: `drop_streams` (`bye`), `crash`, `restart`, `replace_discovery`, `stop_gateway`, `start_gateway`, `restart_gateway`, `pause_gateway` (`seconds`: stalled, then resumed), `reset_record` |
 
 Initial state: `CloudPhone::start_with(json!({...}))`, keys as in
 `DEFAULTS` in `fake_emulator.py` (480×1040 at density 213, lavapipe,

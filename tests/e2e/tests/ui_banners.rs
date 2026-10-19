@@ -3,6 +3,34 @@
 //! but worse than usual; and the colour of the LED on ↻ that goes with them
 //! (red: needs action, orange: being fixed, green: fine). The states come
 //! from the fake emulator: no real phone is crashed, stopped or kicked.
+//!
+//! One test per branch of the page's diagnose() (example/src/diagnose.ts),
+//! in its order, and for the edges just below its thresholds:
+//! - server unreachable (2 missed polls): `server_unreachable_…`; one missed
+//!   poll says nothing: `one_missed_state_poll_shows_nothing`
+//! - kicked: `a_page_kicked_by_another_device_…`
+//! - screen size change pending / applying: `a_screen_size_change_on_its_way_…`,
+//!   `a_screen_size_change_being_applied_…`
+//! - settings change pending / applying: `an_android_settings_change_on_its_way_…`,
+//!   `an_android_settings_change_being_applied_…`
+//! - unit failed, auto-restart, inactive, deactivating, activating:
+//!   `an_emulator_stopped_on_an_error_…`, `an_emulator_crash_with_an_automatic_restart_…`,
+//!   `a_stopped_emulator_…`, `a_stopping_emulator_unit_…`, `a_starting_emulator_unit_…`
+//! - Android booting, with / before the video: `android_still_booting_…`,
+//!   `android_booting_before_the_video_…`
+//! - Android not answering, with / before the video:
+//!   `an_emulator_that_does_not_answer_says_…`,
+//!   `an_emulator_that_does_not_answer_before_the_video_…`
+//! - video dropped: `a_dropped_stream_…`
+//! - video not connected after 15 s (nothing but "connecting" until 14 s):
+//!   `a_video_that_never_connects_says_so_after_15_seconds`
+//! - touches failing (3 failed requests, not 2): `touches_that_fail_…`,
+//!   `two_failed_touch_requests_show_nothing_yet`
+//! - other viewers (1, then 2), not while the video connects:
+//!   `another_viewer_makes_the_watching_banner_count_it`,
+//!   `another_viewer_is_not_reported_while_the_video_connects`
+//! - server overloaded (not at load = threads): `heavy_load_…`
+//! - all well: `a_healthy_phone_shows_no_status`
 use cloudphone_e2e::browser::{blocking, browser_test, en, fr, led, Options, Page};
 use cloudphone_e2e::*;
 use serde_json::json;
@@ -28,6 +56,29 @@ async fn expect_status(page: &Page, text: &str, detail: Option<&str>, covers: bo
     }
     assert_eq!(page.status_is_closable(text).await, !covers, "{text:?} {}", if covers { "covers the screen" } else { "is a closable banner" });
     page.wait_led(colour, Duration::from_secs(5)).await;
+}
+
+/// Asserts no status contains `text` at any moment during `duration`.
+async fn never_status(page: &Page, text: &str, duration: Duration) {
+    let start = std::time::Instant::now();
+    while start.elapsed() < duration {
+        let shown = page.banners().await;
+        assert!(!shown.iter().any(|b| b.contains(text)), "{text:?} shown: {shown:?}");
+        page.sleep(Duration::from_millis(200)).await;
+    }
+}
+
+/// Waits until the gateway's GET /api/v1/state has `value` at `pointer`.
+fn wait_gateway_state(phone: &CloudPhone, pointer: &str, value: &str) {
+    let start = std::time::Instant::now();
+    loop {
+        let state = phone.get_json("api/v1/state");
+        if state.pointer(pointer).and_then(|v| v.as_str()) == Some(value) {
+            return;
+        }
+        assert!(start.elapsed() < SOON, "state {pointer} never {value:?}: {state}");
+        std::thread::sleep(Duration::from_millis(200));
+    }
 }
 
 #[test]
@@ -204,6 +255,12 @@ fn a_video_that_never_connects_says_so_after_15_seconds() {
     let cp = CloudPhone::start_with(json!({"options": {"offer": false}}));
     browser_test(&cp, Options::without_video(), |page| async move {
         page.wait_status("Connexion au flux…", SOON).await;
+        // Connecting, nothing wrong yet: only that message up to 14 s
+        // (counted from the page's start, a little before the stream's).
+        let started = page.js("return performance.now()", vec![]).await.as_f64().unwrap();
+        never_status(&page, "La vidéo ne se connecte pas",
+            Duration::from_millis((14_000.0 - started).max(0.0) as u64)).await;
+        assert_eq!(page.banners().await, vec!["Connexion au flux…".to_string()]);
         let shown = page.wait_status("La vidéo ne se connecte pas", Duration::from_secs(30)).await;
         assert!(shown.contains("Le réseau bloque peut-être le flux vidéo (UDP). Touchez ↻ pour réessayer."), "{shown:?}");
         assert!(!page.status_is_closable("La vidéo ne se connecte pas").await);
@@ -328,4 +385,119 @@ fn statuses_are_translated_for_an_english_browser() {
         phone.fake().action("stop_gateway");
         page.wait_status("Server unreachable", SOON).await;
     });
+}
+
+#[test]
+fn a_screen_size_change_being_applied_covers_the_screen() {
+    // The root service takes the request and stays on "applying".
+    let cp = CloudPhone::start_with(json!({"options": {"apply_seconds": 120}}));
+    let phone = cp.clone();
+    browser_test(&cp, Options::default(), |page| async move {
+        let response = phone.post_json("api/v1/display", &json!({"width": 360, "height": 780, "density": 160}));
+        assert_eq!(response.status(), 202);
+        let p = phone.clone();
+        blocking(move || wait_gateway_state(&p, "/display/state", "applying"));
+        expect_status(&page, "Changement de résolution", Some("Android redémarre…"), true, led::ORANGE).await;
+    });
+}
+
+#[test]
+fn an_android_settings_change_being_applied_covers_the_screen() {
+    let cp = CloudPhone::start_with(json!({"settings": {"cores": 2}, "options": {"apply_seconds": 120}}));
+    let phone = cp.clone();
+    browser_test(&cp, Options::default(), |page| async move {
+        let response = phone.post_json("api/v1/emulator-settings", &json!({"renderer": "lavapipe", "cores": 2, "memoryMb": 2048}));
+        assert_eq!(response.status(), 202);
+        let p = phone.clone();
+        blocking(move || wait_gateway_state(&p, "/settings/state", "applying"));
+        expect_status(&page, "Changement des réglages d’Android", Some("Android redémarre…"), true, led::ORANGE).await;
+    });
+}
+
+#[test]
+fn a_stopping_emulator_unit_covers_the_screen_in_red() {
+    let cp = CloudPhone::start();
+    let phone = cp.clone();
+    browser_test(&cp, Options::default(), |page| async move {
+        phone.fake().control(json!({"unit": {"active": "deactivating", "sub": "stop-sigterm"}}));
+        expect_status(&page, "Android est arrêté", Some("Il faut le démarrer sur le serveur."), true, led::RED).await;
+    });
+}
+
+#[test]
+fn an_emulator_that_does_not_answer_before_the_video_covers_the_screen() {
+    // No video ever (no offer); the gateway starts with Android up, then
+    // loses it.
+    let cp = CloudPhone::start_with(json!({"options": {"offer": false}}));
+    let phone = cp.clone();
+    browser_test(&cp, Options::without_video(), |page| async move {
+        phone.fake().control(json!({"grpc": "down"}));
+        expect_status(&page, "Le serveur se reconnecte à Android…", None, true, led::ORANGE).await;
+    });
+}
+
+#[test]
+fn a_healthy_phone_shows_no_status() {
+    let cp = CloudPhone::start();
+    browser_test(&cp, Options::default(), |page| async move {
+        // Two state polls and more.
+        page.sleep(Duration::from_secs(7)).await;
+        assert!(page.banners().await.is_empty(), "{:?}", page.banners().await);
+        page.wait_led(led::GREEN, Duration::from_secs(5)).await;
+    });
+}
+
+#[test]
+fn one_missed_state_poll_shows_nothing() {
+    // The page polls the state every 3 s and gives up on a poll after 4 s.
+    // Stalling the gateway from just after a poll (at a) until a + 7.5 s
+    // makes the poll at a + 3 time out at a + 7 and the one at a + 6
+    // answer at a + 7.5: one missed poll, never two in a row.
+    let cp = CloudPhone::start();
+    let phone = cp.clone();
+    browser_test(&cp, Options::default(), |page| async move {
+        page.js("performance.clearResourceTimings()", vec![]).await;
+        let since = page.wait_js("a state poll just answered", SOON,
+            "const now = performance.now(); \
+             const e = performance.getEntriesByType('resource').filter(e => e.name.includes('/api/v1/state?')).pop(); \
+             return e && now - e.responseEnd < 300 ? now - e.startTime : null", vec![]).await;
+        let since = since.as_f64().unwrap() / 1000.0;
+        assert!(since < 1.0, "the poll took {since} s");
+        let p = phone.clone();
+        blocking(move || p.fake().control(json!({"action": "pause_gateway", "seconds": 7.5 - since - 0.1})));
+        never_status(&page, "Serveur injoignable", Duration::from_secs(11)).await;
+        // The polls answer again after the stall.
+        let answered = page.js(
+            "return performance.getEntriesByType('resource').filter(e => e.name.includes('/api/v1/state?')).length", vec![]).await;
+        assert!(answered.as_u64().unwrap() >= 3, "state polls answered: {answered}");
+    });
+}
+
+#[test]
+fn two_failed_touch_requests_show_nothing_yet() {
+    // One click is two requests over HTTP (press, release), both refused.
+    let cp = CloudPhone::start_with(json!({"options": {"data_channels": false, "touch_fails": true}}));
+    browser_test(&cp, Options::default(), |page| async move {
+        let (x, y) = page.viewport_point((480, 1040), 240, 520).await;
+        page.click_at(x, y).await;
+        never_status(&page, "Les touches n’arrivent pas à Android", Duration::from_secs(3)).await;
+        page.click_at(x, y).await;
+        page.wait_status("Les touches n’arrivent pas à Android", SOON).await;
+    });
+}
+
+#[test]
+fn another_viewer_is_not_reported_while_the_video_connects() {
+    let cp = CloudPhone::start_with(json!({"options": {"offer": false}}));
+    let other = Viewer::open(&cp, &viewer_id("connecting"));
+    let phone = cp.clone();
+    browser_test(&cp, Options::without_video(), |page| async move {
+        page.wait_status("Connexion au flux…", SOON).await;
+        let p = phone.clone();
+        blocking(move || p.wait_viewers("the page and the other viewer", Duration::from_secs(10), |n| n == 2));
+        // A state poll later, still well before the 15 s message.
+        never_status(&page, "regarde", Duration::from_millis(3500)).await;
+        assert_eq!(page.banners().await, vec!["Connexion au flux…".to_string()]);
+    });
+    other.close();
 }

@@ -7,13 +7,16 @@ import {
 } from '../../src/components/emulator/net/ws_jsep_protocol_driver';
 import Proto from '../../src/proto/emulator_controller_pb';
 import { TOOLBAR_WIDTH, styles } from './styles';
-import { VIEWER_ID, postFetch, postHeaders } from './api';
+import { postFetch, postHeaders } from './api';
 import { LogFilter, LogList, Toasts, pageLog, useLog, useServerLog, useToasts } from './logs';
 import { Icon } from './icons';
 import { AlertsPanel, useAlerts } from './notify';
 import { formatValue, serverSections } from './serverInfo';
 import { ServerPanel } from './serverPanel';
 import { EmulatorSettings, useDisplayState, useEmulatorSettings } from './androidSettings';
+import { useServerState } from './serverState';
+import { bannerShown, diagnose } from './diagnose';
+import { Banner, LEVEL_COLORS, StatusCover, useDismissed } from './banner';
 
 logger.setLevel('warn');
 
@@ -74,111 +77,6 @@ function pingColor(ms) {
   if (ms < 150) return '#ff9f0a';
   return '#ff453a';
 }
-
-// Polls the gateway's view of the server: emulator service, Android boot,
-// viewers, load. failures counts consecutive unanswered polls.
-// details: also ask for the server metrics (CPU, memory, Android's frame
-// rate), which cost the server an adb call: only while the server panel is
-// open.
-function useServerState(gatewayUrl, details = false) {
-  const [server, setServer] = useState({ value: null, failures: 0 });
-  useEffect(() => {
-    let cancelled = false;
-    const load = () => {
-      const controller = new AbortController();
-      const timeout = window.setTimeout(() => controller.abort(), 4000);
-      fetch(`${gatewayUrl}/api/v1/state?viewer=${encodeURIComponent(VIEWER_ID)}${details ? '&details=1' : ''}`,
-        { cache: 'no-store', signal: controller.signal })
-        .then((response) => (response.ok ? response.json() : Promise.reject(new Error(String(response.status)))))
-        .then((value) => { if (!cancelled) setServer({ value, failures: 0 }); })
-        .catch(() => { if (!cancelled) setServer((current) => ({ ...current, failures: current.failures + 1 })); })
-        .finally(() => window.clearTimeout(timeout));
-    };
-    load();
-    const timer = window.setInterval(load, details ? 2000 : 3000);
-    return () => { cancelled = true; window.clearInterval(timer); };
-  }, [gatewayUrl, details]);
-  return server;
-}
-
-// The single most important thing to tell the user, or null.
-// level: 'error' (needs action or will not fix itself), 'wait' (being
-// fixed), 'info' (works, but worse than usual). blocking: covers the screen.
-function diagnose({ server, stream, connectingFor, touchFailures }) {
-  const value = server.value;
-  if (server.failures >= 2) {
-    return {
-      level: 'error', blocking: true, text: 'Serveur injoignable',
-      detail: 'Vérifiez que le VPN (WireGuard) est connecté sur cet appareil.',
-    };
-  }
-  if (value?.kicked) {
-    return {
-      level: 'error', blocking: true, text: 'Un autre appareil a pris la main',
-      detail: 'Touchez ↻ pour la reprendre.',
-    };
-  }
-  const display = value?.display?.state;
-  if (display === 'pending' || display === 'applying') {
-    return { level: 'wait', blocking: true, text: 'Changement de résolution', detail: 'Android redémarre…' };
-  }
-  const settingsChange = value?.settings?.state;
-  if (settingsChange === 'pending' || settingsChange === 'applying') {
-    return { level: 'wait', blocking: true, text: 'Changement des réglages d’Android', detail: 'Android redémarre…' };
-  }
-  const unit = value?.emulator;
-  if (unit) {
-    if (unit.active === 'failed') {
-      return {
-        level: 'error', blocking: true, text: 'Android s’est arrêté sur une erreur',
-        detail: 'Il ne redémarre pas tout seul : il faut le relancer sur le serveur.',
-      };
-    }
-    if (unit.active === 'activating' && unit.sub === 'auto-restart') {
-      return { level: 'wait', blocking: true, text: 'Android a planté', detail: 'Redémarrage automatique…' };
-    }
-    if (unit.active === 'inactive' || unit.active === 'deactivating') {
-      return { level: 'error', blocking: true, text: 'Android est arrêté', detail: 'Il faut le démarrer sur le serveur.' };
-    }
-    if (unit.active === 'activating') {
-      return { level: 'wait', blocking: true, text: 'Android démarre…', detail: null };
-    }
-  }
-  const booted = value?.android?.booted;
-  if (value && booted === false) {
-    return { level: 'wait', blocking: stream !== 'connected', text: 'Android démarre…', detail: 'Cela peut prendre une minute.' };
-  }
-  if (value && booted === null) {
-    return { level: 'wait', blocking: stream !== 'connected', text: 'Le serveur se reconnecte à Android…', detail: null };
-  }
-  if (stream === 'disconnected') {
-    return { level: 'wait', blocking: true, text: 'Vidéo interrompue', detail: 'Reconnexion…' };
-  }
-  if (stream !== 'connected' && connectingFor >= 15) {
-    return {
-      level: 'error', blocking: true, text: 'La vidéo ne se connecte pas',
-      detail: 'Le réseau bloque peut-être le flux vidéo (UDP). Touchez ↻ pour réessayer.',
-    };
-  }
-  if (touchFailures >= 3) {
-    return { level: 'error', blocking: false, text: 'Les touches n’arrivent pas à Android', detail: null };
-  }
-  if (stream === 'connected' && value?.viewers > 1) {
-    const others = value.viewers - 1;
-    return {
-      level: 'info', blocking: false,
-      text: others === 1 ? tr('Un autre appareil regarde ce téléphone')
-        : tr('{n} autres appareils regardent ce téléphone', { n: others }),
-      detail: 'L’image peut être plus lente.',
-    };
-  }
-  if (value?.load && value.load.one > value.load.cpus) {
-    return { level: 'info', blocking: false, text: 'Serveur très chargé', detail: 'L’image peut ralentir.' };
-  }
-  return null;
-}
-
-const LEVEL_COLORS = { error: '#ff453a', wait: '#ff9f0a', info: '#ffd60a' };
 
 const LONG_PRESS_MS = 500;
 
@@ -590,17 +488,7 @@ function App() {
   }, [state, streamGeneration]);
 
   const problem = diagnose({ server, stream: state, connectingFor, touchFailures });
-  // A closed warning stays hidden until it goes away and comes back.
-  const [dismissed, setDismissed] = useState(null);
-  useEffect(() => {
-    if (dismissed !== null && problem?.text !== dismissed) setDismissed(null);
-    // Each new message also goes to the page's log; errors with what to do.
-    if (problem) {
-      const level = { error: 'error', wait: 'warning', info: 'normal' }[problem.level];
-      const detail = problem.detail ? tr(problem.detail) : level === 'error' ? tr('Touchez ↻ pour réessayer.') : '';
-      pageLog(level, detail ? `${tr(problem.text)} : ${detail}` : tr(problem.text));
-    }
-  }, [problem?.text]);
+  const [dismissed, setDismissed] = useDismissed(problem);
   // Android is usable again (after a crash, a restart or a lost stream):
   // reconnect the video without waiting for the user.
   const serverHealthy = server.failures < 2 && server.value?.android?.booted === true
@@ -1086,28 +974,11 @@ function App() {
               onError={(error) => console.error('Android stream:', error)}
             />
           )}
-          {(state !== 'connected' || problem?.blocking) && (
-            <div style={styles.loading} role="status" aria-live="polite">
-              {problem?.blocking && problem.level === 'error'
-                ? <span style={{ ...styles.problemMark, color: LEVEL_COLORS.error }} aria-hidden="true">!</span>
-                : <span style={styles.spinner} aria-hidden="true" />}
-              <span style={styles.loadingText}>
-                {problem?.blocking ? tr(problem.text) : reconnecting ? tr('Reconnexion…') : tr('Connexion au flux…')}
-              </span>
-              {problem?.blocking && problem.detail && <span style={styles.loadingDetail}>{tr(problem.detail)}</span>}
-            </div>
-          )}
-          {problem && !problem.blocking && dismissed !== problem.text && (
-            <div style={{ ...styles.banner, ...styles.bannerWithClose, borderColor: LEVEL_COLORS[problem.level] }}
-              role="status">
-              <span>{tr(problem.text)}{problem.detail && <><br /><small>{tr(problem.detail)}</small></>}</span>
-              <button style={styles.bannerClose} onClick={() => setDismissed(problem.text)}
-                aria-label={tr('Fermer')}>✕</button>
-            </div>
-          )}
+          <StatusCover problem={problem} stream={state} reconnecting={reconnecting} />
+          <Banner problem={problem} dismissed={dismissed} dismiss={setDismissed} />
           <div ref={pluginLayer} style={styles.pluginLayer} aria-hidden="true" />
           <Toasts toasts={toasts} dismiss={dismissToast}
-            top={problem && !problem.blocking && dismissed !== problem.text ? '72px' : '8px'} />
+            top={bannerShown(problem, dismissed) ? '72px' : '8px'} />
           {panel && (
             <div style={styles.info} role="dialog"
               aria-label={panel === 'info' ? tr('Informations') : tr('Options')}>
