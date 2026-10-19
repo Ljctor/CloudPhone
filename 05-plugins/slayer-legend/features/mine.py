@@ -110,6 +110,9 @@ def mine(ports, screens, readers, rules, timer, values):
         return {"saver": False, "fight": False, "other": other}
 
     async def farm():
+        # Only the loop begin() started last farms: one still ending (cancelled
+        # by end(), or in its last alert) never takes another look.
+        me = asyncio.current_task()
         memory = rules.fresh()
         away_since = None
         place = f"étage {status['floor']}, zone {status['area']}"
@@ -145,8 +148,10 @@ def mine(ports, screens, readers, rules, timer, values):
             return "retry"
 
         try:
-            while status["enabled"]:
+            while status["enabled"] and status["task"] is me:
                 await ports.clock.sleep(rules.SECONDS)
+                if status["task"] is not me:
+                    return
                 if not await ports.focused():
                     report("waiting", "Le jeu n’est pas au premier plan")
                     away_since, late = rules.away(away_since, ports.clock.monotonic())
@@ -313,9 +318,10 @@ def mine(ports, screens, readers, rules, timer, values):
         status["enabled"] = True
         status["gold"] = None
         report("waiting", "Surveillance de la mine")
-        task = status["task"]
-        if task is None or task.done():
-            status["task"] = ports.spawn(farm())
+        # A fresh loop, even when the last one has not ended yet: begin()
+        # only runs with farming off, so that one is ending (cancelled by
+        # end() in the same tick, or in its last alert) and would not farm.
+        status["task"] = ports.spawn(farm())
 
     def end():
         status["enabled"] = False
