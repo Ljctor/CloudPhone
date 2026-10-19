@@ -1,9 +1,7 @@
 import { LANGUAGES, defaultLanguage, setLanguage, tr } from './i18n';
-import { emitTap, usePlugins } from './plugins';
+import { usePlugins } from './plugins';
 import React, { useEffect, useRef, useState } from 'react';
 import { Emulator, logger } from '../../src';
-import { sendInputEvent } from '../../src/components/emulator/net/ws_jsep_protocol_driver';
-import Proto from '../../src/proto/emulator_controller_pb';
 import { TOOLBAR_WIDTH, styles } from './styles';
 import { postFetch, postHeaders } from './api';
 import { LogFilter, LogList, Toasts, pageLog, useLog, useServerLog, useToasts } from './logs';
@@ -16,13 +14,10 @@ import { useServerState } from './serverState';
 import { bannerShown, diagnose } from './diagnose';
 import { Banner, LEVEL_COLORS, StatusCover, useDismissed } from './banner';
 import { useStreamStats } from './useStreamStats';
+import { useInput } from './useInput';
 
 logger.setLevel('warn');
 
-// Touches and keys go over the emulator's own WebRTC data channels ("touch",
-// "keyboard"): no HTTP request, no gRPC hop. HTTP through the gateway stays
-// as the fallback while no channel is open. See docs/DEVELOPMENT.md.
-const USE_DATA_CHANNEL = true;
 // Give up showing the reconnect feedback if no frame arrives in this time.
 const RECONNECT_FEEDBACK_MS = 15000;
 // Android's display size until the gateway reports the real one.
@@ -193,16 +188,6 @@ function App() {
     saveSettings(next);
     return next;
   });
-  const pointerDown = useRef(false);
-  // Touch updates sent to the gateway: at most one request in flight. Press
-  // and release are queued in order; while a request runs, intermediate moves
-  // collapse into the latest one, so a drag never lags behind the finger.
-  const touchSender = useRef({ inFlight: false, queue: [], pendingMove: null });
-  const touchMarker = useRef(null);
-  // Where and when the current touch started, for plugins' onTap.
-  const touchStart = useRef(null);
-  // "data channel" or "HTTP": how the last touch reached Android.
-  const inputPath = useRef('–');
   const reconnectTimer = useRef(null);
   const [display, setDisplay] = useState(DEFAULT_DISPLAY);
   // Folded: the bar is hidden and the screen uses the whole window; a small
@@ -267,7 +252,8 @@ function App() {
   // Seconds the stream has been trying to connect, and consecutive failed
   // touch requests: both feed the message shown to the user.
   const [connectingFor, setConnectingFor] = useState(0);
-  const [touchFailures, setTouchFailures] = useState(0);
+  const input = useInput({ gatewayUrl, display, showMarker: settings.touchMarker });
+  const { touchFailures } = input;
   // A size change ends with the gateway restarting on the new size: reload
   // so that layout, touch mapping and the stream all start fresh.
   const firstSize = useRef(null);
@@ -319,7 +305,7 @@ function App() {
 
   const reconnectStream = () => {
     if (reconnectTimer.current !== null) return;
-    pointerDown.current = false;
+    input.pointerDown.current = false;
     setState('connecting');
     setStreamMounted(false);
     reconnectTimer.current = window.setTimeout(() => {
@@ -411,153 +397,8 @@ function App() {
     };
   }, []);
 
-  const post = (path, body) => postFetch(`${gatewayUrl}${path}`, {
-    method: 'POST',
-    headers: postHeaders(),
-    body: JSON.stringify(body),
-  }).then((response) => {
-    if (!response.ok) throw new Error(`${path}: HTTP ${response.status}`);
-    setTouchFailures(0);
-  }).catch((error) => {
-    setTouchFailures((count) => count + 1);
-    console.error('Android control:', error);
-  });
-
-  // Keys: the emulator's "keyboard" data channel when open (a keypress with
-  // the DOM key name), otherwise the gateway, which uses adb.
-  const sendKey = (key) => {
-    if (USE_DATA_CHANNEL) {
-      const event = new Proto.KeyboardEvent();
-      event.setEventtype(Proto.KeyboardEvent.KeyEventType.KEYPRESS);
-      event.setKey(key);
-      if (sendInputEvent('keyboard', event)) return;
-    }
-    post('/api/v1/emulator/key', { key });
-  };
-
-  const touchCoordinates = (event) => {
-    const bounds = event.currentTarget.getBoundingClientRect();
-    return {
-      x: Math.max(0, Math.min(display.width - 1,
-        Math.round((event.clientX - bounds.left) * display.width / bounds.width))),
-      y: Math.max(0, Math.min(display.height - 1,
-        Math.round((event.clientY - bounds.top) * display.height / bounds.height))),
-    };
-  };
-
-  const pumpTouches = () => {
-    const sender = touchSender.current;
-    if (sender.inFlight) return;
-    let next = sender.queue.shift();
-    if (!next && sender.pendingMove) {
-      next = sender.pendingMove;
-      sender.pendingMove = null;
-    }
-    if (!next) return;
-    sender.inFlight = true;
-    post('/api/v1/emulator/touch', next).finally(() => {
-      sender.inFlight = false;
-      pumpTouches();
-    });
-  };
-
-  // Preferred path: the stream's WebRTC data channel, straight to the
-  // emulator, no HTTP request and no gRPC hop through the gateway.
-  const sendOverChannel = (coordinates, pressed) => {
-    const touch = new Proto.Touch();
-    touch.setX(coordinates.x);
-    touch.setY(coordinates.y);
-    touch.setIdentifier(0);
-    touch.setPressure(pressed ? 1024 : 0);
-    touch.setTouchMajor(pressed ? 8 : 0);
-    touch.setTouchMinor(pressed ? 8 : 0);
-    const event = new Proto.TouchEvent();
-    event.setTouchesList([touch]);
-    event.setDisplay(0);
-    return sendInputEvent('touch', event);
-  };
-
-  const queueTouch = (coordinates, pressed, move = false) => {
-    const sender = touchSender.current;
-    // Use the channel only when no HTTP touch is pending, to keep the order.
-    const httpIdle = !sender.inFlight && sender.queue.length === 0 && !sender.pendingMove;
-    if (USE_DATA_CHANNEL && httpIdle && sendOverChannel(coordinates, pressed)) {
-      if (inputPath.current === 'HTTP') pageLog('normal', tr('Les touches passent de nouveau par le canal de données'));
-      inputPath.current = 'data channel';
-      return;
-    }
-    // The session fell back to the server path: slower, worth a toast.
-    if (inputPath.current !== 'HTTP') {
-      pageLog('warning', tr('Les touches passent par le serveur (canal de données fermé) : elles peuvent être plus lentes'),
-        { notify: true });
-    }
-    inputPath.current = 'HTTP';
-    if (move) {
-      sender.pendingMove = { ...coordinates, pressed: true };
-    } else {
-      if (sender.pendingMove) {
-        sender.queue.push(sender.pendingMove);
-        sender.pendingMove = null;
-      }
-      sender.queue.push({ ...coordinates, pressed });
-    }
-    pumpTouches();
-  };
-
-  // Local marker under the finger: immediate feedback while the video of
-  // Android's reaction is still on its way.
-  const showMarker = (event, visible) => {
-    const marker = touchMarker.current;
-    if (!marker) return;
-    if (!settings.touchMarker) visible = false;
-    const bounds = event.currentTarget.getBoundingClientRect();
-    marker.style.transform = `translate(${event.clientX - bounds.left}px, ${event.clientY - bounds.top}px)`;
-    marker.style.opacity = visible ? '1' : '0';
-  };
-
-  const startTouch = (event) => {
-    event.preventDefault();
-    pointerDown.current = true;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    showMarker(event, true);
-    const coordinates = touchCoordinates(event);
-    touchStart.current = { ...coordinates, time: performance.now() };
-    queueTouch(coordinates, true);
-  };
-
-  const moveTouch = (event) => {
-    if (!pointerDown.current) return;
-    event.preventDefault();
-    showMarker(event, true);
-    queueTouch(touchCoordinates(event), true, true);
-  };
-
-  const endTouch = (event) => {
-    if (!pointerDown.current) return;
-    event.preventDefault();
-    pointerDown.current = false;
-    showMarker(event, false);
-    const coordinates = touchCoordinates(event);
-    queueTouch(coordinates, false);
-    tellPlugins(coordinates, event.type === 'pointercancel');
-  };
-
-  // Plugins observe the user's touches (api.onTap), after they were sent:
-  // tap, long press (500 ms, Android's long-press time) or swipe (moved more
-  // than 4 % of the screen's width), as fractions of the screen.
-  const tellPlugins = (end, cancelled) => {
-    const start = touchStart.current;
-    touchStart.current = null;
-    if (!start || cancelled) return;
-    const moved = Math.hypot(end.x - start.x, end.y - start.y) > display.width * 0.04;
-    const kind = moved ? 'swipe' : performance.now() - start.time >= 500 ? 'long' : 'tap';
-    const tap = { x: start.x / display.width, y: start.y / display.height, kind };
-    if (moved) tap.end = { x: end.x / display.width, y: end.y / display.height };
-    emitTap(tap);
-  };
-
   const keyButton = (key, label, icon) => (
-    <button className="tool-button" style={buttonStyle} onClick={() => sendKey(key)}
+    <button className="tool-button" style={buttonStyle} onClick={() => input.sendKey(key)}
       aria-label={label}><Icon name={icon} /></button>
   );
   const connected = state === 'connected';
@@ -657,7 +498,7 @@ function App() {
       ['Tampon vidéo', stats.bufferDelay === null ? '–' : `${Math.round(stats.bufferDelay)} ms`],
       ...deviceInfo(screen),
     ]],
-    ['Entrées', [['Touches via', inputPath.current]]],
+    ['Entrées', [['Touches via', input.inputPath.current]]],
   ];
   const sections = (list) => list.map(([title, rows]) => (
     <div key={title}>
@@ -934,14 +775,14 @@ function App() {
               {(pluginDialog.option.options ?? []).map((option, index) => pluginOption(pluginDialog.plugin, option, `dialog-${index}`))}
             </div>
           )}
-          <div ref={touchMarker} style={styles.touchMarker} aria-hidden="true" />
+          <div ref={input.touchMarker} style={styles.touchMarker} aria-hidden="true" />
           <div
             style={styles.touchLayer}
             aria-label={tr('Surface tactile Android')}
-            onPointerDown={startTouch}
-            onPointerMove={moveTouch}
-            onPointerUp={endTouch}
-            onPointerCancel={endTouch}
+            onPointerDown={input.startTouch}
+            onPointerMove={input.moveTouch}
+            onPointerUp={input.endTouch}
+            onPointerCancel={input.endTouch}
           />
         </div>
       </section>
