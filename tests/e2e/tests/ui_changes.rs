@@ -168,6 +168,14 @@ fn the_page_can_still_post_after_a_change_restarted_the_gateway() {
         blocking(move || p.wait_for_android(Duration::from_secs(60)));
         page.wait_js("the form to be idle", Duration::from_secs(30),
             "const d = document.querySelector('[role=dialog]'); return !!d && !d.innerText.includes('Android redémarre') && !d.innerText.includes('en attente')", vec![]).await;
+        // The page has reconnected: its state poll answers (no reconnect
+        // banner) and its settings poll (every 10 s) brought the running
+        // 2048 MiB, so Apply is off for an unchanged form. Choosing before
+        // that would be undone when the form takes the new settings.
+        page.wait_js("the page to reconnect and show the running settings", Duration::from_secs(45),
+            "const banners = [...document.querySelectorAll('[role=status]')].map(b => b.innerText).join(' '); \
+             const apply = [...document.querySelectorAll('[role=dialog] button')].find(b => b.innerText.trim() === 'Appliquer'); \
+             return !banners.includes('se reconnecte') && !banners.includes('Android démarre') && !!apply && apply.disabled", vec![]).await;
         select(&page, "Mémoire", "4096").await;
         answer_confirm(&page, true).await;
         click_apply(&page).await;
