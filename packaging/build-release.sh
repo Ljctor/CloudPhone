@@ -184,6 +184,10 @@ cp -R "$ROOT"/05-plugins/*/ "$STAGE/05-plugins/"
 mkdir -p "$STAGE/04-cloud-phone-app/dist/wheels"
 cp -R "$UPSTREAM/js/example/dist" "$STAGE/04-cloud-phone-app/dist/web"
 install -m 644 "$wheel" "$STAGE/04-cloud-phone-app/dist/wheels/"
+# The tree's Python caches (a test run leaves them beside the plugins) are
+# not part of a release.
+find "$STAGE" -type d -name __pycache__ -prune -exec rm -rf {} +
+find "$STAGE" -type f -name '*.pyc' -delete
 install -m 644 "$ROOT/docs/INSTALL.md" "$ROOT/docs/METHOD.md" "$ROOT/docs/TUTORIAL.md" "$STAGE/docs/"
 install -m 644 "$UPSTREAM/LICENSE" "$STAGE/licenses/android-emulator-container-scripts-LICENSE"
 chmod -R u=rwX,go=rX "$STAGE"
