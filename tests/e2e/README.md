@@ -86,6 +86,9 @@ What the fake does that nothing in the repository confirms is marked
 `UNVERIFIED` in its source: the contract tests print the real values. The
 guesses they cover were checked against a live emulator (2026-10); the
 marks left are the ones they do not print.
+`vmConfig.numberOfCpuCores` is 16 on the live instance with 4 cores
+configured on an 8-thread host (rule unknown), while the fake reports the
+configured count.
 
 ## Files
 

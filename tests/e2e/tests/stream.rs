@@ -72,7 +72,7 @@ fn the_gateway_relays_the_ice_servers_and_the_token() {
     let cp = CloudPhone::start();
     let viewer = Viewer::open(&cp, &viewer_id("ice"));
     let start = viewer.wait_message("start", Duration::from_secs(15), |m| m["start"].is_object());
-    assert_eq!(start["start"]["iceServers"], json!([{"urls": ["stun:stun.l.google.com:19302"]}]), "{start}");
+    assert_eq!(start["start"]["ice_servers"], json!([{"urls": ["stun:stun.l.google.com:19302"]}]), "{start}");
     let calls = cp.fake().record()["grpc"].clone();
     let rtc: Vec<&Value> = calls.as_array().unwrap().iter().filter(|c| c["method"] == "RequestRtcStream").collect();
     assert!(!rtc.is_empty() && rtc.iter().all(|c| c["authorized"] == true), "with the discovery file's token: {calls}");
