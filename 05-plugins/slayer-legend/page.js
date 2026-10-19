@@ -13,6 +13,7 @@
 import counters from './page_counters.js';
 import launch from './page_launch.js';
 import screen from './page_screen.js';
+import trace from './page_trace.js';
 
 const ENGLISH = {
   'Farmer la mine': 'Farm the mine',
@@ -331,25 +332,7 @@ export default function activate(api) {
   };
   askGold();
 
-  // Navigation trace: each tap on the game goes to the gateway, which
-  // records the screens before and after it (screen name and a small grey
-  // thumbnail, never a screenshot). On unless the user turned it off.
-  // Fire and forget: a lost tap is only a missing edge.
-  const tracing = () => api.setting('traceTaps') !== 'off';
-  const stopTrace = api.onTap?.((tap) => {
-    if (tracing()) api.post('/trace', tap).catch(() => null);
-  });
-  // The counts, asked only while the panel shows them, at most every 5 s.
-  const traced = { answer: null, at: 0, busy: false };
-  const watchTrace = () => {
-    if (traced.busy || Date.now() - traced.at < 5000) return;
-    traced.busy = true;
-    api.get('/trace').catch(() => null).then((answer) => {
-      Object.assign(traced, { answer, at: Date.now(), busy: false });
-      api.refresh();
-    });
-  };
-
+  const tracePart = trace(api);
   return {
     options: [
       ...screenPart.options,
@@ -428,21 +411,7 @@ export default function activate(api) {
         type: 'choice', key: 'goldOverlay', label: 'Overlay gold/s',
         choices: [{ value: 'on', label: 'Affiché' }, { value: 'off', label: 'Masqué' }],
       },
-      { type: 'section', key: 'navigation', label: 'Navigation', folded: true },
-      {
-        type: 'choice', key: 'traceTaps', label: 'Enregistrer mes parcours',
-        choices: [{ value: 'on', label: 'Activé' }, { value: 'off', label: 'Désactivé' }],
-      },
-      {
-        type: 'status', label: 'Parcours enregistrés',
-        value: () => {
-          watchTrace();
-          const answer = traced.answer;
-          if (!answer) return '…';
-          if (!answer.enabled) return api.tr('indisponible (passerelle sans dossier de données)');
-          return api.tr('{nodes} écrans, {taps} appuis', { nodes: answer.nodes, taps: answer.taps ?? answer.edges });
-        },
-      },
+      ...tracePart.options,
       ...counterPart.options,
     ],
     onSetting: (key, value) => {
@@ -459,7 +428,7 @@ export default function activate(api) {
     },
     dispose: () => {
       counterPart.dispose();
-      stopTrace?.();
+      tracePart.dispose();
       launchPart.dispose();
       screenPart.dispose();
       window.clearTimeout(farm.timer);
