@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Emulator, logger } from '../../src';
 import { TOOLBAR_WIDTH, styles } from './styles';
 import { postFetch, postHeaders } from './api';
-import { LogFilter, LogList, Toasts, pageLog, useLog, useServerLog, useToasts } from './logs';
+import { LogFilter, LogList, Toasts, useLog, useServerLog, useToasts } from './logs';
 import { AlertsPanel, useAlerts } from './notify';
 import { serverSections } from './serverInfo';
 import { ServerPanel } from './serverPanel';
@@ -14,6 +14,7 @@ import { bannerShown, diagnose } from './diagnose';
 import { Banner, StatusCover, useDismissed } from './banner';
 import { useStreamStats } from './useStreamStats';
 import { useInput } from './useInput';
+import { useStream } from './useStream';
 import { Toolbar, useBarFold } from './toolbar';
 import { infoSections } from './infoRows';
 import { clientSections, deviceRows } from './clientInfo';
@@ -22,8 +23,6 @@ import { ViewerOptions, loadSettings, useViewerSettings } from './viewerSettings
 
 logger.setLevel('warn');
 
-// Give up showing the reconnect feedback if no frame arrives in this time.
-const RECONNECT_FEEDBACK_MS = 15000;
 // Android's display size until the gateway reports the real one.
 const DEFAULT_DISPLAY = { width: 480, height: 1040 };
 
@@ -63,8 +62,6 @@ function fittedScreen(display = DEFAULT_DISPLAY, folded = false, docked = false)
 function App() {
   const emulatorRef = useRef(null);
   const deviceRef = useRef(null);
-  const feedbackTimer = useRef(null);
-  const [reconnecting, setReconnecting] = useState(false);
   // Open panel over the screen: 'info' (from the ping/fps block, with a
   // client and a server tab) or 'options' (from the cog).
   const [panel, setPanel] = useState(null);
@@ -74,15 +71,11 @@ function App() {
   const serverTab = panel === 'info' && infoTab === 'server';
   // Before any tr() of this render: sets the page's language.
   const [settings, updateSettings] = useViewerSettings();
-  const reconnectTimer = useRef(null);
   const [display, setDisplay] = useState(DEFAULT_DISPLAY);
   const barFold = useBarFold(loadSettings);
   const { barFolded } = barFold;
   const [screen, setScreen] = useState(() => fittedScreen(DEFAULT_DISPLAY));
   const row = screen.toolbar === 'side';
-  const [state, setState] = useState('connecting');
-  const [streamMounted, setStreamMounted] = useState(true);
-  const [streamGeneration, setStreamGeneration] = useState(0);
   // The gateway serves this page: same origin, no CORS.
   const gateway = window.location.host;
   const gatewayUrl = `${window.location.protocol}//${gateway}`;
@@ -99,11 +92,12 @@ function App() {
   });
   const displayState = useDisplayState(gatewayUrl,
     ['pending', 'applying'].includes(emulatorSettings?.request?.state));
+  const input = useInput({ gatewayUrl, display, showMarker: settings.touchMarker });
   // Seconds the stream has been trying to connect, and consecutive failed
   // touch requests: both feed the message shown to the user.
-  const [connectingFor, setConnectingFor] = useState(0);
-  const input = useInput({ gatewayUrl, display, showMarker: settings.touchMarker });
   const { touchFailures } = input;
+  const stream = useStream({ server, input });
+  const { state, reconnecting, connectingFor } = stream;
   // A size change ends with the gateway restarting on the new size: reload
   // so that layout, touch mapping and the stream all start fresh.
   const firstSize = useRef(null);
@@ -131,77 +125,8 @@ function App() {
     return () => { cancelled = true; };
   }, [gatewayUrl]);
 
-  const stopFeedback = () => {
-    setReconnecting(false);
-    if (feedbackTimer.current !== null) {
-      window.clearTimeout(feedbackTimer.current);
-      feedbackTimer.current = null;
-    }
-  };
-
-  // Manual refresh: show that the click was taken into account until the new
-  // stream displays its first frame.
-  const manualReconnect = () => {
-    // Disconnected by another viewer: a new page load is a new viewer.
-    if (server.value?.kicked) {
-      window.location.reload();
-      return;
-    }
-    setReconnecting(true);
-    if (feedbackTimer.current !== null) window.clearTimeout(feedbackTimer.current);
-    feedbackTimer.current = window.setTimeout(stopFeedback, RECONNECT_FEEDBACK_MS);
-    reconnectStream();
-  };
-
-  const reconnectStream = () => {
-    if (reconnectTimer.current !== null) return;
-    input.pointerDown.current = false;
-    setState('connecting');
-    setStreamMounted(false);
-    reconnectTimer.current = window.setTimeout(() => {
-      setStreamGeneration((generation) => generation + 1);
-      setStreamMounted(true);
-      reconnectTimer.current = null;
-    // Leave enough time for the WebSocket bye to reach the gateway and for the
-    // emulator-side participant to be destroyed before requesting a new one.
-    }, 1000);
-  };
-
-  const loggedState = useRef(null);
-  const handleStreamState = (nextState) => {
-    // The stream reports its state often; only changes are logged.
-    if (nextState !== loggedState.current) {
-      loggedState.current = nextState;
-      const said = { connected: 'Vidéo connectée', connecting: 'Vidéo en connexion…', disconnected: 'Vidéo coupée' }[nextState];
-      pageLog('normal', said ? tr(said) : tr('Vidéo : {state}', { state: nextState }));
-    }
-    setState(nextState);
-    if (nextState === 'connected' && reconnectTimer.current === null) stopFeedback();
-  };
-
-  useEffect(() => {
-    if (state === 'connected') {
-      setConnectingFor(0);
-      return undefined;
-    }
-    const started = Date.now();
-    const timer = window.setInterval(() => setConnectingFor(Math.floor((Date.now() - started) / 1000)), 1000);
-    return () => window.clearInterval(timer);
-  }, [state, streamGeneration]);
-
   const problem = diagnose({ server, stream: state, connectingFor, touchFailures });
   const [dismissed, setDismissed] = useDismissed(problem);
-  // Android is usable again (after a crash, a restart or a lost stream):
-  // reconnect the video without waiting for the user.
-  const serverHealthy = server.failures < 2 && server.value?.android?.booted === true
-    && server.value?.emulator?.active !== 'activating';
-  useEffect(() => {
-    if (!serverHealthy || state === 'connected') return undefined;
-    if (state !== 'disconnected' && connectingFor < 20) return undefined;
-    const timer = window.setTimeout(reconnectStream, 2000);
-    return () => window.clearTimeout(timer);
-  }, [serverHealthy, state, connectingFor >= 20]);
-
   useEffect(() => {
     const resize = () => setScreen(fittedScreen(display, barFolded, settings.barDocked));
     resize();
@@ -214,38 +139,6 @@ function App() {
       document.removeEventListener('fullscreenchange', resize);
     };
   }, [display, barFolded, settings.barDocked]);
-
-  useEffect(() => {
-    let wasHidden = document.visibilityState === 'hidden';
-
-    const visibilityChanged = () => {
-      if (document.visibilityState === 'hidden') {
-        wasHidden = true;
-      } else if (wasHidden) {
-        wasHidden = false;
-        reconnectStream();
-      }
-    };
-
-    const pageShown = (event) => {
-      if (event.persisted) reconnectStream();
-    };
-
-    document.addEventListener('visibilitychange', visibilityChanged);
-    window.addEventListener('pageshow', pageShown);
-    return () => {
-      document.removeEventListener('visibilitychange', visibilityChanged);
-      window.removeEventListener('pageshow', pageShown);
-      if (reconnectTimer.current !== null) {
-        window.clearTimeout(reconnectTimer.current);
-        reconnectTimer.current = null;
-      }
-      if (feedbackTimer.current !== null) {
-        window.clearTimeout(feedbackTimer.current);
-        feedbackTimer.current = null;
-      }
-    };
-  }, []);
 
   const togglePanel = (name) => setPanel((open) => (open === name ? null : name));
   const serverRows = serverSections({
@@ -293,15 +186,15 @@ function App() {
       <section style={styles.screen} aria-label={tr('Écran Android')}
         onContextMenu={(event) => event.preventDefault()}>
         <div ref={deviceRef} style={{ ...styles.device, width: screen.width, height: screen.height }}>
-          {streamMounted && (
+          {stream.mounted && (
             <Emulator
-              key={streamGeneration}
+              key={stream.generation}
               ref={emulatorRef}
               uri={gateway}
               width={screen.width}
               height={screen.height}
               muted
-              onStateChange={handleStreamState}
+              onStateChange={stream.handleState}
               onError={(error) => console.error('Android stream:', error)}
             />
           )}
@@ -391,7 +284,7 @@ function App() {
         stream={state}
         problem={problem}
         reconnecting={reconnecting}
-        onReconnect={manualReconnect}
+        onReconnect={stream.manualReconnect}
         stats={stats}
         panel={panel}
         onInfo={() => { if (panel !== 'info') setInfoTab('client'); togglePanel('info'); }}
