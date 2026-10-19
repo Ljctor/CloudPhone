@@ -1,9 +1,9 @@
 //! The gateway's log (GET /api/v1/logs): one stream of records {time,
 //! level, source, text, notify?}, levels normal, warning and error, a
 //! cursor to read only new ones. Failures forced on the fake emulator
-//! (emulator gone, adb offline, a bad or failing screen size request)
-//! must give records of the right level, errors saying what to do next;
-//! events the page shows as toasts carry notify.
+//! (emulator gone, adb offline or never answering, a bad or failing
+//! screen size request) must give records of the right level, errors
+//! saying what to do next; events the page shows as toasts carry notify.
 use cloudphone_e2e::*;
 use serde_json::{json, Value};
 use std::time::Duration;
@@ -95,6 +95,18 @@ fn adb_offline_is_an_error_record_and_its_return_a_normal_one() {
     cp.fake().control(json!({"adb_fails": false}));
     assert_eq!(cp.post_json("api/v1/emulator/key", &json!({"key": "GoHome"})).status(), 200);
     wait_record(&cp, "normal", "adb", "adb joint de nouveau Android", SOON);
+}
+
+#[test]
+fn a_key_adb_never_answers_is_an_error_within_its_timeout() {
+    let cp = CloudPhone::start_with(json!({"options": {"adb_hangs": true}}));
+    let asked = std::time::Instant::now();
+    assert_eq!(cp.post_json("api/v1/emulator/key", &json!({"key": "GoHome"})).status(), 500);
+    assert!(asked.elapsed() < Duration::from_secs(15), "answered after the 10 s timeout: {:?}", asked.elapsed());
+    let record = wait_record(&cp, "error", "gateway", "Error sending key: adb did not answer within 10 s", SOON);
+    assert!(record["text"].as_str().unwrap().contains("Check Android in Information"), "says what to do: {record}");
+    cp.fake().control(json!({"adb_hangs": false}));
+    assert_eq!(cp.post_json("api/v1/emulator/key", &json!({"key": "GoHome"})).status(), 200);
 }
 
 #[test]

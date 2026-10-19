@@ -91,6 +91,7 @@ DEFAULTS = {
         "frames": True,            # video tracks send frames (False: connected, but no picture)
         "touch_fails": False,      # gRPC sendTouch fails (HTTP touch fallback)
         "adb_fails": False,        # the fake adb fails (keys, Android metrics)
+        "adb_hangs": False,        # the fake adb never answers a key (input keyevent)
         "hold_requests": False,    # leave request files pending (path units stalled)
         "status_lcd": False,       # getStatus platformConfig carries hw.lcd.* (real 36.6.11 omits them: checked against a live emulator, 2026-10)
         "apply_seconds": 0.5,      # time spent "applying" before stopping Android
@@ -440,6 +441,10 @@ class Emulator:
             write_atomic(self.path("bin-state/adb-fail"), "1\n")
         elif os.path.exists(self.path("bin-state/adb-fail")):
             os.remove(self.path("bin-state/adb-fail"))
+        if self.options["adb_hangs"]:
+            write_atomic(self.path("bin-state/adb-hang"), "1\n")
+        elif os.path.exists(self.path("bin-state/adb-hang")):
+            os.remove(self.path("bin-state/adb-hang"))
 
     def write_discovery(self):
         """A new emulator process: new pid file, new token."""
@@ -789,7 +794,7 @@ class Emulator:
         for key in ("options",):
             if key in body:
                 deep_update(self.options, body[key])
-        for key in ("data_channels", "offer", "frames", "touch_fails", "adb_fails", "hold_requests", "status_lcd",
+        for key in ("data_channels", "offer", "frames", "touch_fails", "adb_fails", "adb_hangs", "hold_requests", "status_lcd",
                     "apply_seconds", "stop_seconds", "boot_seconds", "crash_seconds", "gateway_restart_seconds"):
             if key in body:
                 self.options[key] = body[key]

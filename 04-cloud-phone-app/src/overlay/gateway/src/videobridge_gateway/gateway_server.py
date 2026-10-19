@@ -613,7 +613,7 @@ async def handle_key(request):
             "AudioVolumeUp": "VOLUME_UP",
             "AudioVolumeDown": "VOLUME_DOWN",
         }
-        code, _, errors = await adb.run("shell", "input", "keyevent", keycodes[key], timeout=None)
+        code, _, errors = await adb.run("shell", "input", "keyevent", keycodes[key])
         if code is None:
             raise OSError(errors)
         if code:
