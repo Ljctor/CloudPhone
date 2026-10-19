@@ -89,26 +89,7 @@ import logging
 import os
 import time
 
-# Areas as (left, top, right, bottom) fractions of the screen.
-START_TEXT = (0.30, 0.80, 0.70, 0.87)   # "TAP TO START", white on dark
-START_TAP = (0.50, 0.836)
-CONFIRM_BUTTON = (0.26, 0.735, 0.37, 0.755)  # orange
-EXIT_BUTTON = (0.62, 0.735, 0.73, 0.755)     # grey
-CONFIRM_TAP = (0.314, 0.745)
-SAVER_TAP = (0.50, 0.88)
-# The game leaves Power Saving Mode only after a press held a few seconds.
-SAVER_HOLD_MS = 4000
-MENU_LABELS = (0.0, 0.975, 1.0, 0.995)
-# The emerald in the top bar: the game's own screens (battle and its menus).
-TOP_EMERALD = (0.377, 0.018, 0.402, 0.030)
-# Power Saving Mode: black screen, orange "In battle . . .", grey button.
-SAVER_BUTTON = (0.33, 0.83, 0.67, 0.92)
-SAVER_TEXT = (0.40, 0.465, 0.60, 0.48)
-SAVER_TOP = (0.10, 0.10, 0.90, 0.25)  # bottom menu names, white on dark
-
 LAUNCH = {"state": "idle", "message": "", "task": None, "since": 0.0}
-SCREEN = {"time": 0.0, "value": None, "lock": None}
-SCREEN_SECONDS = 2.0
 MINE = {"enabled": False, "floor": None, "area": None, "until": None, "gold": None,
         "state": "off", "message": "", "task": None, "stopper": None}
 # A mine whose timer ended while the gateway was down, in a fight: how long
@@ -132,8 +113,6 @@ GOLD_SECONDS = 10
 GOLD_WINDOW = 300
 GOLD = {"samples": [], "pending": None, "text": None, "read": None, "box": None, "asked": 0.0, "task": None,
         "place": None, "number": None, "odd": 0}
-# The last stage number read in Power Saving Mode: {number, numeral}.
-FARMED = {"number": None}
 # Navigation trace: the graph (trace.py), the tap waiting for its "after"
 # screen {tap, before, task}, and the lock that keeps taps in order.
 TRACE = {"graph": None, "path": None, "pending": None, "lock": None}
@@ -149,141 +128,21 @@ def load_sibling(directory, name):
     return module
 
 
-def share(shot, area, test):
-    """Fraction of the pixels in area (fractions of the screen) passing test(r, g, b)."""
-    width, height, pixels = shot
-    left, top = int(area[0] * width), int(area[1] * height)
-    right, bottom = max(left + 1, int(area[2] * width)), max(top + 1, int(area[3] * height))
-    hits = total = 0
-    for y in range(top, bottom, 2):
-        for x in range(left, right, 2):
-            i = (y * width + x) * 3
-            total += 1
-            hits += bool(test(pixels[i], pixels[i + 1], pixels[i + 2]))
-    return hits / total if total else 0.0
-
-
-def white(r, g, b):
-    return r > 200 and g > 200 and b > 200
-
-
-def orange(r, g, b):
-    return r > 190 and 90 < g < 200 and b < 80
-
-
-def grey(r, g, b):
-    return max(r, g, b) - min(r, g, b) < 25 and 50 < r < 170
-
-
-def dim_grey(r, g, b):
-    return max(r, g, b) - min(r, g, b) < 20 and 35 < r < 110
-
-
-def black(r, g, b):
-    return r < 20 and g < 20 and b < 20
-
-
-def light(r, g, b):
-    # The bottom menu's names: light grey, darker under a panel.
-    return min(r, g, b) > 150
-
-
-def green(r, g, b):
-    # Relative, so that it also holds when a panel darkens the screen.
-    return g >= 64 and g > 1.3 * r and g > 2 * b
-
-
-def classify(shot):
-    if share(shot, CONFIRM_BUTTON, orange) > 0.6 and share(shot, EXIT_BUTTON, grey) > 0.6:
-        return "save"
-    # The top bar's emerald: the battle screen, or one of its panels over it
-    # (the bottom menu names then go dark or are covered).
-    if share(shot, TOP_EMERALD, green) > 0.15:
-        return "battle" if share(shot, MENU_LABELS, light) > 0.01 else "menu"
-    if (share(shot, SAVER_BUTTON, dim_grey) > 0.8 and share(shot, SAVER_TOP, black) > 0.95
-            and share(shot, SAVER_TEXT, orange) > 0.08):
-        return "saver"
-    if 0.02 < share(shot, START_TEXT, white) < 0.4:
-        return "title"
-    return "other"
-
-
 def setup(context):
     def feature(name):
         return load_sibling(context.directory, f"features/{name}")
 
     nav = load_sibling(context.directory, "nav")
     ports = feature("ports").build(context, nav)
-    features = [feature("counters").counters(ports, load_sibling(context.directory, "emerald_mask"))]
-
+    screens = load_sibling(context.directory, "screens")
     stage = load_sibling(context.directory, "stage")
+    values = feature("values")
     with open(os.path.join(context.directory, "stages.json"), encoding="utf-8") as f:
         table = json.load(f)
-
-    def stage_info(number, checked):
-        if not number or number > len(table["stages"]):
-            return {"number": number, "name": None, "checked": checked}
-        info = dict(zip(table["fields"], table["stages"][number - 1]))
-        return {"number": number, "checked": checked, **info}
-
-    def name_numeral(number):
-        """The Roman numeral ending the stage's name in the table, or None."""
-        if not number or number > len(table["stages"]):
-            return None
-        last = table["stages"][number - 1][0].rsplit(" ", 1)[-1]
-        if not last or any(c not in "IVX" for c in last):
-            return None
-        return stage._roman(last)
-
-    def screen_facts(shot):
-        """The screen and what it says of the stage: (number, numeral) in
-        Power Saving Mode, the name's numeral on the battle screen."""
-        screen = classify(shot)
-        if screen == "saver":
-            return screen, stage.read_saver(shot)
-        if screen in ("battle", "menu"):
-            return screen, stage.read_battle(shot)
-        return screen, None
-
-    async def read_screen(remembered):
-        if not await in_focus():
-            return {"screen": "away", "stage": None}
-        shot = await context.screenshot(max_age=SCREEN_SECONDS)
-        if not shot:
-            return {"screen": None, "stage": None}
-        screen, read = await context.analyse(screen_facts, shot)
-        known = FARMED["number"] or remembered
-        if screen == "saver":
-            number, numeral = read
-            # Trust a number whose numeral agrees with the table.
-            if number and (numeral is None or name_numeral(number) in (None, numeral)):
-                FARMED["number"] = number
-                note_highest(number)
-                return {"screen": screen, "stage": stage_info(number, True)}
-        elif screen in ("battle", "menu") and known:
-            numeral = read
-            return {"screen": screen, "stage": stage_info(known, numeral is not None and numeral == name_numeral(known))}
-        return {"screen": screen, "stage": stage_info(known, False) if known else None}
-
-    async def handle_screen(request):
-        try:
-            remembered = int(request.query.get("known", ""))
-        except ValueError:
-            remembered = None
-        if remembered is not None and not 1 <= remembered <= len(table["stages"]) + 400:
-            remembered = None
-        if SCREEN["lock"] is None:
-            SCREEN["lock"] = asyncio.Lock()
-        loop = asyncio.get_running_loop()
-        async with SCREEN["lock"]:
-            if SCREEN["value"] is None or loop.time() - SCREEN["time"] > SCREEN_SECONDS:
-                try:
-                    SCREEN["value"] = await read_screen(remembered)
-                except Exception as e:
-                    logging.warning(f"Slayer Legend screen: no screenshot: {e!r}")
-                    SCREEN["value"] = {"screen": None}
-                SCREEN["time"] = loop.time()
-        return context.json(SCREEN["value"])
+    features = [
+        feature("counters").counters(ports, load_sibling(context.directory, "emerald_mask")),
+        feature("screen").screen(ports, screens, stage, feature("screen_rules"), values, table),
+    ]
 
     def report(state, message=""):
         LAUNCH["state"], LAUNCH["message"] = state, message
@@ -307,13 +166,13 @@ def setup(context):
                 shot = await context.screenshot()
                 if not shot:
                     continue
-                screen = await context.analyse(classify, shot)
+                screen = await context.analyse(screens.classify, shot)
                 if screen in ("battle", "menu") and await in_focus():
                     report("done", "Le jeu est sur l’écran de combat")
                     return
                 if screen == "save":
                     # The notice shows the latest save's time; Confirm keeps it.
-                    await tap(shot, "save_notice", "confirm", CONFIRM_TAP)
+                    await tap(shot, "save_notice", "confirm", screens.CONFIRM_TAP)
                     confirmed = True
                     seen_other = None
                     report("loading", "Dernière sauvegarde confirmée, chargement")
@@ -326,13 +185,13 @@ def setup(context):
                         report("blocked", "Le mode économie d’énergie ne se ferme pas : touche son bouton à la main")
                         return
                     saver_taps += 1
-                    await hold(shot, "saver", "leave", SAVER_TAP, SAVER_HOLD_MS)
+                    await hold(shot, "saver", "leave", screens.SAVER_TAP, screens.SAVER_HOLD_MS)
                     last_tap = time.monotonic()
                     seen_other = None
                     report("loading", "Sortie du mode économie d’énergie")
                     continue
                 if screen == "title" and time.monotonic() - last_tap > 8:
-                    await tap(shot, "title", "start", START_TAP)
+                    await tap(shot, "title", "start", screens.START_TAP)
                     last_tap = time.monotonic()
                     seen_other = None
                     report("starting", "Écran titre touché, connexion")
@@ -420,7 +279,7 @@ def setup(context):
         """What farm_mine checks on a screenshot: saver, fight, gold (the
         gold scroll, in a fight), other (a pop-up or a screen that is not
         the floor list)."""
-        if classify(shot) == "saver":
+        if screens.classify(shot) == "saver":
             return {"saver": True}
         if mine.in_fight(shot):
             return {"saver": False, "fight": True, "gold": mine.gold_scroll(shot)}
@@ -470,7 +329,7 @@ def setup(context):
                         shot = await look_again()
                         if shot:
                             last_hold = time.monotonic()
-                            await hold(shot, "saver", "leave", SAVER_TAP, SAVER_HOLD_MS)
+                            await hold(shot, "saver", "leave", screens.SAVER_TAP, screens.SAVER_HOLD_MS)
                     continue
                 timed = MINE["until"] is not None
                 over = timed and time.time() >= MINE["until"]
@@ -587,70 +446,18 @@ def setup(context):
         save_state()
         return context.json(mine_state())
 
-    # The highest stage seen farmed: the game only farms unlocked stages.
-    # None until one is read.
-    HIGHEST = {"number": None}
-
     # What a gateway restart must not lose, so that farming meant to run
     # with the page closed goes on: the mode and its timer, the mine's
-    # floor, area and timer, the highest stage. In the plugin's data
-    # directory (state.json), rewritten whole when it changes.
-    state_file = os.path.join(context.data_dir, "state.json") if context.data_dir else None
-    SAVED = {"text": None}
-
-    def save_state():
-        if not state_file:
-            return
-        text = json.dumps({
-            "mode": {key: MODE[key] for key in ("mode", "until", "stage18", "stage4", "highest", "configured")},
-            "mine": {key: MINE[key] for key in ("enabled", "floor", "area", "until", "state")},
-            "highest": HIGHEST["number"],
-        }, sort_keys=True)
-        if text == SAVED["text"]:
-            return
-        try:
-            with open(f"{state_file}.tmp", "w", encoding="utf-8") as f:
-                f.write(text)
-            os.replace(f"{state_file}.tmp", state_file)
-            SAVED["text"] = text
-        except OSError as e:
-            logging.warning(f"Slayer Legend: state not kept: {e}")
-
-    def number_or_none(value, top):
-        return value if isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= top else None
-
-    def time_or_none(value):
-        return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+    # floor, area and timer (state.json, see ports.State).
+    ports.store.register("mode", lambda: {key: MODE[key] for key in (
+        "mode", "until", "stage18", "stage4", "highest", "configured")})
+    ports.store.register("mine", lambda: {key: MINE[key] for key in ("enabled", "floor", "area", "until", "state")})
+    save_state = ports.store.save
+    number_or_none, time_or_none = values.number_or_none, values.time_or_none
 
     def restore_state():
-        """Reads state.json; the first time, highest.json of earlier
-        versions instead (then removed)."""
-        if not state_file:
-            return
-        try:
-            with open(state_file, encoding="utf-8") as f:
-                saved = json.load(f)
-        except FileNotFoundError:
-            old = os.path.join(context.data_dir, "highest.json")
-            try:
-                with open(old, encoding="utf-8") as f:
-                    HIGHEST["number"] = number_or_none(json.load(f).get("number"), 99999)
-            except (OSError, ValueError, AttributeError):
-                return
-            save_state()
-            if SAVED["text"]:
-                try:
-                    os.remove(old)
-                except OSError:
-                    pass
-            return
-        except (OSError, ValueError) as e:
-            logging.warning(f"Slayer Legend: state not read: {e!r}")
-            return
-        if not isinstance(saved, dict):
-            return
+        saved = ports.store.saved
         mode, mined = saved.get("mode") or {}, saved.get("mine") or {}
-        HIGHEST["number"] = number_or_none(saved.get("highest"), 99999)
         MODE.update(mode=mode.get("mode") if mode.get("mode") in MODES else "mpw18",
                     until=time_or_none(mode.get("until")), configured=mode.get("configured") is True,
                     **{key: number_or_none(mode.get(key), 99999) for key in ("stage18", "stage4", "highest")})
@@ -679,34 +486,7 @@ def setup(context):
                          "back to mpw18 farming, mine off"
                          + (" once Repeat entry is unticked" if MINE["state"] == "stopping" else ""))
 
-    def note_highest(number):
-        if not number or (HIGHEST["number"] and number <= HIGHEST["number"]):
-            return
-        HIGHEST["number"] = number
-        save_state()
-
     restore_state()
-
-    def stage_list(mpw, highest):
-        """Stages with that many monsters per wave, at most `highest`,
-        highest first: [{number, name, colour}]."""
-        found = []
-        for number in range(min(highest or len(table["stages"]), len(table["stages"])), 0, -1):
-            row = table["stages"][number - 1]
-            if row[1] == mpw:
-                found.append({"number": number, "name": row[0], "colour": row[4]})
-        return found
-
-    async def handle_stages(request):
-        """GET /stages[?known=N]: the mpw18 and mpw4 stages up to the highest
-        one seen farmed (N: the highest the page saw), all of them when
-        none is known."""
-        try:
-            note_highest(int(request.query.get("known") or 0) or None)
-        except ValueError:
-            pass
-        highest = HIGHEST["number"]
-        return context.json({"highest": highest, "mpw18": stage_list(18, highest), "mpw4": stage_list(4, highest)})
 
     def mode_report(state, message):
         if (MODE["state"], MODE["message"]) != (state, message):
@@ -837,7 +617,7 @@ def setup(context):
     game_running = ports.running
 
     def stop_facts(shot):
-        return classify(shot), mine_facts(shot)
+        return screens.classify(shot), mine_facts(shot)
 
     async def stop_after_restart():
         """The stop pass of a mine whose timer ended while the gateway was
@@ -877,7 +657,7 @@ def setup(context):
                     return
                 if facts["saver"] and time.monotonic() - last_hold > 60:
                     last_hold = time.monotonic()
-                    await hold(shot, "saver", "leave", SAVER_TAP, SAVER_HOLD_MS)
+                    await hold(shot, "saver", "leave", screens.SAVER_TAP, screens.SAVER_HOLD_MS)
                 elif facts.get("fight"):
                     if await mine_stop(shot, reason):
                         logging.info("Slayer Legend mine: timer ended during a restart, Repeat entry unticked")
@@ -992,7 +772,7 @@ def setup(context):
         """The gold counter's reading and where the game is: ("saver",
         stage number) or ("battle", ink of the stage name line)."""
         reading = gold.read(shot)
-        if classify(shot) == "saver":
+        if screens.classify(shot) == "saver":
             return reading, ("saver", stage.read_saver(shot)[0])
         return reading, ("battle", stage._ink(stage._crop(shot, stage.BATTLE_NAME)))
 
@@ -1085,7 +865,7 @@ def setup(context):
         return await context.analyse(signature, shot)
 
     def signature(shot):
-        return classify(shot), trace.thumbnail(shot)
+        return screens.classify(shot), trace.thumbnail(shot)
 
     def trace_finish(pending, after):
         """Records the pending tap with its after screen and saves."""
@@ -1161,6 +941,7 @@ def setup(context):
         graph = TRACE["graph"]
         return context.json(graph.public() if graph else {"nodes": [], "edges": []})
 
+    ports.store.flush()
     context.app.on_startup.append(resume)
     for part in features:
         for method, path, handler in part["routes"]:
@@ -1171,13 +952,11 @@ def setup(context):
 
     context.add_get("/gold", handle_gold)
     context.add_get("/gold-font", handle_gold_font)
-    context.add_get("/screen", handle_screen)
     context.add_get("/launch", handle_launch_state)
     context.add_post("/launch", handle_launch)
     context.add_get("/mine", handle_mine_state)
     context.add_post("/mine", handle_mine)
     context.add_post("/mine/timer", handle_mine_timer)
-    context.add_get("/stages", handle_stages)
     context.add_get("/mode", handle_mode_state)
     context.add_post("/mode", handle_mode)
     context.add_post("/mode/timer", handle_mode_timer)
