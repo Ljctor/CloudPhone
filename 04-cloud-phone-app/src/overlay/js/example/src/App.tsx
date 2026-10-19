@@ -6,7 +6,7 @@ import { TOOLBAR_WIDTH, styles } from './styles';
 import { postFetch, postHeaders } from './api';
 import { LogFilter, LogList, Toasts, pageLog, useLog, useServerLog, useToasts } from './logs';
 import { AlertsPanel, useAlerts } from './notify';
-import { formatValue, serverSections } from './serverInfo';
+import { serverSections } from './serverInfo';
 import { ServerPanel } from './serverPanel';
 import { EmulatorSettings, useDisplayState, useEmulatorSettings } from './androidSettings';
 import { useServerState } from './serverState';
@@ -16,6 +16,7 @@ import { useStreamStats } from './useStreamStats';
 import { useInput } from './useInput';
 import { Toolbar, useBarFold } from './toolbar';
 import { infoSections } from './infoRows';
+import { clientSections, deviceRows } from './clientInfo';
 import { PluginDialog, PluginList, usePluginDialog } from './pluginOptions';
 import { ViewerOptions, loadSettings, useViewerSettings } from './viewerSettings';
 
@@ -57,20 +58,6 @@ function fittedScreen(display = DEFAULT_DISPLAY, folded = false, docked = false)
   const side = fit(viewport.width - TOOLBAR_WIDTH, viewport.height);
   const below = fit(viewport.width, viewport.height - TOOLBAR_WIDTH);
   return below.width > side.width ? { ...below, toolbar: 'below' } : { ...side, toolbar: 'side' };
-}
-
-// What this browser's device offers and what Android sends, as label/value
-// rows: CSS pixels (layout) and physical pixels (CSS × devicePixelRatio).
-function deviceInfo(shownScreen) {
-  const ratio = window.devicePixelRatio || 1;
-  const viewport = viewportSize();
-  const physical = (width, height) => `${Math.round(width * ratio)}×${Math.round(height * ratio)}`;
-  return [
-    ['Écran de l’appareil', `${physical(window.screen.width, window.screen.height)} px`],
-    ['Fenêtre', `${viewport.width}×${viewport.height} CSS · ${physical(viewport.width, viewport.height)} px`],
-    ['Densité', `×${ratio.toFixed(2)}`],
-    ['Image affichée', `${shownScreen.width}×${shownScreen.height} CSS · ${physical(shownScreen.width, shownScreen.height)} px`],
-  ];
 }
 
 function App() {
@@ -264,22 +251,12 @@ function App() {
   const serverRows = serverSections({
     server, configured: displayState?.configured, display, stats,
   });
-  const clientSections = [
-    ['Réseau', [
-      ['Ping', stats.ping === null ? '–' : `${Math.round(stats.ping)} ms (${stats.pingSource})`],
-      ['Connexion', stats.connection ?? state],
-      ['Chemin', stats.path ?? '–'],
-      ['Paquets perdus', formatValue(stats.packetsLost)],
-      ['Gigue', stats.jitter === null ? '–' : `${Math.round(stats.jitter)} ms`],
-    ]],
-    ['Affichage', [
-      ['Images affichées', `${formatValue(stats.phone)} /s`],
-      ['Images perdues', formatValue(stats.framesDropped)],
-      ['Tampon vidéo', stats.bufferDelay === null ? '–' : `${Math.round(stats.bufferDelay)} ms`],
-      ...deviceInfo(screen),
-    ]],
-    ['Entrées', [['Touches via', input.inputPath.current]]],
-  ];
+  const clientRows = clientSections({
+    stats, stream: state, inputPath: input.inputPath.current,
+    device: deviceRows({
+      ratio: window.devicePixelRatio || 1, device: window.screen, viewport: viewportSize(), shown: screen,
+    }),
+  });
   // A section that folds under its title, folded at first; the state is
   // kept with the other settings.
   const fold = (id, title, content) => {
@@ -373,7 +350,7 @@ function App() {
               )}
               {panel === 'info' && infoTab === 'client' && (
                 <div role="tabpanel">
-                  {infoSections(clientSections)}
+                  {infoSections(clientRows)}
                   {fold('clientLogs', 'Journaux du client', <>
                     {logFilter}
                     <LogList entries={logs.page} filter={settings.logFilter} rowStyle={styles.infoRow}
