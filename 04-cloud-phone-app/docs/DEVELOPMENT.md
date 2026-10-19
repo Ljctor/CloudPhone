@@ -297,7 +297,9 @@ buttons, status) in Options → Plugins, one foldable section per plugin.
 `context` offers `add_get`/`add_post`, `screenshot(max_age=0)` (one
 screenshot shared by every plugin: a capture younger than `max_age`
 seconds, or one under way, is given instead of a new one; a plugin's own
-`adb shell input` makes earlier ones stale), `adb(...)`, `json()`,
+`adb shell input` makes earlier ones stale), `analyse(fn, *args)` (runs
+`fn` in a worker thread: pixel loops there leave the gateway answering),
+`adb(...)`, `json()`,
 `notify(text)`, which sends a phone alert when the user turned them on
 (below), and `data_dir`: a directory the plugin may write to,
 `/var/lib/cloudphone/plugins/<id>/` (`--plugin_data`, created by the gateway

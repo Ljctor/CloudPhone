@@ -5,7 +5,7 @@
 //! tests/fake-emulator/plugins, nothing game-specific.
 use cloudphone_e2e::*;
 use serde_json::{json, Value};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const PROBE: &str = "tests/fake-emulator/plugins/e2e-probe";
 const BROKEN: &str = "tests/fake-emulator/plugins/e2e-broken";
@@ -152,4 +152,26 @@ fn plugin_calls_within_max_age_share_one_screenshot() {
         assert_eq!(call.join().unwrap()["screen"], json!([480, 1040]));
     }
     assert_eq!(captures(&cp), 3, "after a touch: one new capture for both calls");
+}
+
+#[test]
+fn a_plugins_analysis_does_not_hold_the_gateway() {
+    let cp = with(json!([PROBE]));
+    assert_eq!(cp.get("api/v1/state").status(), 200);
+    // The probe's analysis sleeps 2 s in context.analyse.
+    let url = cp.url("api/v1/plugins/e2e-probe/analyse?seconds=2");
+    let analysis = std::thread::spawn(move || {
+        let answer = client().get(url).send().unwrap().json::<Value>().unwrap();
+        (answer, Instant::now())
+    });
+    std::thread::sleep(Duration::from_millis(500));
+    let asked = Instant::now();
+    let state = cp.get("api/v1/state");
+    let answered = Instant::now();
+    assert_eq!(state.status(), 200);
+    let (answer, analysed) = analysis.join().unwrap();
+    assert_eq!(answer, json!({"slept": 2.0}));
+    assert!(answered < analysed, "the state was asked while the analysis ran");
+    let took = answered - asked;
+    assert!(took < Duration::from_millis(700), "GET /api/v1/state took {took:?} during a 2 s analysis");
 }

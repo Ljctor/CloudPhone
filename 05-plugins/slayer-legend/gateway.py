@@ -210,6 +210,9 @@ def setup(context):
         shot = await context.screenshot(max_age=EMERALD_SECONDS)
         if not shot:
             return {"mask": None, "reason": "screenshot"}
+        return await context.analyse(emerald_mask_of, shot, area)
+
+    def emerald_mask_of(shot, area):
         width, height, image = shot
         scale = width / 360
         x0, y0 = emerald.js_round(area["x"] * scale), emerald.js_round(area["y"] * scale)
@@ -272,23 +275,33 @@ def setup(context):
             return None
         return stage._roman(last)
 
+    def screen_facts(shot):
+        """The screen and what it says of the stage: (number, numeral) in
+        Power Saving Mode, the name's numeral on the battle screen."""
+        screen = classify(shot)
+        if screen == "saver":
+            return screen, stage.read_saver(shot)
+        if screen in ("battle", "menu"):
+            return screen, stage.read_battle(shot)
+        return screen, None
+
     async def read_screen(remembered):
         if not await in_focus():
             return {"screen": "away", "stage": None}
         shot = await context.screenshot(max_age=SCREEN_SECONDS)
         if not shot:
             return {"screen": None, "stage": None}
-        screen = classify(shot)
+        screen, read = await context.analyse(screen_facts, shot)
         known = FARMED["number"] or remembered
         if screen == "saver":
-            number, numeral = stage.read_saver(shot)
+            number, numeral = read
             # Trust a number whose numeral agrees with the table.
             if number and (numeral is None or name_numeral(number) in (None, numeral)):
                 FARMED["number"] = number
                 note_highest(number)
                 return {"screen": screen, "stage": stage_info(number, True)}
         elif screen in ("battle", "menu") and known:
-            numeral = stage.read_battle(shot)
+            numeral = read
             return {"screen": screen, "stage": stage_info(known, numeral is not None and numeral == name_numeral(known))}
         return {"screen": screen, "stage": stage_info(known, False) if known else None}
 
@@ -359,7 +372,7 @@ def setup(context):
                 shot = await context.screenshot()
                 if not shot:
                     continue
-                screen = classify(shot)
+                screen = await context.analyse(classify, shot)
                 if screen in ("battle", "menu") and await in_focus():
                     report("done", "Le jeu est sur l’écran de combat")
                     return
@@ -424,7 +437,7 @@ def setup(context):
         shows again."""
         floor = MINE["floor"]
         for _ in range(12):
-            rows = mine.floors(shot)
+            rows = await context.analyse(mine.floors, shot)
             row = next((y for y, n in rows if n == floor), None)
             if row is not None:
                 break
@@ -439,26 +452,26 @@ def setup(context):
             await context.adb("shell", "input", "swipe", x, str(round(a * height)), x, str(round(b * height)), "600")
             await asyncio.sleep(1.5)
             shot = await context.screenshot()
-            if not shot or not mine.floor_list(shot):
+            if not shot or not await context.analyse(mine.floor_list, shot):
                 return False
         else:
             mine_report("blocked", f"Étage {floor} introuvable dans la liste")
             return False
         shot = await mine_step(shot, "mine_list", "floor", (0.5, row))
-        if not shot or not mine.area_popup(shot):
+        if not shot or not await context.analyse(mine.area_popup, shot):
             return False
         shot = await mine_step(shot, "mine_area", "area", mine.AREA_TAPS[MINE["area"] - 1])
-        if not shot or not mine.feather_popup(shot):
+        if not shot or not await context.analyse(mine.feather_popup, shot):
             return False
         shot = await mine_step(shot, "mine_feathers", "feathers", mine.FEATHER_TAPS[MINE_FEATHERS - 1], 6)
-        return bool(shot) and mine.in_fight(shot)
+        return bool(shot) and await context.analyse(mine.in_fight, shot)
 
     async def mine_stop(shot, reason):
         """Unticks "Repeat entry" so that the entry under way is the last.
         True once it is unticked and farming is off."""
-        if mine.repeat_ticked(shot):
+        if await context.analyse(mine.repeat_ticked, shot):
             shot = await mine_step(shot, "mine_fight", "repeat", mine.REPEAT_TAP)
-            if not shot or mine.repeat_ticked(shot):
+            if not shot or await context.analyse(mine.repeat_ticked, shot):
                 mine_report("blocked", f"{reason}, mais « Repeat entry » ne se décoche pas")
                 await alert(MINE["message"])
                 return False
@@ -469,6 +482,17 @@ def setup(context):
     async def alert(text):
         """The Cloud Phone's phone alerts (ntfy), when the user turned them on."""
         await context.notify(text)
+
+    def mine_facts(shot):
+        """What farm_mine checks on a screenshot: saver, fight, gold (the
+        gold scroll, in a fight), other (a pop-up or a screen that is not
+        the floor list)."""
+        if classify(shot) == "saver":
+            return {"saver": True}
+        if mine.in_fight(shot):
+            return {"saver": False, "fight": True, "gold": mine.gold_scroll(shot)}
+        other = mine.area_popup(shot) or mine.feather_popup(shot) or not mine.floor_list(shot)
+        return {"saver": False, "fight": False, "other": other}
 
     async def farm_mine():
         no_gold = 0
@@ -498,7 +522,8 @@ def setup(context):
                 shot = await context.screenshot(max_age=MINE_SECONDS)
                 if not shot:
                     continue
-                if classify(shot) == "saver":
+                facts = await context.analyse(mine_facts, shot)
+                if facts["saver"]:
                     # The buffs are hidden: leave Power Saving Mode to see them.
                     if time.monotonic() - last_hold > 60:
                         last_hold = time.monotonic()
@@ -506,14 +531,14 @@ def setup(context):
                     continue
                 timed = MINE["until"] is not None
                 over = timed and time.time() >= MINE["until"]
-                if over and mine.in_fight(shot):
+                if over and facts["fight"]:
                     if await mine_stop(shot, "Durée écoulée"):
                         await alert(f"Durée écoulée ({place}) : « Repeat entry » décoché, la mine s’arrête après cette entrée")
                         return
                     continue
-                if mine.in_fight(shot):
+                if facts["fight"]:
                     failures = 0
-                    if mine.gold_scroll(shot):
+                    if facts["gold"]:
                         no_gold, gold_seen = 0, time.monotonic()
                         MINE["gold"] = True
                         mine_report("farming", "Combat en cours, parchemin doré actif")
@@ -532,7 +557,7 @@ def setup(context):
                     if await mine_stop(shot, "Plus de parchemin doré"):
                         return
                     continue
-                if mine.area_popup(shot) or mine.feather_popup(shot) or not mine.floor_list(shot):
+                if facts["other"]:
                     # The user's own taps, or a screen this does not know.
                     mine_report("waiting", "Écran autre que la mine : rien à faire")
                     continue
@@ -823,12 +848,21 @@ def setup(context):
         if GOLD["odd"] >= 2:
             gold_restart(place)
 
-    def gold_where(shot):
-        """Follows where the game is at each reading; True when this shot
-        is on the window's stage (its gold may be counted)."""
+    def gold_facts(shot):
+        """The gold counter's reading and where the game is: ("saver",
+        stage number) or ("battle", ink of the stage name line)."""
+        reading = gold.read(shot)
         if classify(shot) == "saver":
+            return reading, ("saver", stage.read_saver(shot)[0])
+        return reading, ("battle", stage._ink(stage._crop(shot, stage.BATTLE_NAME)))
+
+    def gold_where(where):
+        """Follows where the game is at each reading; True when the shot
+        was on the window's stage (its gold may be counted)."""
+        kind, here = where
+        if kind == "saver":
             # Power Saving Mode farms the same stage and writes its number.
-            number, _ = stage.read_saver(shot)
+            number = here
             if number is None:
                 gold_elsewhere()
             elif GOLD["number"] is None and GOLD["place"] is not None and GOLD["odd"] == 0:
@@ -838,7 +872,6 @@ def setup(context):
             else:
                 GOLD["odd"] = 0
             return False
-        here = stage._ink(stage._crop(shot, stage.BATTLE_NAME))
         if here is None:
             gold_elsewhere()
             return False
@@ -859,11 +892,11 @@ def setup(context):
                 if not shot:
                     gold_elsewhere()  # another app in front: the game stops
                 else:
-                    reading = gold.read(shot)
+                    reading, where = await context.analyse(gold_facts, shot)
                     if reading:
                         GOLD["read"] = time.time()
                         GOLD["box"] = reading["box"]
-                    if gold_where(shot) and reading:
+                    if gold_where(where) and reading:
                         now = time.time()
                         if GOLD["pending"] == reading["value"]:
                             samples = GOLD["samples"]
@@ -909,6 +942,9 @@ def setup(context):
         shot, focus = await asyncio.gather(context.screenshot(max_age=0), in_focus())
         if not shot or not focus:
             return None
+        return await context.analyse(signature, shot)
+
+    def signature(shot):
         return classify(shot), trace.thumbnail(shot)
 
     def trace_finish(pending, after):

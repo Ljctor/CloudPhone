@@ -13,7 +13,9 @@ and skipped; the gateway and the other plugins keep working.
 Plugins share one screenshot: context.screenshot(max_age=S) gives the last
 capture when it is younger than S seconds, or joins the capture under way,
 instead of asking the emulator again. The captures each plugin started are
-counted (GET /api/v1/state?details=1, "plugins").
+counted (GET /api/v1/state?details=1, "plugins"). Pixel analysis goes
+through context.analyse(fn, *args), in a worker thread, so that the gateway
+keeps answering while it runs.
 
 A plugin may keep files in its own data directory, DATA_DIR/<id>
 (--plugin_data, /var/lib/cloudphone/plugins on a server), created by the
@@ -26,6 +28,8 @@ behind the same origin and page-token checks as the rest of the API.
 """
 
 import asyncio
+import concurrent.futures
+import functools
 import importlib.util
 import json
 import logging
@@ -38,6 +42,8 @@ from . import logs
 
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
 SCRIPT_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}\.js$")
+# Worker threads for the plugins' pixel analysis, shared by every plugin.
+ANALYSIS = concurrent.futures.ThreadPoolExecutor(max_workers=2, thread_name_prefix="plugin-analysis")
 
 
 class Screenshots:
@@ -121,6 +127,13 @@ class PluginContext:
             if args[:2] == ("shell", "input"):
                 # The screen is about to change: no capture from before.
                 self._screenshots.stale()
+
+    async def analyse(self, fn, *args):
+        """fn(*args) in a worker thread, for work that would hold the event
+        loop (pixel loops over a screenshot): the gateway keeps answering
+        meanwhile. fn must not touch the event loop nor shared state the
+        plugin's handlers change; it returns what it found."""
+        return await asyncio.get_running_loop().run_in_executor(ANALYSIS, functools.partial(fn, *args))
 
     async def notify(self, text):
         """Sends text to the user's phone when they turned alerts on (ntfy,
