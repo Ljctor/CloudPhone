@@ -7,7 +7,7 @@ game-specific code.
 
 | Plugin | What it adds |
 |---|---|
-| [`slayer-legend/`](slayer-legend/README.md) | Slayer Legend: a launch button, the emerald counter rewritten |
+| [`slayer-legend/`](slayer-legend/README.md) | Slayer Legend: the launch, the screen and stage, the modes and the Closed Mine's farming, gold per second, the navigation trace, the emerald and diamond counters cut or rewritten |
 
 ## Install
 
@@ -54,8 +54,10 @@ in its manifest) with:
 | File | Role |
 |---|---|
 | `plugin.json` | `{"id": "<id>", "title": "...", "version": "...", "api": 1}` |
-| `page.js` | optional ES module for the page; may import the other `*.js` beside it |
+| `page.js` | optional ES module for the page; may import the other `*.js` beside it (top level only: the gateway serves no script from a subdirectory) |
 | `gateway.py` | optional, `setup(context)` adds routes under `/api/v1/plugins/<id>/` |
+| other `*.py`, one level of subdirectories | modules `gateway.py` loads itself, beside it or one directory down (e.g. `features/`); installed with it, without `__pycache__`, `*.pyc`, `test_*` and Markdown |
+| `test_*.py` | its tests, run in its directory (not installed) |
 | `README.md` | what it does, for humans (not installed) |
 
 `api` is the version of the plugin API the plugin is written for: the

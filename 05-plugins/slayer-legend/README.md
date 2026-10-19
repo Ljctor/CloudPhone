@@ -39,23 +39,52 @@ release's `uninstall.sh` removes them with the rest of `/opt/cloudphone`.
 
 ## Files
 
+Both sides are split by feature: one module per feature, each a function
+of its ports (gateway side) or of the page API (page side) returning its
+routes and background tasks, or its options and overlay hooks; `gateway.py`
+and `page.js` only wire them together. A feature's rules (mode switching,
+timers, the mine's stop conditions, the gold window, the launch's presses)
+are a pure module beside it, `features/<feature>_rules.py`: state goes in,
+a decision comes out.
+
 | File | Role |
 |---|---|
 | `plugin.json` | id, title, version, plugin API (`api`) |
-| `page.js` | page side: options, the emerald overlay, the launch button |
-| `emerald_mask.js` | finds the emerald counter on the video |
-| `emerald_font.js` | the game's counter font at 480 px wide, for the rewritten number |
-| `gateway.py` | gateway side: `/api/v1/plugins/slayer-legend/launch`, `/emerald-mask`, `/screen`, `/mine` and `/trace` |
+| `gateway.py` | gateway side: builds the ports and wires the features of `features/`; its docstring lists each route under `/api/v1/plugins/slayer-legend/` with the feature serving it |
+| `features/ports.py` | the ports the features get from the gateway's context: screenshots (with `max_age`), analysis, tap, hold and swipe (each through the guard of `nav.py`, refused otherwise), whether the game is in front or running, starting it (the launch only), alerts, the clock, `state.json` |
+| `features/counters.py` | `GET /emerald-mask`: a counter's mask off a screenshot, for browsers that cannot read the video |
+| `features/screen.py`, `screen_rules.py` | `GET /screen`, `GET /stages`: the screen and stage shown, the highest stage seen farmed |
+| `features/launch.py`, `launch_rules.py` | `GET`/`POST /launch`: the launch, on the user's press only |
+| `features/trace.py` | `GET`/`POST /trace`, `GET /trace/graph`: the user's own taps, with the screen before and after each |
+| `features/gold.py`, `gold_rules.py` | `GET /gold`, `GET /gold-font`: gold per second, and which readings count |
+| `features/mine.py`, `mine_rules.py` | `GET`/`POST /mine`, `POST /mine/timer`: the Closed Mine's farming loop, its stop pass after a restart and the passive watch after it |
+| `features/mode.py`, `mode_rules.py` | `GET`/`POST /mode`, `POST /mode/timer`: the mode, its timer and its end |
+| `features/timer_rules.py`, `values.py` | the timers' arithmetic (mode and mine); the checks of values read back from `state.json` |
+| `screens.py` | the game's main screens off a screenshot (title, save notice, battle, menu, Power Saving Mode, other) and where the plugin's own taps and hold go on them |
+| `stage.py` | reads the stage number (Power Saving Mode) and the name's Roman numeral (battle screen) off a screenshot |
 | `gold.py` | the gold counter off a screenshot: its glyphs, its unit letter (A is a thousand, B a thousand A…), and the rate's notation |
 | `mine.py` | the Closed Mine's screens off a screenshot: fight, Repeat entry box, gold scroll, floor list and its numbers, Area and feathers pop-ups |
+| `emerald_mask.py` | Python twin of `emerald_mask.js`, for browsers that cannot read the video's pixels (Firefox on Android); keep the two in step |
+| `trace.py` | the navigation trace: screen signatures (name and grey thumbnail), the graph of screens and taps, its JSON file; the buttons never to press (`FORBIDDEN`) |
 | `navigation.json` | the game's screens and every known way out of each (tap, area, hold, swipe or key), allowed or forbidden with the reason (Breakdown, Change, diamonds, Black Orb, equipment overwrites, raids and recipes in Dragon Valley, Promotion dice…) |
 | `nav.py` | the guard: every tap, hold and swipe of the plugin names the screen it recognised and the move it wants, and is refused unless it is an allowed move of that screen landing where the move is and on no forbidden move (deterministic, refused by default) |
-| `trace.py` | the navigation trace: screen signatures (name and grey thumbnail), the graph of screens and taps, its JSON file; the buttons never to press (`FORBIDDEN`) |
-| `test_nav.py` | the graph is consistent; the guard lets the plugin's own actions through and refuses the forbidden ones (`python3 -m unittest test_nav`) |
-| `test_trace.py` | tests of `trace.py` on synthetic screenshots: `python3 -m unittest test_trace` in this directory (not installed) |
-| `stage.py` | reads the stage number (Power Saving Mode) and the name's Roman numeral (battle screen) off a screenshot |
 | `stages.json` | per stage: name, monsters per wave, drop (weapon `W` or accessory `A`) and grade, main soul colour |
-| `emerald_mask.py` | Python twin of `emerald_mask.js`, for browsers that cannot read the video's pixels (Firefox on Android); keep the two in step |
+| `page.js` | page side: assembles the page features below, starts them, shows their options in the panel's order, hands them the settings and disposes of them |
+| `page_screen.js` | the "Jeu" section's screen and stage rows |
+| `page_launch.js` | the **Lancer le jeu** button and its status row |
+| `page_mode.js` | the "Mode et farming" section, and the mode's lines over the game (its overlay hook) |
+| `page_gold.js` | the "Gold" section, and the label over the game, top left: the features' overlay lines and the gold rate |
+| `gold_text.js` | writes text in the gold counter's pixel font (from `GET /gold-font`) |
+| `page_trace.js` | the "Navigation" section: sends the user's taps to the trace |
+| `page_counters.js` | the "Émeraudes" and "Diamants" sections |
+| `counter_rewrite.js` | finds a counter on the video (or asks the gateway) and cuts it or writes over it |
+| `emerald_mask.js` | finds the emerald counter on the video |
+| `emerald_font.js` | the game's counter font at 480 px wide, for the rewritten number |
+| `test_nav.py` | the graph is consistent; the guard lets the plugin's own actions through and refuses the forbidden ones (`python3 -m unittest test_nav`) |
+| `test_trace.py` | tests of `trace.py` on synthetic screenshots (`python3 -m unittest test_trace`) |
+| `test_mine.py` | the mine on a scripted game, on virtual time, through the guard: an untick that will not take, the mine turned off and on in one tick (`python3 -m unittest test_mine`) |
+
+The tests run in this directory and are not installed, nor is this README.
 
 The plugin API (what `page.js` and `gateway.py` may use) is described at the
 top of `04-cloud-phone-app/src/overlay/js/example/src/plugins.ts` and
