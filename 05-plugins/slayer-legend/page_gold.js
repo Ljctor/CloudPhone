@@ -1,11 +1,15 @@
 // Gold per second, measured by the gateway (a reading every 10 s, the
 // slope over 5 minutes), written top left on the game under the other
 // features' overlay lines (the mode's), in the gold counter's own pixel
-// font (gold_text.js). Options: the "Gold" section.
+// font (gold_text.js). Options: the "Gold" section. The overlay applies
+// while the counter was read lately (the game's battle screen); the
+// features' top-bar hooks (the mode's timer) follow the same rule.
 import { drawText } from './gold_text.js';
 
 // overlay: functions giving the lines written above the gold line.
-export default function goldFeature(api, { overlay }) {
+// topBar: functions (shown, font, cell) drawing in the game's top bar,
+// called whenever the label is shown, redrawn (every second) or removed.
+export default function goldFeature(api, { overlay, topBar = [] }) {
   const gold = { answer: null, timer: null, font: null, line: '' };
   api.get('/gold-font').catch(() => null).then((font) => {
     gold.font = font;
@@ -19,6 +23,7 @@ export default function goldFeature(api, { overlay }) {
     if (!shown) {
       label.remove();
       drawn = '';
+      for (const draw of topBar) draw(false);
       return;
     }
     if (!label.isConnected) api.layer.appendChild(label);
@@ -27,6 +32,7 @@ export default function goldFeature(api, { overlay }) {
     // As high as the level's text above it (8 game pixels, the screen
     // being 1040 of them high), not the gold counter's 13.
     const cell = api.layer.offsetHeight / 1040 * 8 / gold.font.height;
+    for (const draw of topBar) draw(true, gold.font, cell);
     const key = `${lines.join('|')}@${cell}`;
     if (key !== drawn) {
       drawText(label, gold.font, lines, cell);
