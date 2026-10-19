@@ -12,6 +12,7 @@
 //   after it, building a graph of the game's screens (never replayed).
 import counters from './page_counters.js';
 import launch from './page_launch.js';
+import screen from './page_screen.js';
 
 const ENGLISH = {
   'Farmer la mine': 'Farm the mine',
@@ -131,48 +132,7 @@ export default function activate(api) {
   const counterPart = counters(api);
 
   const launchPart = launch(api);
-  // The game's screen, asked to the gateway only while the options panel
-  // shows it: each render asks again once the last answer is 3 s old.
-  const SCREENS = {
-    title: 'Écran titre', save: 'Choix de la sauvegarde', battle: 'Combat',
-    saver: 'Économie d’énergie', other: 'Autre (menu, chargement…)',
-    menu: 'Menu du jeu', away: 'Autre application',
-  };
-  const GRADES = { Common: 'Commun', Great: 'Supérieur', Rare: 'Rare', Epic: 'Épique', Legendary: 'Légendaire' };
-  const COLOURS = { green: 'verte', blue: 'bleue', red: 'rouge' };
-  const stageRow = (label, value) => ({
-    type: 'status', label, visible: () => Boolean(screen.answer?.stage?.name), value,
-  });
-  const screen = { answer: null, at: 0, busy: false, timer: null };
-  // The last stage number read, kept in this browser so that the gateway
-  // still knows it after a restart (it reads it only in Power Saving Mode).
-  const STORE = 'cloudphone-slayer-legend-stage';
-  let remembered = null;
-  try {
-    remembered = Number(window.localStorage.getItem(STORE)) || null;
-  } catch {
-    remembered = null;
-  }
-  const watchScreen = () => {
-    if (screen.busy || Date.now() - screen.at < 3000) return;
-    screen.busy = true;
-    api.get(remembered ? `/screen?known=${remembered}` : '/screen').catch(() => null).then((answer) => {
-      const number = answer?.stage?.checked ? answer.stage.number : null;
-      if (number && number !== remembered) {
-        remembered = number;
-        try {
-          window.localStorage.setItem(STORE, String(number));
-        } catch {
-          // Not kept: read again in Power Saving Mode.
-        }
-      }
-      Object.assign(screen, { answer, at: Date.now(), busy: false });
-      api.refresh();
-      window.clearTimeout(screen.timer);
-      screen.timer = window.setTimeout(api.refresh, 3000);
-    });
-  };
-
+  const screenPart = screen(api);
   // The mode (mpw18 farming by default, or a timed mode: mpw4 farming, free
   // play, the mine) runs in the gateway; this browser's
   // options are sent to it when they change, and on load if the gateway has
@@ -239,6 +199,7 @@ export default function activate(api) {
   // The mpw18 and mpw4 stages up to the highest one the gateway saw
   // farmed (all of them when it knows none).
   const loadStages = async () => {
+    const remembered = screenPart.known();
     farm.stages = await api.get(remembered ? `/stages?known=${remembered}` : '/stages').catch(() => null);
     api.refresh();
   };
@@ -391,38 +352,7 @@ export default function activate(api) {
 
   return {
     options: [
-      { type: 'section', key: 'game', label: 'Jeu' },
-      {
-        type: 'status', label: 'Écran détecté',
-        value: () => {
-          watchScreen();
-          const name = screen.answer?.screen;
-          if (!screen.at) return '…';
-          return api.tr(name ? SCREENS[name] ?? name : 'Pas de capture d’écran');
-        },
-      },
-      {
-        type: 'status', label: 'Stage sélectionné',
-        visible: () => Boolean(screen.at),
-        value: () => {
-          const stage = screen.answer?.stage;
-          if (!stage?.number) return api.tr('inconnu : passe en mode économie d’énergie pour le lire');
-          const text = `${stage.number}${stage.name ? ` · ${stage.name}` : ''}`;
-          return stage.checked ? text : `${text} (${api.tr('vu en mode économie d’énergie, à confirmer')})`;
-        },
-      },
-      stageRow('Monstres par vague', () => String(screen.answer.stage.monsters_per_wave ?? '–')),
-      stageRow('Équipement lâché', () => {
-        const stage = screen.answer.stage;
-        const [grade, level] = String(stage.grade ?? '').split(' ');
-        return `${api.tr(stage.drop === 'A' ? 'Accessoire' : 'Arme')}, ${api.tr(GRADES[grade] ?? grade)} ${level ?? ''}`.trim();
-      }),
-      stageRow('Couleur des âmes', () => {
-        const stage = screen.answer.stage;
-        if (!stage.soul_colour) return '–';
-        const colour = api.tr(COLOURS[stage.soul_colour] ?? stage.soul_colour);
-        return stage.soul_colour_confirmed ? colour : `${colour} (${api.tr('déduite, non vérifiée')})`;
-      }),
+      ...screenPart.options,
       ...launchPart.options,
       { type: 'section', key: 'mode', label: 'Mode et farming' },
       // One row per mode: a radio button chooses it, Configurer opens its
@@ -531,7 +461,7 @@ export default function activate(api) {
       counterPart.dispose();
       stopTrace?.();
       launchPart.dispose();
-      window.clearTimeout(screen.timer);
+      screenPart.dispose();
       window.clearTimeout(farm.timer);
       window.clearTimeout(gold.timer);
       window.clearInterval(modeTick);
