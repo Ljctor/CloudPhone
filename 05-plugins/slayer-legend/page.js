@@ -11,6 +11,7 @@
 //   the game is sent to the gateway, which records the screen before and
 //   after it, building a graph of the game's screens (never replayed).
 import counters from './page_counters.js';
+import launch from './page_launch.js';
 
 const ENGLISH = {
   'Farmer la mine': 'Farm the mine',
@@ -129,22 +130,7 @@ export default function activate(api) {
   api.addTranslations(ENGLISH);
   const counterPart = counters(api);
 
-  // Launch state from the gateway, followed while a launch runs.
-  const launch = { state: 'idle', message: '' };
-  let poll = null;
-  const follow = async () => {
-    const answer = await api.get('/launch').catch(() => null);
-    if (answer) Object.assign(launch, answer);
-    api.refresh();
-    const running = ['starting', 'loading'].includes(launch.state);
-    if (running && !poll) poll = window.setInterval(follow, 2000);
-    if (!running && poll) {
-      window.clearInterval(poll);
-      poll = null;
-    }
-  };
-  follow();
-
+  const launchPart = launch(api);
   // The game's screen, asked to the gateway only while the options panel
   // shows it: each render asks again once the last answer is 3 s old.
   const SCREENS = {
@@ -437,24 +423,7 @@ export default function activate(api) {
         const colour = api.tr(COLOURS[stage.soul_colour] ?? stage.soul_colour);
         return stage.soul_colour_confirmed ? colour : `${colour} (${api.tr('déduite, non vérifiée')})`;
       }),
-      {
-        type: 'action', label: 'Lancer le jeu', button: 'Lancer',
-        disabled: () => ['starting', 'loading'].includes(launch.state),
-        run: async () => {
-          const result = await api.post('/launch');
-          if (!result.ok) {
-            Object.assign(launch, {
-              state: 'failed', message: result.status === 409 ? 'Un lancement est déjà en cours' : result.body.error ?? `HTTP ${result.status}`,
-            });
-          }
-          await follow();
-        },
-      },
-      {
-        type: 'status', label: 'Lancement',
-        visible: () => launch.state !== 'idle',
-        value: () => api.tr(launch.message || launch.state),
-      },
+      ...launchPart.options,
       { type: 'section', key: 'mode', label: 'Mode et farming' },
       // One row per mode: a radio button chooses it, Configurer opens its
       // settings.
@@ -561,7 +530,7 @@ export default function activate(api) {
     dispose: () => {
       counterPart.dispose();
       stopTrace?.();
-      if (poll) window.clearInterval(poll);
+      launchPart.dispose();
       window.clearTimeout(screen.timer);
       window.clearTimeout(farm.timer);
       window.clearTimeout(gold.timer);
