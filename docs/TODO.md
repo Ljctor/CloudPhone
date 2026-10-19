@@ -4,7 +4,19 @@ Tests of the black-box suite (`tests/e2e`) that fail on the current code,
 each with what is known. Owner: the agent maintaining the gateway and the
 page; fix or explain each before the hexagonal refactor reaches its domain.
 
-None at the moment.
+- Harness port clashes, "address already in use": now and then a test's
+  gateway, fake emulator or geckodriver fails to bind its port, three
+  times in one day (the latest in `ui_page`, the gateway on the very port
+  the fake's gRPC service had just been given). The gateway's port is
+  picked ahead (`free_port()` in `tests/fake-emulator/fake_emulator.py`:
+  bind port 0, close, pass the number on), and so is geckodriver's
+  (`tests/e2e/src/browser.rs`); until the process binds it, the fake's own
+  gRPC server (bound on port 0 meanwhile) or any other process can get the
+  same port. A rerun passes. A test that fails this way can also leave
+  its geckodriver and Firefox running, holding the suite lock, so the
+  next `flock` waits until they are stopped. Fix: the fake, the gateway and geckodriver each bind port
+  0 and pass the port they got on to the harness; in one commit, by
+  whoever next works on the harness.
 
 # Planned work
 
