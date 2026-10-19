@@ -509,6 +509,14 @@ def setup(context):
         timer_alerted = False
         place = f"étage {MINE['floor']}, zone {MINE['area']}"
 
+        async def look_again():
+            """Before a tap: a screenshot taken now, or None unless it shows
+            what the loop's look (up to MINE_SECONDS old) saw."""
+            fresh = await context.screenshot(max_age=0)
+            if fresh and await context.analyse(mine_facts, fresh) == facts:
+                return fresh
+            return None
+
         async def finish(state, message):
             MINE["enabled"] = False
             mine_report(state, message)
@@ -532,12 +540,17 @@ def setup(context):
                 if facts["saver"]:
                     # The buffs are hidden: leave Power Saving Mode to see them.
                     if time.monotonic() - last_hold > 60:
-                        last_hold = time.monotonic()
-                        await hold(shot, "saver", "leave", SAVER_TAP, SAVER_HOLD_MS)
+                        shot = await look_again()
+                        if shot:
+                            last_hold = time.monotonic()
+                            await hold(shot, "saver", "leave", SAVER_TAP, SAVER_HOLD_MS)
                     continue
                 timed = MINE["until"] is not None
                 over = timed and time.time() >= MINE["until"]
                 if over and facts["fight"]:
+                    shot = await look_again()
+                    if not shot:
+                        continue
                     if await mine_stop(shot, "Durée écoulée"):
                         await alert(f"Durée écoulée ({place}) : « Repeat entry » décoché, la mine s’arrête après cette entrée")
                         return
@@ -560,6 +573,9 @@ def setup(context):
                         # With a timer, the user chose how long: only warn.
                         mine_report("farming", "Combat en cours, sans parchemin doré")
                         continue
+                    shot = await look_again()
+                    if not shot:
+                        continue
                     if await mine_stop(shot, "Plus de parchemin doré"):
                         return
                     continue
@@ -580,6 +596,9 @@ def setup(context):
                 if failures >= 3:
                     await finish("blocked", "La relance a échoué 3 fois : relance la mine à la main")
                     return
+                shot = await look_again()
+                if not shot:
+                    continue
                 mine_report("relaunching", f"Relance : étage {MINE['floor']}, zone {MINE['area']}")
                 if await mine_relaunch(shot):
                     failures = 0
@@ -710,6 +729,21 @@ def setup(context):
         floor, area = number_or_none(mined.get("floor"), 9999), number_or_none(mined.get("area"), 5)
         MINE.update(enabled=mined.get("enabled") is True and bool(floor and area), floor=floor, area=area,
                     until=time_or_none(mined.get("until")))
+        # A timer that ended while the gateway was down: that mode or the
+        # mine is over, not resumed.
+        now = time.time()
+        ended = []
+        if MODE["mode"] != "mpw18" and MODE["until"] is not None and MODE["until"] <= now:
+            ended.append(f"mode {MODE['mode']}")
+            MODE.update(mode="mpw18", until=None)
+        if MINE["enabled"] and MINE["until"] is not None and MINE["until"] <= now:
+            ended.append("mine")
+            MINE["enabled"] = False
+        if MODE["mode"] == "mine" and not MINE["enabled"]:
+            MODE.update(mode="mpw18", until=None)
+        if ended:
+            logging.info(f"Slayer Legend: timer ended while the gateway was stopped ({', '.join(ended)}): "
+                         "back to mpw18 farming, mine off")
 
     def note_highest(number):
         if not number or (HIGHEST["number"] and number <= HIGHEST["number"]):

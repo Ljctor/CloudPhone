@@ -212,6 +212,20 @@ fn slayer_legends_mode_and_mine_come_back_after_a_gateway_restart() {
     cp.wait_new_token(&token, Duration::from_secs(20));
     let off = cp.get_json("api/v1/plugins/slayer-legend/mode");
     assert_eq!((off["mode"].clone(), off["mine"]["enabled"].clone()), (json!("mpw18"), json!(false)), "{off}");
+    // A timer that ends while the gateway is down: the mine and its mode
+    // come back over, not running.
+    let soon = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs_f64() + 1.0;
+    let set = cp.post_json("api/v1/plugins/slayer-legend/mode", &json!({"mode": "mine", "until": soon, "floor": 7, "area": 1}));
+    assert_eq!(set.json().unwrap()["mine"]["enabled"], true);
+    std::thread::sleep(Duration::from_millis(1500));
+    let token = cp.page_token();
+    cp.fake().action("restart_gateway");
+    cp.wait_new_token(&token, Duration::from_secs(20));
+    let ended = cp.get_json("api/v1/plugins/slayer-legend/mode");
+    assert_eq!(ended["mode"], "mpw18", "{ended}");
+    assert_eq!(ended["until"], Value::Null, "{ended}");
+    assert_eq!(ended["mine"]["enabled"], false, "{ended}");
+    assert_ne!(ended["mine"]["state"], "waiting", "the mine does not watch again: {ended}");
 }
 
 #[test]
