@@ -2,9 +2,7 @@ import { LANGUAGES, defaultLanguage, setLanguage, tr } from './i18n';
 import { emitTap, usePlugins } from './plugins';
 import React, { useEffect, useRef, useState } from 'react';
 import { Emulator, logger } from '../../src';
-import {
-  activePeerConnection, sendInputEvent,
-} from '../../src/components/emulator/net/ws_jsep_protocol_driver';
+import { sendInputEvent } from '../../src/components/emulator/net/ws_jsep_protocol_driver';
 import Proto from '../../src/proto/emulator_controller_pb';
 import { TOOLBAR_WIDTH, styles } from './styles';
 import { postFetch, postHeaders } from './api';
@@ -17,10 +15,10 @@ import { EmulatorSettings, useDisplayState, useEmulatorSettings } from './androi
 import { useServerState } from './serverState';
 import { bannerShown, diagnose } from './diagnose';
 import { Banner, LEVEL_COLORS, StatusCover, useDismissed } from './banner';
+import { useStreamStats } from './useStreamStats';
 
 logger.setLevel('warn');
 
-const STATS_INTERVAL_MS = 1000;
 // Touches and keys go over the emulator's own WebRTC data channels ("touch",
 // "keyboard"): no HTTP request, no gRPC hop. HTTP through the gateway stays
 // as the fallback while no channel is open. See docs/DEVELOPMENT.md.
@@ -117,138 +115,6 @@ function deviceInfo(shownScreen) {
     ['Densité', `×${ratio.toFixed(2)}`],
     ['Image affichée', `${shownScreen.width}×${shownScreen.height} CSS · ${physical(shownScreen.width, shownScreen.height)} px`],
   ];
-}
-
-// Samples the stream once per STATS_INTERVAL_MS:
-// - ping: ICE round-trip time when the browser reports it, otherwise the time
-//   of an HTTP request to the gateway (same network path);
-// - server: video frames received from the emulator per second;
-// - phone: frames this browser actually displayed per second;
-// - network details for the connectivity panel.
-// Frame rates are 0 while the Android screen does not change: the emulator
-// sends a frame only when something moves.
-const EMPTY_STATS = {
-  ping: null, pingSource: null, server: null, phone: null, video: null,
-  bitrate: null, packetsLost: null, jitter: null, bufferDelay: null,
-  framesDropped: null, codec: null, path: null, connection: null,
-};
-
-function useStreamStats(deviceRef, gatewayUrl) {
-  const [stats, setStats] = useState(EMPTY_STATS);
-
-  useEffect(() => {
-    let previous = null;
-    let busy = false;
-    let stopped = false;
-    // Frames presented on screen, counted with requestVideoFrameCallback where
-    // available: getVideoPlaybackQuality() stays at 0 for WebRTC streams in
-    // some browsers.
-    let presented = 0;
-    let watchedVideo = null;
-    let frameCallback = null;
-
-    const watchFrames = (video) => {
-      if (!video || video === watchedVideo || typeof video.requestVideoFrameCallback !== 'function') return;
-      if (watchedVideo && frameCallback !== null) watchedVideo.cancelVideoFrameCallback(frameCallback);
-      watchedVideo = video;
-      const onFrame = () => {
-        presented += 1;
-        if (!stopped && watchedVideo === video) frameCallback = video.requestVideoFrameCallback(onFrame);
-      };
-      frameCallback = video.requestVideoFrameCallback(onFrame);
-    };
-
-    const sample = async () => {
-      if (busy) return;
-      busy = true;
-      try {
-        const now = performance.now();
-        const video = deviceRef.current?.querySelector('video');
-        watchFrames(video);
-        let shown = null;
-        if (watchedVideo) {
-          shown = presented;
-        } else {
-          const quality = video?.getVideoPlaybackQuality?.();
-          shown = quality ? quality.totalVideoFrames - quality.droppedVideoFrames : null;
-        }
-        const sampleData = { received: null, bytes: null, ping: null, details: {} };
-        const connection = activePeerConnection();
-        if (connection) {
-          try {
-            const report = await connection.getStats();
-            const byId = new Map();
-            report.forEach((entry) => byId.set(entry.id, entry));
-            report.forEach((entry) => {
-              if (entry.type === 'inbound-rtp' && (entry.kind ?? entry.mediaType) === 'video') {
-                sampleData.received = entry.framesReceived ?? entry.framesDecoded ?? null;
-                sampleData.bytes = entry.bytesReceived ?? null;
-                sampleData.details.packetsLost = entry.packetsLost ?? null;
-                sampleData.details.jitter = typeof entry.jitter === 'number' ? entry.jitter * 1000 : null;
-                sampleData.details.framesDropped = entry.framesDropped ?? null;
-                if (entry.jitterBufferEmittedCount) {
-                  sampleData.details.bufferDelay = entry.jitterBufferDelay / entry.jitterBufferEmittedCount * 1000;
-                }
-                sampleData.details.codec = byId.get(entry.codecId)?.mimeType?.replace('video/', '') ?? null;
-              } else if (entry.type === 'candidate-pair' && entry.state === 'succeeded'
-                && (entry.nominated || entry.selected)) {
-                if (typeof entry.currentRoundTripTime === 'number') {
-                  sampleData.ping = entry.currentRoundTripTime * 1000;
-                }
-                const local = byId.get(entry.localCandidateId);
-                const remote = byId.get(entry.remoteCandidateId);
-                if (local && remote) {
-                  sampleData.details.path = `${local.candidateType ?? '?'} → ${remote.candidateType ?? '?'} (${(local.protocol ?? '?').toUpperCase()})`;
-                }
-              }
-            });
-            sampleData.details.connection = connection.connectionState;
-          } catch (error) {
-            console.warn('Stream statistics:', error);
-          }
-        }
-        let pingSource = sampleData.ping === null ? null : 'ICE';
-        if (sampleData.ping === null) {
-          const start = performance.now();
-          try {
-            await fetch(`${gatewayUrl}/api/v1/ping`, { cache: 'no-store' });
-            sampleData.ping = performance.now() - start;
-            pingSource = 'HTTP';
-          } catch {
-            sampleData.ping = null;
-          }
-        }
-        const rate = (current, before, seconds) => (
-          current !== null && before !== null && current >= before ? (current - before) / seconds : null);
-        const seconds = previous ? (now - previous.time) / 1000 : 0;
-        if (!stopped) {
-          setStats({
-            ...EMPTY_STATS,
-            ...sampleData.details,
-            ping: sampleData.ping,
-            pingSource,
-            server: previous ? rate(sampleData.received, previous.received, seconds) : null,
-            phone: previous ? rate(shown, previous.shown, seconds) : null,
-            bitrate: previous && rate(sampleData.bytes, previous.bytes, seconds) !== null
-              ? rate(sampleData.bytes, previous.bytes, seconds) * 8 / 1000 : null,
-            video: video?.videoWidth ? { width: video.videoWidth, height: video.videoHeight } : null,
-          });
-        }
-        previous = { time: now, received: sampleData.received, shown, bytes: sampleData.bytes };
-      } finally {
-        busy = false;
-      }
-    };
-
-    const timer = window.setInterval(sample, STATS_INTERVAL_MS);
-    return () => {
-      stopped = true;
-      window.clearInterval(timer);
-      if (watchedVideo && frameCallback !== null) watchedVideo.cancelVideoFrameCallback(frameCallback);
-    };
-  }, [deviceRef, gatewayUrl]);
-
-  return stats;
 }
 
 // A button that floats over the screen and can be dragged anywhere, so it
