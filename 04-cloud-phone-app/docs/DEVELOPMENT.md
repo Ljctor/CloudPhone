@@ -19,7 +19,8 @@ built, never committed.
 | `gateway/src/videobridge_gateway/http/display.py` | `GET`/`POST /api/v1/display`, the change limit as a 409 or 429 answer, refused changes as warning records |
 | `gateway/src/videobridge_gateway/core/settings.py` | renderers, the cores and memory the host allows, the last settings request's state, the settings in the emulator's command line (no I/O) |
 | `gateway/src/videobridge_gateway/http/settings.py` | `GET`/`POST /api/v1/emulator-settings`, sharing the screen size's change limit |
-| `gateway/src/videobridge_gateway/adapters/host_files.py` | the request and status files the root-path units share with the gateway, their times, and the host's own files (`read_file`) |
+| `gateway/src/videobridge_gateway/core/metrics.py` | the server panel's figures from `/proc`, cgroup and adb texts: load, CPU, memory, Android's frame rate (no I/O) |
+| `gateway/src/videobridge_gateway/adapters/host_files.py` | every host file the gateway reads or writes: the request and status files the root-path units share with it, their times, `/proc`, `/sys`, the emulator's cgroup and command line |
 | `gateway/src/videobridge_gateway/plugins.py` | loads the installed plugins' `gateway.py`, serves their scripts |
 | `gateway/src/videobridge_gateway/logs.py` | the gateway's log records: journald, the last 500 in memory for `GET /api/v1/logs` |
 | `js/test/*.test.js` | jest unit tests (run by `packaging/build-release.sh`) |

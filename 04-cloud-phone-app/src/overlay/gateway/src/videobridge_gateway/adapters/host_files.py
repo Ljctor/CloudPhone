@@ -1,10 +1,12 @@
 """The host's files: the request and status files the gateway shares with
 the root-path units (cloudphone-display, cloudphone-settings) and the times
-they keep, and read_file for the host's own (/proc, the emulator's cgroup).
+they keep, and the host's own (/proc, /sys, the emulator's cgroup and its
+command line).
 
-The core never opens a file: it gets what these functions return. The fake
-emulator's shim (tests/fake-emulator/gateway_shim.py) redirects host paths
-by replacing this module's open.
+The core never opens a file: it gets what these functions return. Every
+host file the gateway reads goes through here, so the fake emulator's shim
+(tests/fake-emulator/gateway_shim.py) redirects host paths by replacing
+this module's open alone.
 """
 
 import os
@@ -15,6 +17,21 @@ def read_file(path, size=-1):
     try:
         with open(path, "r") as f:
             return f.read(size)
+    except OSError:
+        return None
+
+
+def first_line(path):
+    """The file's first line; raises OSError when it cannot be read."""
+    with open(path, "r") as f:
+        return f.readline()
+
+
+def command_line(pid):
+    """A process's arguments (/proc/PID/cmdline), or None."""
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            return f.read().decode(errors="replace").split("\0")
     except OSError:
         return None
 

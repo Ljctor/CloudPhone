@@ -3,10 +3,9 @@
 The gateway reads a few host files with no option to point it elsewhere:
 the load (/proc/loadavg), the host's memory (/proc/meminfo) and the
 emulator unit's cgroup (/sys/fs/cgroup/system.slice/UNIT/: its processes,
-CPU and memory, and the command line of its qemu process). This shim
-redirects exactly those paths, in the two gateway modules that open them
-(adapters/host_files.py, whose read_file reads most, and gateway_server.py
-for the rest), to the fake's files under $FAKE_ROOT/host, then runs the
+CPU and memory, and the command line of its qemu process). All of them
+go through adapters/host_files.py; this shim redirects exactly those paths
+in that module to the fake's files under $FAKE_ROOT/host, then runs the
 gateway's own main with the command line it was given. Everything else
 (systemctl and adb through PATH and --adb, the discovery file, config.ini,
 the request and status files) goes through the gateway's normal options.
@@ -39,5 +38,4 @@ def fake_host_open(file, *args, **kwargs):
 
 
 host_files.open = fake_host_open
-gateway_server.open = fake_host_open
 gateway_server.run_main()

@@ -50,6 +50,7 @@ from .http import viewers
 from .http import display
 from .http import settings
 from .core import settings as settings_rules
+from .core import metrics as host_metrics
 from .adapters import host_files
 from .adapters.host_files import read_file
 
@@ -205,71 +206,23 @@ async def read_android_booted():
         return None
 
 
-def physical_cores():
-    """Physical cores (with Hyper-Threading, two threads share each one)."""
-    try:
-        with open("/proc/cpuinfo", "r") as f:
-            text = f.read()
-    except OSError:
-        return None
-    cores = set()
-    for chunk in text.split("\n\n"):
-        fields = {}
-        for line in chunk.splitlines():
-            name, _, value = line.partition(":")
-            fields[name.strip()] = value.strip()
-        if "core id" in fields:
-            cores.add((fields.get("physical id"), fields["core id"]))
-    return len(cores) or None
-
-
 def read_load():
-    try:
-        with open("/proc/loadavg", "r") as f:
-            one, five = f.read().split()[:2]
-        return {"one": float(one), "five": float(five), "cpus": os.cpu_count() or 1, "cores": physical_cores()}
-    except (OSError, ValueError):
-        return None
+    return host_metrics.load(read_file("/proc/loadavg"), os.cpu_count() or 1,
+                             host_metrics.physical_cores(read_file("/proc/cpuinfo")))
 
 
 def read_proc_stat():
     """(busy, total) jiffies of all host CPUs."""
-    with open("/proc/stat", "r") as f:
-        values = [int(v) for v in f.readline().split()[1:]]
-    idle = values[3] + (values[4] if len(values) > 4 else 0)
-    return sum(values) - idle, sum(values)
-
-
-def read_meminfo(text):
-    """kB values of a /proc/meminfo text, by name."""
-    values = {}
-    for line in text.splitlines():
-        name, _, rest = line.partition(":")
-        if rest.split():
-            try:
-                values[name] = int(rest.split()[0])
-            except ValueError:
-                pass
-    return values
+    return host_metrics.cpu_jiffies(host_files.first_line("/proc/stat"))
 
 
 def host_meminfo():
     """The host's /proc/meminfo, kB values by name."""
-    return read_meminfo(read_file("/proc/meminfo") or "")
+    return host_metrics.parse_meminfo(read_file("/proc/meminfo") or "")
 
 
 def emulator_cgroup():
     return f"/sys/fs/cgroup/system.slice/{EMULATOR_UNIT}" if EMULATOR_UNIT else None
-
-
-def memory_summary(values):
-    """MiB figures from meminfo values."""
-    mib = lambda name: round(values[name] / 1024) if name in values else None
-    return {
-        "total": mib("MemTotal"), "available": mib("MemAvailable"),
-        "swapTotal": mib("SwapTotal"),
-        "swapUsed": mib("SwapTotal") - mib("SwapFree") if "SwapTotal" in values and "SwapFree" in values else None,
-    }
 
 
 async def read_android_metrics():
@@ -291,19 +244,7 @@ async def read_android_metrics():
         process.kill()
         return None
     logs.adb_result(process.returncode, errors.decode(errors="replace"))
-    meminfo, _, timestats = output.decode(errors="replace").partition("==TIMESTATS==")
-    layer = fps = None
-    for line in timestats.splitlines():
-        name, _, value = line.strip().partition(" = ")
-        if name == "layerName" and layer is None:
-            # "<id> SurfaceView[com.example/...Activity](BLAST)#12": the package.
-            layer = value.split("[", 1)[-1].split("/", 1)[0].split("]", 1)[0] if "[" in value else value
-        elif name == "averageFPS" and layer is not None and fps is None:
-            try:
-                fps = round(float(value), 1)
-            except ValueError:
-                pass
-    return {"memory": memory_summary(read_meminfo(meminfo)), "app": layer, "fps": fps}
+    return host_metrics.android_metrics(output.decode(errors="replace"))
 
 
 def read_emulator_settings(cgroup):
@@ -312,10 +253,8 @@ def read_emulator_settings(cgroup):
     since)."""
     procs = read_file(f"{cgroup}/cgroup.procs") if cgroup else None
     for pid in (procs or "").split():
-        try:
-            with open(f"/proc/{pid}/cmdline", "rb") as f:
-                args = f.read().decode(errors="replace").split("\0")
-        except OSError:
+        args = host_files.command_line(pid)
+        if args is None:
             continue
         found = settings_rules.from_command_line(args)
         if found is not None:
@@ -334,30 +273,22 @@ async def sample_metrics():
         try:
             now = loop.time()
             busy, total = read_proc_stat()
-            stat = read_file(f"{cgroup}/cpu.stat") if cgroup else None
-            usage = None
-            if stat:
-                usage = dict(line.split() for line in stat.splitlines() if len(line.split()) == 2).get("usage_usec")
-            usage = int(usage) if usage else None
+            usage = host_metrics.cgroup_usage(read_file(f"{cgroup}/cpu.stat") if cgroup else None)
             cpus = os.cpu_count() or 1
             if previous:
                 p_now, p_busy, p_total, p_usage = previous
                 governor = read_file("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor")
-                mhz = [float(line.split(":")[1]) for line in (read_file("/proc/cpuinfo") or "").splitlines()
-                       if line.startswith("cpu MHz")]
                 METRICS["host"] = {
-                    "cpu": round(100 * (busy - p_busy) / max(1, total - p_total)),
+                    "cpu": host_metrics.cpu_percent(busy, total, (p_busy, p_total)),
                     "cpus": cpus,
                     "governor": governor.strip() if governor else None,
-                    "mhz": round(sum(mhz) / len(mhz)) if mhz else None,
-                    "memory": memory_summary(read_meminfo(read_file("/proc/meminfo") or "")),
+                    "mhz": host_metrics.average_mhz(read_file("/proc/cpuinfo")),
+                    "memory": host_metrics.memory_summary(host_meminfo()),
                 }
-                memory = read_file(f"{cgroup}/memory.current") if cgroup else None
                 METRICS["emulator"] = {
                     "settings": read_emulator_settings(cgroup),
-                    # Percent of one core, like top: 400 = four cores busy.
-                    "cpu": round((usage - p_usage) / 1e4 / (now - p_now)) if usage is not None and p_usage is not None else None,
-                    "memory": round(int(memory) / 1048576) if memory and memory.strip().isdigit() else None,
+                    "cpu": host_metrics.core_percent(usage, p_usage, now - p_now),
+                    "memory": host_metrics.cgroup_memory_mb(read_file(f"{cgroup}/memory.current") if cgroup else None),
                 }
             previous = (now, busy, total, usage)
             if now - METRICS["android_wanted"] < ANDROID_WANTED_SECONDS and now - last_android >= ANDROID_METRICS_SECONDS:
