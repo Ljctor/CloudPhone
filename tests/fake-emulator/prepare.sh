@@ -13,7 +13,7 @@
 #                                          and stubs, taken once from build/upstream
 #
 # The first run builds the page and the stubs with
-# packaging/build-release.sh --skip-tests (one source of truth for the
+# packaging/build-release.sh (one source of truth for the
 # build; it needs node/npm and downloads the pinned emulator once, for its
 # .proto files), then copies what it needs to build/e2e/base. Later runs
 # do not use build/upstream at all, and only rebuild the page when the overlay's
@@ -46,11 +46,11 @@ BASE=$OUT/base
 if [ ! -f "$BASE/.complete" ]; then
   if [ ! -d "$UPSTREAM/js/example/node_modules" ] || [ ! -f "$STUBS/emulator_controller_pb2.py" ]; then
     if [ "${CLOUDPHONE_E2E_NO_BUILD:-}" = 1 ]; then
-      echo "prepare.sh: build/upstream is missing (run packaging/build-release.sh --skip-tests first)" >&2
+      echo "prepare.sh: build/upstream is missing (run packaging/build-release.sh first)" >&2
       exit 1
     fi
-    log "First build of the page and the gRPC stubs (packaging/build-release.sh --skip-tests)"
-    "$ROOT/packaging/build-release.sh" --skip-tests >&2
+    log "First build of the page and the gRPC stubs (packaging/build-release.sh)"
+    "$ROOT/packaging/build-release.sh" >&2
   fi
   log "Taking the upstream page and stubs into $BASE"
   rm -rf "$BASE"

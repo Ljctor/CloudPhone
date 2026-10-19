@@ -130,7 +130,7 @@ impl Fake {
     }
 
     /// Changes the fake's state (`booted`, `unit`, `load`, `grpc`,
-    /// `data_channels`, `offer`, `touch_fails`, `adb_fails`,
+    /// `data_channels`, `offer`, `frames`, `touch_fails`, `adb_fails`,
     /// `hold_requests`, `fail_next`, timings...) and/or runs an `action`
     /// (`drop_streams`, `crash`, `restart`, `replace_discovery`,
     /// `stop_gateway`, `start_gateway`, `restart_gateway`, `reset_record`,

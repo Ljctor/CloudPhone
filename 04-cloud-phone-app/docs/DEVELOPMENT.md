@@ -32,17 +32,20 @@ built, never committed.
 | `gateway/src/videobridge_gateway/adapters/systemd.py` | `systemctl show` of the emulator unit |
 | `gateway/src/videobridge_gateway/plugins.py` | loads the installed plugins' `gateway.py`, serves their scripts |
 | `gateway/src/videobridge_gateway/logs.py` | the gateway's log records: journald, the last 500 in memory for `GET /api/v1/logs` |
-| `js/test/*.test.js` | jest unit tests (run by `packaging/build-release.sh`) |
 
 ## Build
 
 On Linux x86-64 with git, curl, make, Node.js 18+ and Python 3.10+:
 
 ```sh
-packaging/build-release.sh          # jest tests, page, gateway wheel, dist/*.tar.gz
+packaging/build-release.sh          # page, gateway wheel, dist/*.tar.gz
 ```
 
-`--skip-tests` skips the jest tests; do not use it for a release.
+The page and the gateway are tested black-box only, by the Rust
+end-to-end tests in `tests/e2e` (a real browser, the real gateway, a
+fake emulator); there are no JavaScript unit tests, and the release
+build runs none. `tests/e2e/README.md` says which tests took over from
+the jest suites the build used to run.
 
 ## Iterate on a test instance
 

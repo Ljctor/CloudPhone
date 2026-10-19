@@ -26,7 +26,7 @@ CLOUDPHONE_E2E_KEEP=1 cargo test --test display -- some_test   # keep the fake's
   `cpio` and `flock` (used by `prepare.sh`).
 - Firefox ESR and geckodriver for the `ui_*` tests (see "Browser").
 - The first run needs `build/upstream` (the upstream page and the gRPC
-  stubs): it calls `packaging/build-release.sh --skip-tests` if it is
+  stubs): it calls `packaging/build-release.sh` if it is
   missing. Set `CLOUDPHONE_E2E_NO_BUILD=1` to fail instead, for instance
   while a release build runs: two builds at once wipe each other's build
   directory.
@@ -79,7 +79,7 @@ Its control API (127.0.0.1, random port), wrapped by `src/fake.rs`:
 |---|---|
 | `GET /record` | everything received: touches (with the channel or `grpc`), keys (`keyboard` channel, `adb`, `grpc`), data channel messages, gRPC calls, JSEP messages each way, display/settings requests and status lines, WebRTC sessions, gateway starts and exits, adb calls |
 | `GET /state` | the fake's state: display, settings, unit, booted, gRPC up/down, sessions, gateway |
-| `POST /control` | `options` (`data_channels`, `offer`, `touch_fails`, `adb_fails`, `hold_requests`, `status_lcd`, timings), `fail_next`, `load`, `unit`, `booted`, `grpc`, and one `action`: `drop_streams` (`bye`), `crash`, `restart`, `replace_discovery`, `stop_gateway`, `start_gateway`, `restart_gateway`, `pause_gateway` (`seconds`: stalled, then resumed), `reset_record` |
+| `POST /control` | `options` (`data_channels`, `offer`, `frames`, `touch_fails`, `adb_fails`, `hold_requests`, `status_lcd`, timings), `fail_next`, `load`, `unit`, `booted`, `grpc`, and one `action`: `drop_streams` (`bye`), `crash`, `restart`, `replace_discovery`, `stop_gateway`, `start_gateway`, `restart_gateway`, `pause_gateway` (`seconds`: stalled, then resumed), `reset_record` |
 
 Initial state: `CloudPhone::start_with(json!({...}))`, keys as in
 `DEFAULTS` in `fake_emulator.py` (480×1040 at density 213, lavapipe,
@@ -108,9 +108,9 @@ configured count.
 | `tests/lifecycle.rs` | crash, restart, discovery file replaced, gateway restarts |
 | `tests/plugins.rs` | plugin host: list, served scripts, routes, token checks, screenshot (shared, counted in the state details), analysis off the event loop and adb for plugins, a plugin's state kept across gateway restarts, a plugin for another plugin API refused, broken plugins skipped |
 | `tests/contract.rs` | what the emulator says (status, JSEP shapes, data channels, codecs): on the fake by default, on a deployed instance with `--features smoke` |
-| `tests/ui_page.rs` | Firefox: video plays and fits, toolbar labels, landmarks, LED, metrics block, ↻ replaces only the video session, English browser |
+| `tests/ui_page.rs` | Firefox: video plays and fits, muted, connected only with a frame, toolbar labels, landmarks, LED, metrics block, ↻ replaces only the video session, signalling back after a gateway restart or a long outage, English browser |
 | `tests/ui_banners.rs` | every status the page shows, covering or closable, with the LED colour; priority; closing; English |
-| `tests/ui_input.rs` | a click lands on the Android pixel under it (several sizes and windows); drags; toolbar keys; HTTP fallbacks; the touch seen in the video |
+| `tests/ui_input.rs` | a click lands on the Android pixel under it (several sizes and windows); drags, clamped at the edge; toolbar keys; HTTP fallbacks; the touch seen in the video |
 | `tests/ui_changes.rs` | Apply from the page: one merged request, pending/applying/failed shown, the page reloads at a new size |
 | `tests/ui_panels.rs` | Information panel (Client and Serveur tabs) and Options panel |
 | `tests/ui_forms.rs` | Android settings and screen size fields, presets, Apply enabled only while they differ |
@@ -118,6 +118,41 @@ configured count.
 | `tests/ui_fullscreen.rs` | fullscreen, fold button, 3 s autofold, handle, docking |
 | `tests/ui_plugins.rs` | plugins in the page: options of each kind, layer drawing, stored options, failures (also a plugin the gateway refused), translations |
 | `tests/smoke.rs` | deployed instance only (`--features smoke`) |
+
+## What took over from the jest tests
+
+The release build used to run six jest suites: four of Google's upstream
+`js/test` and two of ours (`js/test` in the overlay). They are gone; the
+tests below cover what each checked, black-box. "Not used" means the page
+never takes that path, so nothing user-visible depends on it.
+
+| jest suite: test | Covered by |
+|---|---|
+| `emulator`: the WebSocket URL (`ws:`) | every video test, e.g. `ui_page::the_video_plays_and_its_time_advances`; `stream::a_viewer_gets_start_then_an_offer_with_video_and_data_channels` |
+| `emulator`: `wss:` under HTTPS | not used: the gateway serves the page over HTTP inside the VPN |
+| `emulator`: tries a WebRTC connection | `ui_page::the_video_plays_and_its_time_advances` |
+| `emulator`: GPS (4 tests) | not used by the page; the gateway's route: `api::logcat_and_gps_reach_the_emulator` |
+| `emulator`: `sendKey` through the ref | not used; the page's keys: `ui_input::toolbar_keys_arrive_as_keypresses_on_the_keyboard_channel`, `ui_input::without_data_channels_toolbar_keys_go_through_adb` |
+| `emulator`: ends the session on unmount | `ui_page::the_reconnect_button_replaces_the_video_session_only`, `stream::bye_from_the_page_reaches_the_emulator` |
+| `emulator_status`: null at first, no URL, cache, auth headers | not used: the page passes no auth, and the handler that reads this status sits under the page's touch layer |
+| `emulator_status`: fetches and notifies | `contract::the_emulator_status_has_the_fields_the_page_reads`, `api::upstream_emulator_status_is_not_cached_either` |
+| `emulator_status`: survives a failed fetch | `ui_page::the_page_loads_while_androids_status_cannot_be_read` |
+| `event_handler`: forwards mouse and touch | the page's own touch layer: `ui_input::a_click_lands_on_the_android_pixel_under_the_pointer`, `ui_input::a_drag_sends_moves_in_order_then_one_release`; the upstream path stays unused: `ui_input::the_page_never_writes_to_the_input_channel` |
+| `event_handler`: forwards keyboard events | not used: the toolbar's keys instead (above) |
+| `event_handler`: a new status URL | not used: the URL never changes |
+| `event_handler`: scaling 1:1, pillarbox, letterbox | `ui_input::a_click_lands_on_the_android_pixel_under_the_pointer`, `ui_input::clicks_land_right_on_a_screen_of_another_size`, `ui_input::clicks_land_right_in_a_window_of_another_shape`, `ui_page::the_video_is_shown_whole_and_undistorted_in_the_window` |
+| `event_handler`: out-of-bounds events | the page clamps them to the edge: `ui_input::a_drag_past_the_screen_edge_ends_on_the_edge`; the gateway too: `input::touches_outside_the_screen_are_clamped_to_its_edges` |
+| `touch_event_handler`: pressure normalised (5 tests) | the page sends its own pressure, 1024 then 0: `ui_input::a_click_lands_on_the_android_pixel_under_the_pointer`, `ui_input::a_drag_sends_moves_in_order_then_one_release` |
+| `webrtc_view`: volume | not used: the page plays muted and sets no volume |
+| `webrtc_view`: muted | `ui_page::the_video_is_muted_and_holds_each_track_once` |
+| `webrtc_view`: no track twice | `ui_page::the_video_is_muted_and_holds_each_track_once` |
+| `webrtc_view`: connected only after a decoded frame | `ui_page::the_page_says_connected_only_once_a_frame_arrives` (the fake's `frames` option) |
+| `ws_jsep_protocol_driver`: reconnects when the socket closes before WebRTC connects | `ui_page::a_page_still_connecting_reopens_its_signalling_when_the_gateway_restarts` |
+| `ws_jsep_protocol_driver`: stops after its last attempt | internal; what the user sees after a longer outage: `ui_page::after_a_long_outage_the_video_still_comes_back`, `ui_banners::server_unreachable_covers_the_screen_and_clears_when_it_answers_again` |
+| `ws_jsep_protocol_driver`: no reconnect after `disconnect()` | `ui_page::rapid_reconnect_clicks_open_a_single_new_session`; kicked, the page stays put: `ui_banners::a_page_kicked_by_another_device_says_so_and_reload_takes_it_back` |
+| `ws_jsep_protocol_driver`: peer connection handlers cleared | not observable from outside (memory); an old session leaves the new one alone: `ui_page::the_reconnect_button_replaces_the_video_session_only` |
+| `ws_jsep_protocol_driver`: sends on the data channel when open | `ui_input::a_click_lands_on_the_android_pixel_under_the_pointer` (`touch` channel), `ui_input::toolbar_keys_arrive_as_keypresses_on_the_keyboard_channel` |
+| `ws_jsep_protocol_driver`: fallback when not connected, or dropped | `ui_input::without_data_channels_touches_go_over_http_to_the_same_place`, `ui_input::without_data_channels_toolbar_keys_go_through_adb` |
 
 ## Browser
 

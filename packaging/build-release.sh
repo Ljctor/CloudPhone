@@ -25,13 +25,11 @@ SOURCE_DATE_EPOCH=$(git -C "$ROOT" log -1 --format=%ct 2>/dev/null || date +%s)
 export SOURCE_DATE_EPOCH
 
 refresh_constraints=no
-run_tests=yes
 
 usage() {
   cat <<EOF
-Usage: packaging/build-release.sh [--skip-tests] [--refresh-constraints]
+Usage: packaging/build-release.sh [--refresh-constraints]
 
-  --skip-tests            Do not run the JavaScript unit tests.
   --refresh-constraints   Resolve the newest gateway dependencies and rewrite
                           04-cloud-phone-app/constraints.txt before packaging.
 EOF
@@ -42,7 +40,6 @@ die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
 while [ $# -gt 0 ]; do
   case $1 in
-    --skip-tests) run_tests=no ;;
     --refresh-constraints) refresh_constraints=yes ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; die "unknown option: $1" ;;
@@ -99,9 +96,6 @@ log "Building the web control page"
   cd "$UPSTREAM/js"
   npm ci --no-audit --no-fund
   PATH=$BUILD/protoc/wrapper:$PATH make protoc PYTHON=python3
-  if [ "$run_tests" = yes ]; then
-    npm test
-  fi
   cd example
   npm ci --no-audit --no-fund
   npm run build

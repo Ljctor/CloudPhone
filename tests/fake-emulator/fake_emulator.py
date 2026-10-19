@@ -88,6 +88,7 @@ DEFAULTS = {
     "options": {
         "data_channels": True,     # new sessions get the emulator's data channels
         "offer": True,             # new sessions get an SDP offer
+        "frames": True,            # video tracks send frames (False: connected, but no picture)
         "touch_fails": False,      # gRPC sendTouch fails (HTTP touch fallback)
         "adb_fails": False,        # the fake adb fails (keys, Android metrics)
         "hold_requests": False,    # leave request files pending (path units stalled)
@@ -303,6 +304,8 @@ class VideoTrack:
             async def recv(self):
                 import av
 
+                while not participant.emulator.options["frames"]:
+                    await asyncio.sleep(0.1)
                 if self.start is None:
                     self.start = time.time()
                 else:
@@ -783,7 +786,7 @@ class Emulator:
         for key in ("options",):
             if key in body:
                 deep_update(self.options, body[key])
-        for key in ("data_channels", "offer", "touch_fails", "adb_fails", "hold_requests", "status_lcd",
+        for key in ("data_channels", "offer", "frames", "touch_fails", "adb_fails", "hold_requests", "status_lcd",
                     "apply_seconds", "stop_seconds", "boot_seconds", "crash_seconds", "gateway_restart_seconds"):
             if key in body:
                 self.options[key] = body[key]

@@ -351,7 +351,7 @@ packaging/build-release.sh
 
 The script fetches Google's `android-emulator-container-scripts` at the commit
 pinned in `lib/versions.env`, applies `04-cloud-phone-app/src/overlay`,
-runs the JavaScript (jest) tests, builds the web page and the gateway wheel, checks
+builds the web page and the gateway wheel, checks
 that every Python dependency has a wheel for Python 3.10 to 3.13, and writes
 `dist/cloudphone-<version>-linux-x86_64.tar.gz` with its checksum. Downloads
 are cached in `build/cache`. The tarball is reproducible for a given commit.

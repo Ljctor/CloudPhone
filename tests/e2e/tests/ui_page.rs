@@ -4,6 +4,8 @@ use cloudphone_e2e::*;
 use serde_json::json;
 use std::time::Duration;
 
+const SOON: Duration = Duration::from_secs(20);
+
 #[test]
 fn the_video_plays_and_its_time_advances() {
     let cp = CloudPhone::start();
@@ -250,5 +252,97 @@ fn the_page_loads_without_errors_in_the_console() {
         page.sleep(Duration::from_secs(5)).await;
         let errors = page.js("return window.__errors", vec![]).await;
         assert_eq!(errors, json!([]), "no error while streaming");
+    });
+}
+
+#[test]
+fn the_video_is_muted_and_holds_each_track_once() {
+    let cp = CloudPhone::start();
+    browser_test(&cp, Options::default(), |page| async move {
+        let video = page
+            .js(
+                "const v = document.querySelector('video'); const ids = v.srcObject ? v.srcObject.getTracks().map(t => t.id) : []; \
+                 return {muted: v.muted, ids: ids, unique: new Set(ids).size, video: v.srcObject ? v.srcObject.getVideoTracks().length : 0}",
+                vec![],
+            )
+            .await;
+        assert_eq!(video["muted"], true, "the page plays no sound: {video}");
+        assert_eq!(video["video"], 1, "one video track: {video}");
+        assert_eq!(video["unique"], video["ids"].as_array().unwrap().len(), "no track twice: {video}");
+    });
+}
+
+#[test]
+fn the_page_says_connected_only_once_a_frame_arrives() {
+    // The WebRTC session connects, but the emulator sends no picture yet.
+    let cp = CloudPhone::start_with(json!({"options": {"frames": false}}));
+    let phone = cp.clone();
+    browser_test(&cp, Options::without_video(), |page| async move {
+        let p = phone.clone();
+        blocking(move || {
+            let start = std::time::Instant::now();
+            while !p.fake().state()["sessions"].as_array().unwrap().iter().any(|s| s["state"] == "connected") {
+                assert!(start.elapsed() < Duration::from_secs(20), "the session never connected: {}", p.fake().state());
+                std::thread::sleep(Duration::from_millis(200));
+            }
+        });
+        page.sleep(Duration::from_secs(2)).await;
+        assert_ne!(page.led().await["label"], "Connexion connected", "no frame, not connected");
+        assert!(page.banners().await.iter().any(|b| b.contains("Connexion au flux…")), "{:?}", page.banners().await);
+        phone.fake().control(json!({"frames": true}));
+        page.wait_led(led::GREEN, Duration::from_secs(20)).await;
+        assert_eq!(page.led().await["label"], "Connexion connected");
+        page.wait_no_status("Connexion au flux…", Duration::from_secs(5)).await;
+    });
+}
+
+#[test]
+fn a_page_still_connecting_reopens_its_signalling_when_the_gateway_restarts() {
+    // No offer: the page waits on its signalling socket, then the gateway
+    // restarts and closes it.
+    let cp = CloudPhone::start_with(json!({"options": {"offer": false}}));
+    let phone = cp.clone();
+    browser_test(&cp, Options::without_video(), |page| async move {
+        page.wait_status("Connexion au flux…", SOON).await;
+        let p = phone.clone();
+        blocking(move || {
+            p.wait_viewers("the page's signalling session", Duration::from_secs(10), |n| n == 1);
+            let token = p.page_token();
+            p.fake().action("restart_gateway");
+            p.wait_new_token(&token, Duration::from_secs(20));
+            wait_for("the page back on the new gateway, by itself", Duration::from_secs(30), || {
+                let state = p.try_get_json("api/v1/state?viewer=e2e-count")?;
+                (state["viewers"] == 1).then_some(())
+            });
+        });
+    });
+}
+
+#[test]
+fn after_a_long_outage_the_video_still_comes_back() {
+    // Longer than the signalling driver's own retries (about 30 s).
+    let cp = CloudPhone::start();
+    let phone = cp.clone();
+    browser_test(&cp, Options::default(), |page| async move {
+        phone.fake().action("stop_gateway");
+        page.wait_status("Serveur injoignable", SOON).await;
+        page.sleep(Duration::from_secs(45)).await;
+        phone.fake().action("start_gateway");
+        page.wait_no_status("Serveur injoignable", SOON).await;
+        page.wait_js("the video playing again", Duration::from_secs(60),
+            "const v = document.querySelector('video'); const l = document.querySelector('[aria-label^=\"Connexion \"]'); \
+             return !!v && v.videoWidth > 0 && !v.paused && !!l && l.getAttribute('aria-label') === 'Connexion connected'", vec![]).await;
+    });
+}
+
+#[test]
+fn the_page_loads_while_androids_status_cannot_be_read() {
+    // The emulator's gRPC is down before the page opens: GET
+    // /api/v1/emulator/status fails, and the page still runs and says why.
+    let cp = CloudPhone::start_with(json!({"options": {"offer": false}}));
+    cp.fake().control(json!({"grpc": "down"}));
+    browser_test(&cp, Options::without_video(), |page| async move {
+        page.wait_status("Le serveur se reconnecte à Android…", SOON).await;
+        assert_eq!(page.toolbar_labels().await.len(), 10, "the whole toolbar");
     });
 }

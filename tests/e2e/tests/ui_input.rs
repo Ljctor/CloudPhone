@@ -253,3 +253,42 @@ fn a_held_finger_shows_in_the_video_android_sends_back() {
         assert!(elsewhere < 0.05, "and nowhere else: {elsewhere:.2}");
     });
 }
+
+#[test]
+fn a_drag_past_the_screen_edge_ends_on_the_edge() {
+    // A wide window: room right of the screen for the pointer to leave it.
+    let cp = CloudPhone::start();
+    let phone = cp.clone();
+    let options = Options { window: (700, 960), ..Options::default() };
+    browser_test(&cp, options, |page| async move {
+        let rect = page.rect(&cloudphone_e2e::browser::css_label(fr::TOUCH_SURFACE)).await;
+        let right = rect["x"].as_f64().unwrap() + rect["w"].as_f64().unwrap();
+        let width = page.js("return window.innerWidth", vec![]).await.as_f64().unwrap();
+        assert!(width - right > 30.0, "room right of the screen: {rect} in {width} px");
+        let from = page.viewport_point((480, 1040), 400, 520).await;
+        let to = (right + 25.0, from.1);
+        let client = &page.client;
+        use fantoccini::actions::{InputSource, MouseActions, PointerAction, MOUSE_BUTTON_LEFT};
+        let mut mouse = MouseActions::new("mouse".into())
+            .then(PointerAction::MoveTo { duration: None, x: from.0, y: from.1 })
+            .then(PointerAction::Down { button: MOUSE_BUTTON_LEFT });
+        for i in 1..=8 {
+            let f = i as f64 / 8.0;
+            mouse = mouse.then(PointerAction::MoveTo { duration: Some(Duration::from_millis(40)), x: from.0 + (to.0 - from.0) * f, y: from.1 });
+        }
+        mouse = mouse.then(PointerAction::Up { button: MOUSE_BUTTON_LEFT });
+        client.perform_actions(mouse).await.expect("drag");
+        let _ = client.release_actions().await;
+        let fake = phone.clone();
+        let touches = blocking(move || {
+            fake.fake().wait_record("the drag's release", SOON, |r| {
+                let t = r["touches"].as_array()?;
+                (t.last()?["pressure"] == 0).then(|| t.clone())
+            })
+        });
+        assert!(touches.iter().all(|t| t["x"].as_u64().unwrap() <= 479), "never past Android's right edge: {touches:?}");
+        let last = touches.last().unwrap();
+        assert_eq!(last["x"], 479, "the release lands on the edge: {last}");
+        assert!((last["y"].as_f64().unwrap() - 520.0).abs() <= 4.0, "at the pointer's height: {last}");
+    });
+}
