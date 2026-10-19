@@ -212,6 +212,11 @@ mkdir -p "$DIST"
 tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$SOURCE_DATE_EPOCH" \
   -C "$BUILD/stage" -cf - "$NAME" | gzip -9n >"$DIST/$NAME.tar.gz"
 (cd "$DIST" && sha256sum "$NAME.tar.gz" >"$NAME.tar.gz.sha256")
+# The commit it was built from, beside the tarball (not inside, so the build
+# stays reproducible): deploy.sh refuses a tarball from another commit.
+{ git -C "$ROOT" rev-parse HEAD
+  git -C "$ROOT" diff --quiet HEAD || echo "uncommitted changes"
+} >"$DIST/$NAME.tar.gz.commit"
 echo
 du -h "$DIST/$NAME.tar.gz"
 cat "$DIST/$NAME.tar.gz.sha256"

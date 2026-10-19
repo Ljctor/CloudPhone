@@ -470,7 +470,10 @@ packaging/deploy.sh "$SERVER" 04 05     # add 05 when the plugin is installed, t
 
 `deploy.sh` runs `stage-release.sh` and then each part's `install.sh`; it
 uses `AS_ROOT` from your terminal and listens on `10.20.0.1` (`LISTEN`
-overrides it). Reload the page afterwards: each gateway start issues a new
+overrides it). It does not build: it refuses a tarball built from another
+commit than your checkout's HEAD, so a forgotten `build-release.sh` cannot
+ship an old version (`deploy.sh --force` deploys it anyway). Reload the page
+afterwards: each gateway start issues a new
 page token, and a tab opened before it answers 403 to every button until it
 is reloaded.
 

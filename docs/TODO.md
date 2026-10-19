@@ -25,8 +25,5 @@ the machine at once (wrap `cargo test` in `flock` on one shared lock file).
    framesDecoded, framesDropped, framesPerSecond) beside SurfaceFlinger
    timestats in the same 60 s, on a battle and on a light screen. Needs the
    page open in the user's browser.
-4. `packaging/deploy.sh` refuses a tarball built from another commit than
-   HEAD (unless `--force`), or builds it first: it once shipped a stale
-   build.
-5. Hexagonal refactor: gateway domains (display next, with
+4. Hexagonal refactor: gateway domains (display next, with
    `adapters/host_files.py`), then the page, then the plugin.
