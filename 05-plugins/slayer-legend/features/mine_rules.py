@@ -3,10 +3,11 @@ last look saw (see mine_facts), what the loop remembers and the time go
 in; the move to make comes out. The feature (mine.py beside this file)
 makes the moves, every one through the navigation guard.
 
-The loop remembers {no_gold, gold_seen, last_hold, failures}: the checks
-in a row without the gold scroll, when it was last seen and when Power
-Saving Mode was last left (monotonic seconds, 0: never), and the
-relaunches that failed in a row.
+The loop remembers {no_gold, gold_seen, last_hold, failures,
+untick_failures}: the checks in a row without the gold scroll, when it
+was last seen and when Power Saving Mode was last left (monotonic
+seconds, 0: never), the relaunches that failed in a row, and the tries in
+a row to untick "Repeat entry" that did not take.
 """
 
 # Seconds between two looks of the farming loop.
@@ -22,6 +23,11 @@ SAVER_EVERY = 60
 GOLD_STALE = 5 * 60
 # Relaunches failed in a row before giving up.
 MAX_FAILURES = 3
+# Tries in a row to untick "Repeat entry" that did not take before giving
+# up (blocked, one alert): the same number.
+MAX_UNTICK_FAILURES = MAX_FAILURES
+# The moves that untick "Repeat entry".
+UNTICKS = ("stop_timer", "stop_no_gold")
 # The game not in front this long (seconds): one alert.
 AWAY_ALERT = 120
 # The floor list: tries to find the floor, and the swipe (start and end
@@ -40,7 +46,7 @@ WATCH_EVERY = 30
 
 
 def fresh():
-    return {"no_gold": 0, "gold_seen": 0.0, "last_hold": 0.0, "failures": 0}
+    return {"no_gold": 0, "gold_seen": 0.0, "last_hold": 0.0, "failures": 0, "untick_failures": 0}
 
 
 def request(body):
@@ -71,6 +77,22 @@ def away(since, now):
 
 
 def step(facts, memory, now, wall, until, gold):
+    """The farming loop's move for what a look saw: see _move(). Any move
+    but an untick ends a run of failed unticks."""
+    move, memory, gold, gone = _move(facts, memory, now, wall, until, gold)
+    if move not in UNTICKS:
+        memory["untick_failures"] = 0
+    return move, memory, gold, gone
+
+
+def untick_failed(memory):
+    """(memory, give up) after a try to untick "Repeat entry" that did not
+    take: give up at the MAX_UNTICK_FAILURES-th in a row."""
+    memory = {**memory, "untick_failures": memory["untick_failures"] + 1}
+    return memory, memory["untick_failures"] >= MAX_UNTICK_FAILURES
+
+
+def _move(facts, memory, now, wall, until, gold):
     """The farming loop's move for what a look saw: (move, memory, gold,
     gone). now: monotonic seconds; wall: Unix seconds; until: the mine's
     end or None; gold: the gold scroll as last told (None, True, False).

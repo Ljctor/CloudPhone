@@ -8,11 +8,12 @@ POST /mine/timer   {add: minutes}: moves the end of farming (may be negative)
 While a fight runs with "Repeat entry" ticked it only watches. Back on
 the floor list (after 30 entries) it taps the floor, the Area and 3
 feathers again. When the gold scroll is gone, or at `until`, it unticks
-"Repeat entry": the entry under way is the last. A mine whose timer ended
-while the gateway was down gets a stop pass at the gateway's start. When
-to do what is in mine_rules.py; every tap, hold and swipe goes through the
-navigation guard (ports). The mine's floor, area, timer and on/off are
-kept in state.json ("mine").
+"Repeat entry": the entry under way is the last; three tries in a row that
+do not take leave it blocked (one alert), tapping nothing more. A mine
+whose timer ended while the gateway was down gets a stop pass at the
+gateway's start. When to do what is in mine_rules.py; every tap, hold and
+swipe goes through the navigation guard (ports). The mine's floor, area,
+timer and on/off are kept in state.json ("mine").
 """
 
 import asyncio
@@ -74,17 +75,27 @@ def mine(ports, screens, readers, rules, timer, values):
         shot = await step(shot, "mine_feathers", "feathers", readers.FEATHER_TAPS[rules.FEATHERS - 1], 6)
         return bool(shot) and await ports.analyse(readers.in_fight, shot)
 
-    async def untick(shot, reason):
-        """Unticks "Repeat entry" so that the entry under way is the last.
-        True once it is unticked and farming is off."""
+    async def unticked(shot):
+        """Unticks "Repeat entry" if it is ticked, so that the entry under
+        way is the last. True once it is unticked."""
         if await ports.analyse(readers.repeat_ticked, shot):
             shot = await step(shot, "mine_fight", "repeat", readers.REPEAT_TAP)
             if not shot or await ports.analyse(readers.repeat_ticked, shot):
-                report("blocked", f"{reason}, mais « Repeat entry » ne se décoche pas")
-                await alert(status["message"])
                 return False
+        return True
+
+    def stopped(reason):
         status["enabled"] = False
         report("stopped", f"{reason} : « Repeat entry » décoché, la mine s’arrête après cette entrée")
+
+    async def untick(shot, reason):
+        """The stop pass's untick: True once it is unticked and farming is
+        off; else blocked, with an alert."""
+        if not await unticked(shot):
+            report("blocked", f"{reason}, mais « Repeat entry » ne se décoche pas")
+            await alert(status["message"])
+            return False
+        stopped(reason)
         return True
 
     def mine_facts(shot):
@@ -116,6 +127,23 @@ def mine(ports, screens, readers, rules, timer, values):
             report(state, message)
             await alert(f"Mine arrêtée ({place}) : {message}")
 
+        async def untick_or_retry(shot, reason):
+            """The farming loop's untick: "unticked" (farming is off),
+            "retry" (it did not take: the next look tries again) or, after
+            rules.MAX_UNTICK_FAILURES tries in a row that did not take,
+            "blocked" (farming is off, one alert, no more taps)."""
+            nonlocal memory
+            if await unticked(shot):
+                stopped(reason)
+                return "unticked"
+            memory, give_up = rules.untick_failed(memory)
+            if give_up:
+                await finish("blocked", f"{reason}, mais « Repeat entry » ne se décoche pas après "
+                             f"{rules.MAX_UNTICK_FAILURES} essais : décoche-le à la main")
+                return "blocked"
+            report("blocked", f"{reason}, mais « Repeat entry » ne se décoche pas : nouvel essai")
+            return "retry"
+
         try:
             while status["enabled"]:
                 await ports.clock.sleep(rules.SECONDS)
@@ -139,9 +167,11 @@ def mine(ports, screens, readers, rules, timer, values):
                         await ports.hold(shot, "saver", "leave", screens.SAVER_TAP, screens.SAVER_HOLD_MS)
                 elif move == "stop_timer":
                     shot = await look_again()
-                    if shot and await untick(shot, "Durée écoulée"):
+                    result = await untick_or_retry(shot, "Durée écoulée") if shot else "retry"
+                    if result == "unticked":
                         await alert(f"Durée écoulée ({place}) : « Repeat entry » décoché, la mine s’arrête après "
                                     "cette entrée")
+                    if result != "retry":
                         return
                 elif move == "gold":
                     report("farming", "Combat en cours, parchemin doré actif")
@@ -154,7 +184,7 @@ def mine(ports, screens, readers, rules, timer, values):
                         report("farming", "Combat en cours, sans parchemin doré")
                         continue
                     shot = await look_again()
-                    if shot and await untick(shot, "Plus de parchemin doré"):
+                    if shot and await untick_or_retry(shot, "Plus de parchemin doré") != "retry":
                         return
                 elif move == "other":
                     report("waiting", "Écran autre que la mine : rien à faire")
