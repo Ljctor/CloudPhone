@@ -119,8 +119,11 @@ SCREEN_SECONDS = 2.0
 MINE = {"enabled": False, "floor": None, "area": None, "until": None, "gold": None,
         "state": "off", "message": "", "task": None, "stopper": None}
 # A mine whose timer ended while the gateway was down, in a fight: how long
-# its stop pass looks for the fight to untick "Repeat entry".
+# its stop pass looks for the fight to untick "Repeat entry", then how long
+# and how often it still watches for it, without touching anything else.
 MINE_STOP_SECONDS = 180
+MINE_WATCH_SECONDS = 15 * 60
+MINE_WATCH_EVERY = 30
 MINE_FEATHERS = 3
 MINE_SECONDS = 10
 # What the game is set to do. "mpw18" (farming a stage with 18 monsters per
@@ -910,29 +913,57 @@ def setup(context):
         save_state()
         return context.json(mode_state())
 
+    async def game_running():
+        """False when the game's process is gone, None when adb cannot tell."""
+        code, out = await context.adb("shell", "pidof", PACKAGE)
+        if code == 0 and out.strip():
+            return True
+        return False if code == 1 and not out.strip() else None
+
+    def stop_facts(shot):
+        return classify(shot), mine_facts(shot)
+
     async def stop_after_restart():
         """The stop pass of a mine whose timer ended while the gateway was
-        down, during a fight: it only looks (a screenshot at once each time)
+        down, during a fight. It only looks (a screenshot at once each time)
         and, on the mine fight, unticks "Repeat entry" through the guard as
         mine_stop does; Power Saving Mode is left as the mine loop leaves
-        it. Gives up after MINE_STOP_SECONDS without seeing the fight."""
+        it. When the game cannot be in a fight (its process gone, another
+        app in front, the title or save screen: Android or the game
+        restarted), it ends at once: nothing to untick. Without seeing the
+        fight for MINE_STOP_SECONDS it is "blocked" (alert), then watches
+        for MINE_WATCH_SECONDS more (watch_after_blocked)."""
+        reason = "Durée écoulée pendant un redémarrage de la passerelle"
         mine_report("stopping", "Durée écoulée pendant un redémarrage : décoche « Repeat entry »")
         deadline = time.monotonic() + MINE_STOP_SECONDS
         last_hold = 0.0
+        looks = 0
         try:
             while time.monotonic() < deadline:
-                await asyncio.sleep(MINE_SECONDS)
-                if not await in_focus():
-                    continue
+                # The first look at once: a game that cannot be in a fight ends it.
+                if looks:
+                    await asyncio.sleep(MINE_SECONDS)
+                looks += 1
+                gone = await game_running() is False
+                if gone or not await in_focus():
+                    mine_report("stopped", f"{reason} : le jeu n’est plus en combat, rien à décocher")
+                    logging.info("Slayer Legend mine: timer ended during a restart, game "
+                                 + ("not running" if gone else "not in front") + ": nothing to untick")
+                    return
                 shot = await context.screenshot(max_age=0)
                 if not shot:
                     continue
-                facts = await context.analyse(mine_facts, shot)
+                screen, facts = await context.analyse(stop_facts, shot)
+                if screen in ("title", "save"):
+                    mine_report("stopped", f"{reason} : le jeu a redémarré, rien à décocher")
+                    logging.info(f"Slayer Legend mine: timer ended during a restart, game on its {screen} "
+                                 "screen: nothing to untick")
+                    return
                 if facts["saver"] and time.monotonic() - last_hold > 60:
                     last_hold = time.monotonic()
                     await hold(shot, "saver", "leave", SAVER_TAP, SAVER_HOLD_MS)
                 elif facts.get("fight"):
-                    if await mine_stop(shot, "Durée écoulée pendant un redémarrage de la passerelle"):
+                    if await mine_stop(shot, reason):
                         logging.info("Slayer Legend mine: timer ended during a restart, Repeat entry unticked")
                     return
             mine_report("blocked", "Durée écoulée pendant un redémarrage, combat de la mine pas vu en "
@@ -940,11 +971,35 @@ def setup(context):
             logging.warning("Slayer Legend mine: timer ended during a restart, fight not seen: "
                             "Repeat entry may still be ticked")
             await alert(MINE["message"])
+            await watch_after_blocked(reason)
         except asyncio.CancelledError:
             raise
         except Exception as e:
             logging.exception("Slayer Legend mine stop failed")
             mine_report("failed", f"Erreur : {e!r}"[:200])
+
+    async def watch_after_blocked(reason):
+        """After a stop pass gave up: one look every MINE_WATCH_EVERY with
+        the shared screenshot, no tap and no Power Saving hold, except
+        unticking "Repeat entry" (mine_stop, after a screenshot at once
+        still shows the fight) if the mine fight appears. One more alert if
+        it is still blocked at the end."""
+        deadline = time.monotonic() + MINE_WATCH_SECONDS
+        while time.monotonic() < deadline:
+            await asyncio.sleep(MINE_WATCH_EVERY)
+            if not await in_focus():
+                continue
+            shot = await context.screenshot(max_age=MINE_WATCH_EVERY)
+            if not shot or not (await context.analyse(mine_facts, shot)).get("fight"):
+                continue
+            shot = await context.screenshot(max_age=0)
+            if shot and (await context.analyse(mine_facts, shot)).get("fight"):
+                if await mine_stop(shot, reason):
+                    logging.info("Slayer Legend mine: fight seen after giving up, Repeat entry unticked")
+                return
+        logging.warning(f"Slayer Legend mine: fight still not seen after {MINE_WATCH_SECONDS // 60} more minutes")
+        await alert(f"Mine : combat toujours pas vu après {(MINE_STOP_SECONDS + MINE_WATCH_SECONDS) // 60} "
+                    "minutes, « Repeat entry » est peut-être encore coché : vérifie à la main")
 
     def cancel_stopper():
         """The user starts the mine: no stop pass any more."""
