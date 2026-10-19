@@ -9,6 +9,9 @@ case "$gpu" in
   swangle_indirect) gpu=swangle ;;
 esac
 
+# EMULATOR_EXTRA_ARGS: more emulator flags, split on spaces (no quoting),
+# e.g. "-feature -GLPipeChecksum"; empty by default.
+# shellcheck disable=SC2086
 exec /opt/cloudphone/android-sdk/emulator/emulator \
   -avd "${AVD_NAME:-cloudphone}" \
   -port "${EMULATOR_PORT:-5558}" \
@@ -18,4 +21,5 @@ exec /opt/cloudphone/android-sdk/emulator/emulator \
   -no-window -no-audio -no-boot-anim -no-snapshot -no-metrics \
   -gpu "$gpu" \
   -memory "${EMULATOR_MEMORY_MB:-4096}" \
-  -cores "${EMULATOR_CORES:-4}"
+  -cores "${EMULATOR_CORES:-4}" \
+  ${EMULATOR_EXTRA_ARGS:-}
