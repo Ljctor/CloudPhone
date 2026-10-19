@@ -70,7 +70,7 @@ Android keeps running. Reload the page (the index is never cached).
 |---|---|
 | `GET /`, `/index.html`, `/assets/*` | the page |
 | `GET /api/v1/ping` | 204 at once, for the round-trip time |
-| `GET /api/v1/state?viewer=ID[&details=1]` | emulator unit state (`systemctl show`), Android booted, viewers, load, `display` and `settings` change status, `kicked` for this viewer; cached 2 s. `details=1` adds `metrics` (host, emulator, Android) and turns on adb sampling of Android for 30 s. The page polls every 3 s, every 2 s with details while the Server tab is open |
+| `GET /api/v1/state?viewer=ID[&details=1]` | emulator unit state (`systemctl show`), Android booted, viewers, load, `display` and `settings` change status, `kicked` for this viewer; cached 2 s. `details=1` adds `metrics` (host, emulator, Android) and `plugins` (`{id: {screenshots}}`: the screenshots each plugin's gateway code took since the gateway started), and turns on adb sampling of Android for 30 s. The page polls every 3 s, every 2 s with details while the Server tab is open |
 | `GET /api/v1/events` | what happened to Android and the server, newest first (`events.py`): app crashes, ANRs and apps Android stopped while noticeable (out-of-memory score ≤ 200, e.g. stopped for a Google Play Services update), low memory, from `logcat -b events,crash` (back to Android's last boot at most); Android's boot (`/proc/uptime`), the emulator unit's start, automatic restarts and last result (`systemctl show`), the gateway's start. Each event is `{time, kind, app, reason}`; cached 10 s. Kept for API clients: the page shows the server's log instead, where the gateway turns these events into records (below) |
 | `GET /api/v1/logs?since=CURSOR` | the gateway's log records after `CURSOR`, oldest first: `{cursor, records}` (see "Logs" below). Without a cursor, or with one from an earlier gateway process, every record kept (the last 500). Same origin check as the other GETs; `no-store`. The page reads it every 4 s |
 | `GET /api/v1/notify` | phone alerts through ntfy.sh (`notify.py`): `{available, enabled, topic, url}`; `available` is false without `--notify_file` |
@@ -294,7 +294,10 @@ checks. The `id` must equal the directory name and match
 top of `plugins.ts` (video element, a drawing layer over the screen, stored
 options, gateway calls) and renders its options (toggle, number, choice, action,
 buttons, status) in Options → Plugins, one foldable section per plugin.
-`context` offers `add_get`/`add_post`, `screenshot()`, `adb(...)`, `json()`,
+`context` offers `add_get`/`add_post`, `screenshot(max_age=0)` (one
+screenshot shared by every plugin: a capture younger than `max_age`
+seconds, or one under way, is given instead of a new one; a plugin's own
+`adb shell input` makes earlier ones stale), `adb(...)`, `json()`,
 `notify(text)`, which sends a phone alert when the user turned them on
 (below), and `data_dir`: a directory the plugin may write to,
 `/var/lib/cloudphone/plugins/<id>/` (`--plugin_data`, created by the gateway

@@ -103,7 +103,7 @@ configured count.
 | `tests/api.rs` | ping, caching, 404/405, viewers, disconnect-others, origin checks on the socket, consistency between endpoints |
 | `tests/input.rs` | touches and keys over HTTP reach Android at the right place |
 | `tests/lifecycle.rs` | crash, restart, discovery file replaced, gateway restarts |
-| `tests/plugins.rs` | plugin host: list, served scripts, routes, token checks, screenshot and adb for plugins, broken plugins skipped |
+| `tests/plugins.rs` | plugin host: list, served scripts, routes, token checks, screenshot (shared, counted in the state details) and adb for plugins, broken plugins skipped |
 | `tests/contract.rs` | what the emulator says (status, JSEP shapes, data channels, codecs): on the fake by default, on a deployed instance with `--features smoke` |
 | `tests/ui_page.rs` | Firefox: video plays and fits, toolbar labels, landmarks, LED, metrics block, ↻ replaces only the video session, English browser |
 | `tests/ui_banners.rs` | every status the page shows, covering or closable, with the LED colour; priority; closing; English |

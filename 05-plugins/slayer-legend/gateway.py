@@ -207,7 +207,7 @@ def setup(context):
     emerald = load_sibling(context.directory, "emerald_mask")
 
     async def read_emerald_mask(area):
-        shot = await context.screenshot()
+        shot = await context.screenshot(max_age=EMERALD_SECONDS)
         if not shot:
             return {"mask": None, "reason": "screenshot"}
         width, height, image = shot
@@ -275,7 +275,7 @@ def setup(context):
     async def read_screen(remembered):
         if not await in_focus():
             return {"screen": "away", "stage": None}
-        shot = await context.screenshot()
+        shot = await context.screenshot(max_age=SCREEN_SECONDS)
         if not shot:
             return {"screen": None, "stage": None}
         screen = classify(shot)
@@ -495,7 +495,7 @@ def setup(context):
                         await alert("Le jeu n’est plus au premier plan depuis 2 minutes (plantage ?)")
                     continue
                 away_since = None
-                shot = await context.screenshot()
+                shot = await context.screenshot(max_age=MINE_SECONDS)
                 if not shot:
                     continue
                 if classify(shot) == "saver":
@@ -855,7 +855,7 @@ def setup(context):
         # Stops 10 minutes after the last page asked.
         while time.monotonic() - GOLD["asked"] < 600:
             try:
-                shot = await context.screenshot() if await in_focus() else None
+                shot = await context.screenshot(max_age=GOLD_SECONDS) if await in_focus() else None
                 if not shot:
                     gold_elsewhere()  # another app in front: the game stops
                 else:
@@ -905,7 +905,8 @@ def setup(context):
     async def trace_signature():
         """(screen name, thumbnail) of the screen now, or None when the game
         is not in front."""
-        shot, focus = await asyncio.gather(context.screenshot(), in_focus())
+        # Taken at once: a tap's screen, never one from before it.
+        shot, focus = await asyncio.gather(context.screenshot(max_age=0), in_focus())
         if not shot or not focus:
             return None
         return classify(shot), trace.thumbnail(shot)

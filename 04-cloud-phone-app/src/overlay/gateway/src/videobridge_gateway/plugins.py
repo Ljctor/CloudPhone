@@ -10,6 +10,11 @@ The directory belongs to root (an install script puts plugins there), so the
 gateway runs their code like its own. A plugin that fails to load is logged
 and skipped; the gateway and the other plugins keep working.
 
+Plugins share one screenshot: context.screenshot(max_age=S) gives the last
+capture when it is younger than S seconds, or joins the capture under way,
+instead of asking the emulator again. The captures each plugin started are
+counted (GET /api/v1/state?details=1, "plugins").
+
 A plugin may keep files in its own data directory, DATA_DIR/<id>
 (--plugin_data, /var/lib/cloudphone/plugins on a server), created by the
 gateway, owned by its user, mode 700, kept across upgrades: context.data_dir,
@@ -35,10 +40,53 @@ ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
 SCRIPT_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}\.js$")
 
 
+class Screenshots:
+    """Android's screen, shared by every plugin. A caller accepting a
+    capture max_age seconds old gets the last one if it is that young, or
+    joins the capture under way if it started that recently; otherwise a
+    new capture starts. A plugin's own touch (adb shell input) makes the
+    earlier captures stale. Counts the captures each plugin started."""
+
+    def __init__(self, capture):
+        self._capture = capture
+        self._generation = 0
+        self._last = None      # (start, generation, value)
+        self._flight = None    # (start, generation, task)
+        self.counts = {}
+
+    def stale(self):
+        self._generation += 1
+
+    def _young(self, entry, now, max_age):
+        return entry is not None and entry[1] == self._generation and now - entry[0] < max_age
+
+    async def get(self, plugin_id, max_age=0):
+        loop = asyncio.get_running_loop()
+        now = loop.time()
+        if self._young(self._last, now, max_age):
+            return self._last[2]
+        if self._young(self._flight, now, max_age):
+            return await asyncio.shield(self._flight[2])
+        entry = (now, self._generation, loop.create_task(self._capture()))
+        self._flight = entry
+        self.counts[plugin_id] = self.counts.get(plugin_id, 0) + 1
+
+        def done(task):
+            if self._flight is entry:
+                self._flight = None
+            if not task.cancelled() and task.exception() is None and task.result():
+                if self._last is None or self._last[0] <= entry[0]:
+                    self._last = (entry[0], entry[1], task.result())
+
+        entry[2].add_done_callback(done)
+        return await asyncio.shield(entry[2])
+
+
 class PluginContext:
     """What a plugin's gateway.py may use. Passed to setup(context)."""
 
-    def __init__(self, app, plugin_id, directory, screenshot, adb, notify=None, title=None, data_dir=None):
+    def __init__(self, app, plugin_id, directory, screenshot, adb, notify=None, title=None, data_dir=None,
+                 screenshots=None):
         self.app = app
         self.id = plugin_id
         self.directory = directory
@@ -46,7 +94,7 @@ class PluginContext:
         # belongs to root), or None.
         self.data_dir = data_dir
         self.prefix = f"/api/v1/plugins/{plugin_id}"
-        self._screenshot = screenshot
+        self._screenshots = screenshots or Screenshots(screenshot)
         self._adb = adb
         self._notify = notify
         self._title = title or plugin_id
@@ -59,13 +107,20 @@ class PluginContext:
         """POST /api/v1/plugins/<id><path>; the page token is checked."""
         self.app.router.add_post(f"{self.prefix}{path}", handler)
 
-    async def screenshot(self):
-        """Android's screen as (width, height, RGB888 bytes), or None."""
-        return await self._screenshot()
+    async def screenshot(self, max_age=0):
+        """Android's screen as (width, height, RGB888 bytes), or None. With
+        max_age (seconds), a capture that young may be given instead of a
+        new one (shared by every plugin)."""
+        return await self._screenshots.get(self.id, max_age)
 
     async def adb(self, *args, timeout=10):
         """Runs `adb -s <emulator> ARGS...`; returns (exit code, stdout)."""
-        return await self._adb(*args, timeout=timeout)
+        try:
+            return await self._adb(*args, timeout=timeout)
+        finally:
+            if args[:2] == ("shell", "input"):
+                # The screen is about to change: no capture from before.
+                self._screenshots.stale()
 
     async def notify(self, text):
         """Sends text to the user's phone when they turned alerts on (ntfy,
@@ -108,6 +163,8 @@ def load_plugins(app, plugins_dir, screenshot, adb, notify=None, data_dir=None):
     """Registers every plugin found in plugins_dir; returns their manifests.
     data_dir: the parent of the plugins' data directories, or None."""
     loaded = []
+    screenshots = Screenshots(screenshot)
+    app["plugin_screenshots"] = screenshots
     if not plugins_dir or not os.path.isdir(plugins_dir):
         return loaded
     for name in sorted(os.listdir(plugins_dir)):
@@ -128,8 +185,9 @@ def load_plugins(app, plugins_dir, screenshot, adb, notify=None, data_dir=None):
                 spec = importlib.util.spec_from_file_location(f"cloudphone_plugin_{plugin_id.replace('-', '_')}", code)
                 module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(module)
+                screenshots.counts.setdefault(plugin_id, 0)
                 module.setup(PluginContext(app, plugin_id, directory, screenshot, adb, notify, manifest.get("title"),
-                                           plugin_data_dir(data_dir, plugin_id)))
+                                           plugin_data_dir(data_dir, plugin_id), screenshots))
             loaded.append(manifest)
             logging.info(f"Plugin {plugin_id} {manifest['version']} loaded")
         except Exception as e:
@@ -140,6 +198,14 @@ def load_plugins(app, plugins_dir, screenshot, adb, notify=None, data_dir=None):
 
     app.router.add_get("/api/v1/plugins", handle_list)
     return loaded
+
+
+def plugin_stats(app):
+    """{id: {screenshots}}: the captures each plugin started since the
+    gateway started."""
+    screenshots = app.get("plugin_screenshots")
+    counts = screenshots.counts if screenshots else {}
+    return {plugin_id: {"screenshots": counts[plugin_id]} for plugin_id in sorted(counts)}
 
 
 def page_handler(path):

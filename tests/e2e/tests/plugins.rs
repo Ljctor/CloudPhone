@@ -1,7 +1,7 @@
 //! The plugin host, as the gateway serves it (`--plugins_dir`): the list,
 //! the plugins' page modules, their routes under /api/v1/plugins/<id>/
 //! behind the same checks as the rest of the API, and what a plugin's
-//! gateway code may use (screenshot, adb). With test plugins from
+//! gateway code may use (a screenshot shared between calls, adb). With test plugins from
 //! tests/fake-emulator/plugins, nothing game-specific.
 use cloudphone_e2e::*;
 use serde_json::{json, Value};
@@ -122,4 +122,34 @@ fn a_plugin_reads_a_1080p_screen() {
     let response = cp.get("api/v1/plugins/e2e-probe/screen");
     assert_eq!(response.status(), 200, "the 1080p screenshot reaches the plugin: {:?}", response.text());
     assert_eq!(response.json().unwrap(), json!({"screen": [1080, 2340], "bytes": 1080 * 2340 * 3}));
+}
+
+fn captures(cp: &CloudPhone) -> Value {
+    cp.get_json("api/v1/state?details=1")["plugins"]["e2e-probe"]["screenshots"].clone()
+}
+
+#[test]
+fn plugin_calls_within_max_age_share_one_screenshot() {
+    let cp = with(json!([PROBE]));
+    assert_eq!(captures(&cp), 0, "counted per plugin from the start");
+    for _ in 0..2 {
+        let shot = cp.get_json("api/v1/plugins/e2e-probe/screen?max_age=30");
+        assert_eq!(shot["screen"], json!([480, 1040]));
+    }
+    assert_eq!(captures(&cp), 1, "the second call within max_age reuses the first capture");
+    cp.get_json("api/v1/plugins/e2e-probe/screen");
+    assert_eq!(captures(&cp), 2, "without max_age, a new capture");
+    // The plugin's own touch makes earlier captures stale; then two calls
+    // at once share the capture under way.
+    assert_eq!(cp.post_json("api/v1/plugins/e2e-probe/home", &json!({})).status(), 200);
+    let calls: Vec<_> = (0..2)
+        .map(|_| {
+            let url = cp.url("api/v1/plugins/e2e-probe/screen?max_age=30");
+            std::thread::spawn(move || client().get(url).send().unwrap().json::<Value>().unwrap())
+        })
+        .collect();
+    for call in calls {
+        assert_eq!(call.join().unwrap()["screen"], json!([480, 1040]));
+    }
+    assert_eq!(captures(&cp), 3, "after a touch: one new capture for both calls");
 }

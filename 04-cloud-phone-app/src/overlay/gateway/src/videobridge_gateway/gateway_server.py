@@ -41,7 +41,7 @@ from .proto import emulator_controller_pb2_grpc as ec_grpc
 from .proto import rtc_service_v2_pb2 as rtc
 from .proto import rtc_service_v2_pb2_grpc as rtc_grpc
 from .proto import ice_config_pb2 as ice
-from .plugins import load_plugins, run_adb
+from .plugins import load_plugins, plugin_stats, run_adb
 from . import events as events_log
 from . import notify
 from . import logs
@@ -772,6 +772,7 @@ async def handle_state(request):
     if request.query.get("details") == "1":
         METRICS["android_wanted"] = loop.time()
         value["metrics"] = {key: METRICS[key] for key in ("host", "emulator", "android")}
+        value["plugins"] = plugin_stats(request.app)
     return web.json_response(value, headers={"Cache-Control": "no-store"})
 
 

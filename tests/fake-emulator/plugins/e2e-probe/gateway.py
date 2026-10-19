@@ -17,7 +17,8 @@ def setup(context):
         return context.json({"count": COUNT["value"]})
 
     async def handle_screen(request):
-        shot = await context.screenshot()
+        # ?max_age=S: a capture that young will do (shared screenshot).
+        shot = await context.screenshot(max_age=float(request.query.get("max_age", 0)))
         if not shot:
             return context.json({"screen": None})
         width, height, pixels = shot
