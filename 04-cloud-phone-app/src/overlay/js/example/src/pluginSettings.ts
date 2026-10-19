@@ -1,0 +1,37 @@
+// The plugins' stored options and folded sections, as plain data. No
+// React, no DOM.
+
+// The settings change that stores value under the plugin's key.
+export function pluginOptionChange(settings, id, key, value) {
+  return { plugins: { ...settings.plugins, [id]: { ...settings.plugins?.[id], [key]: value } } };
+}
+
+// A plugin's options cut into sub-sections at each { type: 'section', key,
+// label, folded? }: [{ section (null first), options: [[option, index]] }].
+export function optionParts(options) {
+  const parts = [{ section: null, options: [] }];
+  (options ?? []).forEach((option, index) => {
+    if (option.type === 'section') parts.push({ section: option, options: [] });
+    else parts[parts.length - 1].options.push([option, index]);
+  });
+  return parts;
+}
+
+export function sectionFoldId(plugin, section) {
+  return `${plugin.id}:${section.key ?? section.label}`;
+}
+
+// Folded as stored, else as the section says (its default state).
+export function sectionFolded(settings, id, section) {
+  return settings.foldedPlugins?.[id] ?? Boolean(section.folded);
+}
+
+// The settings change that stores id's folded state in settings[field].
+export function foldedChange(settings, field, id, folded) {
+  return { [field]: { ...settings[field], [id]: folded } };
+}
+
+// An option's field that may be a function of the plugin's state.
+export function resolved(value) {
+  return typeof value === 'function' ? value() : value;
+}

@@ -1,6 +1,6 @@
 import { LANGUAGES, defaultLanguage, setLanguage, tr } from './i18n';
 import { usePlugins } from './plugins';
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Emulator, logger } from '../../src';
 import { TOOLBAR_WIDTH, styles } from './styles';
 import { postFetch, postHeaders } from './api';
@@ -15,6 +15,8 @@ import { Banner, StatusCover, useDismissed } from './banner';
 import { useStreamStats } from './useStreamStats';
 import { useInput } from './useInput';
 import { Toolbar, useBarFold } from './toolbar';
+import { infoSections } from './infoRows';
+import { PluginDialog, PluginList, usePluginDialog } from './pluginOptions';
 
 logger.setLevel('warn');
 
@@ -104,8 +106,7 @@ function App() {
   // client and a server tab) or 'options' (from the cog).
   const [panel, setPanel] = useState(null);
   // A plugin's dialog open over the options panel: { plugin, option }.
-  const [pluginDialog, setPluginDialog] = useState(null);
-  useEffect(() => { if (panel !== 'options') setPluginDialog(null); }, [panel]);
+  const [pluginDialog, setPluginDialog] = usePluginDialog(panel);
   const [infoTab, setInfoTab] = useState('client');
   const serverTab = panel === 'info' && infoTab === 'server';
   const [settings, setSettings] = useState(loadSettings);
@@ -290,12 +291,6 @@ function App() {
   }, []);
 
   const togglePanel = (name) => setPanel((open) => (open === name ? null : name));
-  const row2 = (label, value) => (
-    <div key={label} style={styles.infoRow}>
-      <span style={styles.infoLabel}>{label}</span>
-      <span>{value}</span>
-    </div>
-  );
   const serverRows = serverSections({
     server, configured: displayState?.configured, display, stats,
   });
@@ -315,12 +310,6 @@ function App() {
     ]],
     ['Entrées', [['Touches via', input.inputPath.current]]],
   ];
-  const sections = (list) => list.map(([title, rows]) => (
-    <div key={title}>
-      <div style={styles.infoSection}>{tr(title)}</div>
-      {rows.map(([label, value]) => row2(tr(label), value))}
-    </div>
-  ));
   // A section that folds under its title, folded at first; the state is
   // kept with the other settings.
   const fold = (id, title, content) => {
@@ -346,126 +335,6 @@ function App() {
         onChange={(event) => updateSettings({ [key]: event.target.checked })} />
     </label>
   );
-
-  const setPluginOption = (id, key, value) => updateSettings({
-    plugins: { ...settings.plugins, [id]: { ...settings.plugins?.[id], [key]: value } },
-  });
-  // A plugin's options, cut into foldable sub-sections at each
-  // { type: 'section', key, label, folded? } (folded: its default state).
-  const pluginSections = (plugin) => {
-    const parts = [{ section: null, items: [] }];
-    (plugin.instance.options ?? []).forEach((option, index) => {
-      if (option.type === 'section') parts.push({ section: option, items: [] });
-      else parts[parts.length - 1].items.push(pluginOption(plugin, option, index));
-    });
-    return parts.map(({ section, items }, index) => {
-      if (!section) return <React.Fragment key="top">{items}</React.Fragment>;
-      const id = `${plugin.id}:${section.key ?? section.label}`;
-      const folded = settings.foldedPlugins?.[id] ?? Boolean(section.folded);
-      return (
-        <details key={id} open={!folded} style={styles.pluginSection}
-          onToggle={(event) => {
-            const now = !event.currentTarget.open;
-            if (now !== folded) updateSettings({ foldedPlugins: { ...settings.foldedPlugins, [id]: now } });
-          }}>
-          <summary style={styles.pluginSectionTitle}>{tr(section.label)}</summary>
-          {items}
-        </details>
-      );
-    });
-  };
-
-  const pluginOption = (plugin, option, index) => {
-    const key = `${plugin.id}-${index}`;
-    if (!(option.visible?.() ?? true)) return null;
-    if (option.type === 'toggle') {
-      return (
-        <label key={key} style={styles.infoRow}>
-          <span style={styles.infoLabel}>{tr(option.label)}</span>
-          <input type="checkbox" checked={Boolean(settings.plugins?.[plugin.id]?.[option.key])}
-            onChange={(event) => setPluginOption(plugin.id, option.key, event.target.checked)} />
-        </label>
-      );
-    }
-    if (option.type === 'number') {
-      return (
-        <label key={key} style={styles.infoRow}>
-          <span style={styles.infoLabel}>{tr(option.label)}</span>
-          <input type="text" inputMode="numeric" pattern="[0-9]*" maxLength={12} style={styles.numberInput}
-            placeholder={(typeof option.placeholder === 'function' ? option.placeholder() : option.placeholder) ?? ''} value={settings.plugins?.[plugin.id]?.[option.key] ?? ''}
-            onChange={(event) => setPluginOption(plugin.id, option.key, event.target.value.replace(/\D/g, ''))} />
-        </label>
-      );
-    }
-    if (option.type === 'choice') {
-      const choices = (typeof option.choices === 'function' ? option.choices() : option.choices) ?? [];
-      return (
-        <label key={key} style={styles.infoRow}>
-          <span style={styles.infoLabel}>{tr(option.label)}</span>
-          <select style={styles.select} value={settings.plugins?.[plugin.id]?.[option.key] ?? choices[0]?.value ?? ''}
-            onChange={(event) => setPluginOption(plugin.id, option.key, event.target.value)}>
-            {choices.map((choice) => (
-              <option key={choice.value} value={choice.value}>{tr(choice.label)}</option>
-            ))}
-          </select>
-        </label>
-      );
-    }
-    if (option.type === 'action') {
-      return (
-        <div key={key} style={styles.infoRow}>
-          <span style={styles.infoLabel}>{tr(option.label)}</span>
-          <button style={styles.panelButton} disabled={option.disabled?.() ?? false}
-            onClick={() => Promise.resolve(option.run?.()).catch((error) => console.error(error))}>
-            {tr(option.button ?? option.label)}
-          </button>
-        </div>
-      );
-    }
-    if (option.type === 'buttons') {
-      return (
-        <div key={key} style={styles.infoRow}>
-          <span style={styles.infoLabel}>{tr(option.label)}</span>
-          <span style={styles.buttonGroup}>
-            {(option.buttons ?? []).map((button) => (
-              <button key={button.label} style={styles.smallButton} disabled={button.disabled?.() ?? false}
-                onClick={() => Promise.resolve(button.run?.()).catch((error) => console.error(error))}>
-                {tr(button.label)}
-              </button>
-            ))}
-          </span>
-        </div>
-      );
-    }
-    if (option.type === 'dialog') {
-      // select: a radio button before the label, one of a group sharing
-      // the stored key (the first of the group when nothing is stored).
-      const select = option.select;
-      const stored = select && settings.plugins?.[plugin.id]?.[select.key];
-      return (
-        <div key={key} style={styles.infoRow}>
-          {select ? (
-            <label style={{ ...styles.infoLabel, display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <input type="radio" name={`${plugin.id}-${select.key}`}
-                checked={(stored ?? select.default) === select.value}
-                onChange={() => setPluginOption(plugin.id, select.key, select.value)} />
-              {tr(option.label)}
-            </label>
-          ) : <span style={styles.infoLabel}>{tr(option.label)}</span>}
-          <button style={styles.panelButton} onClick={() => setPluginDialog({ plugin, option })}>
-            {tr(option.button ?? 'Configurer')}
-          </button>
-        </div>
-      );
-    }
-    if (option.type === 'status') {
-      const value = option.value?.() ?? '–';
-      const href = option.href?.();
-      return row2(tr(option.label), href
-        ? <a href={href} target="_blank" rel="noreferrer" style={styles.link}>{value}</a> : value);
-    }
-    return null;
-  };
 
   return (
     <main style={{ ...styles.app, flexDirection: row ? 'row' : 'column' }}>
@@ -519,7 +388,7 @@ function App() {
               )}
               {panel === 'info' && infoTab === 'server' && (
                 <ServerPanel
-                  sections={sections(serverRows)}
+                  sections={infoSections(serverRows)}
                   viewers={server.value?.viewers}
                   gatewayUrl={gatewayUrl}
                   settingsForm={(
@@ -541,7 +410,7 @@ function App() {
               )}
               {panel === 'info' && infoTab === 'client' && (
                 <div role="tabpanel">
-                  {sections(clientSections)}
+                  {infoSections(clientSections)}
                   {fold('clientLogs', 'Journaux du client', <>
                     {logFilter}
                     <LogList entries={logs.page} filter={settings.logFilter} rowStyle={styles.infoRow}
@@ -561,34 +430,15 @@ function App() {
                   {toggle('Afficher le curseur', 'touchMarker')}
                   {toggle('Replier la barre 3 s après l’entrée en plein écran', 'autoFold')}
                   <AlertsPanel alerts={alerts} />
-                  <div style={styles.infoSection}>{tr('Plugins')}</div>
-                  {plugins.length === 0 && <div style={styles.infoNote}>{tr('Aucun plugin installé.')}</div>}
-                  {plugins.map((plugin) => (
-                    // One foldable section per plugin, folded state kept with the settings.
-                    <details key={plugin.id} open={!settings.foldedPlugins?.[plugin.id]}
-                      onToggle={(event) => {
-                        const folded = !event.currentTarget.open;
-                        if (folded !== Boolean(settings.foldedPlugins?.[plugin.id])) {
-                          updateSettings({ foldedPlugins: { ...settings.foldedPlugins, [plugin.id]: folded } });
-                        }
-                      }}>
-                      <summary style={styles.pluginTitle}>{plugin.title}</summary>
-                      {plugin.error && <div style={styles.infoWarning}>{tr('Échec : {message}', { message: plugin.error })}</div>}
-                      {pluginSections(plugin)}
-                    </details>
-                  ))}
+                  <PluginList plugins={plugins} settings={settings} updateSettings={updateSettings}
+                    openDialog={setPluginDialog} />
                 </>
               )}
             </div>
           )}
           {panel === 'options' && pluginDialog && (
-            <div style={styles.pluginDialog} role="dialog" aria-label={tr(pluginDialog.option.title ?? pluginDialog.option.label)}>
-              <div style={styles.infoHeader}>
-                <strong>{tr(pluginDialog.option.title ?? pluginDialog.option.label)}</strong>
-                <button style={styles.infoClose} onClick={() => setPluginDialog(null)} aria-label={tr('Fermer')}>✕</button>
-              </div>
-              {(pluginDialog.option.options ?? []).map((option, index) => pluginOption(pluginDialog.plugin, option, `dialog-${index}`))}
-            </div>
+            <PluginDialog dialog={pluginDialog} settings={settings} updateSettings={updateSettings}
+              openDialog={setPluginDialog} />
           )}
           <div ref={input.touchMarker} style={styles.touchMarker} aria-hidden="true" />
           <div
