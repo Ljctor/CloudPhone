@@ -60,7 +60,7 @@ python3 -c 'import sys; sys.exit(sys.version_info < (3, 10))' || die "Python 3.1
 cached_fetch() {
   local url=$1 sha=$2 file=$CACHE/$3
   mkdir -p "$CACHE"
-  if ! printf '%s  %s\n' "$sha" "$file" | sha256sum -c --quiet - 2>/dev/null; then
+  if ! printf '%s  %s\n' "$sha" "$file" | sha256sum -c --quiet - >/dev/null 2>&1; then
     curl -fL --retry 3 --progress-bar -o "$file.part" "$url" >&2
     mv "$file.part" "$file"
     printf '%s  %s\n' "$sha" "$file" | sha256sum -c --quiet - ||
@@ -215,7 +215,7 @@ tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$SOURCE_DATE_EPOCH
 # The commit it was built from, beside the tarball (not inside, so the build
 # stays reproducible): deploy.sh refuses a tarball from another commit.
 { git -C "$ROOT" rev-parse HEAD
-  git -C "$ROOT" diff --quiet HEAD || echo "uncommitted changes"
+  [ -z "$(git -C "$ROOT" status --porcelain -- . ':!.claude')" ] || echo "uncommitted changes"
 } >"$DIST/$NAME.tar.gz.commit"
 echo
 du -h "$DIST/$NAME.tar.gz"
