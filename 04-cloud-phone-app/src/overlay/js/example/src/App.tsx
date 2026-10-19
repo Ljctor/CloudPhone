@@ -5,16 +5,16 @@ import { Emulator, logger } from '../../src';
 import { TOOLBAR_WIDTH, styles } from './styles';
 import { postFetch, postHeaders } from './api';
 import { LogFilter, LogList, Toasts, pageLog, useLog, useServerLog, useToasts } from './logs';
-import { Icon } from './icons';
 import { AlertsPanel, useAlerts } from './notify';
 import { formatValue, serverSections } from './serverInfo';
 import { ServerPanel } from './serverPanel';
 import { EmulatorSettings, useDisplayState, useEmulatorSettings } from './androidSettings';
 import { useServerState } from './serverState';
 import { bannerShown, diagnose } from './diagnose';
-import { Banner, LEVEL_COLORS, StatusCover, useDismissed } from './banner';
+import { Banner, StatusCover, useDismissed } from './banner';
 import { useStreamStats } from './useStreamStats';
 import { useInput } from './useInput';
+import { Toolbar, useBarFold } from './toolbar';
 
 logger.setLevel('warn');
 
@@ -56,23 +56,6 @@ function fittedScreen(display = DEFAULT_DISPLAY, folded = false, docked = false)
   return below.width > side.width ? { ...below, toolbar: 'below' } : { ...side, toolbar: 'side' };
 }
 
-function toggleFullscreen() {
-  if (document.fullscreenElement) {
-    document.exitFullscreen?.().catch(() => {});
-  } else {
-    document.documentElement.requestFullscreen?.({ navigationUI: 'hide' }).catch(() => {});
-  }
-}
-
-function pingColor(ms) {
-  if (ms === null) return '#8a919c';
-  if (ms < 60) return '#34c759';
-  if (ms < 150) return '#ff9f0a';
-  return '#ff453a';
-}
-
-const LONG_PRESS_MS = 500;
-
 // Per-viewer page settings, kept in this browser only.
 const SETTINGS_KEY = 'cloudphone.settings';
 const DEFAULT_SETTINGS = {
@@ -112,60 +95,6 @@ function deviceInfo(shownScreen) {
   ];
 }
 
-// A button that floats over the screen and can be dragged anywhere, so it
-// never sits for good over something the user wants to tap. A press that
-// does not move is a click.
-function FloatingHandle({ position, onMove, onClick, children, label }) {
-  const drag = useRef(null);
-  const dragged = useRef(false);
-  const size = 36;
-  const clamp = (x, y) => ({
-    x: Math.max(0, Math.min(window.innerWidth - size, x)),
-    y: Math.max(0, Math.min(window.innerHeight - size, y)),
-  });
-  const place = position ? clamp(position.x, position.y)
-    : clamp(window.innerWidth - size - 8, window.innerHeight - size - 8);
-
-  return (
-    <button
-      style={{ ...styles.toolbarHandle, left: place.x, top: place.y }}
-      aria-label={label}
-      onPointerDown={(event) => {
-        event.currentTarget.setPointerCapture(event.pointerId);
-        drag.current = { startX: event.clientX, startY: event.clientY, origin: place, moved: false };
-      }}
-      onPointerMove={(event) => {
-        const current = drag.current;
-        if (!current) return;
-        const dx = event.clientX - current.startX;
-        const dy = event.clientY - current.startY;
-        if (!current.moved && Math.hypot(dx, dy) < 6) return;
-        current.moved = true;
-        onMove(clamp(current.origin.x + dx, current.origin.y + dy), false);
-      }}
-      onPointerUp={() => {
-        const current = drag.current;
-        drag.current = null;
-        dragged.current = Boolean(current?.moved);
-        if (current?.moved) onMove(place, true);
-      }}
-      onPointerCancel={() => { drag.current = null; }}
-      // Unfold on the click itself, not on pointerup: removing the handle at
-      // pointerup sent the tap's click to the fold button now under the
-      // finger, which folded the bar again at once.
-      onClick={() => {
-        if (dragged.current) {
-          dragged.current = false;
-          return;
-        }
-        onClick();
-      }}
-    >
-      {children}
-    </button>
-  );
-}
-
 function App() {
   const emulatorRef = useRef(null);
   const deviceRef = useRef(null);
@@ -179,7 +108,6 @@ function App() {
   useEffect(() => { if (panel !== 'options') setPluginDialog(null); }, [panel]);
   const [infoTab, setInfoTab] = useState('client');
   const serverTab = panel === 'info' && infoTab === 'server';
-  const foldPress = useRef({ timer: null, long: false });
   const [settings, setSettings] = useState(loadSettings);
   // Before any tr() of this render: null means the browser's language.
   setLanguage(settings.language ?? defaultLanguage());
@@ -190,46 +118,10 @@ function App() {
   });
   const reconnectTimer = useRef(null);
   const [display, setDisplay] = useState(DEFAULT_DISPLAY);
-  // Folded: the bar is hidden and the screen uses the whole window; a small
-  // handle unfolds it. Entering fullscreen folds it after 3 s.
-  const [barFolded, setBarFolded] = useState(false);
-  // Folding exists only in fullscreen: outside it the bar always shows.
-  const [fullscreen, setFullscreen] = useState(Boolean(document.fullscreenElement));
-  // The unfold handle appears where the fold button was, at every fold; a
-  // drag moves it until the bar is unfolded.
-  const foldButtonRef = useRef(null);
-  const [handlePosition, setHandlePosition] = useState(null);
-  const foldBar = useRef(null);
-  foldBar.current = () => {
-    const bounds = foldButtonRef.current?.getBoundingClientRect();
-    setHandlePosition(bounds && bounds.width > 0
-      ? { x: bounds.left + bounds.width / 2 - 18, y: bounds.top + bounds.height / 2 - 18 } : null);
-    setBarFolded(true);
-  };
+  const barFold = useBarFold(loadSettings);
+  const { barFolded } = barFold;
   const [screen, setScreen] = useState(() => fittedScreen(DEFAULT_DISPLAY));
   const row = screen.toolbar === 'side';
-  const overlay = screen.toolbar === 'overlay';
-  useEffect(() => {
-    const folder = () => {
-      const current = loadSettings();
-      if (!document.fullscreenElement || !current.autoFold || current.barDocked) return;
-      const timer = window.setTimeout(() => foldBar.current(), 3000);
-      return () => window.clearTimeout(timer);
-    };
-    let cancel = null;
-    const changed = () => {
-      cancel?.();
-      setFullscreen(Boolean(document.fullscreenElement));
-      setBarFolded(false);
-      cancel = folder() ?? null;
-    };
-    document.addEventListener('fullscreenchange', changed);
-    return () => {
-      cancel?.();
-      document.removeEventListener('fullscreenchange', changed);
-    };
-  }, []);
-  const buttonStyle = row ? styles.button : { ...styles.button, ...styles.buttonBelow };
   const [state, setState] = useState('connecting');
   const [streamMounted, setStreamMounted] = useState(true);
   const [streamGeneration, setStreamGeneration] = useState(0);
@@ -397,84 +289,7 @@ function App() {
     };
   }, []);
 
-  const keyButton = (key, label, icon) => (
-    <button className="tool-button" style={buttonStyle} onClick={() => input.sendKey(key)}
-      aria-label={label}><Icon name={icon} /></button>
-  );
-  const connected = state === 'connected';
-  // The connection LED sits in the refresh button's corner.
-  const reloadButton = (
-    <button
-      className="tool-button"
-      style={{ ...buttonStyle, ...styles.withLed, ...(reconnecting ? styles.buttonBusy : null) }}
-      onClick={manualReconnect}
-      aria-label={tr('Reconnecter la vidéo')}
-      aria-busy={reconnecting}
-    >
-      <Icon name="refresh" spinning={reconnecting} />
-      <span
-        title={state}
-        aria-label={tr('Connexion {state}', { state })}
-        style={{
-          ...styles.led,
-          background: problem && problem.level !== 'info' ? LEVEL_COLORS[problem.level]
-            : connected ? '#34c759' : '#ff9f0a',
-        }}
-      />
-    </button>
-  );
-  const fullscreenButton = (
-    <button className="tool-button" style={buttonStyle} onClick={toggleFullscreen}
-      aria-label={tr('Plein écran')}><Icon name="fullscreen" /></button>
-  );
-  // Tap: fold the bar away. Long press: dock it, so it keeps its own space
-  // instead of floating over the screen; a tap then makes it float again.
-  const foldButton = (
-    <button
-      ref={foldButtonRef}
-      className="tool-button"
-      style={{ ...buttonStyle, ...(settings.barDocked ? styles.buttonDocked : null) }}
-      aria-label={settings.barDocked ? tr('Barre fixe : toucher pour la rendre flottante')
-        : tr('Replier la barre (appui long : barre fixe)')}
-      aria-pressed={settings.barDocked}
-      onContextMenu={(event) => event.preventDefault()}
-      onPointerDown={() => {
-        foldPress.current.long = false;
-        window.clearTimeout(foldPress.current.timer);
-        foldPress.current.timer = window.setTimeout(() => {
-          foldPress.current.long = true;
-          navigator.vibrate?.(20);
-          updateSettings({ barDocked: true });
-        }, LONG_PRESS_MS);
-      }}
-      onPointerUp={() => window.clearTimeout(foldPress.current.timer)}
-      onPointerCancel={() => window.clearTimeout(foldPress.current.timer)}
-      onPointerLeave={() => window.clearTimeout(foldPress.current.timer)}
-      onClick={() => {
-        if (foldPress.current.long) return;
-        if (settings.barDocked) updateSettings({ barDocked: false });
-        else foldBar.current();
-      }}
-    ><Icon name={row ? 'foldSide' : 'fold'} /></button>
-  );
   const togglePanel = (name) => setPanel((open) => (open === name ? null : name));
-  const zoneStyle = row ? { ...styles.barZone, ...styles.barZoneColumn } : styles.barZone;
-  // The ping and the frames per second this device shows, one above the
-  // other: opens the information panel on its client tab.
-  const metricsBlock = (
-    <button className="metric-link" style={styles.metric}
-      onClick={() => { if (panel !== 'info') setInfoTab('client'); togglePanel('info'); }}
-      aria-label={tr('Informations : client et serveur')} aria-expanded={panel === 'info'}>
-      <span style={{ ...styles.metricLine, color: pingColor(stats.ping) }}>{formatValue(stats.ping)}ms</span>
-      <span style={{ ...styles.metricLine, color: '#e8ebf0' }}>{formatValue(stats.phone)}fps</span>
-    </button>
-  );
-  const optionsButton = (
-    <button className="tool-button" style={buttonStyle} onClick={() => togglePanel('options')}
-      aria-label={tr('Options et plugins')} title={tr('Options et plugins')} aria-expanded={panel === 'options'}>
-      <Icon name="cog" />
-    </button>
-  );
   const row2 = (label, value) => (
     <div key={label} style={styles.infoRow}>
       <span style={styles.infoLabel}>{label}</span>
@@ -786,42 +601,21 @@ function App() {
           />
         </div>
       </section>
-      {fullscreen && barFolded && (
-        <FloatingHandle
-          label={tr('Afficher la barre (glisser pour déplacer)')}
-          position={handlePosition}
-          onMove={(position) => setHandlePosition(position)}
-          onClick={() => setBarFolded(false)}
-        ><Icon name="unfold" /></FloatingHandle>
-      )}
-      <nav
-        style={row ? styles.toolbar
-          : overlay ? { ...styles.toolbarBar, ...styles.toolbarOverlay, display: barFolded ? 'none' : 'grid' }
-            : styles.toolbarBar}
-        aria-label={tr('Contrôles Android')}
-      >
-        {/* Same order beside the screen (top to bottom) and below it (left to
-            right): the phone's physical keys and the network metrics,
-            Android's recents, home and back centred, then the stream
-            information and the page's own buttons. */}
-        <div style={{ ...zoneStyle, justifyContent: 'flex-start' }}>
-          {keyButton('Power', tr('Marche arrêt'), 'power')}
-          {keyButton('AudioVolumeDown', tr('Baisser le volume'), 'volumeDown')}
-          {keyButton('AudioVolumeUp', tr('Monter le volume'), 'volumeUp')}
-          {metricsBlock}
-        </div>
-        <div style={zoneStyle} aria-label={tr('Navigation Android')}>
-          {keyButton('AppSwitch', tr('Applications récentes'), 'recents')}
-          {keyButton('GoHome', tr('Accueil'), 'home')}
-          {keyButton('GoBack', tr('Retour'), 'back')}
-        </div>
-        <div style={{ ...zoneStyle, justifyContent: 'flex-end' }}>
-          {optionsButton}
-          {reloadButton}
-          {fullscreenButton}
-          {fullscreen && foldButton}
-        </div>
-      </nav>
+      <Toolbar
+        placement={screen.toolbar}
+        fold={barFold}
+        docked={settings.barDocked}
+        setDocked={(barDocked) => updateSettings({ barDocked })}
+        stream={state}
+        problem={problem}
+        reconnecting={reconnecting}
+        onReconnect={manualReconnect}
+        stats={stats}
+        panel={panel}
+        onInfo={() => { if (panel !== 'info') setInfoTab('client'); togglePanel('info'); }}
+        onOptions={() => togglePanel('options')}
+        sendKey={input.sendKey}
+      />
     </main>
   );
 }

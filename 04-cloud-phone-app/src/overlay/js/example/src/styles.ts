@@ -2,6 +2,9 @@
 
 export const TOOLBAR_WIDTH = 40;
 
+// A status's colour by level (diagnose.ts): the banner's border, the LED.
+export const LEVEL_COLORS = { error: '#ff453a', wait: '#ff9f0a', info: '#ffd60a' };
+
 export const styles = {
   // The screen and the toolbar form one centered block, so on a wide window
   // the toolbar stays next to the screen instead of at the window's edge.

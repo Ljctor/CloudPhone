@@ -6,9 +6,7 @@ import { useEffect, useState } from 'react';
 import { tr } from './i18n';
 import { bannerShown, problemLogEntry } from './diagnose';
 import { pageLog } from './logs';
-import { styles } from './styles';
-
-export const LEVEL_COLORS = { error: '#ff453a', wait: '#ff9f0a', info: '#ffd60a' };
+import { LEVEL_COLORS, styles } from './styles';
 
 // The text of the closed banner: a closed warning stays hidden until it
 // goes away and comes back.
