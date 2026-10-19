@@ -26,8 +26,9 @@ A control HTTP server lets tests read what the emulator received
 (POST /control). See tests/e2e/README.md.
 
 Values marked UNVERIFIED are guesses about the real emulator 36.6.11 that
-nothing in the repository confirms; tests/e2e/tests/contract.rs prints them
-from a real session.
+nothing in the repository confirms; tests/e2e/tests/contract.rs prints what
+a real session sends. The values it covers were checked against a live
+emulator (2026-10).
 
 Prints one line "READY {json}" on stdout once the gateway answers.
 """
@@ -68,11 +69,13 @@ RENDERERS = ("lavapipe", "swiftshader", "swangle", "software")
 # one. gateway_shim.py redirects /proc/<it>/cmdline.
 FAKE_EMULATOR_PID = 4194304
 EMULATOR_UNIT = "cloudphone-emulator.service"
-# UNVERIFIED: the version string emulator 36.6.11 reports in getStatus.
-EMULATOR_VERSION = "36.6.11.0 (build_id 15507667) (CL:N/A)"
-# UNVERIFIED: labels and order of the data channels the emulator opens.
-# docs/DEVELOPMENT.md (checked 2026-10-16) names mouse, keyboard, touch and
-# adb; the channels' options (ordered, retransmits, ids) are not known.
+# The version string emulator 36.6.11 reports in getStatus (checked against
+# a live emulator, 2026-10).
+EMULATOR_VERSION = "36.6.11.0 (36.6.11-15507667)"
+# The data channels the emulator opens, in this order (checked against a
+# live emulator, 2026-10): all ordered and reliable (no maxRetransmits nor
+# maxPacketLifeTime), not negotiated, no protocol, odd ids 1, 3, 5, 7 (the
+# emulator is the DTLS server).
 DATA_CHANNELS = ("mouse", "keyboard", "touch", "adb")
 FPS = 15
 
@@ -88,7 +91,7 @@ DEFAULTS = {
         "touch_fails": False,      # gRPC sendTouch fails (HTTP touch fallback)
         "adb_fails": False,        # the fake adb fails (keys, Android metrics)
         "hold_requests": False,    # leave request files pending (path units stalled)
-        "status_lcd": False,       # getStatus platformConfig carries hw.lcd.* (UNVERIFIED: real 36.6.11 omits them, says the gateway)
+        "status_lcd": False,       # getStatus platformConfig carries hw.lcd.* (real 36.6.11 omits them: checked against a live emulator, 2026-10)
         "apply_seconds": 0.5,      # time spent "applying" before stopping Android
         "stop_seconds": 0.3,       # time Android takes to stop
         "boot_seconds": 1.5,       # time Android takes to boot (booted false)
@@ -174,11 +177,16 @@ class Participant:
         self.outbox.put_nowait(json.dumps(message))
 
     async def start(self):
-        from aiortc import RTCConfiguration, RTCPeerConnection, RTCRtpSender
+        from aiortc import AudioStreamTrack, RTCConfiguration, RTCPeerConnection, RTCRtpSender
 
-        # UNVERIFIED: the emulator echoes the ICE servers the gateway asked
-        # for in RequestRtcStream as the "start" message's iceServers.
-        self.send({"start": {"iceServers": self.ice_servers}})
+        # The "start" message's keys are block_status, ice_servers,
+        # ice_transport_policy and unblock_ice_servers: snake_case, no
+        # iceServers (checked against a live emulator, 2026-10).
+        # UNVERIFIED: their values (the contract prints the keys only); the
+        # fake echoes the ICE servers the gateway asked for in
+        # RequestRtcStream.
+        self.send({"start": {"block_status": False, "ice_servers": self.ice_servers,
+                             "ice_transport_policy": "all", "unblock_ice_servers": []}})
         if not self.emulator.options["offer"]:
             return
         self.pc = pc = RTCPeerConnection(RTCConfiguration(iceServers=[]))
@@ -195,10 +203,15 @@ class Participant:
             self.watch(channel)
 
         transceiver = pc.addTransceiver(VideoTrack(self), direction="sendonly")
-        # The emulator offers VP8 and VP9, no H264 (DEVELOPMENT.md). aiortc
-        # cannot send VP9: the fake offers VP8 (and its RTX) only.
+        # The emulator offers VP8, VP9, red and ulpfec (with RTX), no H264
+        # (checked against a live emulator, 2026-10). aiortc cannot send
+        # VP9, red nor ulpfec: the fake offers VP8 (and its RTX) only.
         codecs = [c for c in RTCRtpSender.getCapabilities("video").codecs if c.mimeType in ("video/VP8", "video/rtx")]
         transceiver.setCodecPreferences(codecs)
+        # The offer's m-lines are video, audio, application (checked against
+        # a live emulator, 2026-10): the emulator sends an audio track too,
+        # Opus first. The fake's is silence.
+        pc.addTransceiver(AudioStreamTrack(), direction="sendonly")
         if self.emulator.options["data_channels"]:
             for label in DATA_CHANNELS:
                 channel = pc.createDataChannel(label)
@@ -211,10 +224,11 @@ class Participant:
         # trickles. Send the SDP without candidates, then each candidate.
         lines = pc.localDescription.sdp.split("\r\n")
         sdp = "\r\n".join(l for l in lines if not l.startswith("a=candidate:") and l != "a=end-of-candidates")
-        # UNVERIFIED: the offer as {"type": "offer", "sdp": "..."} at the top
-        # level, and candidates as {"candidate": "candidate:...", "sdpMid",
-        # "sdpMLineIndex"} (libwebrtc's peerconnection_client style); the
-        # driver accepts this and the nested {"sdp": {...}} form alike.
+        # The offer as {"type": "offer", "sdp": "..."} at the top level, its
+        # SDP without candidates, then candidates as {"candidate": string,
+        # "sdpMid": string, "sdpMLineIndex": number} (checked against a live
+        # emulator, 2026-10). The driver also accepts the nested
+        # {"sdp": {...}} form.
         self.send({"type": "offer", "sdp": sdp})
         mid, index = None, -1
         for line in lines:
@@ -856,9 +870,9 @@ def make_services(emulator):
                 version=EMULATOR_VERSION, uptime=int((time.time() - emulator.started) * 1000), booted=emulator.booted,
                 vmConfig=ec.VmConfiguration(hypervisorType=ec.VmConfiguration.KVM, numberOfCpuCores=s["cores"],
                                             ramSizeBytes=s["memoryMb"] * 1048576))
-            # UNVERIFIED: the keys of platformConfig on 36.6.11.
-            status.platformConfig["hw.cpu.ncore"] = str(s["cores"])
-            status.platformConfig["hw.ramSize"] = str(s["memoryMb"])
+            # platformConfig is empty on 36.6.11: the gateway's answer has
+            # only the hw.lcd.width and hw.lcd.height it adds itself (checked
+            # against a live emulator, 2026-10).
             if emulator.options["status_lcd"]:
                 for key in ("width", "height", "density"):
                     status.platformConfig[f"hw.lcd.{key}"] = str(emulator.display[key])

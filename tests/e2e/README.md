@@ -83,7 +83,9 @@ Initial state: `CloudPhone::start_with(json!({...}))`, keys as in
 4 cores, 4 GiB, Android booted).
 
 What the fake does that nothing in the repository confirms is marked
-`UNVERIFIED` in its source: the contract tests print the real values.
+`UNVERIFIED` in its source: the contract tests print the real values. The
+guesses they cover were checked against a live emulator (2026-10); the
+marks left are the ones they do not print.
 
 ## Files
 
