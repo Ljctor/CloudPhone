@@ -35,3 +35,9 @@ export function sameSettings(a, b) {
   return Boolean(a && b) && a.renderer === b.renderer
     && Number(a.cores) === Number(b.cores) && Number(a.memoryMb) === Number(b.memoryMb);
 }
+
+// A settings change (GET /api/v1/emulator-settings' request) still waiting
+// or being applied: the screen size is then followed more closely.
+export function changeInProgress(settings) {
+  return ['pending', 'applying'].includes(settings?.request?.state);
+}

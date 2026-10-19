@@ -5,11 +5,48 @@
 `lib/versions.env`. Generated protobuf code, dependencies and bundles are
 built, never committed.
 
+A page module marked (pure) has no React and no DOM: the rules, as plain
+functions of their inputs. The hooks and components beside it wire them to
+the browser and the gateway; `App.tsx` only assembles them.
+
 | File | Role |
 |---|---|
-| `js/example/src/App.tsx` | the page: layout, toolbar, touch, panels, status banners, reconnect |
-| `js/example/src/i18n.ts` | French (source text) and English; `tr()` falls back to French |
+| `js/example/src/App.tsx` | the page's assembly: calls the hooks below, passes their state to the components, lays out the screen, the panels and the toolbar |
+| `js/example/src/main.tsx` | mounts `App` |
+| `js/example/src/layout.ts` | the screen's fitted size and the toolbar's place (side, below, overlay), Android's size from the emulator status, the running size's key, the toasts' top (pure) |
+| `js/example/src/useLayout.ts` | the window's size, the emulator status fetch, the screen refitted on resize and fullscreen, the reload after a screen size change |
+| `js/example/src/usePanels.ts` | which panel is open (information, options) and the information tab; information opens on the client tab |
+| `js/example/src/streamRules.ts` | when to reconnect the stream (Android usable again, the video cut or stuck 20 s), its delays, the log line for a new stream state (pure) |
+| `js/example/src/useStream.ts` | the stream's state, remounting it to reconnect (button, Android back, page shown again), the manual reconnect's feedback, seconds spent connecting |
+| `js/example/src/streamStats.ts` | the stream's figures (ping, fps, losses, jitter, buffer, path) from the WebRTC report and two samples (pure) |
+| `js/example/src/useStreamStats.ts` | samples the stream once a second: ICE or HTTP ping, frames, the network details |
+| `js/example/src/touchInput.ts` | the pointer to Android's pixels, the HTTP touches' queue, what plugins are told of a tap (pure) |
+| `js/example/src/useInput.ts` | touches and keys to Android over the data channels or the gateway, the touch marker, failed touches |
+| `js/example/src/diagnose.ts` | the status shown to the user from the server's state, the stream, the time spent connecting and failed touches; its log line; whether the banner shows (pure) |
+| `js/example/src/banner.tsx` | that status as a cover over the screen or a closable banner, which banner was closed, each new status in the page's log |
+| `js/example/src/serverState.ts` | the poll of `GET /api/v1/state` |
+| `js/example/src/serverInfo.ts` | the Server tab's rows from the state, the metrics and the stream's figures (pure) |
+| `js/example/src/serverPanel.tsx` | the Server tab: its rows, disconnecting the other viewers, the Android settings form, the server's log |
+| `js/example/src/clientInfo.ts` | the Client tab's rows: network, display, input, this device's screen and window (pure) |
+| `js/example/src/infoRows.tsx` | an information row and titled sections of rows |
+| `js/example/src/emulatorSettings.ts` | the renderer, cores and memory offered, comparing two settings, whether a change is in progress (pure) |
+| `js/example/src/screenSize.ts` | the screen shapes and resolutions offered, the size a choice gives, the choice closest to a size (pure) |
+| `js/example/src/androidSettings.tsx` | the polls of `GET /api/v1/display` and `GET /api/v1/emulator-settings`, the form that changes them |
+| `js/example/src/toolbarStatus.ts` | the round trip's colour, the connection LED's colour (pure) |
+| `js/example/src/toolbar.tsx` | the toolbar (keys, figures, options, reconnect, fullscreen, fold and dock), the bar's folded state, the floating handle |
+| `js/example/src/logRecords.ts` | which records a log keeps and shows, how a notify record changes the toasts (pure) |
+| `js/example/src/logs.tsx` | the page's log and the server's (`GET /api/v1/logs`), the log list, the level filter, the toasts |
+| `js/example/src/logSection.tsx` | a log in the information panel: folded at first, with its filter |
+| `js/example/src/notify.tsx` | phone alerts (`GET`/`POST /api/v1/notify`), the options panel's section |
+| `js/example/src/pageSettings.ts` | the per-viewer settings' key and defaults, reading them from the stored text, a change, the log sections' folded state (pure) |
+| `js/example/src/viewerSettings.tsx` | the settings kept in this browser (`localStorage`), the page's language, the options panel's language, cursor and folding rows |
+| `js/example/src/pluginSettings.ts` | a plugin option's stored value, its options cut into sections, folded sections (pure) |
+| `js/example/src/pluginOptions.tsx` | each plugin's options in the options panel, the seven option kinds, the dialog an option opens |
 | `js/example/src/plugins.ts` | loads the installed plugins' `page.js` and their API |
+| `js/example/src/api.ts` | this page load's viewer id, POSTs with the page token |
+| `js/example/src/i18n.ts` | French (source text) and English; `tr()` falls back to French |
+| `js/example/src/styles.ts` | the inline styles, the toolbar's width, the level colours, the page's CSS (pure) |
+| `js/example/src/icons.tsx` | the toolbar's and panels' inline SVG icons |
 | `js/src/components/emulator/net/ws_jsep_protocol_driver.ts` | signaling, viewer id, input on the emulator's data channels; waits for the emulator's SDP offer (Firefox) |
 | `js/src/components/emulator/views/webrtc_view.tsx` | `connected` only after a real decoded frame |
 | `gateway/src/videobridge_gateway/gateway_server.py` | the command line, the emulator's gRPC (status, keys, touch, GPS, screenshots), the health and metrics watches; wires the domains below into one HTTP server |

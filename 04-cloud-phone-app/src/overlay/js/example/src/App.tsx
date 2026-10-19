@@ -1,20 +1,25 @@
 import { tr } from './i18n';
 import { usePlugins } from './plugins';
-import { useEffect, useRef, useState } from 'react';
+import { useRef } from 'react';
 import { Emulator, logger } from '../../src';
-import { TOOLBAR_WIDTH, styles } from './styles';
+import { PAGE_CSS, styles } from './styles';
 import { postFetch, postHeaders } from './api';
-import { LogFilter, LogList, Toasts, useLog, useServerLog, useToasts } from './logs';
+import { Toasts, useLog, useServerLog, useToasts } from './logs';
+import { LogSection } from './logSection';
 import { AlertsPanel, useAlerts } from './notify';
 import { serverSections } from './serverInfo';
 import { ServerPanel } from './serverPanel';
 import { EmulatorSettings, useDisplayState, useEmulatorSettings } from './androidSettings';
+import { changeInProgress } from './emulatorSettings';
 import { useServerState } from './serverState';
 import { bannerShown, diagnose } from './diagnose';
 import { Banner, StatusCover, useDismissed } from './banner';
 import { useStreamStats } from './useStreamStats';
 import { useInput } from './useInput';
 import { useStream } from './useStream';
+import { mainDirection, toastsTop } from './layout';
+import { useAndroidDisplay, useFittedScreen, useReloadOnResize, viewportSize } from './useLayout';
+import { usePanels } from './usePanels';
 import { Toolbar, useBarFold } from './toolbar';
 import { infoSections } from './infoRows';
 import { clientSections, deviceRows } from './clientInfo';
@@ -23,62 +28,21 @@ import { ViewerOptions, loadSettings, useViewerSettings } from './viewerSettings
 
 logger.setLevel('warn');
 
-// Android's display size until the gateway reports the real one.
-const DEFAULT_DISPLAY = { width: 480, height: 1040 };
-
-function viewportSize() {
-  const viewport = window.visualViewport;
-  return {
-    width: Math.floor(viewport?.width || window.innerWidth),
-    height: Math.floor(viewport?.height || window.innerHeight),
-  };
-}
-
-// Largest Android screen that fits, with the toolbar either beside it or
-// below it, whichever leaves the bigger screen. A phone whose shape matches
-// Android's (e.g. 19.5:9) gets the full width with the toolbar below.
-function fittedScreen(display = DEFAULT_DISPLAY, folded = false, docked = false) {
-  const DEVICE_WIDTH = display.width;
-  const DEVICE_HEIGHT = display.height;
-  const viewport = viewportSize();
-  // Fullscreen or folded bar: the screen takes the whole window and the bar
-  // floats over it, so a phone shaped like Android uses every pixel. A
-  // docked bar keeps its own space, even in fullscreen.
-  if ((document.fullscreenElement && !docked) || folded) {
-    const width = Math.max(1, Math.floor(Math.min(viewport.width,
-      viewport.height * DEVICE_WIDTH / DEVICE_HEIGHT)));
-    return { width, height: Math.floor(width * DEVICE_HEIGHT / DEVICE_WIDTH), toolbar: 'overlay' };
-  }
-  const fit = (availableWidth, availableHeight) => {
-    const width = Math.max(1, Math.floor(Math.min(availableWidth,
-      availableHeight * DEVICE_WIDTH / DEVICE_HEIGHT)));
-    return { width, height: Math.floor(width * DEVICE_HEIGHT / DEVICE_WIDTH) };
-  };
-  const side = fit(viewport.width - TOOLBAR_WIDTH, viewport.height);
-  const below = fit(viewport.width, viewport.height - TOOLBAR_WIDTH);
-  return below.width > side.width ? { ...below, toolbar: 'below' } : { ...side, toolbar: 'side' };
-}
-
 function App() {
   const emulatorRef = useRef(null);
   const deviceRef = useRef(null);
-  // Open panel over the screen: 'info' (from the ping/fps block, with a
-  // client and a server tab) or 'options' (from the cog).
-  const [panel, setPanel] = useState(null);
+  const { panel, setPanel, infoTab, setInfoTab, serverTab, togglePanel, openInfo } = usePanels();
   // A plugin's dialog open over the options panel: { plugin, option }.
   const [pluginDialog, setPluginDialog] = usePluginDialog(panel);
-  const [infoTab, setInfoTab] = useState('client');
-  const serverTab = panel === 'info' && infoTab === 'server';
   // Before any tr() of this render: sets the page's language.
   const [settings, updateSettings] = useViewerSettings();
-  const [display, setDisplay] = useState(DEFAULT_DISPLAY);
   const barFold = useBarFold(loadSettings);
   const { barFolded } = barFold;
-  const [screen, setScreen] = useState(() => fittedScreen(DEFAULT_DISPLAY));
-  const row = screen.toolbar === 'side';
   // The gateway serves this page: same origin, no CORS.
   const gateway = window.location.host;
   const gatewayUrl = `${window.location.protocol}//${gateway}`;
+  const display = useAndroidDisplay(gatewayUrl);
+  const screen = useFittedScreen(display, barFolded, settings.barDocked);
   const stats = useStreamStats(deviceRef, gatewayUrl);
   const server = useServerState(gatewayUrl, serverTab);
   const [emulatorSettings, refreshEmulatorSettings] = useEmulatorSettings(gatewayUrl, serverTab);
@@ -90,57 +54,16 @@ function App() {
   const plugins = usePlugins({
     gatewayUrl, deviceRef, layerRef: pluginLayer, screenWidth: screen.width, settings, postFetch, postHeaders,
   });
-  const displayState = useDisplayState(gatewayUrl,
-    ['pending', 'applying'].includes(emulatorSettings?.request?.state));
+  const displayState = useDisplayState(gatewayUrl, changeInProgress(emulatorSettings));
   const input = useInput({ gatewayUrl, display, showMarker: settings.touchMarker });
   // Seconds the stream has been trying to connect, and consecutive failed
   // touch requests: both feed the message shown to the user.
   const { touchFailures } = input;
   const stream = useStream({ server, input });
   const { state, reconnecting, connectingFor } = stream;
-  // A size change ends with the gateway restarting on the new size: reload
-  // so that layout, touch mapping and the stream all start fresh.
-  const firstSize = useRef(null);
-  useEffect(() => {
-    const running = displayState?.running;
-    if (!running?.width) return;
-    const size = `${running.width}x${running.height}`;
-    if (firstSize.current === null) firstSize.current = size;
-    else if (size !== firstSize.current) window.location.reload();
-  }, [displayState]);
-
-  // The gateway reads Android's display size from the running device, so
-  // layout and touch mapping follow the AVD instead of a constant.
-  useEffect(() => {
-    let cancelled = false;
-    fetch(`${gatewayUrl}/api/v1/emulator/status`, { cache: 'no-store' })
-      .then((response) => (response.ok ? response.json() : null))
-      .then((status) => {
-        const config = status?.platformConfig ?? {};
-        const width = Number(config['hw.lcd.width']);
-        const height = Number(config['hw.lcd.height']);
-        if (!cancelled && width > 0 && height > 0) setDisplay({ width, height });
-      })
-      .catch((error) => console.warn('Android display size:', error));
-    return () => { cancelled = true; };
-  }, [gatewayUrl]);
-
+  useReloadOnResize(displayState);
   const problem = diagnose({ server, stream: state, connectingFor, touchFailures });
   const [dismissed, setDismissed] = useDismissed(problem);
-  useEffect(() => {
-    const resize = () => setScreen(fittedScreen(display, barFolded, settings.barDocked));
-    resize();
-    window.addEventListener('resize', resize);
-    window.visualViewport?.addEventListener('resize', resize);
-    document.addEventListener('fullscreenchange', resize);
-    return () => {
-      window.removeEventListener('resize', resize);
-      window.visualViewport?.removeEventListener('resize', resize);
-      document.removeEventListener('fullscreenchange', resize);
-    };
-  }, [display, barFolded, settings.barDocked]);
-
-  const togglePanel = (name) => setPanel((open) => (open === name ? null : name));
   const serverRows = serverSections({
     server, configured: displayState?.configured, display, stats,
   });
@@ -150,39 +73,10 @@ function App() {
       ratio: window.devicePixelRatio || 1, device: window.screen, viewport: viewportSize(), shown: screen,
     }),
   });
-  // A section that folds under its title, folded at first; the state is
-  // kept with the other settings.
-  const fold = (id, title, content) => {
-    const folded = settings.foldedSections?.[id] ?? true;
-    return (
-      <details open={!folded} onToggle={(event) => {
-        const now = !event.currentTarget.open;
-        if (now !== folded) updateSettings({ foldedSections: { ...settings.foldedSections, [id]: now } });
-      }}>
-        <summary style={{ ...styles.infoSection, cursor: 'pointer' }}>{tr(title)}</summary>
-        {!folded && content}
-      </details>
-    );
-  };
-  // Which levels the log lists show, kept with the settings.
-  const logFilter = (
-    <LogFilter value={settings.logFilter} onChange={(logFilter) => updateSettings({ logFilter })} />
-  );
 
   return (
-    <main style={{ ...styles.app, flexDirection: row ? 'row' : 'column' }}>
-      <style>{`
-        @keyframes stream-spinner {
-          to { transform: rotate(360deg); }
-        }
-        .tool-button:active { background: #3a6ea5 !important; border-color: #4da3ff !important; }
-        .metric-link:active { opacity: 0.6; }
-        /* A long press must reach Android, not open the browser's
-           select/copy menu over the video. The panels stay selectable. */
-        body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
-          -webkit-tap-highlight-color: transparent; }
-        [role="dialog"] { -webkit-user-select: text; user-select: text; }
-      `}</style>
+    <main style={{ ...styles.app, flexDirection: mainDirection(screen.toolbar) }}>
+      <style>{PAGE_CSS}</style>
       <section style={styles.screen} aria-label={tr('Écran Android')}
         onContextMenu={(event) => event.preventDefault()}>
         <div ref={deviceRef} style={{ ...styles.device, width: screen.width, height: screen.height }}>
@@ -202,7 +96,7 @@ function App() {
           <Banner problem={problem} dismissed={dismissed} dismiss={setDismissed} />
           <div ref={pluginLayer} style={styles.pluginLayer} aria-hidden="true" />
           <Toasts toasts={toasts} dismiss={dismissToast}
-            top={bannerShown(problem, dismissed) ? '72px' : '8px'} />
+            top={toastsTop(bannerShown(problem, dismissed))} />
           {panel && (
             <div style={styles.info} role="dialog"
               aria-label={panel === 'info' ? tr('Informations') : tr('Options')}>
@@ -234,21 +128,17 @@ function App() {
                       buttonStyle={styles.panelButton}
                     />
                   )}
-                  logs={fold('serverLogs', 'Journaux du serveur', <>
-                    {logFilter}
-                    <LogList entries={logs.server} filter={settings.logFilter} rowStyle={styles.infoRow}
-                      labelStyle={styles.infoLabel} />
-                  </>)}
+                  logs={(
+                    <LogSection id="serverLogs" title="Journaux du serveur" entries={logs.server}
+                      settings={settings} updateSettings={updateSettings} />
+                  )}
                 />
               )}
               {panel === 'info' && infoTab === 'client' && (
                 <div role="tabpanel">
                   {infoSections(clientRows)}
-                  {fold('clientLogs', 'Journaux du client', <>
-                    {logFilter}
-                    <LogList entries={logs.page} filter={settings.logFilter} rowStyle={styles.infoRow}
-                      labelStyle={styles.infoLabel} />
-                  </>)}
+                  <LogSection id="clientLogs" title="Journaux du client" entries={logs.page}
+                    settings={settings} updateSettings={updateSettings} />
                 </div>
               )}
               {panel === 'options' && (
@@ -287,7 +177,7 @@ function App() {
         onReconnect={stream.manualReconnect}
         stats={stats}
         panel={panel}
-        onInfo={() => { if (panel !== 'info') setInfoTab('client'); togglePanel('info'); }}
+        onInfo={openInfo}
         onOptions={() => togglePanel('options')}
         sendKey={input.sendKey}
       />

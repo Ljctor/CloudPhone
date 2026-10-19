@@ -21,3 +21,8 @@ export function settingsFrom(stored) {
 export function withChange(settings, change) {
   return { ...settings, ...change };
 }
+
+// The information panel's foldable sections (the logs): folded at first.
+export function sectionFolded(settings, id) {
+  return settings.foldedSections?.[id] ?? true;
+}

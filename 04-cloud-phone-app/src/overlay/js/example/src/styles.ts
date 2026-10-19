@@ -2,6 +2,22 @@
 
 export const TOOLBAR_WIDTH = 40;
 
+// What inline styles cannot say: the spinner's keyframes, the pressed
+// buttons, and no text selection outside the panels (a long press must
+// reach Android, not open the browser's select/copy menu over the video).
+export const PAGE_CSS = `
+        @keyframes stream-spinner {
+          to { transform: rotate(360deg); }
+        }
+        .tool-button:active { background: #3a6ea5 !important; border-color: #4da3ff !important; }
+        .metric-link:active { opacity: 0.6; }
+        /* A long press must reach Android, not open the browser's
+           select/copy menu over the video. The panels stay selectable. */
+        body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+          -webkit-tap-highlight-color: transparent; }
+        [role="dialog"] { -webkit-user-select: text; user-select: text; }
+      `;
+
 // A status's colour by level (diagnose.ts): the banner's border, the LED.
 export const LEVEL_COLORS = { error: '#ff453a', wait: '#ff9f0a', info: '#ffd60a' };
 
