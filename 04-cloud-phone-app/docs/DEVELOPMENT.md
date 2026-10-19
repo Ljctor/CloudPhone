@@ -15,6 +15,9 @@ built, never committed.
 | `gateway/src/videobridge_gateway/gateway_server.py` | serves the page, WebSocket JSEP bridge, HTTP API |
 | `gateway/src/videobridge_gateway/core/viewers.py` | viewers and their signalling sessions, who was disconnected by another viewer, which arrivals and departures are news (no I/O) |
 | `gateway/src/videobridge_gateway/http/viewers.py` | `POST /api/v1/viewers/disconnect-others`, the viewer id of a request, sessions' arrivals and departures as log records |
+| `gateway/src/videobridge_gateway/core/display.py` | screen size and density limits, the last request's state, one change of either kind (size, settings) every 2 minutes (no I/O) |
+| `gateway/src/videobridge_gateway/http/display.py` | `GET`/`POST /api/v1/display`, the change limit as a 409 or 429 answer, refused changes as warning records |
+| `gateway/src/videobridge_gateway/adapters/host_files.py` | the request and status files the root-path units share with the gateway, their times, and the host's own files (`read_file`) |
 | `gateway/src/videobridge_gateway/plugins.py` | loads the installed plugins' `gateway.py`, serves their scripts |
 | `gateway/src/videobridge_gateway/logs.py` | the gateway's log records: journald, the last 500 in memory for `GET /api/v1/logs` |
 | `js/test/*.test.js` | jest unit tests (run by `packaging/build-release.sh`) |

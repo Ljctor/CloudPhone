@@ -4,11 +4,12 @@ The gateway reads a few host files with no option to point it elsewhere:
 the load (/proc/loadavg), the host's memory (/proc/meminfo) and the
 emulator unit's cgroup (/sys/fs/cgroup/system.slice/UNIT/: its processes,
 CPU and memory, and the command line of its qemu process). This shim
-redirects exactly those paths, for the gateway module only, to the fake's
-files under $FAKE_ROOT/host, then runs the gateway's own main with the
-command line it was given. Everything else (systemctl and adb through PATH
-and --adb, the discovery file, config.ini, the request and status files)
-goes through the gateway's normal options.
+redirects exactly those paths, in the two gateway modules that open them
+(adapters/host_files.py, whose read_file reads most, and gateway_server.py
+for the rest), to the fake's files under $FAKE_ROOT/host, then runs the
+gateway's own main with the command line it was given. Everything else
+(systemctl and adb through PATH and --adb, the discovery file, config.ini,
+the request and status files) goes through the gateway's normal options.
 """
 import builtins
 import os
@@ -24,6 +25,7 @@ redirect = {
 
 sys.path.insert(0, os.environ["FAKE_GATEWAY_PATH"])
 from videobridge_gateway import gateway_server  # noqa: E402
+from videobridge_gateway.adapters import host_files  # noqa: E402
 
 
 def fake_host_open(file, *args, **kwargs):
@@ -36,5 +38,6 @@ def fake_host_open(file, *args, **kwargs):
     return builtins.open(path, *args, **kwargs)
 
 
+host_files.open = fake_host_open
 gateway_server.open = fake_host_open
 gateway_server.run_main()

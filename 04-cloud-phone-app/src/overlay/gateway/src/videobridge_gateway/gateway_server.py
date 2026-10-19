@@ -47,6 +47,10 @@ from . import notify
 from . import logs
 from .logs import log
 from .http import viewers
+from .http import display
+from .core.display import LIMITS as DISPLAY_LIMITS, json_int, size_error
+from .adapters import host_files
+from .adapters.host_files import read_file
 
 # Records to journald and to GET /api/v1/logs (see logs.py).
 logs.setup()
@@ -61,12 +65,7 @@ ADB_SERIAL = "emulator-5558"
 DISPLAY_WIDTH = 480
 DISPLAY_HEIGHT = 1040
 AVD_DIR = None
-# Screen size changes requested from the page: the gateway writes
-# "WIDTH HEIGHT DENSITY" to DISPLAY_REQUEST and a root service applies it,
-# reporting progress in DISPLAY_STATUS. Empty paths disable the feature.
-DISPLAY_REQUEST = ""
-DISPLAY_STATUS = ""
-DISPLAY_LIMITS = {"width": (240, 1440), "height": (320, 3200), "density": (80, 640)}
+# Screen size changes requested from the page: see http/display.py.
 # What the page shows the user when something is wrong: the emulator's
 # systemd unit (read with "systemctl show", no privilege needed), whether
 # Android finished booting, how many viewers are connected and the load.
@@ -89,22 +88,25 @@ STATE_CACHE_SECONDS = 2.0
 PAGE_TOKEN = secrets.token_urlsafe(32)
 TOKEN_HEADER = "X-CloudPhone-Token"
 WEB_ROOT = ""
-DISPLAY_CHANGE_INTERVAL = 120.0
-# Emulator settings (renderer, cores, memory) work the same way: the gateway
-# writes "RENDERER CORES MEMORY_MB" to SETTINGS_REQUEST and a root service
-# applies it, reporting in SETTINGS_STATUS. Changes of either kind share the
-# rate limit above: each one restarts Android.
+# Emulator settings (renderer, cores, memory) work like the screen size: the
+# gateway writes "RENDERER CORES MEMORY_MB" to SETTINGS_REQUEST and a root
+# service applies it, reporting in SETTINGS_STATUS. Changes of either kind
+# share one limit (core/display.py): each one restarts Android.
 SETTINGS_REQUEST = ""
 SETTINGS_STATUS = ""
 RENDERERS = ("lavapipe", "swiftshader", "swangle", "software")
 # Older names of the same renderers, still accepted by the emulator.
 LEGACY_RENDERERS = {"swiftshader_indirect": "swiftshader", "swangle_indirect": "swangle"}
-LAST_DISPLAY_CHANGE = {"time": None}
 GRPC_OPTIONS = [("grpc.max_receive_message_length", 32 * 1024 * 1024)]
 # When the page last asked for a change that restarts Android: a restart
 # soon after it is expected, not an error.
 CHANGE = {"requested": 0.0}
 CHANGE_RESTART_SECONDS = 600
+
+
+def change_requested():
+    """A screen size or settings request was just written."""
+    CHANGE["requested"] = time.time()
 
 
 def parse_discovery_file(path):
@@ -168,16 +170,9 @@ def read_avd_config(avd_dir):
         return {}
 
 
-def json_int(value):
-    """A JSON integer, never a string, float or boolean ("360" is refused)."""
-    if type(value) is not int:
-        raise TypeError("not an integer")
-    return value
-
-
 def read_settings_status():
     """Returns the state of the last emulator settings request."""
-    if SETTINGS_REQUEST and os.path.exists(SETTINGS_REQUEST):
+    if host_files.exists(SETTINGS_REQUEST):
         return {"state": "pending"}
     words = (read_file(SETTINGS_STATUS) or "").split() if SETTINGS_STATUS else []
     if not words or words[0] not in ("applying", "done", "failed"):
@@ -216,24 +211,7 @@ async def handle_settings(request):
     }, headers={"Cache-Control": "no-store"})
 
 
-def change_request(refused):
-    """A screen size or settings request the gateway refuses (invalid,
-    disabled, one already running, too soon) is a warning record."""
-    def wrap(handler):
-        async def handle(request):
-            response = await handler(request)
-            if response.status >= 400:
-                try:
-                    error = json.loads(response.text).get("error", "")
-                except (TypeError, ValueError, AttributeError):
-                    error = str(response.status)
-                log("warning", "gateway", refused, error=error)
-            return response
-        return handle
-    return wrap
-
-
-@change_request("Changement des réglages d’Android refusé : {error}")
+@display.change_request("Changement des réglages d’Android refusé : {error}")
 async def handle_set_settings(request):
     """POST /api/v1/emulator-settings {renderer, cores, memoryMb[, width,
     height, density]}: asks the root service to change them, which restarts
@@ -265,51 +243,19 @@ async def handle_set_settings(request):
             wanted = {key: json_int(data[key]) for key in DISPLAY_LIMITS}
         except (ValueError, TypeError):
             return web.json_response({"error": "width, height and density go together"}, status=400)
-        for key, (low, high) in DISPLAY_LIMITS.items():
-            if not low <= wanted[key] <= high:
-                return web.json_response({"error": f"{key} must be between {low} and {high}"}, status=400)
-        if wanted["width"] % 2 or wanted["height"] % 2:
-            return web.json_response({"error": "width and height must be even"}, status=400)
+        error = size_error(wanted)
+        if error:
+            return web.json_response({"error": error}, status=400)
         size = f" {wanted['width']} {wanted['height']} {wanted['density']}"
-    if read_settings_status()["state"] in ("pending", "applying") or read_display_status()["state"] in ("pending", "applying"):
-        return web.json_response({"error": "A change is already in progress"}, status=409)
-    since = time.time() - last_change()
-    if since < DISPLAY_CHANGE_INTERVAL:
-        wait = int(DISPLAY_CHANGE_INTERVAL - since) + 1
-        return web.json_response({"error": f"Wait {wait} s before the next change"}, status=429)
-    LAST_DISPLAY_CHANGE["time"] = time.time()
-    temporary = f"{SETTINGS_REQUEST}.tmp"
-    with open(temporary, "w") as f:
-        f.write(f"{renderer} {cores} {memory}{size}\n")
-    os.replace(temporary, SETTINGS_REQUEST)
-    CHANGE["requested"] = time.time()
+    refused = display.change_refused(read_settings_status(), (SETTINGS_REQUEST, SETTINGS_STATUS))
+    if refused is not None:
+        return refused
+    host_files.write_request(SETTINGS_REQUEST, f"{renderer} {cores} {memory}{size}\n")
+    change_requested()
     log("normal", "gateway", "Changement des réglages d’Android demandé ({settings}) : Android va redémarrer",
         notify=True, settings=f"{renderer}, {cores} × CPU, {memory} MiB"
         + (f", {wanted['width']}×{wanted['height']}" if size else ""))
     return web.json_response({"status": "pending"}, status=202)
-
-
-def read_display_status():
-    """Returns the state of the last screen size request."""
-    if DISPLAY_REQUEST and os.path.exists(DISPLAY_REQUEST):
-        return {"state": "pending"}
-    try:
-        with open(DISPLAY_STATUS, "r") as f:
-            words = f.read(256).split()
-    except OSError:
-        return {"state": "idle"}
-    if not words:
-        return {"state": "idle"}
-    state = words[0] if words[0] in ("applying", "done", "failed") else "idle"
-    result = {"state": state}
-    if state in ("applying", "done") and len(words) == 4:
-        try:
-            result["width"], result["height"], result["density"] = map(int, words[1:])
-        except ValueError:
-            pass
-    if state == "failed":
-        result["message"] = " ".join(words[1:])
-    return result
 
 
 async def read_emulator_unit():
@@ -399,14 +345,6 @@ def read_meminfo(text):
             except ValueError:
                 pass
     return values
-
-
-def read_file(path):
-    try:
-        with open(path, "r") as f:
-            return f.read()
-    except OSError:
-        return None
 
 
 def memory_summary(values):
@@ -591,10 +529,10 @@ def change_expected():
     a moment ago (this gateway may have been restarted by it)."""
     if time.time() - CHANGE["requested"] < CHANGE_RESTART_SECONDS:
         return True
-    for status, path in ((read_display_status(), DISPLAY_STATUS), (read_settings_status(), SETTINGS_STATUS)):
+    for status, path in ((display.status(), display.STATUS), (read_settings_status(), SETTINGS_STATUS)):
         if status["state"] in ("pending", "applying"):
             return True
-        if status["state"] in ("done", "failed") and time.time() - status_time(path) < CHANGE_RESTART_SECONDS:
+        if status["state"] in ("done", "failed") and time.time() - host_files.mtime(path) < CHANGE_RESTART_SECONDS:
             return True
     return False
 
@@ -664,34 +602,19 @@ def change_status_record(kind, status):
     return None
 
 
-def status_time(path):
-    try:
-        return os.stat(path).st_mtime
-    except (OSError, TypeError):
-        return 0.0
-
-
-def last_change():
-    """When the last screen or emulator change was asked for or done (Unix
-    time). A change restarts the gateway with the emulator, so this process's
-    own memory is not enough: the request and status files keep their time."""
-    files = (DISPLAY_REQUEST, DISPLAY_STATUS, SETTINGS_REQUEST, SETTINGS_STATUS)
-    return max(LAST_DISPLAY_CHANGE["time"] or 0.0, *(status_time(path) for path in files))
-
-
 async def watch_health():
     """Every few seconds, the emulator unit, Android's boot and the change
     requests: each change of state that matters is a record."""
     while True:
         try:
             unit, booted = await asyncio.gather(read_emulator_unit(), read_android_booted())
-            check_health(unit, booted, read_display_status(), read_settings_status())
+            check_health(unit, booted, display.status(), read_settings_status())
         except Exception as e:
             logging.warning(f"Health check failed: {e!r}")
         await asyncio.sleep(HEALTH_SECONDS)
 
 
-def check_health(unit, booted, display, settings):
+def check_health(unit, booted, display_status, settings):
     now = time.time()
     first = HEALTH["unit"] is None and HEALTH["booted"] == "unknown"
     if unit:
@@ -729,7 +652,7 @@ def check_health(unit, booted, display, settings):
         if HEALTH["lost"] == 4:
             log("error", "emulator", "Le serveur ne joint plus Android (gRPC). S’il ne revient pas d’ici une "
                 "minute, relancez Android sur le serveur.", notify=True)
-    for kind, status, path in (("display", display, DISPLAY_STATUS), ("settings", settings, SETTINGS_STATUS)):
+    for kind, status, path in (("display", display_status, display.STATUS), ("settings", settings, SETTINGS_STATUS)):
         key = (status.get("state"), status.get("message"), status.get("width"))
         before = HEALTH[kind]
         HEALTH[kind] = key
@@ -737,7 +660,7 @@ def check_health(unit, booted, display, settings):
             continue
         # At the gateway's start, a status written just before it (the
         # change restarted Android, then the gateway) is still news.
-        if before is None and now - status_time(path) > 120:
+        if before is None and now - host_files.mtime(path) > 120:
             continue
         record = change_status_record(kind, status)
         if record:
@@ -764,7 +687,7 @@ async def handle_state(request):
             "android": {"booted": booted},
             "viewers": viewers.VIEWERS.count,
             "load": read_load(),
-            "display": read_display_status(),
+            "display": display.status(),
             "settings": read_settings_status(),
         }
         STATE_CACHE["time"] = loop.time()
@@ -902,59 +825,6 @@ async def watch_discovery_file():
                 notify=True)
             logging.shutdown()
             os._exit(75)
-
-
-async def handle_display(request):
-    """
-    GET /api/v1/display: the Android screen size the gateway works with, the
-    one in config.ini (current even before the gateway restarts) and the
-    state of the last change request.
-    """
-    return web.json_response(
-        {
-            "running": {"width": DISPLAY_WIDTH, "height": DISPLAY_HEIGHT},
-            "configured": read_avd_config(AVD_DIR),
-            "request": read_display_status(),
-            "canChange": bool(DISPLAY_REQUEST),
-            "limits": DISPLAY_LIMITS,
-        },
-        headers={"Cache-Control": "no-store"},
-    )
-
-
-@change_request("Changement de résolution refusé : {error}")
-async def handle_set_display(request):
-    """
-    POST /api/v1/display {width, height, density}: asks the root service to
-    change Android's screen size, which reboots Android (data is kept).
-    """
-    if not DISPLAY_REQUEST:
-        return web.json_response({"error": "Screen size changes are disabled"}, status=403)
-    try:
-        data = await request.json()
-        wanted = {key: json_int(data[key]) for key in DISPLAY_LIMITS}
-    except (ValueError, KeyError, TypeError):
-        return web.json_response({"error": "width, height and density are required"}, status=400)
-    for key, (low, high) in DISPLAY_LIMITS.items():
-        if not low <= wanted[key] <= high:
-            return web.json_response({"error": f"{key} must be between {low} and {high}"}, status=400)
-    if wanted["width"] % 2 or wanted["height"] % 2:
-        return web.json_response({"error": "width and height must be even"}, status=400)
-    if read_display_status()["state"] in ("pending", "applying") or read_settings_status()["state"] in ("pending", "applying"):
-        return web.json_response({"error": "A change is already in progress"}, status=409)
-    since = time.time() - last_change()
-    if since < DISPLAY_CHANGE_INTERVAL:
-        wait = int(DISPLAY_CHANGE_INTERVAL - since) + 1
-        return web.json_response({"error": f"Wait {wait} s before the next change"}, status=429)
-    LAST_DISPLAY_CHANGE["time"] = time.time()
-    temporary = f"{DISPLAY_REQUEST}.tmp"
-    with open(temporary, "w") as f:
-        f.write(f"{wanted['width']} {wanted['height']} {wanted['density']}\n")
-    os.replace(temporary, DISPLAY_REQUEST)
-    CHANGE["requested"] = time.time()
-    log("normal", "gateway", "Changement de résolution demandé : Android va redémarrer en {size}",
-        notify=True, size=f"{wanted['width']}×{wanted['height']}")
-    return web.json_response({"status": "pending"}, status=202)
 
 
 def get_emulator_metadata():
@@ -1328,7 +1198,8 @@ def init_app(videobridge_token, plugins_dir="", plugin_data=""):
 
     # Register routes
     app.router.add_get("/api/v1/ping", handle_ping)
-    app.router.add_get("/api/v1/display", handle_display)
+    app.router.add_get("/api/v1/display", display.get_display(
+        lambda: {"width": DISPLAY_WIDTH, "height": DISPLAY_HEIGHT}, lambda: read_avd_config(AVD_DIR)))
     app.router.add_get("/api/v1/state", handle_state)
     app.router.add_get("/api/v1/events", handle_events)
     app.router.add_get("/api/v1/logs", handle_logs)
@@ -1336,7 +1207,8 @@ def init_app(videobridge_token, plugins_dir="", plugin_data=""):
     app.router.add_post("/api/v1/notify", handle_set_notify)
     app.router.add_post("/api/v1/notify/test", handle_test_notify)
     app.router.add_post("/api/v1/viewers/disconnect-others", viewers.disconnect_others(forget_state))
-    app.router.add_post("/api/v1/display", handle_set_display)
+    app.router.add_post("/api/v1/display", display.set_display(
+        read_settings_status, lambda: (SETTINGS_REQUEST, SETTINGS_STATUS), change_requested))
     app.router.add_get("/api/v1/emulator-settings", handle_settings)
     app.router.add_post("/api/v1/emulator-settings", handle_set_settings)
     app.router.add_get("/api/v1/emulator/status", handle_status)
@@ -1453,7 +1325,7 @@ async def main():
     )
     args = parser.parse_args()
 
-    global ADB_PATH, ADB_SERIAL, DISPLAY_REQUEST, DISPLAY_STATUS, EMULATOR_UNIT, DISCOVERY_FILE
+    global ADB_PATH, ADB_SERIAL, EMULATOR_UNIT, DISCOVERY_FILE
     global SETTINGS_REQUEST, SETTINGS_STATUS
     EMULATOR_UNIT = args.emulator_unit
     global WEB_ROOT
@@ -1461,8 +1333,8 @@ async def main():
     DISCOVERY_FILE = args.discovery_file or ""
     ADB_PATH = args.adb
     ADB_SERIAL = args.adb_serial
-    DISPLAY_REQUEST = args.display_request
-    DISPLAY_STATUS = args.display_status
+    display.REQUEST = args.display_request
+    display.STATUS = args.display_status
     SETTINGS_REQUEST = args.settings_request
     SETTINGS_STATUS = args.settings_status
     notify.load(args.notify_file)
