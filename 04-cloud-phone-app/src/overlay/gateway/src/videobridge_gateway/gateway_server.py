@@ -15,7 +15,6 @@ import argparse
 import asyncio
 import sys
 import os
-from pathlib import Path
 
 # Add the proto/ directory to sys.path to allow absolute imports between sibling proto stubs
 # (e.g., rtc_service_v2_pb2 importing ice_config_pb2).
@@ -23,14 +22,9 @@ proto_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "proto")
 if proto_dir not in sys.path:
     sys.path.insert(0, proto_dir)
 
-import aiohttp
 from aiohttp import web
 import grpc
-import hmac
-import html
-import json
 import logging
-import secrets
 import time
 
 # Add local path to package import context to resolve generated proto modules
@@ -38,9 +32,6 @@ proto_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "proto")
 sys.path.insert(0, proto_dir)
 from .proto import emulator_controller_pb2 as ec
 from .proto import emulator_controller_pb2_grpc as ec_grpc
-from .proto import rtc_service_v2_pb2 as rtc
-from .proto import rtc_service_v2_pb2_grpc as rtc_grpc
-from .proto import ice_config_pb2 as ice
 from .plugins import load_plugins, plugin_stats, run_adb
 from . import logs
 from .logs import log
@@ -49,7 +40,9 @@ from .http import display
 from .http import settings
 from .http import events
 from .http import notify
+from .http import session
 from .core import settings as settings_rules
+from .core.session import bearer
 from .core import metrics as host_metrics
 from .adapters import host_files, systemd
 from .adapters.host_files import read_file
@@ -82,13 +75,7 @@ METRICS_SECONDS = 2
 ANDROID_METRICS_SECONDS = 5
 ANDROID_WANTED_SECONDS = 30
 STATE_CACHE_SECONDS = 2.0
-# The gateway also serves the page, so page and API share one origin and no
-# CORS is needed. Each start draws a random token, written into index.html;
-# every POST must carry it, so a web page from another origin (for instance
-# one open in the phone's browser while the VPN is up) cannot drive or
-# reboot Android.
-PAGE_TOKEN = secrets.token_urlsafe(32)
-TOKEN_HEADER = "X-CloudPhone-Token"
+# The page, served with this start's token: see http/session.py.
 WEB_ROOT = ""
 # Emulator settings (renderer, cores, memory) work like the screen size:
 # see http/settings.py.
@@ -502,16 +489,7 @@ async def watch_discovery_file():
 
 
 def get_emulator_metadata():
-    token = DISCOVERY_PROPS.get("grpc.token", "")
-    if token:
-        return [("authorization", f"Bearer {token}")]
-    return []
-
-
-def get_videobridge_metadata(token_arg):
-    if token_arg:
-        return [("authorization", f"Bearer {token_arg}")]
-    return []
+    return bearer(DISCOVERY_PROPS.get("grpc.token", ""))
 
 
 async def handle_ping(request):
@@ -679,179 +657,6 @@ async def handle_touch(request):
         return web.json_response({"error": str(e)}, status=500)
 
 
-async def handle_websocket_jsep(request):
-    """
-    GET /api/v1/emulator/ws-jsep (WebSocket Upgrade)
-    Handles WebRTC signaling connection and interfaces with Video Bridge over rtc2.
-    """
-    ws = web.WebSocketResponse()
-    await ws.prepare(request)
-    logging.debug("WebSocket connection opened for JSEP signaling.")
-    viewer = viewers.viewer_of(request)
-    if await viewers.refuse_if_kicked(ws, viewer):
-        return ws
-
-    if not VIDEOBRIDGE_CHANNEL:
-        logging.error("No channel to Video Bridge. Restart the gateway (systemctl restart cloudphone-gateway).")
-        await ws.close(
-            code=web.WSCloseCode.INTERNAL_ERROR, message=b"Video Bridge offline"
-        )
-        return ws
-
-    rtc_stub = rtc_grpc.RtcStub(VIDEOBRIDGE_CHANNEL)
-    bridge_metadata = get_videobridge_metadata(request.app["videobridge_token"])
-    guid = None
-    stream_task = None
-    bye_forwarded = False
-    viewers.joined(ws, viewer)
-
-    try:
-        # 1. Build default ICE configuration using public STUN server
-        ice_config = ice.IceServerConfig()
-        stun_server = ice_config.ice_servers.add()
-        stun_server.urls.append("stun:stun.l.google.com:19302")
-
-        # 2. Initialize signaling session with Video Bridge
-        stream_req = rtc.RtcStreamRequest(ice_server_config=ice_config)
-        # Connect to retrieve stream credentials
-        response = await rtc_stub.RequestRtcStream(stream_req, metadata=bridge_metadata)
-        guid = response.id.guid
-        logging.debug(
-            f"Initialized WebRTC stream session with Video Bridge. Connection ID: {guid}"
-        )
-
-        # The emulator sends the authoritative start message on its JSEP
-        # stream. Sending a second synthetic start creates two peer
-        # connections and breaks both video input and hardware controls.
-
-        # 3. Spawn background streaming reader to forward gRPC messages -> WebSocket
-        async def stream_to_client():
-            logging.debug(
-                f"Starting stream_to_client background task for connection: {guid}"
-            )
-            try:
-                reader_req = rtc.ReceiveJsepMessageRequest(id=rtc.Id(guid=guid))
-                logging.debug(
-                    f"Subscribing to JSEP message stream from Video Bridge for connection: {guid}"
-                )
-                async for response_msg in rtc_stub.ReceiveJsepMessageStream(
-                    reader_req, metadata=bridge_metadata
-                ):
-                    msg_text = response_msg.jsep_msg.message
-                    logging.debug(
-                        f"Received JSEP message from Video Bridge gRPC stream: '{msg_text}'"
-                    )
-                    if not msg_text:
-                        logging.debug(
-                            "Received empty JSEP message from Video Bridge. Stopping stream reader."
-                        )
-                        break
-                    parsed_jsep = json.loads(msg_text)
-                    logging.debug(f"Forwarding JSEP message to browser: {parsed_jsep}")
-
-                    # If it's an SDP offer/answer, or an ICE candidate message
-                    await ws.send_json(parsed_jsep)
-                logging.debug("Video Bridge JSEP stream finished cleanly.")
-            except asyncio.CancelledError:
-                logging.debug(f"stream_to_client task cancelled for connection: {guid}")
-            except Exception as ex:
-                logging.exception("Error in stream_to_client reader loop. Reload the video (↻) if it stopped:")
-
-        stream_task = asyncio.create_task(stream_to_client())
-
-        # 4. Handle incoming browser messages and route -> Video Bridge
-        async for ws_msg in ws:
-            if ws_msg.type == web.WSMsgType.TEXT:
-                client_data = ws_msg.json()
-                logging.debug(
-                    f"Received message from Client -> Video Bridge: {client_data}"
-                )
-
-                send_req = rtc.SendJsepMessageRequest()
-                send_req.jsep_msg.id.guid = guid
-                send_req.jsep_msg.message = json.dumps(client_data)
-
-                await rtc_stub.SendJsepMessage(send_req, metadata=bridge_metadata)
-                logging.debug(
-                    f"Successfully forwarded JSEP message to Video Bridge for connection: {guid}"
-                )
-
-                if "bye" in client_data:
-                    bye_forwarded = True
-                    logging.debug(
-                        f"Received 'bye' signal from client. Tearing down connection: {guid}"
-                    )
-                    break
-            elif ws_msg.type == web.WSMsgType.ERROR:
-                logging.error(f"WebSocket encountered error: {ws.exception()}. Reload the video (↻) if it stopped.")
-
-    except Exception as e:
-        logging.exception("Error in WebSocket session handler. Reload the video (↻) if it stopped:")
-    finally:
-        viewers.left(ws, viewer)
-        logging.debug(f"Closing signaling WebSocket session for ID: {guid}")
-        # Browsers do not always get a chance to send a final WebSocket frame
-        # when a tab is suspended or killed. Explicitly tear down the emulator
-        # participant so that the next viewer does not compete with an orphaned
-        # WebRTC session.
-        if guid and not bye_forwarded:
-            try:
-                bye_req = rtc.SendJsepMessageRequest()
-                bye_req.jsep_msg.id.guid = guid
-                bye_req.jsep_msg.message = json.dumps({"bye": True})
-                await rtc_stub.SendJsepMessage(bye_req, metadata=bridge_metadata)
-                logging.debug(
-                    f"Forwarded teardown for abandoned connection: {guid}"
-                )
-            except Exception as e:
-                logging.warning(f"Failed to tear down abandoned connection {guid}: {e!r}")
-        if stream_task:
-            stream_task.cancel()
-            try:
-                await stream_task
-            except asyncio.CancelledError:
-                pass
-        await ws.close()
-    return ws
-
-
-def same_origin(request):
-    """True when the request has no Origin (not sent by a cross-origin page)
-    or when its Origin is this server."""
-    origin = request.headers.get("Origin")
-    if origin is None:
-        return True
-    return origin in (f"http://{request.host}", f"https://{request.host}")
-
-
-@web.middleware
-async def guard_middleware(request, handler):
-    if not same_origin(request):
-        logging.warning(f"Refused {request.method} {request.path} from origin {request.headers.get('Origin')!r}")
-        return web.json_response({"error": "Cross-origin requests are not accepted"}, status=403)
-    if request.method not in ("GET", "HEAD"):
-        token = request.headers.get(TOKEN_HEADER, "")
-        if not hmac.compare_digest(token, PAGE_TOKEN):
-            return web.json_response({"error": "Missing or invalid page token: reload the page"}, status=403)
-    return await handler(request)
-
-
-async def handle_index(request):
-    """GET /: the page, with this start's token. Never cached, so a reload
-    always gets the current token and the current bundle names."""
-    try:
-        with open(os.path.join(WEB_ROOT, "index.html"), "r", encoding="utf-8") as f:
-            page = f.read()
-    except OSError:
-        return web.Response(status=503, text="The web page is not installed.")
-    meta = f'<meta name="cloudphone-token" content="{html.escape(PAGE_TOKEN)}">'
-    page = page.replace("<head>", f"<head>\n    {meta}", 1)
-    return web.Response(
-        text=page, content_type="text/html",
-        headers={"Cache-Control": "no-cache", "Referrer-Policy": "no-referrer"},
-    )
-
-
 @web.middleware
 async def cache_middleware(request, handler):
     response = await handler(request)
@@ -867,7 +672,7 @@ async def cache_middleware(request, handler):
 
 
 def init_app(videobridge_token, plugins_dir="", plugin_data=""):
-    app = web.Application(middlewares=[guard_middleware, cache_middleware])
+    app = web.Application(middlewares=[session.guard, cache_middleware])
     app["videobridge_token"] = videobridge_token
 
     # Register routes
@@ -891,10 +696,11 @@ def init_app(videobridge_token, plugins_dir="", plugin_data=""):
     app.router.add_get("/api/v1/emulator/logcat", handle_logcat)
     app.router.add_post("/api/v1/emulator/key", handle_key)
     app.router.add_post("/api/v1/emulator/touch", handle_touch)
-    app.router.add_get("/api/v1/emulator/ws-jsep", handle_websocket_jsep)
+    app.router.add_get("/api/v1/emulator/ws-jsep", session.signalling(lambda: VIDEOBRIDGE_CHANNEL))
     if WEB_ROOT:
-        app.router.add_get("/", handle_index)
-        app.router.add_get("/index.html", handle_index)
+        index = session.index(WEB_ROOT)
+        app.router.add_get("/", index)
+        app.router.add_get("/index.html", index)
         app.router.add_static("/assets", os.path.join(WEB_ROOT, "assets"))
     load_plugins(app, plugins_dir, read_screenshot, plugin_adb, notify.send, plugin_data or None)
 
