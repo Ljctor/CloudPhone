@@ -89,7 +89,6 @@ import logging
 import os
 import time
 
-LAUNCH = {"state": "idle", "message": "", "task": None, "since": 0.0}
 MINE = {"enabled": False, "floor": None, "area": None, "until": None, "gold": None,
         "state": "off", "message": "", "task": None, "stopper": None}
 # A mine whose timer ended while the gateway was down, in a fight: how long
@@ -142,74 +141,10 @@ def setup(context):
     features = [
         feature("counters").counters(ports, load_sibling(context.directory, "emerald_mask")),
         feature("screen").screen(ports, screens, stage, feature("screen_rules"), values, table),
+        feature("launch").launch(ports, screens, feature("launch_rules")),
     ]
 
-    def report(state, message=""):
-        LAUNCH["state"], LAUNCH["message"] = state, message
-        logging.info(f"Slayer Legend launch: {state} {message}".rstrip())
-
     tap, hold, in_focus = ports.tap, ports.hold, ports.focused
-
-    async def launch():
-        try:
-            report("starting", "Ouverture du jeu")
-            if not await ports.start_game():
-                report("failed", "Android ne répond pas")
-                return
-            deadline = time.monotonic() + 180
-            confirmed = False
-            last_tap = 0.0
-            seen_other = None
-            saver_taps = 0
-            while time.monotonic() < deadline:
-                await asyncio.sleep(3)
-                shot = await context.screenshot()
-                if not shot:
-                    continue
-                screen = await context.analyse(screens.classify, shot)
-                if screen in ("battle", "menu") and await in_focus():
-                    report("done", "Le jeu est sur l’écran de combat")
-                    return
-                if screen == "save":
-                    # The notice shows the latest save's time; Confirm keeps it.
-                    await tap(shot, "save_notice", "confirm", screens.CONFIRM_TAP)
-                    confirmed = True
-                    seen_other = None
-                    report("loading", "Dernière sauvegarde confirmée, chargement")
-                    await asyncio.sleep(3)
-                    continue
-                if screen == "saver" and time.monotonic() - last_tap > 5:
-                    # Power Saving Mode: the game is already in battle; a
-                    # long press closes it. Give up after 3.
-                    if saver_taps >= 3:
-                        report("blocked", "Le mode économie d’énergie ne se ferme pas : touche son bouton à la main")
-                        return
-                    saver_taps += 1
-                    await hold(shot, "saver", "leave", screens.SAVER_TAP, screens.SAVER_HOLD_MS)
-                    last_tap = time.monotonic()
-                    seen_other = None
-                    report("loading", "Sortie du mode économie d’énergie")
-                    continue
-                if screen == "title" and time.monotonic() - last_tap > 8:
-                    await tap(shot, "title", "start", screens.START_TAP)
-                    last_tap = time.monotonic()
-                    seen_other = None
-                    report("starting", "Écran titre touché, connexion")
-                    continue
-                # Loading and logging-in screens are "other" for a while; an
-                # unknown screen that stays (Google sign-in, an update, an
-                # event pop-up) is for the user.
-                seen_other = seen_other or time.monotonic()
-                if time.monotonic() - seen_other > (60 if confirmed else 45):
-                    report("blocked", "Écran inattendu : termine le lancement à la main")
-                    return
-            report("blocked", "Le jeu n’a pas atteint l’écran de combat en 3 minutes")
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            logging.exception("Slayer Legend launch failed")
-            report("failed", f"Erreur : {e!r}"[:200])
-
     mine = load_sibling(context.directory, "mine")
 
     def mine_report(state, message):
@@ -717,17 +652,6 @@ def setup(context):
                           "mine": ("mine", "Mine")}.get(MODE["mode"], ("idle", f"Farming {MODE['mode']}")))
             MODE["task"] = loop.create_task(watch_mode())
 
-    async def handle_launch_state(request):
-        return context.json({"state": LAUNCH["state"], "message": LAUNCH["message"]})
-
-    async def handle_launch(request):
-        task = LAUNCH["task"]
-        if task is not None and not task.done():
-            return context.json({"error": "A launch is already running"}, status=409)
-        LAUNCH["task"] = asyncio.get_running_loop().create_task(launch())
-        logging.info(f"Slayer Legend launch requested by {request.remote}")
-        return context.json({"state": "starting"}, status=202)
-
     gold = load_sibling(context.directory, "gold")
 
     def gold_rate():
@@ -952,8 +876,6 @@ def setup(context):
 
     context.add_get("/gold", handle_gold)
     context.add_get("/gold-font", handle_gold_font)
-    context.add_get("/launch", handle_launch_state)
-    context.add_post("/launch", handle_launch)
     context.add_get("/mine", handle_mine_state)
     context.add_post("/mine", handle_mine)
     context.add_post("/mine/timer", handle_mine_timer)
