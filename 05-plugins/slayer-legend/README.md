@@ -68,6 +68,8 @@ a decision comes out.
 | `trace.py` | the navigation trace: screen signatures (name and grey thumbnail), the graph of screens and taps, its JSON file; the buttons never to press (`FORBIDDEN`) |
 | `navigation.json` | the game's screens and every known way out of each (tap, area, hold, swipe or key), allowed or forbidden with the reason (Breakdown, Change, diamonds, Black Orb, equipment overwrites, raids and recipes in Dragon Valley, Promotion dice…) |
 | `nav.py` | the guard: every tap, hold and swipe of the plugin names the screen it recognised and the move it wants, and is refused unless it is an allowed move of that screen landing where the move is and on no forbidden move (deterministic, refused by default) |
+| `engravings.json` | per soul weapon (by id, the game's order): its engraving grid's active cells, the user's variants (Atk, Balanced, Crit) as pieces with shape, rotation and cells, the gold layout, the completion effect; see **Soul Weapon engraving data** below |
+| `features/engraving_rules.py` | the engraving's rules: rotations, the pieces a variant needs and whether they are there (and the alert when not), the gold layout's search, placement checks, lookups by name and id |
 | `stages.json` | per stage: name, monsters per wave, drop (weapon `W` or accessory `A`) and grade, main soul colour |
 | `page.js` | page side: assembles the page features below, starts them, shows their options in the panel's order, hands them the settings and disposes of them |
 | `page_screen.js` | the "Jeu" section's screen and stage rows |
@@ -82,6 +84,7 @@ a decision comes out.
 | `emerald_font.js` | the game's counter font at 480 px wide, for the rewritten number |
 | `test_nav.py` | the graph is consistent; the guard lets the plugin's own actions through and refuses the forbidden ones (`python3 -m unittest test_nav`) |
 | `test_trace.py` | tests of `trace.py` on synthetic screenshots (`python3 -m unittest test_trace`) |
+| `test_engraving.py` | `engravings.json` is well formed and its variants fill their patterns; rotations, the gold layout, the pieces needed (`python3 -m unittest test_engraving`) |
 | `test_mine.py` | the mine on a scripted game, on virtual time, through the guard: an untick that will not take, the mine turned off and on in one tick (`python3 -m unittest test_mine`) |
 
 The tests run in this directory and are not installed, nor is this README.
@@ -89,6 +92,45 @@ The tests run in this directory and are not installed, nor is this README.
 The plugin API (what `page.js` and `gateway.py` may use) is described at the
 top of `04-cloud-phone-app/src/overlay/js/example/src/plugins.ts` and
 `.../gateway/src/videobridge_gateway/plugins.py`.
+
+## Soul Weapon engraving data
+
+`engravings.json` holds, for every soul weapon (ids 1–89, in the game's
+order; stage = 320 + 20 × (id − 13)), the cells of its engraving grid and
+the ways to fill them. Weapons 1–12 have no engraving (it unlocks at
+Pride); they are listed with `grid: null` so that a lookup by name never
+fails silently.
+
+- **Variants** (`source: "user-sheet"`): the user's own sheet of complete
+  engravings, one per weapon and goal (**Atk**, **Balanced**, **Crit**),
+  read from its pixels: each piece's shape (the 7 tetrominoes L, J, T, O,
+  I, S, Z), rotation and cells. The sheet's colours only tell the pieces
+  apart. Every variant covers the weapon's cells exactly.
+- **Gold**: computed when the file is built, never by hand: the most 1×4
+  bars (the I piece, which gives gold) the grid holds; ties go to the
+  lexicographically smallest list of bars. It is given with rotation
+  (horizontal and vertical bars) and without (vertical only).
+- **Rotation**: whether the game turns pieces is not confirmed yet
+  (`"rotation": null`). The sheet's solutions turn pieces; 47 of the 77
+  grids cannot be filled exactly without turning any (`tileable_without`).
+  Pieces are never mirrored.
+- **Cross-check and completion effects**: the community wiki
+  slayerlegend.wiki, from its repository
+  https://github.com/BenDol/SlayerLegendWiki (no licence: its files are
+  not copied here, only facts re-encoded in this file's own format). Its
+  grids transcribed from screenshots (ids 13–54) and its players'
+  submissions (ids 55–81) agree with the sheet wherever they exist
+  (`wiki_check`). The completion effect (ATK %, HP %), the soul colour
+  and the shapes' stats come from it alone. The later weapons' names
+  follow the sheet; the wiki's older names are kept as `aliases`.
+- **Trust**: nothing is checked in game yet (`verified_in_game: false`).
+
+Before the plugin places anything (a later phase), it reads the grid on
+the engraving screen from pixels and compares the shape of its active
+cells with the pattern's `cells`: never a name, no OCR. A mismatch blocks
+with an alert and places nothing. It also reads the pieces available; if
+the chosen variant needs pieces that are not there, it alerts with the
+list of what is missing and places nothing.
 
 ## Limits
 
