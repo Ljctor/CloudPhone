@@ -61,6 +61,7 @@ def setup(context):
         mine,
         feature("mode").mode(ports, feature("mode_rules"), timer, values, mine["api"], screens,
                              module("gold_scroll")),
+        feature("engraving").engraving(ports, feature("engraving_rules")),
     ]
     # Every feature registered its part of state.json: an old highest.json
     # becomes state.json now.

@@ -261,15 +261,17 @@ def weapon_by_id(weapon_id, table):
     return next((entry for entry in table["weapons"] if entry["id"] == weapon_id), None)
 
 
-def profile(body, table, rotate=True):
-    """POST /engraving-profile's {soul_weapon: {id, variant}}: (the
-    profile, None) or (None, the error in French). The variant is one of
-    the weapon's (variants())."""
+MODES = ("mpw18", "mpw4")
+PRESETS = ("I", "II", "III", "IV", "V")
+
+
+def soul_weapon(chosen, table, rotate=True):
+    """{id, variant} checked: (it, None) or (None, the error in French).
+    The variant is one of the weapon's (variants())."""
     try:
-        chosen = body["soul_weapon"]
         weapon_id, name = chosen["id"], chosen["variant"]
     except (KeyError, TypeError):
-        return None, "Attendu : {soul_weapon: {id, variant}}"
+        return None, "Arme : attendu {id, variant}"
     if not isinstance(weapon_id, int) or isinstance(weapon_id, bool):
         return None, "id : un nombre entier"
     entry = weapon_by_id(weapon_id, table)
@@ -280,8 +282,45 @@ def profile(body, table, rotate=True):
     names = variants(entry, rotate)
     if name not in names:
         return None, f"Variante inconnue pour {entry['name']} : {name} (au choix : {', '.join(names)})"
-    variant = names[name]
-    result = check(entry["cells"], [piece["cells"] for piece in variant["pieces"]])
+    result = check(entry["cells"], [piece["cells"] for piece in names[name]["pieces"]])
     if result["outside"] or result["overlap"]:
         return None, f"La variante {name} de {entry['name']} sort de la grille ou se chevauche"
-    return {"soul_weapon": {"id": weapon_id, "variant": name}}, None
+    return {"id": weapon_id, "variant": name}, None
+
+
+def loadout(body, table, rotate=True):
+    """POST /loadout's {mode, preset, soul_weapon: {id, variant}}: ((mode,
+    {preset, soul_weapon}), None) or (None, the error in French). mode:
+    mpw18 or mpw4; preset: the Battle settings preset, I to V; either of
+    those two may be null (not set)."""
+    if not isinstance(body, dict):
+        return None, "Attendu : {mode, preset, soul_weapon: {id, variant}}"
+    mode = body.get("mode")
+    if mode not in MODES:
+        return None, f"mode : {' ou '.join(MODES)}"
+    preset = body.get("preset")
+    if preset is not None and preset not in PRESETS:
+        return None, f"Préréglage de combat : {', '.join(PRESETS)}"
+    chosen = body.get("soul_weapon")
+    if chosen is not None:
+        chosen, error = soul_weapon(chosen, table, rotate)
+        if error:
+            return None, error
+    return (mode, {"preset": preset, "soul_weapon": chosen}), None
+
+
+def kept_loadouts(saved, table, rotate=True):
+    """The loadouts state.json kept, each checked again (the data file may
+    have changed): {mode: {preset, soul_weapon}}, what is no longer valid
+    left out."""
+    out = {mode: {"preset": None, "soul_weapon": None} for mode in MODES}
+    for mode in MODES:
+        part = saved.get(mode) if isinstance(saved, dict) else None
+        if not isinstance(part, dict):
+            continue
+        asked, error = loadout(dict(part, mode=mode), table, rotate)
+        if not error:
+            out[mode] = asked[1]
+        elif part.get("preset") in PRESETS:
+            out[mode]["preset"] = part["preset"]
+    return out

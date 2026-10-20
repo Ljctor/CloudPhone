@@ -3,9 +3,12 @@ gold layouts and tileable flags hold; the engraving rules turn, pack, count
 and check right, the same way every time.
 Run: python3 -m unittest test_engraving"""
 
+import asyncio
 import importlib.util
 import os
+import tempfile
 import unittest
+from types import SimpleNamespace
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -245,19 +248,101 @@ class Check(unittest.TestCase):
         self.assertTrue(rules.check(cells, [[[0, 0], [0, 1], [1, 0]], [[1, 1], [2, 0]]])["complete"])
 
 
-class Profile(unittest.TestCase):
+class Loadout(unittest.TestCase):
     def test_valid(self):
-        self.assertEqual(rules.profile({"soul_weapon": {"id": 32, "variant": "Crit"}}, TABLE),
-                         ({"soul_weapon": {"id": 32, "variant": "Crit"}}, None))
-        self.assertEqual(rules.profile({"soul_weapon": {"id": 32, "variant": "Gold"}}, TABLE)[1], None)
+        body = {"mode": "mpw18", "preset": "III", "soul_weapon": {"id": 32, "variant": "Crit"}}
+        self.assertEqual(rules.loadout(body, TABLE),
+                         (("mpw18", {"preset": "III", "soul_weapon": {"id": 32, "variant": "Crit"}}), None))
+        body = {"mode": "mpw4", "preset": None, "soul_weapon": {"id": 32, "variant": "Gold"}}
+        self.assertIsNone(rules.loadout(body, TABLE)[1])
+        self.assertEqual(rules.loadout({"mode": "mpw4"}, TABLE),
+                         (("mpw4", {"preset": None, "soul_weapon": None}), None))
 
     def test_refused(self):
-        for body in (None, {}, {"soul_weapon": {"id": "32", "variant": "Crit"}},
-                     {"soul_weapon": {"id": 999, "variant": "Crit"}}, {"soul_weapon": {"id": 1, "variant": "Atk"}},
-                     {"soul_weapon": {"id": 32, "variant": "Atk"}}):
-            profile, error = rules.profile(body, TABLE)
-            self.assertIsNone(profile, body)
+        weapon = {"id": 32, "variant": "Crit"}
+        for body in (None, {}, {"mode": "mine", "soul_weapon": weapon}, {"mode": "mpw18", "preset": "VI"},
+                     {"mode": "mpw18", "soul_weapon": {"id": "32", "variant": "Crit"}},
+                     {"mode": "mpw18", "soul_weapon": {"id": 999, "variant": "Crit"}},
+                     {"mode": "mpw18", "soul_weapon": {"id": 1, "variant": "Atk"}},
+                     {"mode": "mpw18", "soul_weapon": {"id": 32, "variant": "Atk"}},
+                     {"mode": "mpw18", "soul_weapon": {"id": 32}}):
+            asked, error = rules.loadout(body, TABLE)
+            self.assertIsNone(asked, body)
             self.assertTrue(error)
+
+    def test_kept(self):
+        saved = {"mpw18": {"preset": "III", "soul_weapon": {"id": 32, "variant": "Crit"}},
+                 "mpw4": {"preset": "II", "soul_weapon": {"id": 32, "variant": "Nope"}}}
+        self.assertEqual(rules.kept_loadouts(saved, TABLE),
+                         {"mpw18": {"preset": "III", "soul_weapon": {"id": 32, "variant": "Crit"}},
+                          "mpw4": {"preset": "II", "soul_weapon": None}})
+        empty = {"preset": None, "soul_weapon": None}
+        self.assertEqual(rules.kept_loadouts(None, TABLE), {"mpw18": empty, "mpw4": empty})
+
+
+class Request:
+    def __init__(self, body=None, **query):
+        self.query = query
+        self._body = body
+
+    async def json(self):
+        if isinstance(self._body, Exception):
+            raise self._body
+        return self._body
+
+
+class Routes(unittest.TestCase):
+    """The routes as the gateway sets them up (gateway.py), with state.json
+    in a temporary directory; nothing touches Android."""
+
+    def setup_gateway(self, data_dir):
+        spec = importlib.util.spec_from_file_location("slayer_legend_test_engraving_gateway",
+                                                      os.path.join(HERE, "gateway.py"))
+        gateway = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(gateway)
+        routes = {}
+
+        async def refuse(*args, **kwargs):
+            raise AssertionError("no Android here")
+
+        context = SimpleNamespace(
+            app=SimpleNamespace(on_startup=[]), id="slayer-legend", directory=HERE, data_dir=data_dir,
+            add_get=lambda path, handler: routes.__setitem__(("GET", path), handler),
+            add_post=lambda path, handler: routes.__setitem__(("POST", path), handler),
+            screenshot=refuse, adb=refuse, analyse=refuse, notify=refuse,
+            json=lambda value, status=200: SimpleNamespace(status=status, body=value))
+        gateway.setup(context)
+        return lambda method, path, request: asyncio.run(routes[(method, path)](request))
+
+    def test_routes(self):
+        with tempfile.TemporaryDirectory() as data_dir:
+            call = self.setup_gateway(data_dir)
+            listed = call("GET", "/engravings", Request()).body
+            self.assertEqual(len(listed["weapons"]), 89)
+            self.assertIsNone(listed["rotation"])
+            self.assertEqual(listed["weapons"][31]["variants"], ["Balanced", "Crit", "Gold"])
+            one = call("GET", "/engraving", Request(id="32")).body
+            self.assertEqual(one["name"], "Ambition")
+            self.assertEqual([v["needed"] for v in one["variants"]],
+                             [{"J": 1, "L": 3}, {"I": 1, "L": 2, "O": 1}, {"I": 4}])
+            self.assertEqual(call("GET", "/engraving", Request(weapon="ambition")).body["id"], 32)
+            self.assertEqual(call("GET", "/engraving", Request(weapon="Excalibur")).status, 404)
+            self.assertEqual(call("GET", "/engraving", Request(id="x")).status, 404)
+
+            empty = {"preset": None, "soul_weapon": None, "weapon": None}
+            self.assertEqual(call("GET", "/loadout", Request()).body, {"loadouts": {"mpw18": empty, "mpw4": empty}})
+            body = {"mode": "mpw18", "preset": "III", "soul_weapon": {"id": 32, "variant": "Gold"}}
+            self.assertEqual(call("POST", "/loadout", Request(body)).status, 200)
+            refused = call("POST", "/loadout", Request({"mode": "mpw4", "soul_weapon": {"id": 32, "variant": "Atk"}}))
+            self.assertEqual(refused.status, 400)
+            self.assertIn("Variante inconnue", refused.body["error"])
+            self.assertEqual(call("POST", "/loadout", Request(ValueError("not JSON"))).status, 400)
+
+            # Kept across a gateway restart.
+            again = self.setup_gateway(data_dir)
+            self.assertEqual(again("GET", "/loadout", Request()).body["loadouts"],
+                             {"mpw18": {"preset": "III", "soul_weapon": {"id": 32, "variant": "Gold"},
+                                        "weapon": "Ambition"}, "mpw4": empty})
 
 
 class Names(unittest.TestCase):
