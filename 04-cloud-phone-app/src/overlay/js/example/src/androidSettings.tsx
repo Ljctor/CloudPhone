@@ -91,7 +91,7 @@ export function EmulatorSettings({ gatewayUrl, settings, refresh, rowStyle, labe
         setError(body.error ?? tr('Erreur {status}', { status: response.status }));
       }
     } catch {
-      setError(tr('Passerelle injoignable'));
+      setError(tr('Gateway injoignable'));
     }
     refresh();
   };

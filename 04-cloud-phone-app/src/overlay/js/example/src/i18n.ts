@@ -133,7 +133,7 @@ const EN = {
   'Mémoire d’Android insuffisante': 'Android ran low on memory',
   'Android a démarré': 'Android started',
   'Le service Android a démarré': 'The Android service started',
-  'La passerelle a démarré': 'The gateway started',
+  'Le gateway a démarré': 'The gateway started',
   // Logs and toasts
   'Niveau': 'Level',
   'Tout': 'All',
@@ -146,7 +146,7 @@ const EN = {
   'Les touches passent par le serveur (canal de données fermé) : elles peuvent être plus lentes':
     'Touches go through the server (data channel closed): they may be slower',
   // Server log records (gateway, emulator, adb)
-  'L’émulateur a redémarré : la passerelle redémarre pour le suivre':
+  'L’émulateur a redémarré : le gateway redémarre pour le suivre':
     'The emulator restarted: the gateway restarts to follow it',
   'Android a redémarré après un arrêt anormal ({result}, {restarts} redémarrages automatiques). S’il ne revient pas d’ici deux minutes, relancez-le sur le serveur.':
     'Android restarted after an abnormal stop ({result}, {restarts} automatic restarts). If it is not back within two minutes, start it again on the server.',
@@ -223,7 +223,7 @@ const EN = {
   'Demande envoyée, en attente du serveur…': 'Request sent, waiting for the server…',
   'Android redémarre en {size}…': 'Android is restarting at {size}…',
   'Échec : {message}': 'Failed: {message}',
-  'Passerelle injoignable': 'Gateway unreachable',
+  'Gateway injoignable': 'Gateway unreachable',
   'Erreur {status}': 'Error {status}',
   'Android va redémarrer en {size}.': 'Android will restart at {size}.',
   'Cela prend une à deux minutes. Les applications ouvertes se ferment ; les données sont conservées.':

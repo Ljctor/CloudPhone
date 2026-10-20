@@ -476,7 +476,7 @@ async def watch_discovery_file():
         except OSError:
             others = []
         if others:
-            log("warning", "gateway", "L’émulateur a redémarré : la passerelle redémarre pour le suivre",
+            log("warning", "gateway", "L’émulateur a redémarré : le gateway redémarre pour le suivre",
                 notify=True)
             logging.shutdown()
             os._exit(75)

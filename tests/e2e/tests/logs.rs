@@ -33,7 +33,7 @@ fn records_have_one_shape_and_a_cursor_gives_only_new_ones() {
     let body = first.json().unwrap();
     let cursor = body["cursor"].as_str().expect("a cursor").to_string();
     let all = body["records"].as_array().unwrap().clone();
-    let start = all.iter().find(|r| r["text"] == "La passerelle a démarré").expect("the gateway's start");
+    let start = all.iter().find(|r| r["text"] == "Le gateway a démarré").expect("the gateway's start");
     assert_eq!((start["level"].as_str(), start["source"].as_str(), &start["notify"]), (Some("normal"), Some("gateway"), &json!(true)));
     for record in &all {
         assert!(record["time"].as_f64().is_some(), "{record}");
@@ -180,5 +180,5 @@ fn a_restarted_gateway_answers_an_old_cursor_with_its_own_records() {
     cp.fake().action("restart_gateway");
     cp.wait_new_token(&token, SOON);
     let after = cp.get_json(&format!("api/v1/logs?since={cursor}"));
-    assert!(after["records"].as_array().unwrap().iter().any(|r| r["text"] == "La passerelle a démarré"), "{after}");
+    assert!(after["records"].as_array().unwrap().iter().any(|r| r["text"] == "Le gateway a démarré"), "{after}");
 }
