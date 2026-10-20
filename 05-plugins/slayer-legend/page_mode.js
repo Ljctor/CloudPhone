@@ -2,10 +2,9 @@
 // play, the mine) runs in the gateway; this browser's options are sent to
 // it when they change, and on load if the gateway has not been told since
 // it started. Its state is asked every 10 s. Options: the "Mode et
-// farming" section. Overlay hooks, called by page_gold.js while the
-// overlay applies: overlay(), the mode's lines on the game, top left;
-// topBar(), the time left of a timed mode in the game's top bar.
-import { drawText } from './gold_text.js';
+// farming" section. Overlay hook, called by page_gold.js while the
+// overlay applies: overlay(), the mode's lines on the game, top left (the
+// time left of a timed mode under its name).
 
 // This browser's copy of when the timed mode ends (Unix seconds), as the
 // gateway last said; sent again after a gateway restart.
@@ -14,11 +13,6 @@ const UNTIL = 'cloudphone-slayer-legend-mode-until';
 const TIMED_MINUTES = 30;
 const DOTS = { green: '🟢', blue: '🔵', red: '🔴' };
 const MODE_NAMES = { mpw18: 'Farming mpw18', mpw4: 'Farming mpw4', free: 'Jeu libre', mine: 'Mine fermée' };
-// Where the time left goes in the game's top bar: right of the player's
-// name (which ends at about 27 % of the width), before the emerald counter
-// (its icon at about 38 %), centred on the name's line (2.5 % of the height).
-const BAR_LEFT = '28%';
-const BAR_MIDDLE = '2.5%';
 
 // Seconds as the game's timers write them: mm:ss, or h:mm:ss from an hour.
 const clock = (seconds) => {
@@ -111,17 +105,6 @@ export default function modeFeature(api, { known }) {
   });
   loadStages();
 
-  // The time left of a timed mode (seconds), or null: none runs.
-  const timeLeft = () => {
-    const current = farm.answer?.mode ?? mode();
-    if (current === 'mpw18' || !farm.answer?.until) return null;
-    const seconds = Math.round(farm.answer.until - Date.now() / 1000);
-    return seconds > 0 ? seconds : null;
-  };
-  const bar = document.createElement('canvas');
-  bar.style.cssText = `position:absolute;image-rendering:pixelated;left:${BAR_LEFT}`;
-  let barDrawn = '';
-
   return {
     // The selected mode, under the player's level (top left), and below it
     // "(défaut)" or the time left on the timer.
@@ -132,25 +115,6 @@ export default function modeFeature(api, { known }) {
         api.tr(MODE_NAMES[current] ?? current).toUpperCase(),
         `(${(current === 'mpw18' || !farm.answer?.until ? api.tr('défaut') : clock(seconds)).toUpperCase()})`,
       ];
-    },
-    // The time left of a timed mode in the game's top bar, in `font` at
-    // `cell` CSS pixels per font pixel; removed while the overlay does not
-    // apply (shown false) or no timed mode runs.
-    topBar: (shown, font, cell) => {
-      const seconds = shown ? timeLeft() : null;
-      if (seconds === null) {
-        bar.remove();
-        barDrawn = '';
-        return;
-      }
-      if (!bar.isConnected) api.layer.appendChild(bar);
-      const text = clock(seconds);
-      const key = `${text}@${cell}`;
-      if (key !== barDrawn) {
-        drawText(bar, font, [text], cell);
-        bar.style.top = `calc(${BAR_MIDDLE} - ${bar.style.height} / 2)`;
-        barDrawn = key;
-      }
     },
     options: [
       { type: 'section', key: 'mode', label: 'Mode et farming' },
@@ -234,7 +198,6 @@ export default function modeFeature(api, { known }) {
     },
     dispose: () => {
       window.clearTimeout(farm.timer);
-      bar.remove();
     },
   };
 }

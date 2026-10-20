@@ -2,15 +2,14 @@
 // plugins.ts in part 04 for the API). This file only assembles the
 // features, one module per feature beside it, each a function of the page
 // API returning its options, its onSetting and dispose hooks and, for the
-// mode, its overlay hooks (its lines top left, its timer in the top bar):
+// mode, its overlay hook (its lines top left):
 // - page_screen.js: the game's screen and stage ("Jeu").
 // - page_launch.js: "Lancer le jeu": the gateway starts the game and
 //   brings it to the battle screen (TAP TO START, then Confirm).
-// - page_mode.js: the mode and its timer ("Mode et farming"), and the
-//   time left of a timed mode in the game's top bar.
-// - page_gold.js: gold per second ("Gold"), written top left on the game
-//   with the mode's lines, in the gold counter's font (gold_text.js); it
-//   calls the overlay hooks while the overlay applies.
+// - page_mode.js: the mode and its timer ("Mode et farming").
+// - page_gold.js: gold per second ("Gold"), written in the game's top bar,
+//   and the mode's lines top left, in the gold counter's font
+//   (gold_text.js); it calls the overlay hooks while the overlay applies.
 // - page_trace.js: "Enregistrer mes parcours" (on by default): each tap
 //   the user makes on the game is sent to the gateway, which records the
 //   screen before and after it (never replayed).
@@ -146,7 +145,7 @@ export default function activate(api) {
   const launchPart = launch(api);
   const screenPart = screen(api);
   const modePart = mode(api, { known: screenPart.known });
-  const goldPart = gold(api, { overlay: [modePart.overlay], topBar: [modePart.topBar] });
+  const goldPart = gold(api, { overlay: [modePart.overlay] });
   const tracePart = trace(api);
   const parts = [counterPart, launchPart, screenPart, modePart, goldPart, tracePart];
   // ...and shown in this one.
