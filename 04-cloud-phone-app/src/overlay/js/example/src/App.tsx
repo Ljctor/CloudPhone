@@ -32,7 +32,7 @@ logger.setLevel('warn');
 function App() {
   const emulatorRef = useRef(null);
   const deviceRef = useRef(null);
-  const { panel, setPanel, infoTab, setInfoTab, serverTab, togglePanel, openInfo } = usePanels();
+  const { panel, setPanel, infoTab, setInfoTab, serverTab, infoOpen, optionsOpen, togglePanel, openInfo } = usePanels();
   // A plugin's dialog open over the options panel: { plugin, option }.
   const [pluginDialog, setPluginDialog] = usePluginDialog(panel);
   // Before any tr() of this render: sets the page's language.
@@ -48,9 +48,9 @@ function App() {
   const server = useServerState(gatewayUrl, serverTab);
   const [emulatorSettings, refreshEmulatorSettings] = useEmulatorSettings(gatewayUrl, serverTab);
   useServerLog(gatewayUrl);
-  const logs = useLog(panel === 'info');
+  const logs = useLog(infoOpen);
   const [toasts, dismissToast] = useToasts();
-  const alerts = useAlerts(gatewayUrl, panel === 'options');
+  const alerts = useAlerts(gatewayUrl, optionsOpen);
   const pluginLayer = useRef(null);
   const plugins = usePlugins({
     gatewayUrl, deviceRef, layerRef: pluginLayer, screenWidth: screen.width, settings, postFetch, postHeaders,
