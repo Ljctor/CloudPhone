@@ -61,9 +61,28 @@ export default function loadoutFeature(api) {
   loadList();
   loadSaved();
 
+  // What a selector shows: this browser's choice once made (null: never
+  // touched here; '' chosen empty), else the loadout saved on the server,
+  // so that a browser without local settings shows, and keeps, what is saved.
+  const touched = (mode, field) => api.setting(`${mode}${field}`) !== null;
+  const fromServer = (mode, field) => {
+    const part = data.saved?.[mode];
+    if (field === 'Preset') return part?.preset ?? '';
+    if (field === 'Weapon') return part?.soul_weapon ? String(part.soul_weapon.id) : '';
+    // The saved variant only goes with the saved weapon.
+    return part?.soul_weapon && value(mode, 'Weapon') === String(part.soul_weapon.id) ? part.soul_weapon.variant : '';
+  };
+  const value = (mode, field) => (touched(mode, field) ? api.setting(`${mode}${field}`) : fromServer(mode, field));
+  // A choice shows its first entry while untouched: the server's value goes first.
+  const firstSaved = (mode, field, choices) => {
+    const saved = touched(mode, field) ? '' : fromServer(mode, field);
+    const index = saved ? choices.findIndex((choice) => choice.value === saved) : -1;
+    return index > 0 ? [choices[index], ...choices.slice(0, index), ...choices.slice(index + 1)] : choices;
+  };
+
   // The chosen weapon's pattern and variants, asked once.
   const weapon = (mode) => {
-    const id = Number(api.setting(`${mode}Weapon`)) || null;
+    const id = Number(value(mode, 'Weapon')) || null;
     if (!id) return null;
     if (!(id in data.weapons) && !data.asking.has(id)) {
       data.asking.add(id);
@@ -76,22 +95,25 @@ export default function loadoutFeature(api) {
     return data.weapons[id] ?? null;
   };
   const variant = (mode) => {
-    const name = api.setting(`${mode}Variant`);
+    const name = value(mode, 'Variant');
     return weapon(mode)?.variants.find((v) => v.name === name) ?? null;
   };
 
-  const weaponChoices = () => [
+  const presetChoices = (mode) => firstSaved(mode, 'Preset', [
+    { value: '', label: api.tr('— choisir —') }, ...PRESETS.map((p) => ({ value: p, label: p })),
+  ]);
+  const weaponChoices = (mode) => firstSaved(mode, 'Weapon', [
     { value: '', label: api.tr('— choisir —') },
     ...(data.list?.weapons ?? []).filter((w) => w.grid).map((w) => ({
       value: String(w.id), label: `${w.stage} · ${w.name}`,
     })),
-  ];
-  const variantChoices = (mode) => [
+  ]);
+  const variantChoices = (mode) => firstSaved(mode, 'Variant', [
     { value: '', label: api.tr('— choisir —') },
     ...(weapon(mode)?.variants ?? []).map((v) => ({
       value: v.name, label: v.placeable ? v.name : `${v.name} ⚠`,
     })),
-  ];
+  ]);
   // One line per grid row: the pieces' colours, empty cells, inactive cells.
   const gridRow = (mode, row) => {
     const entry = weapon(mode);
@@ -147,12 +169,16 @@ export default function loadoutFeature(api) {
     return [part.preset, what].filter(Boolean).join(' · ');
   };
   const save = async (mode) => {
-    const chosen = variant(mode);
-    const body = {
-      mode,
-      preset: api.setting(`${mode}Preset`) || null,
-      soul_weapon: chosen ? { id: weapon(mode).id, variant: chosen.name } : null,
-    };
+    // Only what was chosen in this browser: a field left out keeps the
+    // server's value (POST /loadout). An empty choice clears it; a weapon
+    // without its variant yet is not a choice.
+    const body = { mode };
+    if (touched(mode, 'Preset')) body.preset = api.setting(`${mode}Preset`) || null;
+    if (touched(mode, 'Weapon') || touched(mode, 'Variant')) {
+      const chosen = variant(mode);
+      if (!value(mode, 'Weapon')) body.soul_weapon = null;
+      else if (chosen) body.soul_weapon = { id: weapon(mode).id, variant: chosen.name };
+    }
     const result = await api.post('/loadout', body).catch(() => null);
     data.error[mode] = result?.ok ? null : (result?.body?.error ?? (result ? `HTTP ${result.status}` : '…'));
     if (result?.ok) data.saved = result.body.loadouts;
@@ -163,13 +189,12 @@ export default function loadoutFeature(api) {
     // The options of a mode's dialog, in page_mode.js.
     options: (mode) => [
       {
-        type: 'choice', key: `${mode}Preset`, label: 'Préréglage de combat',
-        choices: [{ value: '', label: api.tr('— choisir —') }, ...PRESETS.map((p) => ({ value: p, label: p }))],
+        type: 'choice', key: `${mode}Preset`, label: 'Préréglage de combat', choices: () => presetChoices(mode),
       },
-      { type: 'choice', key: `${mode}Weapon`, label: 'Soul Weapon', choices: weaponChoices },
+      { type: 'choice', key: `${mode}Weapon`, label: 'Soul Weapon', choices: () => weaponChoices(mode) },
       {
         type: 'choice', key: `${mode}Variant`, label: 'Gravure',
-        visible: () => Boolean(api.setting(`${mode}Weapon`)), choices: () => variantChoices(mode),
+        visible: () => Boolean(value(mode, 'Weapon')), choices: () => variantChoices(mode),
       },
       ...[0, 1, 2, 3, 4].map((row) => ({
         type: 'status', label: row === 0 ? 'Grille' : '',

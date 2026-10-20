@@ -71,7 +71,8 @@ in a fresh directory per test:
   game plugins are not tested against the fake, except Slayer Legend's
   routes that need no game screen (its state kept across gateway restarts,
   a timed mode's default timer, a mode refused until configured) and its
-  mpw18 loadout chosen in the page and saved.
+  mpw18 loadout chosen in the page and saved, and kept by « Enregistrer »
+  from a browser with no settings of its own.
   `--plugin_data` is a directory of the fake's, kept across gateway
   restarts;
 

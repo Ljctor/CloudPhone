@@ -76,7 +76,7 @@ a decision comes out.
 | `page_screen.js` | the "Jeu" section's screen and stage rows |
 | `page_launch.js` | the **Lancer le jeu** button and its status row |
 | `page_mode.js` | the "Mode et farming" section; its overlay hook: the mode's lines over the game (a timed mode's time left under its name) |
-| `page_engraving.js` | in the **Farming mpw18** and **Farming mpw4** dialogs of `page_mode.js`: the mode's loadout (Battle settings preset, soul weapon, engraving variant), the variant's grid drawn read-only and the pieces it needs, **Enregistrer** (Save) |
+| `page_engraving.js` | in the **Farming mpw18** and **Farming mpw4** dialogs of `page_mode.js`: the mode's loadout (Battle settings preset, soul weapon, engraving variant), the variant's grid drawn read-only and the pieces it needs, **Enregistrer** (Save). A selector this browser never touched shows the saved value, and **Enregistrer** sends only what was chosen here: a field left out keeps the saved one |
 | `page_gold.js` | the "Gold" section, the gold rate in the game's top bar, and the label over the game, top left: the features' overlay lines, under the same condition |
 | `gold_text.js` | writes text in the gold counter's pixel font (from `GET /gold-font`) |
 | `page_trace.js` | the "Navigation" section: sends the user's taps to the trace |

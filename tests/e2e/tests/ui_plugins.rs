@@ -270,3 +270,49 @@ fn slayer_legends_mpw18_loadout_is_chosen_in_its_dialog_and_saved() {
         assert_eq!(saved["loadouts"]["mpw4"]["soul_weapon"], serde_json::Value::Null, "{saved}");
     });
 }
+
+#[test]
+fn slayer_legends_saved_loadout_survives_enregistrer_from_a_fresh_browser() {
+    let cp = CloudPhone::start_with(json!({"plugins": [SLAYER_LEGEND]}));
+    let saved = json!({"mode": "mpw18", "stage": 940, "preset": "III", "soul_weapon": {"id": 32, "variant": "Gold-maxed"}});
+    assert_eq!(cp.post_json("api/v1/plugins/slayer-legend/loadout", &saved).status(), 200);
+    let before = cp.get_json("api/v1/plugins/slayer-legend/loadout");
+    let phone = cp.clone();
+    // A browser with no settings of its own: its selectors show the server's loadout.
+    browser_test(&cp, Options::without_video(), |page| async move {
+        page.open_options().await;
+        page.wait_js("the plugin's options", Duration::from_secs(15),
+            "const d = document.querySelector('[role=dialog]'); return !!d && d.innerText.includes('Farming mpw18 (par défaut)')",
+            vec![]).await;
+        page.client.find(Locator::XPath(
+            "//div[@role='dialog']//label[contains(., 'Farming mpw18 (par défaut)')]/following-sibling::button")).await.unwrap()
+            .click().await.unwrap();
+        let settings = "Configuration : farming mpw18";
+        page.wait_dialog(settings).await;
+        page.wait_dialog_value(settings, "Enregistré", Duration::from_secs(10), |v| v == "III · Ambition (Gold-maxed)").await;
+        wait_option(&page, settings, "Gravure", "Gold-maxed").await;
+        for (label, value) in [("Préréglage de combat", "III"), ("Soul Weapon", "32"), ("Gravure", "Gold-maxed")] {
+            let state = page.control_state(&page.control(settings, label).await).await;
+            assert_eq!(state["value"], value, "{label} shows the saved value: {state}");
+        }
+        assert_eq!(page.dialog_value(settings, "Pièces nécessaires").await.as_deref(), Some("4 × Line (I)"));
+        assert_eq!(page.stored_settings().await["plugins"]["slayer-legend"]["mpw18Preset"], serde_json::Value::Null,
+            "nothing chosen in this browser");
+        // « Enregistrer » without touching anything sends no field: nothing changes.
+        page.js("window.__posts = []; const f = window.fetch; window.fetch = (url, init) => { \
+                 if (String(url).includes('/loadout') && init && init.method === 'POST') window.__posts.push(init.body); \
+                 return f(url, init); }; return true", vec![]).await;
+        page.client.find(Locator::XPath(&format!(
+            "//div[@role='dialog'][@aria-label='{settings}']//button[normalize-space()='Enregistrer']"))).await.unwrap()
+            .click().await.unwrap();
+        page.wait_js("the POST sent", Duration::from_secs(10), "return window.__posts.length === 1", vec![]).await;
+        let sent = page.js("return JSON.parse(window.__posts[0])", vec![]).await;
+        assert_eq!(sent, json!({"mode": "mpw18"}), "only the mode: nothing was chosen here");
+        page.sleep(Duration::from_millis(500)).await;
+        assert_eq!(page.dialog_value(settings, "Enregistré").await.as_deref(), Some("III · Ambition (Gold-maxed)"));
+        let p = phone.clone();
+        let after = blocking(move || p.get_json("api/v1/plugins/slayer-legend/loadout"));
+        assert_eq!(after, before, "the saved loadout is unchanged");
+        assert_eq!(after["loadouts"]["mpw18"]["stage"], 940, "{after}");
+    });
+}
