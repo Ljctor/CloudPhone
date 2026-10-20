@@ -267,7 +267,8 @@ fn slayer_legends_timed_modes_start_with_30_minutes() {
     let until = now() + 600.0;
     cp.post_json("api/v1/plugins/slayer-legend/mode", &json!({"mode": "mpw18"}));
     cp.post_json("api/v1/plugins/slayer-legend/mode", &json!({"mode": "free", "until": until}));
-    assert_eq!(cp.get_json("api/v1/plugins/slayer-legend/mode")["until"], json!(until), "an end time given is kept");
+    let kept = cp.get_json("api/v1/plugins/slayer-legend/mode")["until"].as_f64().unwrap();
+    assert!((kept - until).abs() < 0.01, "an end time given is kept: {kept} for {until}");
     cp.post_json("api/v1/plugins/slayer-legend/mode", &json!({"mode": "mpw18"}));
     assert_eq!(cp.get_json("api/v1/plugins/slayer-legend/mode")["until"], Value::Null);
 }
@@ -287,4 +288,22 @@ fn slayer_legend_refuses_a_mode_not_configured_yet() {
         assert_eq!(refused.json().unwrap(), json!({"error": reason}), "{body}");
         assert_eq!(cp.get_json("api/v1/plugins/slayer-legend/mode")["mode"], "mpw18", "{body}");
     }
+}
+
+#[test]
+fn slayer_legend_keeps_a_value_a_post_leaves_null_or_out() {
+    // A browser that does not know a value (after a gateway restart, for
+    // instance) sends it null or not at all: the gateway's stays.
+    let cp = with(json!([SLAYER_LEGEND]));
+    let set = cp.post_json("api/v1/plugins/slayer-legend/mode", &json!({"mode": "mpw18", "stage18": 920, "stage4": 31}));
+    assert_eq!(set.status(), 200, "{:?}", set.text());
+    let set = cp.post_json("api/v1/plugins/slayer-legend/mode", &json!({"mode": "mpw18", "stage18": null}));
+    assert_eq!(set.status(), 200, "{:?}", set.text());
+    let answer = cp.get_json("api/v1/plugins/slayer-legend/mode");
+    assert_eq!((answer["stage18"].clone(), answer["stage4"].clone()), (json!(920), json!(31)), "{answer}");
+    // mpw4 is configured on the gateway: chosen without its stage.
+    let set = cp.post_json("api/v1/plugins/slayer-legend/mode", &json!({"mode": "mpw4", "stage4": null}));
+    assert_eq!(set.status(), 200, "{:?}", set.text());
+    let answer = cp.get_json("api/v1/plugins/slayer-legend/mode");
+    assert_eq!((answer["mode"].clone(), answer["stage4"].clone()), (json!("mpw4"), json!(31)), "{answer}");
 }

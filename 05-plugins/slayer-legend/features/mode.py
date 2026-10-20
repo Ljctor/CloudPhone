@@ -3,7 +3,8 @@ farming mpw4, free play or the Closed Mine; back to mpw18 when the timer
 ends (the mine ends its last entry first).
 
 GET  /mode         {mode, until, stage18, stage4, highest, configured, state, message, gold, mine}
-POST /mode         {mode, until, stage18, stage4, highest, floor, area}
+POST /mode         {mode, until, stage18, stage4, highest, floor, area}: a number
+                   absent or null keeps its value
 POST /mode/timer   {add: minutes}: moves the end of the mode (and of the mine)
 
 Switching stages in the game is not learned yet: it says what to do by
@@ -116,7 +117,9 @@ def mode(ports, rules, timer, values, mines, screens, scroll):
             body = await request.json()
         except (ValueError, TypeError, AttributeError):
             body = None
-        asked, error = rules.request(body)
+        mine = mines["state"]()
+        asked, error = rules.request(body, {**{key: status[key] for key in ("stage18", "stage4", "highest")},
+                                            "floor": mine["floor"], "area": mine["area"]})
         if error:
             return ports.respond({"error": error}, status=400)
         name, until, numbers = asked

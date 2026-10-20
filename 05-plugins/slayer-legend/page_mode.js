@@ -42,14 +42,15 @@ const keep = (name, value) => {
 export default function modeFeature(api, { known }) {
   const farm = { answer: null, timer: null, stages: null };
   const mode = () => api.setting('mode') || 'mpw18';
-  const modeOptions = () => ({
+  // Only what this browser has: the gateway keeps its values for the rest.
+  const modeOptions = () => Object.fromEntries(Object.entries({
     mode: mode(),
     until: farm.answer?.until ?? (Number(load(UNTIL)) || null),
     stage18: Number(api.setting('stage18')) || null,
     stage4: Number(api.setting('stage4')) || null,
     floor: Number(api.setting('mineFloor')) || null,
     area: Number(api.setting('mineArea')) || null,
-  });
+  }).filter(([, value]) => value !== null));
   const left = () => {
     const seconds = (farm.answer?.until ?? 0) - Date.now() / 1000;
     if (!farm.answer?.until || seconds <= 0) return api.tr('Sans limite');

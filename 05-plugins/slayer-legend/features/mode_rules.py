@@ -22,18 +22,24 @@ def gold_due(last, now):
     return last is None or now - last >= GOLD_EVERY
 
 
-def request(body):
+NUMBERS = ("stage18", "stage4", "highest", "floor", "area")
+
+
+def request(body, stored=None):
     """POST /mode's {mode, until, stage18, stage4, highest, floor, area}:
     ((mode, until, numbers), None) or (None, the error, in French: the page
-    shows it). The default mode has no timer."""
+    shows it). A number absent or null keeps its stored value (stored: the
+    numbers as they are, e.g. after a gateway restart a browser that does
+    not know one). The default mode has no timer."""
     try:
         mode = body.get("mode") or DEFAULT
         until = float(body["until"]) if body.get("until") is not None else None
-        numbers = {key: int(body.get(key) or 0) or None for key in ("stage18", "stage4", "highest", "floor", "area")}
+        numbers = {key: int(body.get(key) or 0) or None for key in NUMBERS}
     except (ValueError, TypeError, AttributeError):
         return None, "Expected {mode, until, stage18, stage4, highest, floor, area}"
     if mode not in MODES:
         return None, f"mode: one of {', '.join(MODES)}"
+    numbers = {key: value if value is not None else (stored or {}).get(key) for key, value in numbers.items()}
     # A mode is chosen only once configured (the page greys it out until then).
     if mode == "mpw4" and not numbers["stage4"]:
         return None, "Farming mpw4 : choisis d’abord son stage"
