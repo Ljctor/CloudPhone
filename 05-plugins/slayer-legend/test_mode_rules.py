@@ -98,5 +98,27 @@ class Merge(unittest.TestCase):
         self.assertEqual(asked[2], dict.fromkeys(rules.NUMBERS))
 
 
+class FreePlayWarning(unittest.TestCase):
+    def test_once_2_minutes_before_the_end(self):
+        until = 10_000
+        self.assertFalse(rules.warn_due("free", until, None, until - 121))
+        self.assertTrue(rules.warn_due("free", until, None, until - 120))
+        self.assertTrue(rules.warn_due("free", until, None, until - 5))
+        self.assertFalse(rules.warn_due("free", until, until, until - 5), "said once")
+        self.assertFalse(rules.warn_due("free", until, None, until), "ended: no warning")
+
+    def test_again_when_the_timer_was_moved_later(self):
+        self.assertTrue(rules.warn_due("free", 10_600, 10_000, 10_500))
+
+    def test_only_free_play_with_a_timer(self):
+        for mode in ("mpw18", "mpw4", "mine"):
+            self.assertFalse(rules.warn_due(mode, 10_000, None, 9_950), mode)
+        self.assertFalse(rules.warn_due("free", None, None, 9_950))
+
+    def test_the_text(self):
+        self.assertEqual(rules.WARNING, "Le Cloud Phone reprend la main dans 2 min, "
+                                        "prolonge le jeu libre si tu joues encore")
+
+
 if __name__ == "__main__":
     unittest.main()

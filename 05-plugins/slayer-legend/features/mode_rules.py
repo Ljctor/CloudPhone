@@ -14,6 +14,17 @@ WATCH_EVERY = 10
 # mpw4 farming: seconds between two looks for the gold scroll (on the
 # battle screen, gold_scroll.py), with a screenshot at most WATCH_EVERY old.
 GOLD_EVERY = 30
+# Free play: one phone alert this long (seconds) before its end, so that a
+# user still playing can extend it.
+WARN_BEFORE = 2 * 60
+WARNING = "Le Cloud Phone reprend la main dans 2 min, prolonge le jeu libre si tu joues encore"
+
+
+def warn_due(mode, until, warned, now):
+    """Free play says WARNING now: its end is at most WARN_BEFORE away and
+    this end was not warned of yet (warned: the until last warned of, so
+    that a timer moved later warns again near its new end)."""
+    return mode == "free" and until is not None and until != warned and 0 < until - now <= WARN_BEFORE
 
 
 def gold_due(last, now):

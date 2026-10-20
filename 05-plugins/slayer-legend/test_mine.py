@@ -278,5 +278,25 @@ class Reenable(MineTest):
         self.assertEqual((state["enabled"], state["state"]), (True, "farming"))
 
 
+class FreePlayWarning(MineTest):
+    """Free play warns once 2 minutes before its end, again once the timer
+    was moved later; the mode feature's watch, through the gateway."""
+
+    WARNING = "Le Cloud Phone reprend la main dans 2 min, prolonge le jeu libre si tu joues encore"
+
+    def test_once_then_again_after_a_longer_timer(self):
+        scenes = {"fight": dict(FIGHT_GOLD)}
+        game, _ = self.play(scenes, "fight", [
+            (0, [("POST", "/mode", {"mode": "free", "until": EPOCH + 600})]),
+            (530, [("POST", "/mode/timer", {"add": 5})])], 1000)
+        warnings = [t for t, text in game.alerts if text == self.WARNING]
+        self.assertEqual(len(warnings), 2, game.alerts)
+        self.assertTrue(480 <= warnings[0] <= 490, warnings)
+        self.assertTrue(780 <= warnings[1] <= 790, warnings)
+        self.assertEqual([text for _, text in game.alerts if text.startswith("Minuteur écoulé")],
+                         ["Minuteur écoulé : retour au farming mpw18"])
+        self.assertEqual(game.taps, [], "free play touches nothing")
+
+
 if __name__ == "__main__":
     unittest.main()

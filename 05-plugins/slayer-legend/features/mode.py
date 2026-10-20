@@ -12,7 +12,9 @@ Switching stages in the game is not learned yet: it says what to do by
 hand (and alerts) instead of tapping. While farming mpw4 it looks for the
 gold scroll every 30 s on the battle screen (gold: true, false once missing
 for 2 looks, null unknown) and alerts once when it goes, then once when it
-is back (gold_scroll.py, shared with the mine). The rules are in
+is back (gold_scroll.py, shared with the mine). Free play alerts once 2
+minutes before its end, so that a user still playing can extend it. The
+rules are in
 mode_rules.py; the
 mode and its timer are kept in state.json ("mode") and go on after a
 gateway restart. The mpw18 and mpw4 stages are those of the modes'
@@ -32,7 +34,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts):
     set_stage, adopt_stage), which holds the mpw18 and mpw4 stages."""
     status = {"mode": rules.DEFAULT, "until": None, "highest": None,
               "configured": False, "state": "idle", "message": "", "task": None,
-              "scroll": scroll.fresh(), "gold_look": None}
+              "scroll": scroll.fresh(), "gold_look": None, "warned": None}
     ports.store.register("mode", lambda: {key: status[key] for key in (
         "mode", "until", "highest", "configured")})
 
@@ -102,6 +104,10 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts):
                 why = rules.due(status["mode"], status["until"], mines["state"](), ports.clock.wall())
                 if why:
                     await back_to_default(REASONS[why])
+                elif rules.warn_due(status["mode"], status["until"], status["warned"], ports.clock.wall()):
+                    status["warned"] = status["until"]
+                    logging.info("Slayer Legend mode free: 2 minutes left, user warned")
+                    await ports.notify(rules.WARNING)
                 elif status["mode"] == "mpw4" and rules.gold_due(status["gold_look"], ports.clock.monotonic()):
                     status["gold_look"] = ports.clock.monotonic()
                     await look_for_gold()
