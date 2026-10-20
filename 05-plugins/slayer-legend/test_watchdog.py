@@ -26,6 +26,7 @@ MENU = {"adb": True, "running": True, "focused": True, "screen": "menu"}
 TITLE = {"adb": True, "running": True, "focused": True, "screen": "title"}
 OTHER = {"adb": True, "running": True, "focused": True, "screen": "other"}
 CRASH = {"adb": True, "running": True, "focused": False, "crash": True, "screen": None}
+ANR = {"adb": True, "running": True, "focused": False, "anr": True, "screen": None}
 GONE = {"adb": True, "running": False, "focused": False, "screen": None}
 AWAY = {"adb": True, "running": True, "focused": False, "screen": None}
 NO_ADB = {"adb": False, "running": None, "focused": False, "screen": None}
@@ -383,6 +384,17 @@ class Profile(unittest.TestCase):
         self.assertEqual((symptom, params), ("wrong_battle_settings", {"preset": "III"}))
         unread = rules.judge(BATTLE, profile, NUMERALS.get, None, False, rules.fresh(), 60)[0]
         self.assertIsNone(unread, "not read is not wrong")
+
+
+class NotResponding(unittest.TestCase):
+    def test_an_anr_is_one_alert_and_never_a_relaunch(self):
+        w = Watch()
+        w.looks(BATTLE, 3)
+        w.looks(ANR, 6)
+        self.assertEqual(w.symptoms[-1], "anr")
+        self.assertEqual(w.repairs, [])
+        self.assertEqual(len(w.alerts()), 1)
+        self.assertIn("ne répond pas", w.alerts()[0][1])
 
 
 class AfterMode(unittest.TestCase):

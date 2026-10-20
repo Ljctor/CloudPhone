@@ -102,6 +102,11 @@ DEFAULTS = {
         "crash_seconds": 3.0,      # unit in auto-restart after a crash
         "gateway_restart_seconds": 1.0,  # systemd RestartSec of the gateway (5 s in production)
         "fail_next": {},           # {"display": "message", "settings": "message"}: next request fails
+        # An app Android can start, for plugins that watch one (see
+        # write_app): {package, activity, state: absent | running | crashed | anr,
+        # start_seconds, picture: [[left, top, right, bottom, [r, g, b]], ...]
+        # (fractions of the screen, on black) shown while it runs in front}.
+        "app": None,
     },
     "load": 0.1,
     "host_memory_mb": 16384,
@@ -447,6 +452,7 @@ class Emulator:
             write_atomic(self.path("bin-state/adb-hang"), "1\n")
         elif os.path.exists(self.path("bin-state/adb-hang")):
             os.remove(self.path("bin-state/adb-hang"))
+        self.write_app()
         # The gateway's --adb: a link to the fake adb, removed while adb_missing.
         link = self.path("bin/adb")
         if self.options["adb_missing"]:
@@ -454,6 +460,52 @@ class Emulator:
                 os.remove(link)
         elif not os.path.lexists(link):
             os.symlink(HERE / "bin" / "adb", link)
+
+    def write_app(self):
+        """The app's files for the fake adb (bin-state/app-*): its package
+        and activity, its state ("absent", "running", "crashed" or
+        "starting UNTIL": running from that Unix time on, which the fake
+        adb writes on `am start`), how long it takes to start, and the
+        bounds of the crash dialog's "Close app" button (an input tap
+        inside it closes the dialog: the app is absent again). pidof,
+        dumpsys window, am start, uiautomator dump and input tap answer from
+        them; the picture shows while it runs."""
+        app = self.options.get("app")
+        if not app:
+            for name in ("package", "activity", "state", "start", "close"):
+                if os.path.exists(self.path(f"bin-state/app-{name}")):
+                    os.remove(self.path(f"bin-state/app-{name}"))
+            return
+        width, height = self.display["width"], self.display["height"]
+        close = [round(width * 0.08), round(height * 0.50), round(width * 0.92), round(height * 0.56)]
+        write_atomic(self.path("bin-state/app-package"), app["package"] + "\n")
+        write_atomic(self.path("bin-state/app-activity"), app.get("activity", ".MainActivity") + "\n")
+        write_atomic(self.path("bin-state/app-start"), f"{int(app.get('start_seconds', 2))}\n")
+        write_atomic(self.path("bin-state/app-close"), " ".join(map(str, close)) + "\n")
+        if "state" in app:
+            write_atomic(self.path("bin-state/app-state"), app.pop("state") + "\n")
+
+    def app_state(self):
+        """The app's state now, as the fake adb sees it."""
+        try:
+            with open(self.path("bin-state/app-state")) as f:
+                words = f.read().split()
+        except OSError:
+            return "absent"
+        if words[:1] == ["starting"]:
+            return "running" if len(words) > 1 and time.time() >= int(words[1]) else "starting"
+        return words[0] if words else "absent"
+
+    def app_picture(self, screen):
+        app = self.options.get("app")
+        if not app or not app.get("picture") or self.app_state() != "running":
+            return None
+        import numpy as np
+        image = np.zeros((screen.height, screen.width, 3), dtype=np.uint8)
+        for left, top, right, bottom, colour in app["picture"]:
+            image[int(top * screen.height):int(bottom * screen.height),
+                  int(left * screen.width):int(right * screen.width)] = colour
+        return image
 
     def write_discovery(self):
         """A new emulator process: new pid file, new token."""
@@ -479,6 +531,9 @@ class Emulator:
         """The current frame for a session's screen; one render per tick."""
         number = int((time.time() - self.started) * FPS)
         key = (screen.width, screen.height, number)
+        picture = self.app_picture(screen) if self.booted else None
+        if picture is not None:
+            return picture
         if key not in self.frame_cache:
             self.frame_cache.clear()
             touch = None
@@ -809,6 +864,9 @@ class Emulator:
                 self.options[key] = body[key]
         if "fail_next" in body:
             self.options["fail_next"].update(body["fail_next"])
+        if "app" in body:
+            # Merged into the app's settings; "state" is applied once.
+            self.options["app"] = {**(self.options.get("app") or {}), **body["app"]} if body["app"] else None
         if "load" in body:
             self.config["load"] = float(body["load"])
         if "unit" in body:

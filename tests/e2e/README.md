@@ -62,6 +62,13 @@ in a fresh directory per test:
   emulator restart and the new discovery file that make the gateway exit
   and be restarted, as systemd does);
 - `adb` and `systemctl` on the gateway's `PATH` (`tests/fake-emulator/bin`);
+- an app Android can start, when a test sets the `app` option (`package`,
+  `activity`, `state`: absent, running, crashed or anr, `start_seconds`,
+  `picture`: rectangles on black shown while it runs): `pidof`, `am start`
+  (running after its start time), the focus in `dumpsys window`, Android's
+  crash dialog there and in `uiautomator dump`, closed by an `input tap` on
+  its "Close app" button. Generic, so that a plugin's watchdog can be tested
+  without the real app;
 - the host figures (`/proc/loadavg`, `/proc/meminfo`, the unit's cgroup):
   `gateway_shim.py` starts the gateway with `open()` redirected for those
   paths only. The gateway itself is not modified;
@@ -82,7 +89,7 @@ Its control API (127.0.0.1, random port), wrapped by `src/fake.rs`:
 |---|---|
 | `GET /record` | everything received: touches (with the channel or `grpc`), keys (`keyboard` channel, `adb`, `grpc`), data channel messages, gRPC calls, JSEP messages each way, display/settings requests and status lines, WebRTC sessions, gateway starts and exits, adb calls |
 | `GET /state` | the fake's state: display, settings, unit, booted, gRPC up/down, sessions, gateway |
-| `POST /control` | `options` (`data_channels`, `offer`, `frames`, `touch_fails`, `adb_fails`, `hold_requests`, `status_lcd`, timings), `fail_next`, `load`, `unit`, `booted`, `grpc`, and one `action`: `drop_streams` (`bye`), `crash`, `restart`, `replace_discovery`, `stop_gateway`, `start_gateway`, `restart_gateway`, `pause_gateway` (`seconds`: stalled, then resumed), `reset_record` |
+| `POST /control` | `options` (`data_channels`, `offer`, `frames`, `touch_fails`, `adb_fails`, `hold_requests`, `status_lcd`, timings), `app` (merged; its `state` applied once), `fail_next`, `load`, `unit`, `booted`, `grpc`, and one `action`: `drop_streams` (`bye`), `crash`, `restart`, `replace_discovery`, `stop_gateway`, `start_gateway`, `restart_gateway`, `pause_gateway` (`seconds`: stalled, then resumed), `reset_record` |
 
 Initial state: `CloudPhone::start_with(json!({...}))`, keys as in
 `DEFAULTS` in `fake_emulator.py` (480×1040 at density 213, lavapipe,
@@ -109,7 +116,8 @@ configured count.
 | `tests/api.rs` | ping, caching, 404/405, viewers, disconnect-others, origin checks on the socket, consistency between endpoints |
 | `tests/input.rs` | touches and keys over HTTP reach Android at the right place |
 | `tests/lifecycle.rs` | crash, restart, discovery file replaced, gateway restarts |
-| `tests/plugins.rs` | plugin host: list, served scripts, routes, token checks, screenshot (shared, counted in the state details), analysis off the event loop and adb for plugins, a plugin's state kept across gateway restarts, Slayer Legend's timed modes (30 minutes by default, refused until configured), a plugin for another plugin API refused, broken plugins skipped |
+| `tests/plugins.rs` | plugin host: list, served scripts, routes, token checks, screenshot (shared, counted in the state details), analysis off the event loop and adb for plugins, a plugin's state kept across gateway restarts, Slayer Legend's timed modes (30 minutes by default, refused until configured) and its shared lease (the token for POST and DELETE, released by its holder only), a plugin for another plugin API refused, broken plugins skipped |
+| `tests/watchdog.rs` | Slayer Legend's mpw18 watchdog at its real pace on the fake's app: a crash closed and relaunched (MAIN/LAUNCHER, never `-S`) and farming again within a minute, timings printed; a game not responding gets Wait once, then an alert, never a kill; a gateway start observes before relaunching; free play suspends it; another lease holder defers the relaunch; the page's row |
 | `tests/contract.rs` | what the emulator says (status, JSEP shapes, data channels, codecs): on the fake by default, on a deployed instance with `--features smoke` |
 | `tests/ui_page.rs` | Firefox: video plays and fits, muted, connected only with a frame, toolbar labels, landmarks, LED, metrics block, ↻ replaces only the video session, signalling back after a gateway restart or a long outage, English browser |
 | `tests/ui_banners.rs` | every status the page shows, covering or closable, with the LED colour; priority; closing; English |

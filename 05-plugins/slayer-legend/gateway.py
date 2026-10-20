@@ -21,12 +21,14 @@ GET  /mode, POST /mode, /mode/timer    features/mode.py
 GET  /engravings, /engraving?id=N      features/engraving.py
 GET  /loadout, POST /loadout           features/engraving.py
 GET, POST, DELETE /lease               features/lease.py (ports.Lease)
+GET  /watchdog                         features/watchdog.py
 
 The mode and its timer, the mine's floor, area, timer and on/off, each
 farming mode's loadout (its stage, Battle settings preset, soul weapon
-and engraving) and the highest stage seen farmed are kept in the plugin's data directory
-(state.json, written when they change) and restored when the gateway
-starts: farming and a timed mode go on after a gateway restart.
+and engraving), the highest stage seen farmed and the watchdog's repairs
+of the last hour are kept in the plugin's data directory (state.json,
+written when they change) and restored when the gateway starts: farming
+and a timed mode go on after a gateway restart.
 """
 
 import importlib.util
@@ -57,17 +59,23 @@ def setup(context):
     timer = feature("timer_rules")
     engraving = feature("engraving").engraving(ports, feature("engraving_rules"))
     mine = feature("mine").mine(ports, screens, module("mine"), feature("mine_rules"), timer, values)
+    launch = feature("launch").launch(ports, screens, feature("launch_rules"))
+    mode = feature("mode").mode(ports, feature("mode_rules"), timer, values, mine["api"], screens,
+                                module("gold_scroll"), engraving["api"])
+    screen_rules = feature("screen_rules")
     features = [
         feature("lease").lease(ports),
         feature("counters").counters(ports, module("emerald_mask")),
-        feature("screen").screen(ports, screens, stage, feature("screen_rules"), values, table),
-        feature("launch").launch(ports, screens, feature("launch_rules")),
+        feature("screen").screen(ports, screens, stage, screen_rules, values, table),
+        launch,
         feature("trace").trace(ports, screens, module("trace")),
         feature("gold").gold(ports, screens, stage, module("gold"), feature("gold_rules")),
         mine,
-        feature("mode").mode(ports, feature("mode_rules"), timer, values, mine["api"], screens,
-                             module("gold_scroll"), engraving["api"]),
+        mode,
         engraving,
+        feature("watchdog").watchdog(ports, screens, stage, feature("watchdog_rules"),
+                                     lambda number: screen_rules.name_numeral(table, stage, number),
+                                     mode["api"], mine["api"], launch["api"], engraving["api"]["loadout"]),
     ]
     # Every feature registered its part of state.json: an old highest.json
     # becomes state.json now.

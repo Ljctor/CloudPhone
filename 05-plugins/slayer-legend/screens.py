@@ -7,6 +7,11 @@ Saving Mode) or other. Screens are recognised from a few pixel areas, as
 (left, top, right, bottom) fractions of the screen, measured on a 360x780
 screen (the page's device shapes keep this ratio). A screenshot is
 (width, height, RGB888 bytes).
+
+TODO: the "connected on another device" screen (after free play on
+another phone) and the choice between two saves have no known layout yet:
+they are "other" (the watchdog alerts on them, for the user). Android's
+crash dialog is not the game's: ports.crashed() reads it from dumpsys.
 """
 
 START_TEXT = (0.30, 0.80, 0.70, 0.87)   # "TAP TO START", white on dark

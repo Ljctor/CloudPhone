@@ -193,4 +193,6 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts):
     return {
         "routes": [("GET", "/mode", handle_state), ("POST", "/mode", handle_mode), ("POST", "/mode/timer", handle_timer)],
         "startup": [resume],
+        # For the watchdog: the mode now (it runs only in the default one).
+        "api": {"state": state},
     }

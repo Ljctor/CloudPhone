@@ -60,6 +60,21 @@ class Graph(unittest.TestCase):
         self.assertIn("check first", nav.guard("quest_panel", "claim", 0.79, 0.29))
         self.assertIn(("quest_panel", "claim", "the row's reward bar is full, read from pixels"), nav.preconditions())
 
+    def test_androids_crash_dialog(self):
+        # "Close app" only where uiautomator says it is (verified); never
+        # "App info" (Force stop, Clear storage).
+        self.assertIn("check first", nav.guard("crash_dialog", "close", 0.5, 0.6))
+        self.assertIsNone(nav.guard("crash_dialog", "close", 0.5, 0.6, verified=True))
+        self.assertIsNotNone(nav.guard("crash_dialog", "close", 0.5, 0.95, verified=True), "outside the dialog")
+        self.assertIn("forbidden", nav.guard("crash_dialog", "app_info", 0.5, 0.6))
+
+    def test_androids_not_responding_dialog(self):
+        # "Wait" only; its "Close app" kills the game.
+        self.assertIsNone(nav.guard("anr_dialog", "wait", 0.5, 0.6, verified=True))
+        self.assertIn("check first", nav.guard("anr_dialog", "wait", 0.5, 0.6))
+        self.assertIn("forbidden", nav.guard("anr_dialog", "close", 0.5, 0.6))
+        self.assertIn("forbidden", nav.guard("anr_dialog", "app_info", 0.5, 0.6))
+
     def test_refused_by_default(self):
         self.assertIsNotNone(nav.guard("battle", "no_such_move", 0.5, 0.5))
         self.assertIsNotNone(nav.guard("no_such_screen", "start", 0.5, 0.836))

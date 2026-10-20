@@ -23,6 +23,8 @@ Symptom → response, one look at a time (SYMPTOMS, REPAIRS):
 | Symptom                                   | Response                              |
 |-------------------------------------------|---------------------------------------|
 | adb missing (the emulator or adb gone)    | error alert, no repair (part 03)      |
+| Android's "isn't responding" dialog       | "Wait" once (the feature), then an    |
+|                                           | alert; never "Close app" (a kill)     |
 | game not running, not in front, a crash   | relaunch (phase 1b)                   |
 | dialog, its title or save notice          |                                       |
 | a game menu 60 s with no user input       | back to battle, no relaunch           |
@@ -103,6 +105,7 @@ SYMPTOMS = {
     "not_running": "le jeu ne tourne pas",
     "away": "une autre application est au premier plan",
     "crash": "le jeu a planté (fenêtre d’erreur d’Android)",
+    "anr": "le jeu ne répond pas (fenêtre d’Android), « Attendre » sans effet : à faire à la main",
     "start_screen": "le jeu est revenu à son écran titre",
     "after_mode_screen": "écran inconnu après la fin du mode (connecté sur un autre appareil ? choix de "
                          "sauvegarde ?) : à faire à la main",
@@ -118,6 +121,7 @@ REPAIRS = {
     "not_running": "relaunch",
     "away": "relaunch",
     "crash": "relaunch",
+    "anr": None,
     "start_screen": "relaunch",
     "after_mode_screen": None,
     "menu": "back_to_battle",
@@ -181,7 +185,7 @@ def judge(seen, profile, numeral_of, last_input, resumed, memory, now, after_mod
     """(symptom, text, params, memory) for one look.
 
     seen: {adb (False: adb does not answer), running, focused, crash (an
-    Android error window in front), screen (None: no capture), numeral
+    Android error window in front), anr (its "not responding" one), screen (None: no capture), numeral
     (battle: the numeral ending the stage's name, None: unread),
     battle_settings (the preset's name read, None: not read), loadout
     (None: not checked; else what is wrong, "" when nothing)}.
@@ -201,11 +205,14 @@ def judge(seen, profile, numeral_of, last_input, resumed, memory, now, after_mod
     never a stage number."""
     memory = {**memory, "looks": memory["looks"] + 1}
     if seen["adb"] and seen.get("running") and seen.get("focused") and not seen.get("crash") \
+            and not seen.get("anr") \
             and seen.get("screen") is None:
         return "unknown", "pas de vérification (pas de capture d’écran)", {}, memory
     menu_since, memory["menu_since"] = memory["menu_since"], None
     if not seen["adb"]:
         return "adb_missing", SYMPTOMS["adb_missing"], {}, memory
+    if seen.get("anr"):
+        return "anr", SYMPTOMS["anr"], {}, memory
     if seen.get("crash"):
         return "crash", SYMPTOMS["crash"], {}, memory
     if not seen["running"]:
@@ -366,7 +373,7 @@ def counters(memory, wall):
 def profile(loadout, stage18):
     """The farming profile: the mpw18 stage (the mode's stage18) and
     mpw18's loadout, as the engraving feature keeps it per mode
-    (ports.loadout("mpw18"): {preset: "I"-"V", the Battle settings preset;
+    (its api loadout("mpw18"): {preset: "I"-"V", the Battle settings preset;
     soul_weapon: {id, variant}}, or None). Phase 1 uses only the stage; the
     preset and the soul weapon wait for phase 3 (the panels that show them
     are not mapped yet). The engraving's placement is the engraving's."""

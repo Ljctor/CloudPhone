@@ -1912,6 +1912,55 @@
    "source": "skill notes",
    "moves": []
   },
+  "crash_dialog": {
+   "name": "Android's crash dialog (not the game's)",
+   "recognise": "dumpsys window: mCurrentFocus is 'Application Error: com.gear2.growslayer' (the dialog 'Slayer Legend keeps stopping' / « Slayer Legend s’arrête »), a stable system window",
+   "source": "Android's own dialog (aerr_close, aerr_app_info); positions from uiautomator",
+   "moves": [
+    {
+     "id": "close",
+     "label": "Close app / Fermer l’application",
+     "area": [0.0, 0.2, 1.0, 0.8],
+     "precondition": "uiautomator dump: the node android:id/aerr_close, tapped at its bounds' centre",
+     "to": "unknown"
+    },
+    {
+     "id": "app_info",
+     "label": "App info / Infos sur l’appli",
+     "forbidden": true,
+     "reason": "opens Android's settings of the game (Force stop, Clear storage)",
+     "to": "unknown"
+    }
+   ]
+  },
+  "anr_dialog": {
+   "name": "Android's \"not responding\" dialog (not the game's)",
+   "recognise": "dumpsys window: mCurrentFocus is 'Application Not Responding: com.gear2.growslayer' (the dialog 'Slayer Legend isn't responding' / « Slayer Legend ne répond pas »), a stable system window",
+   "source": "Android's own dialog (aerr_wait, aerr_close, aerr_app_info); positions from uiautomator",
+   "moves": [
+    {
+     "id": "wait",
+     "label": "Wait / Attendre",
+     "area": [0.0, 0.2, 1.0, 0.8],
+     "precondition": "uiautomator dump: the node android:id/aerr_wait, tapped at its bounds' centre",
+     "to": "unknown"
+    },
+    {
+     "id": "close",
+     "label": "Close app / Fermer l’application",
+     "forbidden": true,
+     "reason": "kills the game (the plugin never kills it)",
+     "to": "unknown"
+    },
+    {
+     "id": "app_info",
+     "label": "App info / Infos sur l’appli",
+     "forbidden": true,
+     "reason": "opens Android's settings of the game (Force stop, Clear storage)",
+     "to": "unknown"
+    }
+   ]
+  },
   "unknown": {
    "name": "Not explored yet",
    "recognise": "anything else",

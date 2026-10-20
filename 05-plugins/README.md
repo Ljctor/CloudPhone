@@ -7,7 +7,7 @@ game-specific code.
 
 | Plugin | What it adds |
 |---|---|
-| [`slayer-legend/`](slayer-legend/README.md) | Slayer Legend: the launch, the screen and stage, the modes and the Closed Mine's farming, gold per second, the navigation trace, the emerald and diamond counters cut or rewritten |
+| [`slayer-legend/`](slayer-legend/README.md) | Slayer Legend: the launch, the screen and stage, the modes and the Closed Mine's farming, the mpw18 watchdog (alerts, relaunch), gold per second, the navigation trace, the emerald and diamond counters cut or rewritten |
 
 ## Install
 

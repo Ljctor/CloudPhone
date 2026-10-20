@@ -18,7 +18,15 @@ of the gateway, so what it may do to the game is all here.
 - last_input(): the user's last input ({monotonic, wall}) or None.
 - focused(): the game is the app in front. running(): its process is
   there (False when gone, None when adb cannot tell). start_game(): opens
-  it (the launch, on the user's press only).
+  it as the launcher does (am start, MAIN/LAUNCHER, never -S: it never
+  kills the game), for the launch (the user's press, or the mpw18
+  watchdog's relaunch). dialog(): Android's dialog for the game in front,
+  "crash" ("Slayer Legend keeps stopping") or "anr" ("Slayer Legend isn't
+  responding"), system windows, or None; crashed(): the crash one.
+  close_crash(shot): taps the crash dialog's "Close app" button;
+  wait_anr(shot): the ANR dialog's "Wait" (its "Close app" would kill the
+  game: never). Both are found by uiautomator (native, so their bounds are
+  exact) and go through the guard (crash_dialog, anr_dialog).
 - notify(text): the Cloud Phone's phone alerts, when the user turned them on.
 - clock: wall() (Unix seconds), monotonic(), sleep(seconds).
 - spawn(coroutine): runs it as a background task.
@@ -33,11 +41,43 @@ import contextvars
 import json
 import logging
 import os
+import re
 import time
 from types import SimpleNamespace
 
 PACKAGE = "com.gear2.growslayer"
 ACTIVITY = f"{PACKAGE}/com.google.firebase.MessagingUnityPlayerActivity"
+# Android's crash and "not responding" dialogs: their windows' titles,
+# whatever the language.
+CRASH_WINDOW = f"Application Error: {PACKAGE}"
+ANR_WINDOW = f"Application Not Responding: {PACKAGE}"
+NODE = re.compile(r"<node\b[^>]*>")
+BOUNDS = re.compile(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"')
+
+
+def crash_window(dumpsys):
+    """The game's Android dialog that has the focus, from `dumpsys window`:
+    "crash" (keeps stopping), "anr" (isn't responding) or None."""
+    for line in dumpsys.splitlines():
+        if "mCurrentFocus" in line:
+            if CRASH_WINDOW in line:
+                return "crash"
+            if ANR_WINDOW in line:
+                return "anr"
+    return None
+
+
+def close_button(hierarchy, name="aerr_close"):
+    """The centre (x, y, pixels) of a button of Android's app dialogs in
+    `uiautomator dump`, by its id: "Close app" (aerr_close), "Wait"
+    (aerr_wait); None when it is not there."""
+    for node in NODE.findall(hierarchy):
+        if f'resource-id="android:id/{name}"' in node:
+            found = BOUNDS.search(node)
+            if found:
+                left, top, right, bottom = map(int, found.groups())
+                return (left + right) // 2, (top + bottom) // 2
+    return None
 
 
 class State:
@@ -257,9 +297,41 @@ def build(context, nav):
         return False if code == 1 and not out.strip() else None
 
     async def start_game():
-        """True when Android started the game's activity."""
-        code, _ = await adb("shell", "am", "start", "-n", ACTIVITY, timeout=20)
+        """True when Android started (or brought to the front) the game's
+        activity, as the launcher does; never -S: a running game is not
+        killed."""
+        code, _ = await adb("shell", "am", "start", "-n", ACTIVITY, "-a", "android.intent.action.MAIN",
+                            "-c", "android.intent.category.LAUNCHER", timeout=20)
         return code == 0
+
+    async def dialog():
+        code, out = await adb("shell", "dumpsys", "window")
+        return crash_window(out) if code == 0 else None
+
+    async def crashed():
+        return await dialog() == "crash"
+
+    async def press_dialog(shot, screen, move, name):
+        """Taps button name of an Android dialog where uiautomator says it
+        is; False when it is not there."""
+        lease.check(HOLDER.get())
+        code, out = await adb("shell", "uiautomator", "dump", "/dev/tty", timeout=20)
+        point = close_button(out, name) if code == 0 else None
+        if not point:
+            return False
+        width, height, _ = shot
+        refusal = nav.guard(screen, move, point[0] / width, point[1] / height, verified=True)
+        if refusal:
+            logging.error(f"Slayer Legend: action refused: {refusal}")
+            raise RuntimeError(f"Action refusée par le garde-fou : {refusal}")
+        await adb("shell", "input", "tap", str(point[0]), str(point[1]))
+        return True
+
+    async def close_crash(shot):
+        return await press_dialog(shot, "crash_dialog", "close", "aerr_close")
+
+    async def wait_anr(shot):
+        return await press_dialog(shot, "anr_dialog", "wait", "aerr_wait")
 
     def spawn(coroutine):
         return asyncio.get_running_loop().create_task(coroutine)
@@ -270,11 +342,13 @@ def build(context, nav):
     def data_path(name):
         return os.path.join(data_dir, name) if data_dir else None
 
+    store = State(data_dir)
+
     return SimpleNamespace(
         capture=context.screenshot, analyse=context.analyse,
         tap=tap, hold=hold, swipe=swipe, lease=lease, leased=leased, Busy=Busy, last_input=last_input,
-        focused=focused, running=running, start_game=start_game,
+        focused=focused, running=running, start_game=start_game, dialog=dialog, crashed=crashed, close_crash=close_crash, wait_anr=wait_anr,
         notify=context.notify,
         clock=clock,
-        spawn=spawn, store=State(data_dir), data_path=data_path, respond=context.json,
+        spawn=spawn, store=store, data_path=data_path, respond=context.json,
     )
