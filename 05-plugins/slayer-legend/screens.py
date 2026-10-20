@@ -88,3 +88,41 @@ def classify(shot):
     if 0.02 < share(shot, START_TEXT, white) < 0.4:
         return "title"
     return "other"
+
+
+# The bottom menu's tabs, and with a panel open the one it is: its label
+# is lit, orange (seen on Adventure; assumed alike for the others) or
+# white, when the others stay grey (138 at 480x1040) or go dark.
+TABS = ((0.073, "character_enhance"), (0.24, "skill"), (0.41, "equipment_weapon"), (0.585, "companion"),
+        (0.755, "adventure_map"), (0.925, "shop_summon"))
+TAB_HALF = 0.06
+TAB_TAP_Y = 0.966
+
+
+def lit(r, g, b):
+    return (r > 180 and g > 90 and b < 110 and r - b > 90) or min(r, g, b) > 200
+
+
+def open_tab(shot):
+    """(x, the navigation screen whose close move it is) of the bottom tab
+    whose panel is open: the one tab whose label is lit; None when no tab
+    or more than one is."""
+    shares = [share(shot, (x - TAB_HALF, MENU_LABELS[1], x + TAB_HALF, MENU_LABELS[3]), lit) for x, _ in TABS]
+    best = max(range(len(TABS)), key=lambda i: shares[i])
+    if shares[best] < 0.05 or sorted(shares)[-2] > shares[best] / 3:
+        return None
+    return TABS[best]
+
+
+# The battle screen with no panel or pop-up over it shows the skill bar:
+# its blue mana bar (the start of it, filled unless the mana is spent).
+MANA_BAR = (0.12, 0.546, 0.30, 0.551)
+
+
+def blue(r, g, b):
+    return b > 200 and g > 100 and r < 120
+
+
+def plain_battle(shot):
+    """The battle screen with nothing over it (its skill bar shows)."""
+    return share(shot, TOP_EMERALD, green) > 0.15 and share(shot, MANA_BAR, blue) > 0.5
