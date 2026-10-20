@@ -95,6 +95,8 @@ def mode(ports, rules, timer, values, mines):
             return ports.respond({"error": error}, status=400)
         name, until, numbers = asked
         changed = name != status["mode"]
+        if changed and name != rules.DEFAULT and until is None:
+            until = ports.clock.wall() + rules.TIMED_MINUTES * 60
         status.update(mode=name, until=until, configured=True,
                       **{key: numbers[key] for key in ("stage18", "stage4", "highest")})
         if name == "mine":

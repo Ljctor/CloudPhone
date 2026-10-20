@@ -48,7 +48,6 @@ const ENGLISH = {
   'Jeu libre': 'Free play',
   'Mine fermée': 'Closed Mine',
   'Configuration : jeu libre': 'Settings: free play',
-  'Minuteur par défaut (minutes)': 'Default timer (minutes)',
   'Stage mpw18': 'mpw18 stage',
   'Stage mpw4': 'mpw4 stage',
   '— choisir —': '— choose —',
@@ -76,6 +75,9 @@ const ENGLISH = {
   'Plus de parchemin doré, mais « Repeat entry » ne se décoche pas': 'Gold scroll gone, but "Repeat entry" does not untick',
   'La relance a échoué 3 fois : relance la mine à la main': 'Restarting failed 3 times: start the mine by hand',
   'Choisis l’étage et la zone': 'Choose the floor and the area',
+  'Farming mpw4 : choisis d’abord son stage': 'mpw4 farming: choose its stage first',
+  'Mine fermée : choisis d’abord l’étage (1 à 9999) et la zone (1 à 5)':
+    'Closed Mine: choose the floor (1 to 9999) and the area (1 to 5) first',
   'arrêtée': 'off',
   'Lancer le jeu': 'Launch the game',
   'Lancer': 'Launch',

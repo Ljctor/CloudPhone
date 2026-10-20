@@ -18,7 +18,9 @@
 //   { type: 'dialog', label, button?, title?, options: Option[], select? }   a button opening
 //                                                  these options in a dialog over the panel;
 //                                                  select: { key, value, default } puts a radio
-//                                                  button before the label (stored as key = value)
+//                                                  button before the label (stored as key = value),
+//                                                  select.disabled?() greys it out (not configured);
+//                                                  options: [] shows no button
 // Any option may have visible?(): shown only when it returns true.
 // Labels are French; the plugin gives English texts with api.addTranslations.
 // api:

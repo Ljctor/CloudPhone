@@ -69,7 +69,8 @@ in a fresh directory per test:
   some (`"plugins": ["tests/fake-emulator/plugins/e2e-probe"]`). The test
   plugins under `tests/fake-emulator/plugins` exercise the plugin host;
   game plugins are not tested against the fake, except Slayer Legend's
-  state kept across gateway restarts (routes that need no game screen).
+  routes that need no game screen (its state kept across gateway restarts,
+  a timed mode's default timer, a mode refused until configured).
   `--plugin_data` is a directory of the fake's, kept across gateway
   restarts;
 
@@ -106,7 +107,7 @@ configured count.
 | `tests/api.rs` | ping, caching, 404/405, viewers, disconnect-others, origin checks on the socket, consistency between endpoints |
 | `tests/input.rs` | touches and keys over HTTP reach Android at the right place |
 | `tests/lifecycle.rs` | crash, restart, discovery file replaced, gateway restarts |
-| `tests/plugins.rs` | plugin host: list, served scripts, routes, token checks, screenshot (shared, counted in the state details), analysis off the event loop and adb for plugins, a plugin's state kept across gateway restarts, a plugin for another plugin API refused, broken plugins skipped |
+| `tests/plugins.rs` | plugin host: list, served scripts, routes, token checks, screenshot (shared, counted in the state details), analysis off the event loop and adb for plugins, a plugin's state kept across gateway restarts, Slayer Legend's timed modes (30 minutes by default, refused until configured), a plugin for another plugin API refused, broken plugins skipped |
 | `tests/contract.rs` | what the emulator says (status, JSEP shapes, data channels, codecs): on the fake by default, on a deployed instance with `--features smoke` |
 | `tests/ui_page.rs` | Firefox: video plays and fits, muted, connected only with a frame, toolbar labels, landmarks, LED, metrics block, ↻ replaces only the video session, signalling back after a gateway restart or a long outage, English browser |
 | `tests/ui_banners.rs` | every status the page shows, covering or closable, with the LED colour; priority; closing; English |
@@ -116,7 +117,7 @@ configured count.
 | `tests/ui_forms.rs` | Android settings and screen size fields, presets, Apply enabled only while they differ |
 | `tests/ui_settings.rs` | client options and language in `localStorage`, plugin options included |
 | `tests/ui_fullscreen.rs` | fullscreen, fold button, 3 s autofold, handle, docking |
-| `tests/ui_plugins.rs` | plugins in the page: options of each kind, layer drawing, stored options, failures (also a plugin the gateway refused), translations |
+| `tests/ui_plugins.rs` | plugins in the page: options of each kind, dialog rows (no button with nothing to configure, a radio greyed out by `disabled()`), layer drawing, stored options, failures (also a plugin the gateway refused), translations |
 | `tests/smoke.rs` | deployed instance only (`--features smoke`) |
 
 ## What took over from the jest tests

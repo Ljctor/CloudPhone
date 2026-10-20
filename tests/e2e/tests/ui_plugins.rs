@@ -160,3 +160,53 @@ fn plugin_texts_follow_the_page_language() {
         }
     });
 }
+
+/// The buttons in the options panel's row of the plugin option labelled `label`.
+async fn row_buttons(page: &Page, label: &str) -> serde_json::Value {
+    let row = page.control(O, label).await;
+    page.js("return [...arguments[0].closest('label').parentElement.querySelectorAll('button')].map(b => b.innerText.trim())",
+        vec![serde_json::to_value(&row).unwrap()]).await
+}
+
+#[test]
+fn a_dialog_row_with_nothing_to_configure_has_no_button() {
+    let cp = probe_page();
+    browser_test(&cp, Options::without_video(), |page| async move {
+        open_plugins(&page).await;
+        assert_eq!(row_buttons(&page, "Choix A").await, json!(["Configurer"]), "a row with options opens them");
+        assert_eq!(row_buttons(&page, "Choix B").await, json!([]), "options: [] shows no button");
+    });
+}
+
+#[test]
+fn a_disabled_dialog_radio_cannot_be_chosen_until_it_is_enabled() {
+    let cp = probe_page();
+    browser_test(&cp, Options::without_video(), |page| async move {
+        open_plugins(&page).await;
+        let a = page.control_state(&page.control(O, "Choix A").await).await;
+        let b = page.control_state(&page.control(O, "Choix B").await).await;
+        assert_eq!((a["checked"].clone(), a["disabled"].clone()), (json!(true), json!(false)), "the default: {a}");
+        assert_eq!((b["checked"].clone(), b["disabled"].clone()), (json!(false), json!(true)), "disabled() is true: {b}");
+        // A click on it does nothing (WebDriver may or may not refuse it).
+        let _ = page.control(O, "Choix B").await.click().await;
+        assert_eq!(page.control_state(&page.control(O, "Choix B").await).await["checked"], false);
+        assert_eq!(page.stored_settings().await["plugins"]["e2e-probe"]["pick"], serde_json::Value::Null, "nothing stored");
+        // Its condition comes true in the other row's dialog.
+        let configure = page.client.find(Locator::XPath(
+            "//div[@role='dialog']//label[contains(., 'Choix A')]/following-sibling::button")).await.unwrap();
+        configure.click().await.unwrap();
+        let settings = "Réglages du choix A";
+        page.wait_dialog(settings).await;
+        page.control(settings, "Autoriser B").await.click().await.unwrap();
+        page.client.find(Locator::Css(&format!("[role=dialog][aria-label='{settings}'] [aria-label='Fermer']"))).await.unwrap()
+            .click().await.unwrap();
+        page.wait_js("the radio enabled", Duration::from_secs(5),
+            "const l = [...document.querySelectorAll('[role=dialog] label')].find(l => l.innerText.trim() === 'Choix B'); \
+             return !!l && !l.control.disabled", vec![]).await;
+        page.control(O, "Choix B").await.click().await.unwrap();
+        let b = page.control_state(&page.control(O, "Choix B").await).await;
+        assert_eq!(b["checked"], true, "{b}");
+        assert_eq!(page.control_state(&page.control(O, "Choix A").await).await["checked"], false, "one of the group");
+        assert_eq!(page.stored_settings().await["plugins"]["e2e-probe"]["pick"], "b");
+    });
+}

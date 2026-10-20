@@ -116,13 +116,17 @@ function pluginOption(context, plugin, option, index) {
           <label style={{ ...styles.infoLabel, display: 'flex', alignItems: 'center', gap: '6px' }}>
             <input type="radio" name={`${plugin.id}-${select.key}`}
               checked={(stored ?? select.default) === select.value}
+              disabled={select.disabled?.() ?? false}
               onChange={() => setPluginOption(plugin.id, select.key, select.value)} />
             {tr(option.label)}
           </label>
         ) : <span style={styles.infoLabel}>{tr(option.label)}</span>}
-        <button style={styles.panelButton} onClick={() => openDialog({ plugin, option })}>
-          {tr(option.button ?? 'Configurer')}
-        </button>
+        {/* No button for a row with nothing to configure (options: []). */}
+        {option.options?.length !== 0 && (
+          <button style={styles.panelButton} onClick={() => openDialog({ plugin, option })}>
+            {tr(option.button ?? 'Configurer')}
+          </button>
+        )}
       </div>
     );
   }

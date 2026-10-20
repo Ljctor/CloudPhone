@@ -10,8 +10,8 @@ import { drawText } from './gold_text.js';
 // This browser's copy of when the timed mode ends (Unix seconds), as the
 // gateway last said; sent again after a gateway restart.
 const UNTIL = 'cloudphone-slayer-legend-mode-until';
-// Free play starts with this timer unless set in its dialog.
-const FREE_MINUTES = 60;
+// A timed mode starts with this timer (then +30 … −30 to adjust it).
+const TIMED_MINUTES = 30;
 const DOTS = { green: '🟢', blue: '🔵', red: '🔴' };
 const MODE_NAMES = { mpw18: 'Farming mpw18', mpw4: 'Farming mpw4', free: 'Jeu libre', mine: 'Mine fermée' };
 // Where the time left goes in the game's top bar: right of the player's
@@ -54,7 +54,7 @@ export default function modeFeature(api, { known }) {
     stage18: Number(api.setting('stage18')) || null,
     stage4: Number(api.setting('stage4')) || null,
     floor: Number(api.setting('mineFloor')) || null,
-    area: Number(api.setting('mineArea') || 1),
+    area: Number(api.setting('mineArea')) || null,
   });
   const left = () => {
     const seconds = (farm.answer?.until ?? 0) - Date.now() / 1000;
@@ -166,29 +166,31 @@ export default function modeFeature(api, { known }) {
       },
       {
         type: 'dialog', label: 'Farming mpw4', title: 'Configuration : farming mpw4',
-        select: { key: 'mode', value: 'mpw4', default: 'mpw18' },
+        // Only once configured: its stage chosen.
+        select: { key: 'mode', value: 'mpw4', default: 'mpw18', disabled: () => !Number(api.setting('stage4')) },
         options: [
           { type: 'choice', key: 'stage4', label: 'Stage mpw4', choices: () => stageChoices(4) },
         ],
       },
       {
-        type: 'dialog', label: 'Jeu libre', title: 'Configuration : jeu libre',
+        // Nothing to configure: no Configurer button.
+        type: 'dialog', label: 'Jeu libre',
         select: { key: 'mode', value: 'free', default: 'mpw18' },
-        options: [
-          {
-            type: 'number', key: 'freeMinutes', label: 'Minuteur par défaut (minutes)',
-            placeholder: String(FREE_MINUTES),
-          },
-        ],
+        options: [],
       },
       {
         type: 'dialog', label: 'Mine fermée', title: 'Configuration : mine fermée',
-        select: { key: 'mode', value: 'mine', default: 'mpw18' },
+        // Only once configured: its floor and area chosen.
+        select: {
+          key: 'mode', value: 'mine', default: 'mpw18',
+          disabled: () => !Number(api.setting('mineFloor')) || !Number(api.setting('mineArea')),
+        },
         options: [
           { type: 'number', key: 'mineFloor', label: 'Étage à farmer', placeholder: '161' },
           {
             type: 'choice', key: 'mineArea', label: 'Zone à farmer',
-            choices: [1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: String(n) })),
+            choices: [{ value: '', label: api.tr('— choisir —') },
+              ...[1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: String(n) }))],
           },
           { type: 'status', label: 'Plumes', value: () => '3' },
         ],
@@ -210,7 +212,7 @@ export default function modeFeature(api, { known }) {
       {
         type: 'status', label: 'État',
         value: () => {
-          if (farm.error) return farm.error;
+          if (farm.error) return api.tr(farm.error);
           if (mode() === 'mine' && !Number(api.setting('mineFloor'))) return api.tr('Choisis l’étage et la zone');
           const answer = farm.answer;
           if (!answer) return '…';
@@ -223,9 +225,8 @@ export default function modeFeature(api, { known }) {
       },
     ],
     onSetting: (key, value) => {
-      if (key === 'mode' && value === 'free') {
-        const minutes = Number(api.setting('freeMinutes')) || FREE_MINUTES;
-        farm.answer = { ...farm.answer, until: Date.now() / 1000 + minutes * 60 };
+      if (key === 'mode' && value !== 'mpw18' && value !== farm.answer?.mode) {
+        farm.answer = { ...farm.answer, until: Date.now() / 1000 + TIMED_MINUTES * 60 };
       }
       if (['mode', 'stage18', 'stage4', 'mineFloor', 'mineArea'].includes(key)) {
         farm.error = null;

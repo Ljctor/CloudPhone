@@ -246,3 +246,44 @@ fn a_plugin_for_another_api_is_refused_and_listed_with_its_error() {
     assert!(plugins[1].get("error").is_none(), "{list}");
     assert_eq!(cp.get_json("api/v1/plugins/e2e-probe/hello")["plugin"], "e2e-probe");
 }
+
+#[test]
+fn slayer_legends_timed_modes_start_with_30_minutes() {
+    // A timed mode chosen without an end time gets 30 minutes; one with an
+    // end time keeps it; mpw18 has none.
+    let cp = with(json!([SLAYER_LEGEND]));
+    let now = || std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs_f64();
+    for mode in ["mpw4", "free", "mine"] {
+        assert_eq!(cp.post_json("api/v1/plugins/slayer-legend/mode", &json!({"mode": "mpw18"})).status(), 200);
+        let asked = now();
+        let set = cp.post_json("api/v1/plugins/slayer-legend/mode", &json!({"mode": mode, "floor": 7, "area": 2, "stage4": 31}));
+        assert_eq!(set.status(), 200, "{mode}: {:?}", set.text());
+        let answer = cp.get_json("api/v1/plugins/slayer-legend/mode");
+        assert_eq!(answer["mode"], mode, "{answer}");
+        let left = answer["until"].as_f64().unwrap_or_else(|| panic!("{mode}: no timer: {answer}")) - asked;
+        assert!((1795.0..1805.0).contains(&left), "{mode}: {left} s left: {answer}");
+    }
+    let until = now() + 600.0;
+    cp.post_json("api/v1/plugins/slayer-legend/mode", &json!({"mode": "mpw18"}));
+    cp.post_json("api/v1/plugins/slayer-legend/mode", &json!({"mode": "free", "until": until}));
+    assert_eq!(cp.get_json("api/v1/plugins/slayer-legend/mode")["until"], json!(until), "an end time given is kept");
+    cp.post_json("api/v1/plugins/slayer-legend/mode", &json!({"mode": "mpw18"}));
+    assert_eq!(cp.get_json("api/v1/plugins/slayer-legend/mode")["until"], Value::Null);
+}
+
+#[test]
+fn slayer_legend_refuses_a_mode_not_configured_yet() {
+    // mpw4 without its stage, the mine without its floor or area: 400 with
+    // the reason in French, and the mode stays as it was.
+    let cp = with(json!([SLAYER_LEGEND]));
+    for (body, reason) in [
+        (json!({"mode": "mpw4"}), "Farming mpw4 : choisis d’abord son stage"),
+        (json!({"mode": "mine", "area": 2}), "Mine fermée : choisis d’abord l’étage (1 à 9999) et la zone (1 à 5)"),
+        (json!({"mode": "mine", "floor": 12}), "Mine fermée : choisis d’abord l’étage (1 à 9999) et la zone (1 à 5)"),
+    ] {
+        let refused = cp.post_json("api/v1/plugins/slayer-legend/mode", &body);
+        assert_eq!(refused.status(), 400, "{body}");
+        assert_eq!(refused.json().unwrap(), json!({"error": reason}), "{body}");
+        assert_eq!(cp.get_json("api/v1/plugins/slayer-legend/mode")["mode"], "mpw18", "{body}");
+    }
+}

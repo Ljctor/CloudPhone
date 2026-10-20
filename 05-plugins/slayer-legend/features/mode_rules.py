@@ -7,14 +7,16 @@ until a time, then it goes back to it.
 
 MODES = ("mpw18", "mpw4", "free", "mine")
 DEFAULT = "mpw18"
+# A timed mode chosen without an end time runs this long.
+TIMED_MINUTES = 30
 # Seconds between two checks of a timed mode.
 WATCH_EVERY = 10
 
 
 def request(body):
     """POST /mode's {mode, until, stage18, stage4, highest, floor, area}:
-    ((mode, until, numbers), None) or (None, the error). The default mode
-    has no timer."""
+    ((mode, until, numbers), None) or (None, the error, in French: the page
+    shows it). The default mode has no timer."""
     try:
         mode = body.get("mode") or DEFAULT
         until = float(body["until"]) if body.get("until") is not None else None
@@ -23,9 +25,12 @@ def request(body):
         return None, "Expected {mode, until, stage18, stage4, highest, floor, area}"
     if mode not in MODES:
         return None, f"mode: one of {', '.join(MODES)}"
+    # A mode is chosen only once configured (the page greys it out until then).
+    if mode == "mpw4" and not numbers["stage4"]:
+        return None, "Farming mpw4 : choisis d’abord son stage"
     if mode == "mine" and not (numbers["floor"] and 1 <= numbers["floor"] <= 9999
                                and numbers["area"] and 1 <= numbers["area"] <= 5):
-        return None, "The mine needs floor 1-9999 and area 1-5"
+        return None, "Mine fermée : choisis d’abord l’étage (1 à 9999) et la zone (1 à 5)"
     if mode == DEFAULT:
         until = None
     return (mode, until, numbers), None

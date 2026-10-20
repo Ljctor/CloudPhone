@@ -1,5 +1,7 @@
 // Test plugin for the e2e suite, page side: one option of each type, a
-// drawing in the plugin's layer, calls to its gateway routes.
+// drawing in the plugin's layer, calls to its gateway routes; two dialog
+// rows sharing a radio group, the second with nothing to configure and
+// chosen only once the first's toggle is on.
 import { FRAME_COLOUR } from './helper.js';
 
 export default function activate(api) {
@@ -9,6 +11,10 @@ export default function activate(api) {
     'Compter': 'Count',
     'Compteur': 'Counter',
     'Vidéo vue': 'Video seen',
+    'Choix A': 'Choice A',
+    'Choix B': 'Choice B',
+    'Réglages du choix A': 'Choice A settings',
+    'Autoriser B': 'Allow B',
   });
   const state = { count: null };
   let frame = null;
@@ -42,6 +48,16 @@ export default function activate(api) {
       {
         type: 'status', label: 'Vidéo vue',
         value: () => { const v = api.video(); return v && v.videoWidth ? `${v.videoWidth}×${v.videoHeight}` : '–'; },
+      },
+      {
+        type: 'dialog', label: 'Choix A', title: 'Réglages du choix A',
+        select: { key: 'pick', value: 'a', default: 'a' },
+        options: [{ type: 'toggle', key: 'allowB', label: 'Autoriser B' }],
+      },
+      {
+        type: 'dialog', label: 'Choix B',
+        select: { key: 'pick', value: 'b', default: 'a', disabled: () => !api.setting('allowB') },
+        options: [],
       },
     ],
     onSetting: (key, value) => { if (key === 'draw') draw(Boolean(value)); },
