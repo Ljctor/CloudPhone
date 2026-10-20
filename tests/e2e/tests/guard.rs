@@ -17,7 +17,7 @@ fn post_raw(cp: &CloudPhone, path: &str, token: Option<&str>, origin: Option<&st
 #[test]
 fn posts_without_the_page_token_are_refused_and_reach_nothing() {
     let cp = CloudPhone::start();
-    for path in ["api/v1/emulator/key", "api/v1/emulator/touch", "api/v1/emulator-settings", "api/v1/display", "api/v1/viewers/disconnect-others"] {
+    for path in ["api/v1/emulator/key", "api/v1/emulator/touch", "api/v1/emulator-settings", "api/v1/display", "api/v1/viewers/disconnect-others", "api/v1/input"] {
         assert_eq!(post_raw(&cp, path, None, None), 403, "POST {path} without a token");
         assert_eq!(post_raw(&cp, path, Some("not-the-token"), None), 403, "POST {path} with a wrong token");
     }

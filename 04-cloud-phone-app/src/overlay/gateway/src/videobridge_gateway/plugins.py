@@ -24,6 +24,12 @@ counted (GET /api/v1/state?details=1, "plugins"). Pixel analysis goes
 through context.analyse(fn, *args), in a worker thread, so that the gateway
 keeps answering while it runs.
 
+What the user does: context.last_input() is the last touch, swipe or key
+from any page ({monotonic, wall} seconds, None since the gateway started;
+see http/activity.py), context.viewers() the viewers connected now, so
+that what a plugin does on its own can wait while someone plays. Both are
+additions to API 1: a plugin for older gateways checks they exist.
+
 A plugin may keep files in its own data directory, DATA_DIR/<id>
 (--plugin_data, /var/lib/cloudphone/plugins on a server), created by the
 gateway, owned by its user, mode 700, kept across upgrades: context.data_dir,
@@ -99,7 +105,7 @@ class PluginContext:
     """What a plugin's gateway.py may use. Passed to setup(context)."""
 
     def __init__(self, app, plugin_id, directory, screenshot, adb, notify=None, title=None, data_dir=None,
-                 screenshots=None):
+                 screenshots=None, activity=None):
         self.app = app
         self.id = plugin_id
         self.directory = directory
@@ -111,6 +117,7 @@ class PluginContext:
         self._adb = adb
         self._notify = notify
         self._title = title or plugin_id
+        self._activity = activity
 
     def add_get(self, path, handler):
         """GET /api/v1/plugins/<id><path>."""
@@ -146,6 +153,15 @@ class PluginContext:
         """Sends text to the user's phone when they turned alerts on (ntfy,
         see http/notify.py), titled with the plugin's name; True when sent."""
         return bool(self._notify) and await self._notify(text, title=self._title)
+
+    def last_input(self):
+        """The user's last touch, swipe or key, from any page: {monotonic,
+        wall} (seconds), or None since the gateway started."""
+        return self._activity.last() if self._activity else None
+
+    def viewers(self):
+        """The viewers connected now."""
+        return self._activity.viewers() if self._activity else 0
 
     def json(self, value, status=200):
         return web.json_response(value, status=status, headers={"Cache-Control": "no-store"})
@@ -189,9 +205,10 @@ def plugin_data_dir(data_dir, plugin_id):
     return path
 
 
-def load_plugins(app, plugins_dir, screenshot, adb, notify=None, data_dir=None):
+def load_plugins(app, plugins_dir, screenshot, adb, notify=None, data_dir=None, activity=None):
     """Registers every plugin found in plugins_dir; returns their manifests.
-    data_dir: the parent of the plugins' data directories, or None."""
+    data_dir: the parent of the plugins' data directories, or None.
+    activity: last() and viewers(), the user's activity (http/activity.py)."""
     loaded = []
     screenshots = Screenshots(screenshot)
     app["plugin_screenshots"] = screenshots
@@ -222,7 +239,7 @@ def load_plugins(app, plugins_dir, screenshot, adb, notify=None, data_dir=None):
                 spec.loader.exec_module(module)
                 screenshots.counts.setdefault(plugin_id, 0)
                 module.setup(PluginContext(app, plugin_id, directory, screenshot, adb, notify, manifest.get("title"),
-                                           plugin_data_dir(data_dir, plugin_id), screenshots))
+                                           plugin_data_dir(data_dir, plugin_id), screenshots, activity))
             loaded.append(manifest)
             logging.info(f"Plugin {plugin_id} {manifest['version']} loaded")
         except Exception as e:

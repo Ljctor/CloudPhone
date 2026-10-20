@@ -82,3 +82,40 @@ fn touches_follow_the_screen_size_after_a_change() {
     let last = cp.fake().touches().last().cloned().unwrap();
     assert_eq!((last["x"].clone(), last["y"].clone()), (json!(359), json!(779)), "clamped to the new 360×780 screen");
 }
+
+const PROBE: &str = "tests/fake-emulator/plugins/e2e-probe";
+
+fn last_input(cp: &CloudPhone) -> Value {
+    cp.get_json("api/v1/plugins/e2e-probe/activity")["last_input"].clone()
+}
+
+#[test]
+fn the_users_inputs_reach_the_plugins_as_last_input() {
+    // POST /api/v1/input (the page's word for inputs it sent over the data
+    // channels) and the HTTP fallback's keys and touches: the plugin API's
+    // last_input() advances, in Unix and monotonic seconds.
+    let cp = CloudPhone::start_with(json!({"plugins": [PROBE]}));
+    assert_eq!(last_input(&cp), Value::Null, "none since the gateway started");
+    let url = cp.url("api/v1/input");
+    let refused = off_runtime(move || client().post(url).json(&json!({})).send().unwrap().status().as_u16());
+    assert_eq!(refused, 403, "the page token is needed");
+    assert_eq!(last_input(&cp), Value::Null, "a refused one does not count");
+
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs_f64();
+    assert_eq!(cp.post_json("api/v1/input", &json!({})).status(), 200);
+    let first = last_input(&cp);
+    let wall = first["wall"].as_f64().expect("Unix seconds");
+    assert!((wall - now).abs() < 5.0, "{first}");
+    let mut previous = first["monotonic"].as_f64().expect("monotonic seconds");
+    for (path, body) in [("api/v1/input", json!({})), ("api/v1/emulator/key", json!({"key": "GoHome"})),
+                         ("api/v1/emulator/touch", json!({"x": 10, "y": 10, "pressed": true}))] {
+        std::thread::sleep(Duration::from_millis(50));
+        assert_eq!(cp.post_json(path, &body).status(), 200, "{path}");
+        let later = last_input(&cp)["monotonic"].as_f64().unwrap();
+        assert!(later > previous, "{path} advances last_input");
+        previous = later;
+    }
+    assert_eq!(cp.post_json("api/v1/emulator/key", &json!({"key": "Enter"})).status(), 400);
+    assert_eq!(last_input(&cp)["monotonic"].as_f64().unwrap(), previous, "a refused key is no input");
+    assert_eq!(cp.get_json("api/v1/plugins/e2e-probe/activity")["viewers"], 0);
+}

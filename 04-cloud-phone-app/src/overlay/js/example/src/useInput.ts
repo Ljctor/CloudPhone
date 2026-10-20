@@ -14,6 +14,9 @@ import { enqueue, queueIdle, takeNext, tapOf, touchPoint, touchQueue } from './t
 // "keyboard"): no HTTP request, no gRPC hop. HTTP through the gateway stays
 // as the fallback while no channel is open. See docs/DEVELOPMENT.md.
 const USE_DATA_CHANNEL = true;
+// The gateway is told of the user's inputs (POST /api/v1/input: plugins wait
+// while someone plays): at once after a silence, then at most this often (ms).
+const INPUT_EVERY = 5000;
 
 // display: Android's screen size; showMarker: the setting that shows the
 // local marker under the finger.
@@ -29,6 +32,17 @@ export function useInput({ gatewayUrl, display, showMarker: markerShown }) {
   const touchStart = useRef(null);
   const inputPath = useRef('–');
   const [touchFailures, setTouchFailures] = useState(0);
+  const inputTold = useRef(null);
+
+  // A touch, a swipe or a key: tells the gateway, leading edge, then at
+  // most every INPUT_EVERY. Fire and forget: the HTTP path's own touches and
+  // keys count on the gateway anyway.
+  const noteInput = () => {
+    const now = performance.now();
+    if (inputTold.current !== null && now - inputTold.current < INPUT_EVERY) return;
+    inputTold.current = now;
+    postFetch(`${gatewayUrl}/api/v1/input`, { method: 'POST', headers: postHeaders(), body: '{}' }).catch(() => null);
+  };
 
   const post = (path, body) => postFetch(`${gatewayUrl}${path}`, {
     method: 'POST',
@@ -45,6 +59,7 @@ export function useInput({ gatewayUrl, display, showMarker: markerShown }) {
   // Keys: the emulator's "keyboard" data channel when open (a keypress with
   // the DOM key name), otherwise the gateway, which uses adb.
   const sendKey = (key) => {
+    noteInput();
     if (USE_DATA_CHANNEL) {
       const event = new Proto.KeyboardEvent();
       event.setEventtype(Proto.KeyboardEvent.KeyEventType.KEYPRESS);
@@ -120,6 +135,7 @@ export function useInput({ gatewayUrl, display, showMarker: markerShown }) {
     showMarker(event, true);
     const coordinates = touchCoordinates(event);
     touchStart.current = { ...coordinates, time: performance.now() };
+    noteInput();
     queueTouch(coordinates, true);
   };
 

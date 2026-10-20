@@ -147,6 +147,47 @@ const KEYS: [(&str, &str, &str); 6] = [
 ];
 
 #[test]
+fn the_page_tells_the_gateway_of_inputs_at_once_then_every_5_s() {
+    // Over the data channels the gateway sees no input: the page says so
+    // with POST /api/v1/input, the first after a silence at once, then at
+    // most one every 5 s. Read back through the probe plugin's last_input().
+    let cp = CloudPhone::start_with(json!({"plugins": ["tests/fake-emulator/plugins/e2e-probe"]}));
+    let phone = cp.clone();
+    browser_test(&cp, Options::default(), |page| async move {
+        let probe = phone.clone();
+        let last = move || probe.get_json("api/v1/plugins/e2e-probe/activity");
+        let read = last.clone();
+        let activity = blocking(move || read());
+        assert_eq!(activity["last_input"], Value::Null, "{activity}");
+        assert_eq!(activity["viewers"], 1, "this page: {activity}");
+        let (x, y) = page.viewport_point((480, 1040), 240, 520).await;
+        page.click_at(x, y).await;
+        let read = last.clone();
+        let first = blocking(move || {
+            wait_for("the click's input", SOON, || {
+                let input = read()["last_input"].clone();
+                input["wall"].as_f64().map(|_| input)
+            })
+        });
+        assert_eq!(phone.fake().touches().last().unwrap()["via"], "touch", "over the data channel");
+        page.click_at(x, y).await;
+        page.sleep(Duration::from_millis(1000)).await;
+        let read = last.clone();
+        assert_eq!(blocking(move || read())["last_input"], first, "within 5 s: not sent again");
+        page.sleep(Duration::from_millis(4500)).await;
+        page.click_label(fr::HOME).await;
+        let (read, before) = (last.clone(), first.clone());
+        let later = blocking(move || {
+            wait_for("the key's input", SOON, || {
+                let input = read()["last_input"].clone();
+                (input != before).then_some(input)
+            })
+        });
+        assert!(later["wall"].as_f64().unwrap() >= first["wall"].as_f64().unwrap() + 5.0, "{first} then {later}");
+    });
+}
+
+#[test]
 fn toolbar_keys_arrive_as_keypresses_on_the_keyboard_channel() {
     let cp = CloudPhone::start();
     let phone = cp.clone();

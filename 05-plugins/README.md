@@ -71,6 +71,18 @@ options panel shows the error. Additions to the API (such as
 breaks existing plugins raises it, and the plugins of the release move to it
 in the same commit.
 
+Additions to API 1 a plugin may use (checking they exist, for older
+gateways):
+
+- `context.last_input()`: the user's last touch, swipe or key from any page,
+  `{monotonic, wall}` in seconds (`time.monotonic()` and Unix time), or
+  `None` since the gateway started. The page tells the gateway of the
+  inputs it sends over the data channels (`POST /api/v1/input`, at once
+  after a silence, then at most every 5 s); the HTTP fallback's touches and
+  keys count by themselves. A plugin that acts on its own waits while
+  someone plays.
+- `context.viewers()`: the viewers connected now.
+
 The API is described at the top of
 `04-cloud-phone-app/src/overlay/js/example/src/plugins.ts` (page) and
 `04-cloud-phone-app/src/overlay/gateway/src/videobridge_gateway/plugins.py`

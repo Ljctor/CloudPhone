@@ -26,6 +26,7 @@ from aiohttp import web
 import grpc
 import logging
 import time
+from types import SimpleNamespace
 
 # Add local path to package import context to resolve generated proto modules
 proto_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "proto")
@@ -35,6 +36,7 @@ from .proto import emulator_controller_pb2_grpc as ec_grpc
 from .plugins import load_plugins, plugin_stats
 from . import logs
 from .logs import log
+from .http import activity
 from .http import viewers
 from .http import display
 from .http import settings
@@ -600,6 +602,7 @@ async def handle_key(request):
         }
         if key not in supported_keys:
             return web.json_response({"error": "unsupported key"}, status=400)
+        activity.seen()
         keycodes = {
             "GoBack": "BACK",
             "GoHome": "HOME",
@@ -627,6 +630,7 @@ async def handle_touch(request):
         x = max(0, min(DISPLAY_WIDTH - 1, int(data.get("x", 0))))
         y = max(0, min(DISPLAY_HEIGHT - 1, int(data.get("y", 0))))
         pressed = bool(data.get("pressed", False))
+        activity.seen()
         contact = ec.Touch(
             x=x,
             y=y,
@@ -685,13 +689,15 @@ def init_app(videobridge_token, plugins_dir="", plugin_data=""):
     app.router.add_get("/api/v1/emulator/logcat", handle_logcat)
     app.router.add_post("/api/v1/emulator/key", handle_key)
     app.router.add_post("/api/v1/emulator/touch", handle_touch)
+    app.router.add_post("/api/v1/input", activity.handle_input)
     app.router.add_get("/api/v1/emulator/ws-jsep", session.signalling(lambda: VIDEOBRIDGE_CHANNEL))
     if WEB_ROOT:
         index = session.index(WEB_ROOT)
         app.router.add_get("/", index)
         app.router.add_get("/index.html", index)
         app.router.add_static("/assets", os.path.join(WEB_ROOT, "assets"))
-    load_plugins(app, plugins_dir, read_screenshot, adb_output, notify.send, plugin_data or None)
+    load_plugins(app, plugins_dir, read_screenshot, adb_output, notify.send, plugin_data or None,
+                 activity=SimpleNamespace(last=activity.last, viewers=lambda: viewers.VIEWERS.count))
 
     return app
 

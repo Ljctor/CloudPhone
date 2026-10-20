@@ -55,6 +55,7 @@ the browser and the gateway; `App.tsx` only assembles them.
 | `gateway/src/videobridge_gateway/http/session.py` | serves the page with its token, the guard middleware (origin, token), the WebSocket JSEP bridge `GET /api/v1/emulator/ws-jsep` |
 | `gateway/src/videobridge_gateway/adapters/videobridge.py` | the emulator's Video Bridge (gRPC Rtc): opens a stream, JSEP messages both ways |
 | `gateway/src/videobridge_gateway/core/viewers.py` | viewers and their signalling sessions, who was disconnected by another viewer, which arrivals and departures are news (no I/O) |
+| `gateway/src/videobridge_gateway/http/activity.py` | `POST /api/v1/input`, the user's last input (monotonic and Unix seconds) for the plugins |
 | `gateway/src/videobridge_gateway/http/viewers.py` | `POST /api/v1/viewers/disconnect-others`, the viewer id of a request, sessions' arrivals and departures as log records |
 | `gateway/src/videobridge_gateway/core/display.py` | screen size and density limits, the last request's state, one change of either kind (size, settings) every 2 minutes (no I/O) |
 | `gateway/src/videobridge_gateway/http/display.py` | `GET`/`POST /api/v1/display`, the change limit as a 409 or 429 answer, refused changes as warning records |
@@ -141,6 +142,7 @@ Android keeps running. Reload the page (the index is never cached).
 | `GET /api/v1/plugins` | installed plugins (id, title, version, page script); one the gateway refused has `error` and no page script |
 | `GET /api/v1/emulator/status` | emulator status and screen size |
 | `POST /api/v1/emulator/touch`, `/key` | input fallback (gRPC touch, adb key) |
+| `POST /api/v1/input` | the page sent a touch, swipe or key over the data channels (at once after a silence, then at most every 5 s; `http/activity.py`): the plugins' `last_input()`. No log record |
 | `POST /api/v1/emulator/gps`, `GET /api/v1/emulator/logcat` | upstream helpers |
 | `GET /api/v1/emulator/ws-jsep?viewer=ID` | WebSocket signaling |
 
