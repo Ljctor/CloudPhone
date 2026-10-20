@@ -50,6 +50,29 @@ class Request(unittest.TestCase):
         self.assertIsNone(asked[1])
 
 
+class Timer(unittest.TestCase):
+    NOW = 1_800_000_000.0
+
+    def test_an_absent_until_keeps_the_timer(self):
+        asked, _ = rules.request({"mode": "free"}, {})
+        self.assertFalse(asked[3])
+        self.assertEqual(rules.timer_for("free", asked[1], asked[3], "free", self.NOW + 600, self.NOW), self.NOW + 600)
+        # A timed mode just chosen starts with its default timer.
+        self.assertEqual(rules.timer_for("free", asked[1], asked[3], "mpw18", None, self.NOW),
+                         self.NOW + rules.TIMED_MINUTES * 60)
+
+    def test_a_null_until_clears_it(self):
+        asked, error = rules.request({"mode": "mine", "floor": 12, "area": 3, "until": None}, {})
+        self.assertIsNone(error)
+        self.assertTrue(asked[3])
+        self.assertIsNone(rules.timer_for("mine", asked[1], asked[3], "mine", self.NOW + 600, self.NOW))
+        self.assertIsNone(rules.timer_for("mine", asked[1], asked[3], "mpw18", None, self.NOW))
+
+    def test_a_given_until_and_the_default_mode(self):
+        self.assertEqual(rules.timer_for("mpw4", self.NOW + 60, True, "mpw4", self.NOW + 600, self.NOW), self.NOW + 60)
+        self.assertIsNone(rules.timer_for("mpw18", None, False, "free", self.NOW + 600, self.NOW))
+
+
 class Merge(unittest.TestCase):
     STORED = {"stage18": 920, "stage4": 31, "highest": 950, "floor": 161, "area": 2}
 

@@ -398,39 +398,63 @@ def soul_weapon(chosen, table, rotate=False):
     return {"id": weapon_id, "variant": name}, None
 
 
-def loadout(body, table, rotate=False):
-    """POST /loadout's {mode, preset, soul_weapon: {id, variant}}: ((mode,
-    {preset, soul_weapon}), None) or (None, the error in French). mode:
-    mpw18 or mpw4; preset: the Battle settings preset, I to V; either of
-    those two may be null (not set)."""
+FIELDS = ("stage", "preset", "soul_weapon")
+TOP_STAGE = 99999
+
+
+def empty_loadout():
+    return dict.fromkeys(FIELDS)
+
+
+def stage_or_none(value):
+    """A stage number, 1 to TOP_STAGE, or None."""
+    ok = isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= TOP_STAGE
+    return value if ok else None
+
+
+def loadout(body, table, rotate=False, stored=None):
+    """POST /loadout's {mode, stage, preset, soul_weapon: {id, variant}}:
+    ((mode, {stage, preset, soul_weapon}), None) or (None, the error in
+    French). mode: mpw18 or mpw4; stage: the stage farmed, 1 to 99999;
+    preset: the Battle settings preset, I to V; soul_weapon: the weapon and
+    its engraving variant. A field absent keeps its stored value (stored:
+    that mode's loadout as it is); a null one clears it."""
     if not isinstance(body, dict):
-        return None, "Attendu : {mode, preset, soul_weapon: {id, variant}}"
+        return None, "Attendu : {mode, stage, preset, soul_weapon: {id, variant}}"
     mode = body.get("mode")
     if mode not in MODES:
         return None, f"mode : {' ou '.join(MODES)}"
-    preset = body.get("preset")
-    if preset is not None and preset not in PRESETS:
-        return None, f"Préréglage de combat : {', '.join(PRESETS)}"
-    chosen = body.get("soul_weapon")
-    if chosen is not None:
-        chosen, error = soul_weapon(chosen, table, rotate)
-        if error:
-            return None, error
-    return (mode, {"preset": preset, "soul_weapon": chosen}), None
+    part = dict(empty_loadout(), **(stored or {}))
+    if "stage" in body:
+        if body["stage"] is not None and stage_or_none(body["stage"]) is None:
+            return None, f"Stage : un nombre de 1 à {TOP_STAGE}"
+        part["stage"] = body["stage"]
+    if "preset" in body:
+        if body["preset"] is not None and body["preset"] not in PRESETS:
+            return None, f"Préréglage de combat : {', '.join(PRESETS)}"
+        part["preset"] = body["preset"]
+    if "soul_weapon" in body:
+        chosen = body["soul_weapon"]
+        if chosen is not None:
+            chosen, error = soul_weapon(chosen, table, rotate)
+            if error:
+                return None, error
+        part["soul_weapon"] = chosen
+    return (mode, part), None
 
 
 def kept_loadouts(saved, table, rotate=False):
-    """The loadouts state.json kept, each checked again (the data file may
-    have changed): {mode: {preset, soul_weapon}}, what is no longer valid
-    left out."""
-    out = {mode: {"preset": None, "soul_weapon": None} for mode in MODES}
+    """The loadouts state.json kept, each field checked again (the data
+    file may have changed): {mode: {stage, preset, soul_weapon}}, what is no
+    longer valid left out (None)."""
+    out = {mode: empty_loadout() for mode in MODES}
     for mode in MODES:
         part = saved.get(mode) if isinstance(saved, dict) else None
         if not isinstance(part, dict):
             continue
-        asked, error = loadout(dict(part, mode=mode), table, rotate)
-        if not error:
-            out[mode] = asked[1]
-        elif part.get("preset") in PRESETS:
-            out[mode]["preset"] = part["preset"]
+        for field in FIELDS:
+            if field in part:
+                asked, error = loadout({"mode": mode, field: part[field]}, table, rotate, out[mode])
+                if not error:
+                    out[mode] = asked[1]
     return out

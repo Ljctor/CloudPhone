@@ -307,3 +307,38 @@ fn slayer_legend_keeps_a_value_a_post_leaves_null_or_out() {
     let answer = cp.get_json("api/v1/plugins/slayer-legend/mode");
     assert_eq!((answer["mode"].clone(), answer["stage4"].clone()), (json!("mpw4"), json!(31)), "{answer}");
 }
+
+#[test]
+fn slayer_legend_keeps_a_timer_a_post_leaves_out_and_clears_a_null_one() {
+    let cp = with(json!([SLAYER_LEGEND]));
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs_f64();
+    let mode = "api/v1/plugins/slayer-legend/mode";
+    cp.post_json(mode, &json!({"mode": "mine", "floor": 7, "area": 2, "until": now + 600.0}));
+    // The same mode posted again without until: its timer stays.
+    assert_eq!(cp.post_json(mode, &json!({"mode": "mine", "floor": 8})).status(), 200);
+    let answer = cp.get_json(mode);
+    assert!((answer["until"].as_f64().unwrap() - (now + 600.0)).abs() < 0.01, "{answer}");
+    // An explicit null: no time limit (the mine farms until stopped).
+    assert_eq!(cp.post_json(mode, &json!({"mode": "mine", "until": null})).status(), 200);
+    let answer = cp.get_json(mode);
+    assert_eq!((answer["mode"].clone(), answer["until"].clone()), (json!("mine"), Value::Null), "{answer}");
+}
+
+#[test]
+fn slayer_legends_stages_are_its_loadouts() {
+    // POST /mode's stages land in the modes' loadouts, which GET /mode reads
+    // back; POST /loadout keeps what it leaves out.
+    let cp = with(json!([SLAYER_LEGEND]));
+    assert_eq!(cp.post_json("api/v1/plugins/slayer-legend/mode", &json!({"mode": "mpw18", "stage18": 920, "stage4": 31})).status(), 200);
+    let loadouts = cp.get_json("api/v1/plugins/slayer-legend/loadout")["loadouts"].clone();
+    assert_eq!((loadouts["mpw18"]["stage"].clone(), loadouts["mpw4"]["stage"].clone()), (json!(920), json!(31)), "{loadouts}");
+    let set = cp.post_json("api/v1/plugins/slayer-legend/loadout", &json!({"mode": "mpw4", "stage": 41, "preset": "II"}));
+    assert_eq!(set.status(), 200, "{:?}", set.text());
+    assert_eq!(cp.get_json("api/v1/plugins/slayer-legend/mode")["stage4"], 41);
+    let token = cp.page_token();
+    cp.fake().action("restart_gateway");
+    cp.wait_new_token(&token, Duration::from_secs(20));
+    let loadouts = cp.get_json("api/v1/plugins/slayer-legend/loadout")["loadouts"].clone();
+    assert_eq!(loadouts["mpw4"], json!({"stage": 41, "preset": "II", "soul_weapon": null, "weapon": null, "placeable": null}));
+    assert_eq!(cp.get_json("api/v1/plugins/slayer-legend/mode")["stage18"], 920);
+}

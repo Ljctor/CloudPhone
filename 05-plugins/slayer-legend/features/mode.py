@@ -4,7 +4,8 @@ ends (the mine ends its last entry first).
 
 GET  /mode         {mode, until, stage18, stage4, highest, configured, state, message, gold, mine}
 POST /mode         {mode, until, stage18, stage4, highest, floor, area}: a number
-                   absent or null keeps its value
+                   absent or null keeps its value; until absent keeps the
+                   timer, null clears it (no time limit)
 POST /mode/timer   {add: minutes}: moves the end of the mode (and of the mine)
 
 Switching stages in the game is not learned yet: it says what to do by
@@ -14,7 +15,9 @@ for 2 looks, null unknown) and alerts once when it goes, then once when it
 is back (gold_scroll.py, shared with the mine). The rules are in
 mode_rules.py; the
 mode and its timer are kept in state.json ("mode") and go on after a
-gateway restart.
+gateway restart. The mpw18 and mpw4 stages are those of the modes'
+loadouts (features/engraving.py, state.json "loadouts"): stage18 and
+stage4 here are read from them and written to them.
 """
 
 import asyncio
@@ -23,14 +26,18 @@ import logging
 REASONS = {"mine done": "Mine terminée", "mine stopped": "Mine arrêtée", "timer": "Minuteur écoulé"}
 
 
-def mode(ports, rules, timer, values, mines, screens, scroll):
+def mode(ports, rules, timer, values, mines, screens, scroll, loadouts):
     """mines: the mine feature's api (start, stop, state, set_until, ended);
-    scroll: gold_scroll.py."""
-    status = {"mode": rules.DEFAULT, "until": None, "stage18": None, "stage4": None, "highest": None,
+    scroll: gold_scroll.py; loadouts: the engraving feature's api (stage,
+    set_stage, adopt_stage), which holds the mpw18 and mpw4 stages."""
+    status = {"mode": rules.DEFAULT, "until": None, "highest": None,
               "configured": False, "state": "idle", "message": "", "task": None,
               "scroll": scroll.fresh(), "gold_look": None}
     ports.store.register("mode", lambda: {key: status[key] for key in (
-        "mode", "until", "stage18", "stage4", "highest", "configured")})
+        "mode", "until", "highest", "configured")})
+
+    def stages():
+        return {"stage18": loadouts["stage"]("mpw18"), "stage4": loadouts["stage"]("mpw4")}
 
     def report(state, message):
         if (status["state"], status["message"]) != (state, message):
@@ -39,8 +46,8 @@ def mode(ports, rules, timer, values, mines, screens, scroll):
         ports.store.save()
 
     def state():
-        answer = {key: status[key] for key in ("mode", "until", "stage18", "stage4", "highest", "configured",
-                                               "state", "message")}
+        answer = {key: status[key] for key in ("mode", "until", "highest", "configured", "state", "message")}
+        answer.update(stages())
         answer["gold"] = status["scroll"]["gold"] if status["mode"] == "mpw4" else None
         answer["mine"] = mines["state"]()
         return answer
@@ -54,7 +61,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll):
 
     async def enter(name):
         """What changing to mode name does (rules.entered)."""
-        move = rules.entered(name, status["stage18"], status["stage4"])
+        move = rules.entered(name, stages()["stage18"], stages()["stage4"])
         if move[0] == "stage":
             await set_stage(move[1], move[2])
         elif move[0] == "choose":
@@ -67,7 +74,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll):
     async def back_to_default(reason):
         status.update(mode=rules.DEFAULT, until=None)
         await ports.notify(f"{reason} : retour au farming mpw18"
-                           + (f" (stage {status['stage18']})" if status["stage18"] else ""))
+                           + (f" (stage {stages()['stage18']})" if stages()["stage18"] else ""))
         await enter(rules.DEFAULT)
 
     def gold_facts(shot):
@@ -118,16 +125,16 @@ def mode(ports, rules, timer, values, mines, screens, scroll):
         except (ValueError, TypeError, AttributeError):
             body = None
         mine = mines["state"]()
-        asked, error = rules.request(body, {**{key: status[key] for key in ("stage18", "stage4", "highest")},
+        asked, error = rules.request(body, {**stages(), "highest": status["highest"],
                                             "floor": mine["floor"], "area": mine["area"]})
         if error:
             return ports.respond({"error": error}, status=400)
-        name, until, numbers = asked
+        name, until, numbers, given = asked
         changed = name != status["mode"]
-        if changed and name != rules.DEFAULT and until is None:
-            until = ports.clock.wall() + rules.TIMED_MINUTES * 60
-        status.update(mode=name, until=until, configured=True,
-                      **{key: numbers[key] for key in ("stage18", "stage4", "highest")})
+        until = rules.timer_for(name, until, given, status["mode"], status["until"], ports.clock.wall())
+        status.update(mode=name, until=until, configured=True, highest=numbers["highest"])
+        loadouts["set_stage"]("mpw18", numbers["stage18"])
+        loadouts["set_stage"]("mpw4", numbers["stage4"])
         if name == "mine":
             mines["start"](numbers["floor"], numbers["area"], until)
         else:
@@ -162,7 +169,10 @@ def mode(ports, rules, timer, values, mines, screens, scroll):
     saved = ports.store.saved.get("mode") or {}
     status.update(mode=saved.get("mode") if saved.get("mode") in rules.MODES else rules.DEFAULT,
                   until=values.time_or_none(saved.get("until")), configured=saved.get("configured") is True,
-                  **{key: values.number_or_none(saved.get(key), 99999) for key in ("stage18", "stage4", "highest")})
+                  highest=values.number_or_none(saved.get("highest"), 99999))
+    # Earlier versions kept the stages here: they move to the loadouts.
+    for key, name in (("stage18", "mpw18"), ("stage4", "mpw4")):
+        loadouts["adopt_stage"](name, values.number_or_none(saved.get(key), 99999))
     before = status["mode"]
     status["mode"], status["until"], ended = rules.restored(status["mode"], status["until"],
                                                             mines["state"]()["enabled"], ports.clock.wall())

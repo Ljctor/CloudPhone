@@ -5,14 +5,17 @@ settings preset and the soul weapon with its engraving variant.
 GET  /engravings                 {rotation, weapons: [{id, name, stage, grid, source, verified_in_game,
                                   wiki_check, variants}]}
 GET  /engraving?id=N             the weapon's pattern, its variants with the pieces each needs
-GET  /loadout                    {loadouts: {mpw18, mpw4}}, each {preset, soul_weapon: {id, variant}}
-POST /loadout                    {mode, preset, soul_weapon: {id, variant}}: one mode's loadout
+GET  /loadout                    {loadouts: {mpw18, mpw4}}, each {stage, preset, soul_weapon: {id, variant}}
+POST /loadout                    {mode, stage, preset, soul_weapon: {id, variant}}: one mode's loadout;
+                                 a field absent keeps its value, a null one clears it
 
 Read-only for the game: nothing is equipped or placed yet; a later phase
 compares the grid on the engraving screen with the pattern and reads the
 pieces there first (engraving_rules.feasible, missing_alert). The rules
 are in engraving_rules.py; the loadouts are kept in state.json
-("loadouts").
+("loadouts"). They are the one place of the mpw18 and mpw4 stages: the
+mode feature (POST /mode's stage18, stage4) and the watchdog read and set
+them through api (loadout, stage, set_stage, adopt_stage).
 """
 
 
@@ -24,6 +27,20 @@ def engraving(ports, rules):
     rotate = rules.rotation_allowed(table)
     loadouts = rules.kept_loadouts(ports.store.saved.get("loadouts"), table, rotate)
     ports.store.register("loadouts", lambda: loadouts)
+
+    def set_stage(mode, number):
+        """The stage farmed in mode (mpw18, mpw4); None clears it."""
+        if loadouts[mode]["stage"] != rules.stage_or_none(number):
+            loadouts[mode]["stage"] = rules.stage_or_none(number)
+            ports.store.save()
+
+    def adopt_stage(mode, number):
+        """A stage from an older state.json, kept only where none is set."""
+        if loadouts[mode]["stage"] is None and rules.stage_or_none(number):
+            set_stage(mode, number)
+
+    api = {"loadout": lambda mode: dict(loadouts[mode]), "stage": lambda mode: loadouts[mode]["stage"],
+           "set_stage": set_stage, "adopt_stage": adopt_stage}
 
     def summary(entry):
         return {key: entry.get(key) for key in ("id", "name", "stage", "grid", "source", "verified_in_game",
@@ -74,7 +91,8 @@ def engraving(ports, rules):
             body = await request.json()
         except (ValueError, TypeError, AttributeError):
             body = None
-        asked, error = rules.loadout(body, table, rotate)
+        mode = body.get("mode") if isinstance(body, dict) else None
+        asked, error = rules.loadout(body, table, rotate, loadouts.get(mode) if isinstance(mode, str) else None)
         if error:
             return ports.respond({"error": error}, status=400)
         mode, part = asked
@@ -82,5 +100,5 @@ def engraving(ports, rules):
         ports.store.save()
         return ports.respond(state())
 
-    return {"routes": [("GET", "/engravings", handle_list), ("GET", "/engraving", handle_one),
+    return {"api": api, "routes": [("GET", "/engravings", handle_list), ("GET", "/engraving", handle_one),
                        ("GET", "/loadout", handle_get), ("POST", "/loadout", handle_post)]}

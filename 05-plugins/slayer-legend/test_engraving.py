@@ -5,6 +5,7 @@ Run: python3 -m unittest test_engraving"""
 
 import asyncio
 import importlib.util
+import json
 import os
 import tempfile
 import unittest
@@ -326,16 +327,23 @@ class Check(unittest.TestCase):
 class Loadout(unittest.TestCase):
     def test_valid(self):
         body = {"mode": "mpw18", "preset": "III", "soul_weapon": {"id": 32, "variant": "Crit"}}
-        self.assertEqual(rules.loadout(body, TABLE),
-                         (("mpw18", {"preset": "III", "soul_weapon": {"id": 32, "variant": "Crit"}}), None))
-        body = {"mode": "mpw4", "preset": None, "soul_weapon": {"id": 32, "variant": "Gold-maxed"}}
+        self.assertEqual(rules.loadout(body, TABLE), (("mpw18", {
+            "stage": None, "preset": "III", "soul_weapon": {"id": 32, "variant": "Crit"}}), None))
+        body = {"mode": "mpw4", "stage": 31, "preset": None, "soul_weapon": {"id": 32, "variant": "Gold-maxed"}}
         self.assertIsNone(rules.loadout(body, TABLE)[1])
-        self.assertEqual(rules.loadout({"mode": "mpw4"}, TABLE),
-                         (("mpw4", {"preset": None, "soul_weapon": None}), None))
+        self.assertEqual(rules.loadout({"mode": "mpw4"}, TABLE), (("mpw4", rules.empty_loadout()), None))
+
+    def test_absent_keeps_null_clears(self):
+        stored = {"stage": 920, "preset": "III", "soul_weapon": {"id": 32, "variant": "Crit"}}
+        self.assertEqual(rules.loadout({"mode": "mpw18", "preset": "II"}, TABLE, stored=stored)[0][1],
+                         dict(stored, preset="II"))
+        self.assertEqual(rules.loadout({"mode": "mpw18", "stage": None, "soul_weapon": None}, TABLE,
+                                       stored=stored)[0][1], {"stage": None, "preset": "III", "soul_weapon": None})
 
     def test_refused(self):
         weapon = {"id": 32, "variant": "Crit"}
         for body in (None, {}, {"mode": "mine", "soul_weapon": weapon}, {"mode": "mpw18", "preset": "VI"},
+                     {"mode": "mpw18", "stage": 0}, {"mode": "mpw18", "stage": "920"}, {"mode": "mpw18", "stage": 100000},
                      {"mode": "mpw18", "soul_weapon": {"id": "32", "variant": "Crit"}},
                      {"mode": "mpw18", "soul_weapon": {"id": 999, "variant": "Crit"}},
                      {"mode": "mpw18", "soul_weapon": {"id": 1, "variant": "Atk"}},
@@ -346,12 +354,12 @@ class Loadout(unittest.TestCase):
             self.assertTrue(error)
 
     def test_kept(self):
-        saved = {"mpw18": {"preset": "III", "soul_weapon": {"id": 32, "variant": "Crit"}},
-                 "mpw4": {"preset": "II", "soul_weapon": {"id": 32, "variant": "Nope"}}}
+        saved = {"mpw18": {"stage": 920, "preset": "III", "soul_weapon": {"id": 32, "variant": "Crit"}},
+                 "mpw4": {"stage": "x", "preset": "II", "soul_weapon": {"id": 32, "variant": "Nope"}}}
         self.assertEqual(rules.kept_loadouts(saved, TABLE),
-                         {"mpw18": {"preset": "III", "soul_weapon": {"id": 32, "variant": "Crit"}},
-                          "mpw4": {"preset": "II", "soul_weapon": None}})
-        empty = {"preset": None, "soul_weapon": None}
+                         {"mpw18": {"stage": 920, "preset": "III", "soul_weapon": {"id": 32, "variant": "Crit"}},
+                          "mpw4": {"stage": None, "preset": "II", "soul_weapon": None}})
+        empty = rules.empty_loadout()
         self.assertEqual(rules.kept_loadouts(None, TABLE), {"mpw18": empty, "mpw4": empty})
 
 
@@ -406,7 +414,7 @@ class Routes(unittest.TestCase):
             self.assertEqual(call("GET", "/engraving", Request(id="x")).status, 404)
             self.assertEqual(call("GET", "/engraving", Request(id="999")).status, 404)
 
-            empty = {"preset": None, "soul_weapon": None, "weapon": None, "placeable": None}
+            empty = {"stage": None, "preset": None, "soul_weapon": None, "weapon": None, "placeable": None}
             self.assertEqual(call("GET", "/loadout", Request()).body, {"loadouts": {"mpw18": empty, "mpw4": empty}})
             body = {"mode": "mpw18", "preset": "III", "soul_weapon": {"id": 32, "variant": "Gold-maxed"}}
             self.assertEqual(call("POST", "/loadout", Request(body)).status, 200)
@@ -414,12 +422,37 @@ class Routes(unittest.TestCase):
             self.assertEqual(refused.status, 400)
             self.assertIn("Variante inconnue", refused.body["error"])
             self.assertEqual(call("POST", "/loadout", Request(ValueError("not JSON"))).status, 400)
+            self.assertEqual(call("POST", "/loadout", Request({"mode": ["mpw18"]})).status, 400)
+            # The mode's stages are the loadouts': POST /mode sets them,
+            # GET /mode reads them back, and a field left out is kept.
+            self.assertEqual(call("POST", "/mode", Request({"mode": "mpw18", "stage18": 920})).status, 200)
+            self.assertEqual(call("GET", "/mode", Request()).body["stage18"], 920)
+            self.assertEqual(call("GET", "/loadout", Request()).body["loadouts"]["mpw18"]["stage"], 920)
+            self.assertEqual(call("POST", "/loadout", Request({"mode": "mpw18", "stage": 940})).status, 200)
+            self.assertEqual(call("GET", "/mode", Request()).body["stage18"], 940)
+            self.assertEqual(call("GET", "/loadout", Request()).body["loadouts"]["mpw18"]["preset"], "III")
 
             # Kept across a gateway restart.
             again = self.setup_gateway(data_dir)
             self.assertEqual(again("GET", "/loadout", Request()).body["loadouts"],
-                             {"mpw18": {"preset": "III", "soul_weapon": {"id": 32, "variant": "Gold-maxed"},
+                             {"mpw18": {"stage": 940, "preset": "III", "soul_weapon": {"id": 32, "variant": "Gold-maxed"},
                                         "weapon": "Ambition", "placeable": True}, "mpw4": empty})
+            self.assertEqual(again("GET", "/mode", Request()).body["stage18"], 940)
+
+    def test_stages_of_an_older_state_move_to_the_loadouts(self):
+        with tempfile.TemporaryDirectory() as data_dir:
+            with open(os.path.join(data_dir, "state.json"), "w", encoding="utf-8") as f:
+                json.dump({"mode": {"mode": "mpw18", "until": None, "stage18": 920, "stage4": 31, "highest": 950,
+                                    "configured": True}}, f)
+            call = self.setup_gateway(data_dir)
+            loadouts = call("GET", "/loadout", Request()).body["loadouts"]
+            self.assertEqual((loadouts["mpw18"]["stage"], loadouts["mpw4"]["stage"]), (920, 31))
+            mode = call("GET", "/mode", Request()).body
+            self.assertEqual((mode["stage18"], mode["stage4"], mode["highest"]), (920, 31, 950))
+            with open(os.path.join(data_dir, "state.json"), encoding="utf-8") as f:
+                kept = json.load(f)
+            self.assertNotIn("stage18", kept["mode"])
+            self.assertEqual(kept["loadouts"]["mpw4"]["stage"], 31)
 
     def test_no_search_at_run_time(self):
         # The routes only read engravings.json: the searches run when it is built.

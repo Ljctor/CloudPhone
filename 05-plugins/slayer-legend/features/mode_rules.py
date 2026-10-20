@@ -27,12 +27,15 @@ NUMBERS = ("stage18", "stage4", "highest", "floor", "area")
 
 def request(body, stored=None):
     """POST /mode's {mode, until, stage18, stage4, highest, floor, area}:
-    ((mode, until, numbers), None) or (None, the error, in French: the page
-    shows it). A number absent or null keeps its stored value (stored: the
-    numbers as they are, e.g. after a gateway restart a browser that does
-    not know one). The default mode has no timer."""
+    ((mode, until, numbers, given), None) or (None, the error, in French:
+    the page shows it). A number absent or null keeps its stored value
+    (stored: the numbers as they are, e.g. after a gateway restart a
+    browser that does not know one). given: whether the body has until (a
+    null one clears the timer; an absent one keeps it, see timer_for). The
+    default mode has no timer."""
     try:
         mode = body.get("mode") or DEFAULT
+        given = "until" in body
         until = float(body["until"]) if body.get("until") is not None else None
         numbers = {key: int(body.get(key) or 0) or None for key in NUMBERS}
     except (ValueError, TypeError, AttributeError):
@@ -48,7 +51,21 @@ def request(body, stored=None):
         return None, "Mine fermée : choisis d’abord l’étage (1 à 9999) et la zone (1 à 5)"
     if mode == DEFAULT:
         until = None
-    return (mode, until, numbers), None
+    return (mode, until, numbers, given), None
+
+
+def timer_for(mode, until, given, current, current_until, now):
+    """The end of mode once POST /mode chose it: until when the body gave
+    one (null: no time limit, e.g. the mine farming until stopped); else
+    the timer running when the mode stays the same, or TIMED_MINUTES from
+    now for a timed mode just chosen. The default mode has none."""
+    if mode == DEFAULT:
+        return None
+    if given:
+        return until
+    if mode == current:
+        return current_until
+    return now + TIMED_MINUTES * 60
 
 
 def entered(mode, stage18, stage4):
