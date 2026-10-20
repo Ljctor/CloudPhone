@@ -69,6 +69,7 @@ a decision comes out.
 | `navigation.json` | the game's screens and every known way out of each (tap, area, hold, swipe or key), allowed or forbidden with the reason (Breakdown, Change, diamonds, Black Orb, equipment overwrites, raids and recipes in Dragon Valley, Promotion dice…) |
 | `nav.py` | the guard: every tap, hold and swipe of the plugin names the screen it recognised and the move it wants, and is refused unless it is an allowed move of that screen landing where the move is and on no forbidden move (deterministic, refused by default) |
 | `engravings.json` | per soul weapon (by id, the game's order): its engraving grid's active cells, the user's variants (Atk, Balanced, Crit) as pieces with shape, rotation and cells, the gold layout, the completion effect; see **Soul Weapon engraving data** below |
+| `features/engraving.py` | `GET /engravings`, `GET /engraving?id=N`, `GET`/`POST /loadout`: the patterns and their variants, and each farming mode's Battle settings preset and soul weapon with its variant (by id), kept in `state.json` |
 | `features/engraving_rules.py` | the engraving's rules: rotations, the pieces a variant needs and whether they are there (and the alert when not), the gold layout's search, placement checks, lookups by name and id |
 | `stages.json` | per stage: name, monsters per wave, drop (weapon `W` or accessory `A`) and grade, main soul colour |
 | `page.js` | page side: assembles the page features below, starts them, shows their options in the panel's order, hands them the settings and disposes of them |
@@ -106,13 +107,21 @@ fails silently.
   read from its pixels: each piece's shape (the 7 tetrominoes L, J, T, O,
   I, S, Z), rotation and cells. The sheet's colours only tell the pieces
   apart. Every variant covers the weapon's cells exactly.
-- **Gold**: computed when the file is built, never by hand: the most 1×4
-  bars (the I piece, which gives gold) the grid holds; ties go to the
-  lexicographically smallest list of bars. It is given with rotation
-  (horizontal and vertical bars) and without (vertical only).
+- **Gold**, computed when the file is built, never by hand, in two
+  variants beside the sheet's: **Gold-maxed**, the most 1×4 bars (the I
+  piece, which gives gold) the grid holds, the rest left empty (ties go to
+  the lexicographically smallest list of bars); **Gold-balanced**, as many
+  bars with the rest filled by other pieces, as close as can be to the
+  weapon's Balanced mix of shapes (then the same tie-break), or one bar
+  fewer when the rest cannot be filled (`bars`, `max`); there is none when
+  neither fills. Both are given with rotation (horizontal and vertical
+  bars) and without (vertical only).
 - **Rotation**: whether the game turns pieces is not confirmed yet
-  (`"rotation": null`). The sheet's solutions turn pieces; 47 of the 77
-  grids cannot be filled exactly without turning any (`tileable_without`).
+  (`"rotation": null`). Until it is `true`, the gold variants are the
+  ones without rotation, and a sheet variant that turns pieces is listed
+  but marked not placeable (« non plaçable tant que la rotation n’est pas
+  confirmée »). The sheet's solutions turn pieces; 47 of the 77 grids
+  cannot be filled exactly without turning any (`tileable_without`).
   Pieces are never mirrored.
 - **Cross-check and completion effects**: the community wiki
   slayerlegend.wiki, from its repository
@@ -120,7 +129,10 @@ fails silently.
   not copied here, only facts re-encoded in this file's own format). Its
   grids transcribed from screenshots (ids 13–54) and its players'
   submissions (ids 55–81) agree with the sheet wherever they exist
-  (`wiki_check`). The completion effect (ATK %, HP %), the soul colour
+  (`wiki_check`, `"none"` when the wiki has no grid). Content (id 79) and
+  Echo (id 80) are `"community-differs"`: their only submissions are
+  junk; check them in game first, nothing is placed on them before they
+  are `verified_in_game`. The completion effect (ATK %, HP %), the soul colour
   and the shapes' stats come from it alone. The later weapons' names
   follow the sheet; the wiki's older names are kept as `aliases`.
 - **Trust**: nothing is checked in game yet (`verified_in_game: false`).

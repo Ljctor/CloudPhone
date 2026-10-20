@@ -4,7 +4,7 @@ settings preset and the soul weapon with its engraving variant.
 
 GET  /engravings                 {rotation, weapons: [{id, name, stage, grid, source, verified_in_game,
                                   wiki_check, variants}]}
-GET  /engraving?id=N|weapon=Name the weapon's pattern, its variants with the pieces each needs
+GET  /engraving?id=N             the weapon's pattern, its variants with the pieces each needs
 GET  /loadout                    {loadouts: {mpw18, mpw4}}, each {preset, soul_weapon: {id, variant}}
 POST /loadout                    {mode, preset, soul_weapon: {id, variant}}: one mode's loadout
 
@@ -18,9 +18,10 @@ are in engraving_rules.py; the loadouts are kept in state.json
 
 def engraving(ports, rules):
     table = rules.load()
-    # Rotation not confirmed in game (null): the sheet's variants and the
-    # gold layout with rotation are offered, marked as not checked.
-    rotate = table.get("rotation") is not False
+    # Pieces are turned only once the game is known to turn them: until
+    # then Gold has vertical bars only, and the sheet's variants that turn
+    # pieces are listed but not placeable.
+    rotate = rules.rotation_allowed(table)
     loadouts = rules.kept_loadouts(ports.store.saved.get("loadouts"), table, rotate)
     ports.store.register("loadouts", lambda: loadouts)
 
@@ -45,19 +46,14 @@ def engraving(ports, rules):
                               "weapons": [summary(entry) for entry in table["weapons"]]})
 
     async def handle_one(request):
-        asked = request.query.get("id")
-        if asked:
-            try:
-                entry = rules.weapon_by_id(int(asked), table)
-            except ValueError:
-                entry = None
-            if entry is None:
-                return ports.respond({"error": f"Arme inconnue : id {asked}"}, status=404)
-        else:
-            try:
-                entry = rules.pattern_for(request.query.get("weapon", ""), table)
-            except rules.UnknownWeapon as e:
-                return ports.respond({"error": str(e)}, status=404)
+        # By id only: names are for display (two weapons share one).
+        asked = request.query.get("id", "")
+        try:
+            entry = rules.weapon_by_id(int(asked), table)
+        except ValueError:
+            entry = None
+        if entry is None:
+            return ports.respond({"error": f"Arme inconnue : id {asked}"}, status=404)
         return ports.respond(detail(entry))
 
     def state():
@@ -65,7 +61,9 @@ def engraving(ports, rules):
         for mode, part in loadouts.items():
             chosen = part["soul_weapon"]
             entry = rules.weapon_by_id(chosen["id"], table) if chosen else None
-            out[mode] = dict(part, weapon=entry["name"] if entry else None)
+            variant = rules.variants(entry, rotate)[chosen["variant"]] if entry else None
+            out[mode] = dict(part, weapon=entry["name"] if entry else None,
+                             placeable=variant["placeable"] if variant else None)
         return {"loadouts": out}
 
     async def handle_get(request):

@@ -14,9 +14,11 @@ box's top-left cell is on anchor.
 
 A variant is one complete filling of a weapon's pattern from the user's
 sheet ("Atk", "Balanced", "Crit"), its pieces listed with their cells; it
-is the plan, nothing is searched at run time. "Gold" is computed when
-engravings.json is built: the most 1x4 bars (the I shape) the pattern
-holds (gold()).
+is the plan, nothing is searched at run time. Two gold variants are
+computed when engravings.json is built: "Gold-maxed", the most 1x4 bars
+(the I shape, which gives gold) the pattern holds, the rest left empty
+(gold()); "Gold-balanced", as many bars with the rest filled by other
+pieces (gold_balanced()).
 """
 
 import difflib
@@ -24,7 +26,8 @@ import json
 import os
 
 DATA = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "engravings.json")
-GOLD = "Gold"
+GOLD_MAXED = "Gold-maxed"
+GOLD_BALANCED = "Gold-balanced"
 
 
 class UnknownWeapon(KeyError):
@@ -163,6 +166,96 @@ def gold(weapon_cells, rotate=True):
     return {"count": best["count"], "bars": [[list(cell) for cell in bar] for bar in best["bars"]]}
 
 
+def bar_packings(target, count, rotate):
+    """Every set of count non-overlapping 1x4 bars in target (a set of
+    (row, col)), each a sorted list of bars."""
+    bars = sorted([(row + step[0] * k, col + step[1] * k) for k in range(4)]
+                  for row, col in target for step in (((1, 0), (0, 1)) if rotate else ((1, 0),))
+                  if all((row + step[0] * k, col + step[1] * k) in target for k in range(4)))
+    taken, chosen = set(), []
+
+    def search(start):
+        if len(chosen) == count:
+            yield list(chosen)
+            return
+        for index in range(start, len(bars)):
+            bar = bars[index]
+            if not taken.intersection(bar):
+                taken.update(bar)
+                chosen.append(bar)
+                yield from search(index + 1)
+                chosen.pop()
+                taken.difference_update(bar)
+
+    yield from search(0)
+
+
+def tilings(cells, shapes, rotate):
+    """Every exact fill of cells (a set of (row, col)) by pieces of shapes
+    ({name: cells}, as many of each as wanted): lists of (shape, rotation,
+    sorted cells). rotate False: rotation 0 only."""
+    orients = []
+    for name, shape in shapes.items():
+        seen = set()
+        for rotation, turned in enumerate(rotations(shape)[:4 if rotate else 1]):
+            key = tuple(map(tuple, turned))
+            if key not in seen:
+                seen.add(key)
+                orients.append((name, rotation, key, min(key)))
+    free = set(cells)
+    chosen = []
+
+    def search():
+        if not free:
+            yield list(chosen)
+            return
+        cell = min(free)
+        for name, rotation, key, first in orients:
+            covered = [(row + cell[0] - first[0], col + cell[1] - first[1]) for row, col in key]
+            if all(c in free for c in covered):
+                free.difference_update(covered)
+                chosen.append((name, rotation, sorted(covered)))
+                yield from search()
+                chosen.pop()
+                free.update(covered)
+
+    yield from search()
+
+
+def gold_balanced(weapon_cells, shapes, prefer, rotate=True):
+    """The most bars, and the rest of the pattern filled with other pieces:
+    {bars, max, pieces: [{shape, rotation, cells}]} sorted by cells, or None
+    when the rest cannot be filled with max bars nor with max - 1. bars:
+    the bars in it (max: the most that fit; max - 1 when no fill of the
+    rest exists with max). Of the fills with that many bars, the one whose pieces
+    besides the bars are closest to prefer ({shape: count}, the sheet's
+    Balanced variant): the most pieces in common, then the
+    lexicographically smallest sorted list of every piece's cells. Exact;
+    run when engravings.json is built."""
+    target = {tuple(cell) for cell in weapon_cells}
+    shapes = {name: (shape["cells"] if isinstance(shape, dict) else shape) for name, shape in shapes.items()}
+    most = gold(weapon_cells, rotate)["count"]
+    for count in range(most, max(most - 2, -1), -1):
+        best = None
+        for packing in bar_packings(target, count, rotate):
+            rest = target.difference(cell for bar in packing for cell in bar)
+            for fill in tilings(rest, shapes, rotate):
+                have = {}
+                for name, _, _ in fill:
+                    have[name] = have.get(name, 0) + 1
+                common = sum(min(n, prefer.get(name, 0)) for name, n in have.items())
+                pieces = sorted([("I", 0 if bar[0][1] == bar[1][1] else 1, bar) for bar in packing] + fill,
+                                key=lambda piece: piece[2])
+                key = (-common, [piece[2] for piece in pieces])
+                if best is None or key < best[0]:
+                    best = (key, pieces)
+        if best:
+            return {"bars": count, "max": most,
+                    "pieces": [{"shape": name, "rotation": rotation, "cells": [list(c) for c in cells]}
+                               for name, rotation, cells in best[1]]}
+    return None
+
+
 def check(weapon_cells, placed_cells):
     """What a placement still lacks and what is wrong with it.
     placed_cells: one list of cells per piece placed. Answers {missing:
@@ -181,17 +274,33 @@ def check(weapon_cells, placed_cells):
             "overlap": [list(c) for c in overlap], "complete": not (missing or outside or overlap)}
 
 
-def variants(entry, rotate=True):
-    """The weapon's variants by name: the sheet's, then "Gold" (with
-    rotate, horizontal bars too). Each {name, pieces: [{shape, rotation,
-    cells, colour}]}; colour is the sheet's label for the piece (None for
-    Gold)."""
-    out = {variant["name"]: variant for variant in entry.get("variants", [])}
+def rotation_allowed(table):
+    """Whether pieces may be turned: only once the game is known to turn
+    them (engravings.json "rotation": true)."""
+    return table.get("rotation") is True
+
+
+def variants(entry, rotate=False):
+    """The weapon's variants by name: the sheet's, then "Gold-maxed" and
+    "Gold-balanced" (with rotate, horizontal bars too; else vertical bars
+    only, and Gold-balanced only when the rest fills without rotation).
+    Each {name, pieces: [{shape, rotation, cells, colour}], placeable};
+    colour is the sheet's label for the piece (None for the gold ones);
+    placeable is False for a variant that turns pieces while rotate is
+    False (listed, not placed). Gold-maxed leaves cells empty; bars: how
+    many bars a gold variant holds."""
+    out = {variant["name"]: dict(variant) for variant in entry.get("variants", [])}
     layout = (entry.get("gold") or {}).get("with_rotation" if rotate else "without_rotation")
     if layout:
-        out[GOLD] = {"name": GOLD, "computed": "gold", "count": layout["count"],
-                     "pieces": [{"shape": "I", "rotation": 0 if bar[0][1] == bar[1][1] else 1, "cells": bar,
-                                 "colour": None} for bar in layout["bars"]]}
+        out[GOLD_MAXED] = {"name": GOLD_MAXED, "computed": "gold-maxed", "bars": layout["count"],
+                           "pieces": [{"shape": "I", "rotation": 0 if bar[0][1] == bar[1][1] else 1,
+                                       "cells": bar, "colour": None} for bar in layout["bars"]]}
+        balanced = layout.get("balanced")
+        if balanced:
+            out[GOLD_BALANCED] = {"name": GOLD_BALANCED, "computed": "gold-balanced", "bars": balanced["bars"],
+                                  "pieces": [dict(piece, colour=None) for piece in balanced["pieces"]]}
+    for variant in out.values():
+        variant["placeable"] = rotate or not needs_rotation(variant)
     return out
 
 
@@ -265,7 +374,7 @@ MODES = ("mpw18", "mpw4")
 PRESETS = ("I", "II", "III", "IV", "V")
 
 
-def soul_weapon(chosen, table, rotate=True):
+def soul_weapon(chosen, table, rotate=False):
     """{id, variant} checked: (it, None) or (None, the error in French).
     The variant is one of the weapon's (variants())."""
     try:
@@ -288,7 +397,7 @@ def soul_weapon(chosen, table, rotate=True):
     return {"id": weapon_id, "variant": name}, None
 
 
-def loadout(body, table, rotate=True):
+def loadout(body, table, rotate=False):
     """POST /loadout's {mode, preset, soul_weapon: {id, variant}}: ((mode,
     {preset, soul_weapon}), None) or (None, the error in French). mode:
     mpw18 or mpw4; preset: the Battle settings preset, I to V; either of
@@ -309,7 +418,7 @@ def loadout(body, table, rotate=True):
     return (mode, {"preset": preset, "soul_weapon": chosen}), None
 
 
-def kept_loadouts(saved, table, rotate=True):
+def kept_loadouts(saved, table, rotate=False):
     """The loadouts state.json kept, each checked again (the data file may
     have changed): {mode: {preset, soul_weapon}}, what is no longer valid
     left out."""

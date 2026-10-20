@@ -32,6 +32,13 @@ FULL5 = [[r, c] for r in range(5) for c in range(5)]
 AMBITION = sorted([[r, 1] for r in range(4)] + [[r, c] for r in range(1, 5) for c in range(2, 5)])
 
 
+def prefer(entry):
+    """The shapes of the weapon's sheet Balanced variant, which
+    Gold-balanced's fill comes closest to."""
+    balanced = [v for v in entry["variants"] if v["name"] == "Balanced"]
+    return rules.needed(balanced[0]) if balanced else {}
+
+
 def engraved():
     return [entry for entry in TABLE["weapons"] if entry["grid"]]
 
@@ -64,7 +71,9 @@ class Data(unittest.TestCase):
                 self.assertIn(entry["source"], SOURCES)
                 self.assertIs(entry["verified_in_game"], False)
                 self.assertIn(entry["colour"], ("green", "blue", "red", None))
+                self.assertIn(entry["wiki_check"], CHECKS)
                 if entry["id"] <= 12:
+                    self.assertEqual(entry["wiki_check"], "none")
                     self.assertIsNone(entry["grid"])
                     self.assertIsNone(entry["cells"])
                     self.assertEqual(entry["source"], "none")
@@ -102,8 +111,21 @@ class Data(unittest.TestCase):
         for entry in engraved():
             for rotate, key in ((True, "with_rotation"), (False, "without_rotation")):
                 with self.subTest(entry["name"], rotate=rotate):
-                    layout = entry["gold"][key]
+                    layout = dict(entry["gold"][key])
+                    balanced = layout.pop("balanced")
                     self.assertEqual(layout, rules.gold(entry["cells"], rotate))
+                    self.assertEqual(balanced, rules.gold_balanced(entry["cells"], SHAPES, prefer(entry), rotate))
+                    if balanced:
+                        self.assertEqual(balanced["max"], layout["count"])
+                        self.assertIn(balanced["bars"], (layout["count"], layout["count"] - 1))
+                        self.assertTrue(rules.check(entry["cells"], [p["cells"] for p in balanced["pieces"]])
+                                        ["complete"])
+                        for piece in balanced["pieces"]:
+                            self.assertEqual(rules.identify(piece["cells"], SHAPES),
+                                             (piece["shape"], piece["rotation"]))
+                            if not rotate:
+                                self.assertEqual(piece["rotation"], 0)
+                        self.assertGreaterEqual(rules.needed(balanced).get("I", 0), balanced["bars"])
                     self.assertEqual(layout["count"], len(layout["bars"]))
                     result = rules.check(entry["cells"], layout["bars"])
                     self.assertEqual(result["outside"] + result["overlap"], [])
@@ -180,12 +202,62 @@ class Gold(unittest.TestCase):
         self.assertEqual(rules.gold(FULL4, rotate=False)["bars"], [[[r, c] for r in range(4)] for c in range(4)])
         self.assertEqual(rules.gold(list(reversed(FULL5))), rules.gold(FULL5))
 
+    def test_balanced_small(self):
+        # Full 4x4: four bars and nothing else to fill.
+        self.assertEqual(rules.gold_balanced(FULL4, SHAPES, {})["bars"], 4)
+        # A bar over a 2x2 block: one bar, a square under it.
+        cells = [[0, 0], [0, 1], [0, 2], [0, 3], [1, 0], [1, 1], [2, 0], [2, 1]]
+        self.assertEqual(rules.gold_balanced(cells, SHAPES, {}),
+                         {"bars": 1, "max": 1, "pieces": [
+                             {"shape": "I", "rotation": 1, "cells": [[0, 0], [0, 1], [0, 2], [0, 3]]},
+                             {"shape": "O", "rotation": 0, "cells": [[1, 0], [1, 1], [2, 0], [2, 1]]}]})
+        # Without rotation the horizontal bar is not there: no bar fits,
+        # and 8 cells of that shape do not fill with unturned pieces.
+        self.assertIsNone(rules.gold_balanced(cells, SHAPES, {}, rotate=False))
+
+    def test_balanced_falls_back_to_one_bar_less(self):
+        # Dullness holds 2 bars, but the rest of no 2-bar layout fills.
+        entry = rules.pattern_for("Dullness", TABLE)
+        result = rules.gold_balanced(entry["cells"], SHAPES, prefer(entry))
+        self.assertEqual((result["bars"], result["max"]), (1, 2))
+
+    def test_balanced_prefers_the_sheet_mix(self):
+        entry = rules.pattern_for("Dullness", TABLE)
+        squares = rules.gold_balanced(entry["cells"], SHAPES, {"O": 5})
+        ells = rules.gold_balanced(entry["cells"], SHAPES, {"L": 5})
+        self.assertEqual(rules.needed(squares), {"I": 1, "J": 1, "O": 1})
+        self.assertEqual(rules.needed(ells), {"I": 1, "L": 1, "S": 1})
+        self.assertEqual(rules.gold_balanced(list(reversed(entry["cells"])), SHAPES, {"O": 5}), squares)
+
     def test_gold_variant(self):
         entry = rules.pattern_for("Ambition", TABLE)
-        gold = rules.variants(entry)["Gold"]
+        gold = rules.variants(entry)["Gold-maxed"]
         self.assertEqual(rules.needed(gold), {"I": 4})
         self.assertFalse(rules.needs_rotation(gold))
-        self.assertEqual(list(rules.variants(entry)), ["Balanced", "Crit", "Gold"])
+        self.assertEqual(list(rules.variants(entry)), ["Balanced", "Crit", "Gold-maxed", "Gold-balanced"])
+        # Without rotation, Gold is the vertical layout; with it, the other.
+        pride = rules.pattern_for("Exciting", TABLE)
+        self.assertEqual(rules.variants(pride)["Gold-maxed"]["bars"], pride["gold"]["without_rotation"]["count"])
+        self.assertEqual(rules.variants(pride, rotate=True)["Gold-maxed"]["bars"], pride["gold"]["with_rotation"]["count"])
+        self.assertNotEqual(pride["gold"]["without_rotation"]["count"], pride["gold"]["with_rotation"]["count"])
+
+    def test_placeable(self):
+        # While rotation is not confirmed, a variant that turns pieces is
+        # listed but not placeable.
+        self.assertFalse(rules.rotation_allowed(TABLE))
+        self.assertFalse(rules.rotation_allowed({"rotation": None}))
+        self.assertTrue(rules.rotation_allowed({"rotation": True}))
+        entry = rules.pattern_for("Ambition", TABLE)
+        self.assertEqual({name: v["placeable"] for name, v in rules.variants(entry).items()},
+                         {"Balanced": False, "Crit": False, "Gold-maxed": True, "Gold-balanced": True})
+        self.assertTrue(all(v["placeable"] for v in rules.variants(entry, rotate=True).values()))
+
+    def test_gold_leaves_cells_empty(self):
+        entry = rules.pattern_for("Pride", TABLE)
+        gold = rules.variants(entry)["Gold-maxed"]
+        result = rules.check(entry["cells"], [piece["cells"] for piece in gold["pieces"]])
+        self.assertEqual(len(result["missing"]), len(entry["cells"]) - 4 * gold["bars"])
+        self.assertEqual(result["outside"] + result["overlap"], [])
 
 
 class Pieces(unittest.TestCase):
@@ -253,7 +325,7 @@ class Loadout(unittest.TestCase):
         body = {"mode": "mpw18", "preset": "III", "soul_weapon": {"id": 32, "variant": "Crit"}}
         self.assertEqual(rules.loadout(body, TABLE),
                          (("mpw18", {"preset": "III", "soul_weapon": {"id": 32, "variant": "Crit"}}), None))
-        body = {"mode": "mpw4", "preset": None, "soul_weapon": {"id": 32, "variant": "Gold"}}
+        body = {"mode": "mpw4", "preset": None, "soul_weapon": {"id": 32, "variant": "Gold-maxed"}}
         self.assertIsNone(rules.loadout(body, TABLE)[1])
         self.assertEqual(rules.loadout({"mode": "mpw4"}, TABLE),
                          (("mpw4", {"preset": None, "soul_weapon": None}), None))
@@ -320,18 +392,20 @@ class Routes(unittest.TestCase):
             listed = call("GET", "/engravings", Request()).body
             self.assertEqual(len(listed["weapons"]), 89)
             self.assertIsNone(listed["rotation"])
-            self.assertEqual(listed["weapons"][31]["variants"], ["Balanced", "Crit", "Gold"])
+            self.assertEqual(listed["weapons"][31]["variants"], ["Balanced", "Crit", "Gold-maxed", "Gold-balanced"])
             one = call("GET", "/engraving", Request(id="32")).body
             self.assertEqual(one["name"], "Ambition")
             self.assertEqual([v["needed"] for v in one["variants"]],
-                             [{"J": 1, "L": 3}, {"I": 1, "L": 2, "O": 1}, {"I": 4}])
-            self.assertEqual(call("GET", "/engraving", Request(weapon="ambition")).body["id"], 32)
-            self.assertEqual(call("GET", "/engraving", Request(weapon="Excalibur")).status, 404)
+                             [{"J": 1, "L": 3}, {"I": 1, "L": 2, "O": 1}, {"I": 4}, {"I": 4}])
+            self.assertEqual([v["placeable"] for v in one["variants"]], [False, False, True, True])
+            # By id only.
+            self.assertEqual(call("GET", "/engraving", Request(weapon="Ambition")).status, 404)
             self.assertEqual(call("GET", "/engraving", Request(id="x")).status, 404)
+            self.assertEqual(call("GET", "/engraving", Request(id="999")).status, 404)
 
-            empty = {"preset": None, "soul_weapon": None, "weapon": None}
+            empty = {"preset": None, "soul_weapon": None, "weapon": None, "placeable": None}
             self.assertEqual(call("GET", "/loadout", Request()).body, {"loadouts": {"mpw18": empty, "mpw4": empty}})
-            body = {"mode": "mpw18", "preset": "III", "soul_weapon": {"id": 32, "variant": "Gold"}}
+            body = {"mode": "mpw18", "preset": "III", "soul_weapon": {"id": 32, "variant": "Gold-maxed"}}
             self.assertEqual(call("POST", "/loadout", Request(body)).status, 200)
             refused = call("POST", "/loadout", Request({"mode": "mpw4", "soul_weapon": {"id": 32, "variant": "Atk"}}))
             self.assertEqual(refused.status, 400)
@@ -341,8 +415,17 @@ class Routes(unittest.TestCase):
             # Kept across a gateway restart.
             again = self.setup_gateway(data_dir)
             self.assertEqual(again("GET", "/loadout", Request()).body["loadouts"],
-                             {"mpw18": {"preset": "III", "soul_weapon": {"id": 32, "variant": "Gold"},
-                                        "weapon": "Ambition"}, "mpw4": empty})
+                             {"mpw18": {"preset": "III", "soul_weapon": {"id": 32, "variant": "Gold-maxed"},
+                                        "weapon": "Ambition", "placeable": True}, "mpw4": empty})
+
+    def test_no_search_at_run_time(self):
+        # The routes only read engravings.json: the searches run when it is built.
+        with open(os.path.join(HERE, "features", "engraving.py"), encoding="utf-8") as f:
+            source = f.read()
+        for name in ("solve", "tiling", "gold"):
+            self.assertNotIn(f"rules.{name}(", source)
+            self.assertNotIn(f"{name}(", source.replace("rotation_allowed(", ""))
+        self.assertNotIn("import engraving_rules", source)
 
 
 class Names(unittest.TestCase):
