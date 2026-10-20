@@ -94,6 +94,8 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         status["anr_waited"] = True
         shot = await ports.capture(max_age=rules.MAX_AGE)
         if not shot:
+            # No capture: Wait is tried again at the next look.
+            status["anr_waited"] = False
             return
         try:
             async with ports.leased("watchdog", "« Attendre » sur « ne répond pas »", 60):

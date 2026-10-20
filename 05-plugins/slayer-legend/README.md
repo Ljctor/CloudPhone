@@ -89,7 +89,7 @@ a decision comes out.
 | `emerald_mask.js` | finds the emerald counter on the video |
 | `emerald_font.js` | the game's counter font at 480 px wide, for the rewritten number |
 | `test_nav.py` | the graph is consistent; the guard lets the plugin's own actions through and refuses the forbidden ones (`python3 -m unittest test_nav`) |
-| `test_watchdog.py` | the watchdog's rules on virtual time: timings, alerts said once, caps, the lease, a gateway restart, the profile, after a mode's end (`python3 -m unittest test_watchdog`) |
+| `test_watchdog.py` | the watchdog's rules on virtual time: timings, alerts said once, caps, the lease, a gateway restart, the profile, after a mode's end; its Wait on the ANR dialog (`python3 -m unittest test_watchdog`) |
 | `test_screens.py` | `screens.classify` on synthetic screenshots drawn from the areas it reads (`python3 -m unittest test_screens`) |
 | `test_trace.py` | tests of `trace.py` on synthetic screenshots (`python3 -m unittest test_trace`) |
 | `test_engraving.py` | `engravings.json` is well formed and its variants fill their patterns; rotations, the gold layout, the pieces needed (`python3 -m unittest test_engraving`) |
@@ -172,9 +172,12 @@ list of what is missing and places nothing.
   stage's name on the battle screen: another region's stage with the same
   numeral passes (the region's banner is not read yet). Power Saving Mode
   shows no name: there the stage is not checked.
-- The "connected on another device" screen and the choice between two
-  saves are not mapped: the watchdog only alerts on them; finish by hand.
-
+- The relaunch's timing: a crash or a game that stopped is seen within
+  about 30 s (2 looks 15 s apart), the relaunch starts within a minute,
+  then the game takes its own load time to reach the battle screen.
+- "Connected elsewhere" (« connected on another device ») and the save
+  chooser stay alert-only: the watchdog never taps them (not mapped yet);
+  finish by hand.
 - Screens are recognised from a few pixel areas measured at the page's
   device shape (19.5:9, e.g. 480×1040). Another shape may stop the launch on
   "unexpected screen"; finish it by hand.

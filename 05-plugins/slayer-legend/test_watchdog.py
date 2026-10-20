@@ -1,10 +1,14 @@
 """The mpw18 watchdog's rules (features/watchdog_rules.py), offline: the
 looks a scripted game gives, one every rules.EVERY seconds, through
-judge() and decide(). Run: python3 -m unittest test_watchdog
+judge() and decide(); and features/watchdog.py's Wait on Android's
+ANR dialog, on fake ports. Run: python3 -m unittest test_watchdog
 """
 
+import asyncio
+import contextlib
 import importlib.util
 import os
+import types
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -395,6 +399,91 @@ class NotResponding(unittest.TestCase):
         self.assertEqual(w.repairs, [])
         self.assertEqual(len(w.alerts()), 1)
         self.assertIn("ne répond pas", w.alerts()[0][1])
+
+
+class WaitOnTheDialog(unittest.TestCase):
+    """features/watchdog.py's own "Wait" on Android's ANR dialog, on fake
+    ports: one look every rules.EVERY seconds, the dialog always there."""
+
+    def looks(self, shots):
+        """One look per capture given (None: missing); the looks that
+        pressed Wait."""
+        spec = importlib.util.spec_from_file_location("watchdog_feature", os.path.join(HERE, "features", "watchdog.py"))
+        feature = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(feature)
+        shots, pressed, coroutines, looked = list(shots), [], [], [0]
+
+        class Ports:
+            class Busy(RuntimeError):
+                pass
+
+            store = types.SimpleNamespace(saved={}, register=lambda *a: None, save=lambda: None)
+            lease = types.SimpleNamespace(state=lambda: None)
+            respond = staticmethod(lambda body: body)
+
+            class clock:
+                now = 0.0
+                monotonic = staticmethod(lambda: Ports.clock.now)
+                wall = staticmethod(lambda: EPOCH + Ports.clock.now)
+
+                @staticmethod
+                async def sleep(seconds):
+                    if looked[0] == len(shots):
+                        raise asyncio.CancelledError
+                    looked[0] += 1
+                    Ports.clock.now += seconds
+
+            @staticmethod
+            def spawn(coroutine):
+                coroutines.append(coroutine)
+
+            last_input = staticmethod(lambda: None)
+
+            @staticmethod
+            async def running():
+                return True
+
+            @staticmethod
+            async def dialog():
+                return "anr"
+
+            @staticmethod
+            async def capture(max_age):
+                return shots[looked[0] - 1]
+
+            @staticmethod
+            @contextlib.asynccontextmanager
+            async def leased(holder, reason, seconds):
+                yield
+
+            @staticmethod
+            async def wait_anr(shot):
+                pressed.append(looked[0] - 1)
+                return True
+
+            @staticmethod
+            async def notify(text):
+                pass
+
+        built = feature.watchdog(
+            Ports, None, None, rules, NUMERALS.get, {"state": lambda: {"mode": "mpw18"}},
+            {"state": lambda: {"enabled": False}},
+            {"running": lambda: False, "start": lambda *a: None, "state": lambda: {}}, lambda mode: None)
+
+        async def run():
+            await built["startup"][0](None)
+            with self.assertRaises(asyncio.CancelledError):
+                await coroutines[0]
+
+        with self.assertLogs("cloudphone.slayer-legend", "INFO"):
+            asyncio.run(run())
+        return pressed
+
+    def test_wait_is_pressed_once_per_dialog(self):
+        self.assertEqual(self.looks(["shot", "shot", "shot"]), [0])
+
+    def test_a_missing_capture_tries_wait_again_at_the_next_look(self):
+        self.assertEqual(self.looks([None, "shot", "shot"]), [1])
 
 
 class AfterMode(unittest.TestCase):
