@@ -115,9 +115,12 @@ class Data(unittest.TestCase):
                     balanced = layout.pop("balanced")
                     self.assertEqual(layout, rules.gold(entry["cells"], rotate))
                     self.assertEqual(balanced, rules.gold_balanced(entry["cells"], SHAPES, prefer(entry), rotate))
+                    # Absent exactly when no complete filling exists.
+                    self.assertEqual(balanced is not None,
+                                     entry["tileable_with_rotation" if rotate else "tileable_without"])
                     if balanced:
                         self.assertEqual(balanced["max"], layout["count"])
-                        self.assertIn(balanced["bars"], (layout["count"], layout["count"] - 1))
+                        self.assertLessEqual(balanced["bars"], layout["count"])
                         self.assertTrue(rules.check(entry["cells"], [p["cells"] for p in balanced["pieces"]])
                                         ["complete"])
                         for piece in balanced["pieces"]:
@@ -215,8 +218,8 @@ class Gold(unittest.TestCase):
         # and 8 cells of that shape do not fill with unturned pieces.
         self.assertIsNone(rules.gold_balanced(cells, SHAPES, {}, rotate=False))
 
-    def test_balanced_falls_back_to_one_bar_less(self):
-        # Dullness holds 2 bars, but the rest of no 2-bar layout fills.
+    def test_balanced_fills_every_cell(self):
+        # Dullness holds 2 bars, but no complete filling has 2.
         entry = rules.pattern_for("Dullness", TABLE)
         result = rules.gold_balanced(entry["cells"], SHAPES, prefer(entry))
         self.assertEqual((result["bars"], result["max"]), (1, 2))

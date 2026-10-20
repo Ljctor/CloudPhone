@@ -223,19 +223,20 @@ def tilings(cells, shapes, rotate):
 
 
 def gold_balanced(weapon_cells, shapes, prefer, rotate=True):
-    """The most bars, and the rest of the pattern filled with other pieces:
-    {bars, max, pieces: [{shape, rotation, cells}]} sorted by cells, or None
-    when the rest cannot be filled with max bars nor with max - 1. bars:
-    the bars in it (max: the most that fit; max - 1 when no fill of the
-    rest exists with max). Of the fills with that many bars, the one whose pieces
-    besides the bars are closest to prefer ({shape: count}, the sheet's
+    """A complete filling of the pattern with as many bars as a complete
+    filling can hold: {bars, max, pieces: [{shape, rotation, cells}]}
+    sorted by cells, or None when no complete filling exists (without
+    rotation, for many patterns). bars: the bars in it; max: the most bars
+    that fit when cells may stay empty (gold()), which a complete filling
+    may not reach. Of the fillings with that many bars, the one whose
+    other pieces are closest to prefer ({shape: count}, the sheet's
     Balanced variant): the most pieces in common, then the
     lexicographically smallest sorted list of every piece's cells. Exact;
     run when engravings.json is built."""
     target = {tuple(cell) for cell in weapon_cells}
     shapes = {name: (shape["cells"] if isinstance(shape, dict) else shape) for name, shape in shapes.items()}
     most = gold(weapon_cells, rotate)["count"]
-    for count in range(most, max(most - 2, -1), -1):
+    for count in range(most, -1, -1):
         best = None
         for packing in bar_packings(target, count, rotate):
             rest = target.difference(cell for bar in packing for cell in bar)
