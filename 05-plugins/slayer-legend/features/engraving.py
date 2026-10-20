@@ -5,6 +5,7 @@ settings preset and the soul weapon with its engraving variant.
 GET  /engravings                 {rotation, weapons: [{id, name, stage, grid, source, verified_in_game,
                                   wiki_check, variants}]}
 GET  /engraving?id=N             the weapon's pattern, its variants with the pieces each needs
+                                 (needed by shape; needed_oriented by "L:1", per piece, else null)
 GET  /loadout                    {loadouts: {mpw18, mpw4}}, each {stage, preset, soul_weapon: {id, variant}}
 POST /loadout                    {mode, stage, preset, soul_weapon: {id, variant}}: one mode's loadout;
                                  a field absent keeps its value, a null one clears it
@@ -21,10 +22,13 @@ them through api (loadout, stage, set_stage, adopt_stage).
 
 def engraving(ports, rules):
     table = rules.load()
-    # Pieces are turned only once the game is known to turn them: until
-    # then Gold has vertical bars only, and the sheet's variants that turn
-    # pieces are listed but not placeable.
-    rotate = rules.rotation_allowed(table)
+    # Layouts hold turned pieces only once the game is known to turn them
+    # ("rotation": true) or pieces are known to drop in every orientation
+    # ("per-piece"): until then Gold has vertical bars only, and the sheet's
+    # variants that turn pieces are listed but not placeable. Per piece, the
+    # inventory is counted by oriented piece (needed_oriented).
+    rotate = rules.any_orientation(table)
+    oriented = table["shapes"] if rules.per_piece(table) else None
     loadouts = rules.kept_loadouts(ports.store.saved.get("loadouts"), table, rotate)
     ports.store.register("loadouts", lambda: loadouts)
 
@@ -53,7 +57,8 @@ def engraving(ports, rules):
                                                   "tileable_with_rotation", "tileable_without", "note")}
         answer["rotation"] = table.get("rotation")
         answer["variants"] = [
-            dict(variant, needed=rules.needed(variant), needs_rotation=rules.needs_rotation(variant))
+            dict(variant, needed=rules.needed(variant), needs_rotation=rules.needs_rotation(variant),
+                 needed_oriented=rules.needed(variant, oriented) if oriented else None)
             for variant in (rules.variants(entry, rotate).values() if entry.get("grid") else [])]
         return answer
 

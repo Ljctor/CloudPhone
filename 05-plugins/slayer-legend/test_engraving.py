@@ -48,7 +48,7 @@ class Data(unittest.TestCase):
     def test_header(self):
         self.assertEqual(TABLE["format"], 1)
         self.assertEqual(TABLE["source"]["url"], "https://github.com/BenDol/SlayerLegendWiki")
-        self.assertIn(TABLE["rotation"], (None, True, False))
+        self.assertIn(TABLE["rotation"], (None, True, False, rules.PER_PIECE))
         self.assertIs(TABLE["mirror"], False)
         self.assertEqual(TABLE["inventory_slots"], 8)
 
@@ -138,6 +138,29 @@ class Data(unittest.TestCase):
                         if not rotate:
                             self.assertEqual(rules.identify(bar, SHAPES), ("I", 0))
 
+    def test_per_piece_layouts(self):
+        for entry in engraved():
+            with self.subTest(entry["name"]):
+                kept = entry["gold"]["per_piece"]
+                self.assertEqual(kept["frontier"], rules.gold_frontier(entry["cells"]))
+                counts = [(f["vertical"], f["horizontal"]) for f in kept["frontier"]]
+                self.assertEqual(max(v + h for v, h in counts), entry["gold"]["with_rotation"]["count"])
+                self.assertEqual(max(v for v, h in counts), entry["gold"]["without_rotation"]["count"])
+                for layout in kept["frontier"]:
+                    result = rules.check(entry["cells"], layout["bars"])
+                    self.assertEqual(result["outside"] + result["overlap"], [])
+                    turns = [rules.identify(bar, SHAPES) for bar in layout["bars"]]
+                    self.assertEqual(sorted(turns), [("I", 0)] * layout["vertical"] + [("I", 1)] * layout["horizontal"])
+                fillings = []
+                for bars in ((0, 1), (0,), (1,)):
+                    filling = rules.gold_balanced(entry["cells"], SHAPES, prefer(entry), True, bars)
+                    if filling and filling not in fillings:
+                        fillings.append(filling)
+                self.assertEqual(kept["balanced"], sorted(fillings, key=lambda f: -f["bars"]))
+                self.assertEqual(kept["balanced"][0], entry["gold"]["with_rotation"]["balanced"])
+                for filling in kept["balanced"]:
+                    self.assertTrue(rules.check(entry["cells"], [p["cells"] for p in filling["pieces"]])["complete"])
+
     def test_tileable_flags(self):
         shapes = list(SHAPES.values())
         for entry in engraved():
@@ -150,6 +173,11 @@ class Data(unittest.TestCase):
         entry = rules.pattern_for("Ambition", TABLE)
         self.assertEqual(entry["cells"], AMBITION)
         self.assertEqual(entry["gold"]["with_rotation"]["count"], 4)
+        # In game: 4 I bars fill it, and only vertical ones fit four.
+        self.assertIn("count matches in game", entry["note"])
+        self.assertFalse(entry["verified_in_game"])
+        self.assertEqual([(f["vertical"], f["horizontal"]) for f in entry["gold"]["per_piece"]["frontier"]],
+                         [(4, 0), (0, 3)])
 
 
 class Rotations(unittest.TestCase):
@@ -282,6 +310,127 @@ class Pieces(unittest.TestCase):
                                "Rien n’a été placé.")
 
 
+PER_PIECE = {"rotation": rules.PER_PIECE}
+
+
+def brute_gold(cells, vertical, horizontal):
+    """The most bars kept of any packing, each orientation cut to what is owned."""
+    target = {tuple(cell) for cell in cells}
+    best = 0
+    for count in range(rules.gold(cells)["count"] + 1):
+        for packing in rules.bar_packings(target, count, True):
+            v = sum(1 for bar in packing if bar[0][1] == bar[1][1])
+            best = max(best, min(v, vertical) + min(count - v, horizontal))
+    return best
+
+
+class Oriented(unittest.TestCase):
+    """Pieces whose orientation is fixed when they drop ("rotation":
+    "per-piece"): the inventory is counted by shape and orientation."""
+
+    def test_modes(self):
+        self.assertEqual([(rules.rotation_allowed(t), rules.per_piece(t), rules.any_orientation(t))
+                          for t in ({"rotation": None}, {"rotation": True}, PER_PIECE, TABLE)],
+                         [(False, False, False), (True, False, True), (False, True, True), (False, False, False)])
+
+    def test_orientation(self):
+        self.assertEqual([rules.orientation(SHAPES["O"], r) for r in range(4)], [0, 0, 0, 0])
+        self.assertEqual([rules.orientation(SHAPES["I"], r) for r in range(4)], [0, 1, 0, 1])
+        self.assertEqual([rules.orientation(SHAPES["S"], r) for r in range(4)], [0, 1, 0, 1])
+        self.assertEqual([rules.orientation(SHAPES["L"], r) for r in range(4)], [0, 1, 2, 3])
+        self.assertEqual(rules.piece_key("I", 3, TABLE["shapes"]), "I:1")
+
+    def test_needed(self):
+        crit = rules.variants(rules.pattern_for("Ambition", TABLE))["Crit"]
+        by_piece = rules.needed(crit, TABLE["shapes"])
+        self.assertEqual(sum(by_piece.values()), sum(rules.needed(crit).values()))
+        totals = {}
+        for key, count in by_piece.items():
+            totals[key.split(":")[0]] = totals.get(key.split(":")[0], 0) + count
+        self.assertEqual(totals, rules.needed(crit))
+        self.assertEqual(by_piece, {f"{p['shape']}:{p['rotation']}": by_piece[f"{p['shape']}:{p['rotation']}"]
+                                    for p in crit["pieces"]})
+
+    def test_sheet_variant_by_orientation(self):
+        # The same shapes in another orientation: enough by shape, short by oriented piece.
+        crit = rules.variants(rules.pattern_for("Ambition", TABLE), rotate=True)["Crit"]
+        need = rules.needed(crit, TABLE["shapes"])
+        self.assertEqual(rules.feasible(need, dict(need)), (True, {}))
+        turned = dict(need)
+        key = next(k for k in need if k.startswith("L:"))
+        other = "L:" + str((int(key[2]) + 1) % 4)
+        turned[key] -= 1
+        turned[other] = turned.get(other, 0) + 1
+        self.assertEqual(rules.feasible(rules.needed(crit), {"I": 1, "L": 2, "O": 1}), (True, {}))
+        ok, missing = rules.feasible(need, turned)
+        self.assertFalse(ok)
+        self.assertEqual(missing, {key: 1})
+        self.assertTrue(crit["placeable"])
+
+    def test_gold_maxed_for_the_bars_owned(self):
+        entry = rules.pattern_for("Ambition", TABLE)
+        fit = lambda owned: rules.fit_gold_maxed(entry, owned)
+        self.assertEqual(rules.needed(fit({"I:0": 4}), TABLE["shapes"]), {"I:0": 4})
+        self.assertEqual(rules.needed(fit({"I:1": 5}), TABLE["shapes"]), {"I:1": 3})
+        self.assertEqual(fit({"I:0": 2, "I:1": 5})["bars"], 3)
+        self.assertEqual(fit({"L:0": 9})["pieces"], [])
+        self.assertIsNone(rules.fit_gold_maxed(rules.pattern_for("Innocence", TABLE), {"I:0": 4}))
+        # The best possible for every count owned, against every packing.
+        for name in ("Ambition", "Exciting", "Pride"):
+            entry = rules.pattern_for(name, TABLE)
+            for vertical in range(6):
+                for horizontal in range(6):
+                    with self.subTest(name, vertical=vertical, horizontal=horizontal):
+                        variant = rules.fit_gold_maxed(entry, {"I:0": vertical, "I:1": horizontal})
+                        self.assertEqual(variant["bars"], brute_gold(entry["cells"], vertical, horizontal))
+                        ok, _ = rules.feasible(rules.needed(variant, TABLE["shapes"]),
+                                               {"I:0": vertical, "I:1": horizontal})
+                        self.assertTrue(ok)
+                        result = rules.check(entry["cells"], [p["cells"] for p in variant["pieces"]])
+                        self.assertEqual(result["outside"] + result["overlap"], [])
+
+    def test_gold_balanced_for_the_pieces_owned(self):
+        entry = rules.pattern_for("Ambition", TABLE)
+        fillings = entry["gold"]["per_piece"]["balanced"]
+        self.assertGreater(len(fillings), 1)
+        shapes = TABLE["shapes"]
+        need = [rules.needed({"pieces": f["pieces"]}, shapes) for f in fillings]
+        variant, missing = rules.fit_gold_balanced(entry, need[0], shapes)
+        self.assertEqual((variant["bars"], missing), (fillings[0]["bars"], {}))
+        # Only the second filling's pieces: the second, fewer bars.
+        variant, missing = rules.fit_gold_balanced(entry, need[1], shapes)
+        self.assertEqual((variant["bars"], missing), (fillings[1]["bars"], {}))
+        self.assertTrue(rules.check(entry["cells"], [p["cells"] for p in variant["pieces"]])["complete"])
+        # Nothing owned: the first, and all it lacks.
+        variant, missing = rules.fit_gold_balanced(entry, {}, shapes)
+        self.assertEqual((variant["bars"], missing), (fillings[0]["bars"], need[0]))
+        self.assertEqual(rules.fit_gold_balanced(rules.pattern_for("Innocence", TABLE), {}, shapes), (None, {}))
+
+    def test_no_search(self):
+        # Fitting reads what engravings.json keeps: the searches are not called.
+        names = ("solve", "tiling", "tilings", "gold", "gold_balanced", "gold_frontier", "bar_packings")
+        kept = {name: getattr(rules, name) for name in names}
+
+        def refuse(*args, **kwargs):
+            raise AssertionError("searched at run time")
+
+        try:
+            for name in names:
+                setattr(rules, name, refuse)
+            entry = rules.pattern_for("Ambition", TABLE)
+            rules.fit_gold_maxed(entry, {"I:0": 1, "I:1": 1})
+            rules.fit_gold_balanced(entry, {"I:0": 4}, TABLE["shapes"])
+            rules.needed(rules.variants(entry, rotate=True)["Crit"], TABLE["shapes"])
+        finally:
+            for name, function in kept.items():
+                setattr(rules, name, function)
+
+    def test_missing_alert(self):
+        text = rules.missing_alert("Ambition", "Crit", {"I:1": 1, "L:2": 2}, TABLE["shapes"])
+        self.assertEqual(text, "Gravure de Ambition (Crit) : il manque 1 × Line (I, orientation 1), "
+                               "2 × L-Shape (L, orientation 2). Rien n’a été placé.")
+
+
 class Solve(unittest.TestCase):
     def setUp(self):
         self.pride = rules.pattern_for("Pride", TABLE)["cells"]
@@ -409,6 +558,8 @@ class Routes(unittest.TestCase):
             self.assertEqual([v["needed"] for v in one["variants"]],
                              [{"J": 1, "L": 3}, {"I": 1, "L": 2, "O": 1}, {"I": 4}, {"I": 4}])
             self.assertEqual([v["placeable"] for v in one["variants"]], [False, False, True, True])
+            # Counted by shape until pieces are known to keep their orientation.
+            self.assertEqual({v["needed_oriented"] for v in one["variants"]}, {None})
             # By id only.
             self.assertEqual(call("GET", "/engraving", Request(weapon="Ambition")).status, 404)
             self.assertEqual(call("GET", "/engraving", Request(id="x")).status, 404)
@@ -458,7 +609,7 @@ class Routes(unittest.TestCase):
         # The routes only read engravings.json: the searches run when it is built.
         with open(os.path.join(HERE, "features", "engraving.py"), encoding="utf-8") as f:
             source = f.read()
-        for name in ("solve", "tiling", "gold"):
+        for name in ("solve", "tiling", "gold", "gold_balanced", "gold_frontier", "bar_packings", "tilings"):
             self.assertNotIn(f"rules.{name}(", source)
             self.assertNotIn(f"{name}(", source.replace("rotation_allowed(", ""))
         self.assertNotIn("import engraving_rules", source)

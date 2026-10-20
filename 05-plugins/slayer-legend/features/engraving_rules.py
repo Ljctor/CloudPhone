@@ -129,16 +129,27 @@ def tiling(weapon_cells, shapes, rotate=True):
     return solve(weapon_cells, [shape for shape in shapes for _ in range(count)], rotate)
 
 
-def gold(weapon_cells, rotate=True):
+STEPS = {0: (1, 0), 1: (0, 1)}  # the I shape's two orientations: vertical (unturned), horizontal
+
+
+def bar_turns(rotate, bars=None):
+    """The bar orientations allowed: bars if given, else both with rotate
+    and vertical only without."""
+    return tuple(bars) if bars is not None else ((0, 1) if rotate else (0,))
+
+
+def gold(weapon_cells, rotate=True, bars=None):
     """The most 1x4 bars that fit in the pattern without overlap: {count,
     bars: [cells of each bar]}. Vertical bars are the I shape unturned;
-    horizontal ones need rotation (rotate). Exact (every packing is looked
+    horizontal ones need rotation (rotate); bars, if given, the orientations
+    allowed (0 vertical, 1 horizontal) whatever rotate says. Exact (every packing is looked
     at); of the packings with the most bars, the one whose sorted list of
     bars (each bar's cells sorted) is lexicographically smallest."""
     target = {tuple(cell) for cell in weapon_cells}
+    steps = [STEPS[turn] for turn in bar_turns(rotate, bars)]
     bars = []
     for row, col in sorted(target):
-        for step in ((1, 0), (0, 1)) if rotate else ((1, 0),):
+        for step in steps:
             bar = [(row + step[0] * k, col + step[1] * k) for k in range(4)]
             if all(cell in target for cell in bar):
                 bars.append(bar)
@@ -166,11 +177,11 @@ def gold(weapon_cells, rotate=True):
     return {"count": best["count"], "bars": [[list(cell) for cell in bar] for bar in best["bars"]]}
 
 
-def bar_packings(target, count, rotate):
+def bar_packings(target, count, rotate, turns=None):
     """Every set of count non-overlapping 1x4 bars in target (a set of
-    (row, col)), each a sorted list of bars."""
+    (row, col)), each a sorted list of bars; turns: as gold()'s bars."""
     bars = sorted([(row + step[0] * k, col + step[1] * k) for k in range(4)]
-                  for row, col in target for step in (((1, 0), (0, 1)) if rotate else ((1, 0),))
+                  for row, col in target for step in (STEPS[turn] for turn in bar_turns(rotate, turns))
                   if all((row + step[0] * k, col + step[1] * k) in target for k in range(4)))
     taken, chosen = set(), []
 
@@ -190,16 +201,18 @@ def bar_packings(target, count, rotate):
     yield from search(0)
 
 
-def tilings(cells, shapes, rotate):
+def tilings(cells, shapes, rotate, only=None):
     """Every exact fill of cells (a set of (row, col)) by pieces of shapes
     ({name: cells}, as many of each as wanted): lists of (shape, rotation,
-    sorted cells). rotate False: rotation 0 only."""
+    sorted cells). rotate False: rotation 0 only; only: {shape: the
+    rotations allowed} for some shapes, whatever rotate says."""
     orients = []
     for name, shape in shapes.items():
         seen = set()
-        for rotation, turned in enumerate(rotations(shape)[:4 if rotate else 1]):
+        allowed = only[name] if only and name in only else range(4 if rotate else 1)
+        for rotation, turned in enumerate(rotations(shape)):
             key = tuple(map(tuple, turned))
-            if key not in seen:
+            if rotation in allowed and key not in seen:
                 seen.add(key)
                 orients.append((name, rotation, key, min(key)))
     free = set(cells)
@@ -222,7 +235,7 @@ def tilings(cells, shapes, rotate):
     yield from search()
 
 
-def gold_balanced(weapon_cells, shapes, prefer, rotate=True):
+def gold_balanced(weapon_cells, shapes, prefer, rotate=True, bars=None):
     """A complete filling of the pattern with as many bars as a complete
     filling can hold: {bars, max, pieces: [{shape, rotation, cells}]}
     sorted by cells, or None when no complete filling exists (without
@@ -231,16 +244,18 @@ def gold_balanced(weapon_cells, shapes, prefer, rotate=True):
     may not reach. Of the fillings with that many bars, the one whose
     other pieces are closest to prefer ({shape: count}, the sheet's
     Balanced variant): the most pieces in common, then the
-    lexicographically smallest sorted list of every piece's cells. Exact;
-    run when engravings.json is built."""
+    lexicographically smallest sorted list of every piece's cells. bars:
+    as gold()'s, for every I piece of the filling. Exact; run when
+    engravings.json is built."""
     target = {tuple(cell) for cell in weapon_cells}
     shapes = {name: (shape["cells"] if isinstance(shape, dict) else shape) for name, shape in shapes.items()}
-    most = gold(weapon_cells, rotate)["count"]
+    most = gold(weapon_cells, rotate, bars)["count"]
+    only = {"I": bar_turns(rotate, bars)}
     for count in range(most, -1, -1):
         best = None
-        for packing in bar_packings(target, count, rotate):
+        for packing in bar_packings(target, count, rotate, bars):
             rest = target.difference(cell for bar in packing for cell in bar)
-            for fill in tilings(rest, shapes, rotate):
+            for fill in tilings(rest, shapes, rotate, only):
                 have = {}
                 for name, _, _ in fill:
                     have[name] = have.get(name, 0) + 1
@@ -255,6 +270,27 @@ def gold_balanced(weapon_cells, shapes, prefer, rotate=True):
                     "pieces": [{"shape": name, "rotation": rotation, "cells": [list(c) for c in cells]}
                                for name, rotation, cells in best[1]]}
     return None
+
+
+def gold_frontier(weapon_cells):
+    """The bar layouts no other beats in both orientations at once: [{vertical,
+    horizontal, bars}], most vertical bars first; of the packings with the
+    same counts, the lexicographically smallest sorted list of bars. Any
+    packing has at most as many bars of each orientation as one of these,
+    so the best gold layout for any number of owned bars of each
+    orientation is one of them, trimmed (fit_gold_maxed). Exact; run when
+    engravings.json is built."""
+    target = {tuple(cell) for cell in weapon_cells}
+    best = {}
+    for count in range(gold(weapon_cells)["count"] + 1):
+        for packing in bar_packings(target, count, True):
+            vertical = sum(1 for bar in packing if bar[0][1] == bar[1][1])
+            key = (vertical, count - vertical)
+            if key not in best or packing < best[key]:
+                best[key] = packing
+    kept = [key for key in best if not any(o != key and o[0] >= key[0] and o[1] >= key[1] for o in best)]
+    return [{"vertical": v, "horizontal": h, "bars": [[list(cell) for cell in bar] for bar in best[(v, h)]]}
+            for v, h in sorted(kept, reverse=True)]
 
 
 def check(weapon_cells, placed_cells):
@@ -275,10 +311,27 @@ def check(weapon_cells, placed_cells):
             "overlap": [list(c) for c in overlap], "complete": not (missing or outside or overlap)}
 
 
+PER_PIECE = "per-piece"
+
+
 def rotation_allowed(table):
     """Whether pieces may be turned: only once the game is known to turn
     them (engravings.json "rotation": true)."""
     return table.get("rotation") is True
+
+
+def per_piece(table):
+    """Whether a piece's orientation is its own, fixed when it drops, not
+    chosen when placing it (engravings.json "rotation": "per-piece"; seen
+    in game, not confirmed). The inventory is then counted by shape and
+    orientation (needed(variant, shapes))."""
+    return table.get("rotation") == PER_PIECE
+
+
+def any_orientation(table):
+    """Whether layouts may hold pieces in any orientation: when the game
+    turns them, or when pieces drop in every orientation."""
+    return rotation_allowed(table) or per_piece(table)
 
 
 def variants(entry, rotate=False):
@@ -305,19 +358,34 @@ def variants(entry, rotate=False):
     return out
 
 
-def needed(variant):
-    """The pieces a variant needs: {shape: how many}, shapes sorted. A
-    piece's rotation is where it goes, not what it is."""
+def orientation(shape, rotation):
+    """A rotation's orientation: the lowest rotation giving the same cells
+    (the square has one, the line and the squiggles two, L, J, T four)."""
+    turns = rotations(shape)
+    return turns.index(turns[rotation % 4])
+
+
+def piece_key(name, rotation, shapes):
+    """The inventory key of an oriented piece: "L:1" (shape, orientation)."""
+    shape = shapes[name]
+    return f"{name}:{orientation(shape['cells'] if isinstance(shape, dict) else shape, rotation)}"
+
+
+def needed(variant, shapes=None):
+    """The pieces a variant needs: {shape: how many}, shapes sorted; a
+    piece's rotation is where it goes, not what it is. With shapes (the
+    table's, per_piece), by oriented piece instead: {"L:1": how many}."""
     count = {}
     for piece in variant["pieces"]:
-        count[piece["shape"]] = count.get(piece["shape"], 0) + 1
+        key = piece_key(piece["shape"], piece["rotation"], shapes) if shapes else piece["shape"]
+        count[key] = count.get(key, 0) + 1
     return dict(sorted(count.items()))
 
 
 def feasible(need, available):
-    """(ok, missing): whether the pieces available ({shape: count}, read
-    off the engraving screen) cover what is needed, and {shape: how many
-    short} when not."""
+    """(ok, missing): whether the pieces available (read off the engraving
+    screen; {shape: count}, or {"L:1": count} per_piece, as need's keys)
+    cover what is needed, and {key: how many short} when not."""
     missing = {shape: count - available.get(shape, 0) for shape, count in sorted(need.items())
                if count > available.get(shape, 0)}
     return not missing, missing
@@ -329,9 +397,53 @@ def needs_rotation(variant):
     return any(piece["rotation"] for piece in variant["pieces"])
 
 
+def fit_gold_maxed(entry, owned):
+    """Gold-maxed for the bars owned, per_piece: owned {"I:0": vertical
+    bars, "I:1": horizontal ones}. Of the frontier's layouts
+    (gold.per_piece.frontier), the one keeping the most bars once each
+    orientation is cut to what is owned (the first such), cut so: a
+    variant as variants() gives, or None without a pattern. No search."""
+    frontier = ((entry.get("gold") or {}).get("per_piece") or {}).get("frontier")
+    if not frontier:
+        return None
+    have = (owned.get("I:0", 0), owned.get("I:1", 0))
+    kept = lambda layout: min(layout["vertical"], have[0]) + min(layout["horizontal"], have[1])
+    layout = max(frontier, key=kept)  # max keeps the first of equals
+    left, pieces = list(have), []
+    for bar in layout["bars"]:
+        turn = 0 if bar[0][1] == bar[1][1] else 1
+        if left[turn]:
+            left[turn] -= 1
+            pieces.append({"shape": "I", "rotation": turn, "cells": bar, "colour": None})
+    return {"name": GOLD_MAXED, "computed": "gold-maxed", "bars": len(pieces), "pieces": pieces, "placeable": True}
+
+
+def fit_gold_balanced(entry, owned, shapes):
+    """Gold-balanced for the oriented pieces owned, per_piece: of the
+    complete fillings kept when engravings.json was built
+    (gold.per_piece.balanced: bars of either orientation, vertical only,
+    horizontal only; most bars first), the first the pieces owned cover.
+    (variant, missing): missing {} when it is covered; else the first
+    filling and what it lacks (the alert). (None, {}) without one."""
+    fillings = ((entry.get("gold") or {}).get("per_piece") or {}).get("balanced") or []
+    best = None
+    for filling in fillings:
+        variant = {"name": GOLD_BALANCED, "computed": "gold-balanced", "bars": filling["bars"],
+                   "pieces": [dict(piece, colour=None) for piece in filling["pieces"]], "placeable": True}
+        ok, missing = feasible(needed(variant, shapes), owned)
+        if ok:
+            return variant, {}
+        best = best or (variant, missing)
+    return best or (None, {})
+
+
 def missing_alert(weapon, variant, missing, shapes):
-    """The phone alert when pieces are missing: nothing is placed."""
-    what = ", ".join(f"{count} × {shapes[shape]['name']} ({shape})" for shape, count in sorted(missing.items()))
+    """The phone alert when pieces are missing: nothing is placed. missing:
+    by shape, or by oriented piece ("L:1") per_piece."""
+    def piece(key):
+        shape, _, turn = key.partition(":")
+        return f"{shapes[shape]['name']} ({shape}{', orientation ' + turn if turn else ''})"
+    what = ", ".join(f"{count} × {piece(key)}" for key, count in sorted(missing.items()))
     return f"Gravure de {weapon} ({variant}) : il manque {what}. Rien n’a été placé."
 
 

@@ -124,7 +124,21 @@ fails silently.
   but marked not placeable (« non plaçable tant que la rotation n’est pas
   confirmée »). The sheet's solutions turn pieces; 47 of the 77 grids
   cannot be filled exactly without turning any (`tileable_without`).
-  Pieces are never mirrored.
+  Pieces are never mirrored. In game, the unequipped pieces seen were
+  all L in one orientation, with no control to turn them: a piece may
+  keep the orientation it dropped with. That is not confirmed; it is
+  prepared as `"rotation": "per-piece"`. Then layouts hold pieces in
+  any orientation, and the inventory is counted by shape and
+  orientation (`"L:1"`, `needed_oriented`): a sheet variant needs its
+  pieces in the orientations it uses, and the gold variants are
+  fitted to the pieces owned (`fit_gold_maxed`: the most bars of the
+  orientations owned, from the layouts kept in `gold.per_piece`;
+  `fit_gold_balanced`: the first complete filling with bars of
+  either orientation, vertical only or horizontal only that the
+  pieces cover, else the alert). Nothing is searched at run time.
+- **Seen in game**: Ambition with 4 I bars equipped filling its grid,
+  as Gold-maxed's count (its `note`; only vertical bars fit four
+  there). Not `verified_in_game`: the cells were not compared yet.
 - **Cross-check and completion effects**: the community wiki
   slayerlegend.wiki, from its repository
   https://github.com/BenDol/SlayerLegendWiki (no licence: its files are
