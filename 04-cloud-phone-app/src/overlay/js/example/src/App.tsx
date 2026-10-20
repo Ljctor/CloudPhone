@@ -22,6 +22,7 @@ import { useAndroidDisplay, useFittedScreen, useReloadOnResize, viewportSize } f
 import { usePanels } from './usePanels';
 import { Toolbar, useBarFold } from './toolbar';
 import { infoSections } from './infoRows';
+import { InfoPanel } from './infoPanel';
 import { clientSections, deviceRows } from './clientInfo';
 import { PluginDialog, PluginList, usePluginDialog } from './pluginOptions';
 import { ViewerOptions, loadSettings, useViewerSettings } from './viewerSettings';
@@ -98,21 +99,7 @@ function App() {
           <Toasts toasts={toasts} dismiss={dismissToast}
             top={toastsTop(bannerShown(problem, dismissed))} />
           {panel && (
-            <div style={styles.info} role="dialog"
-              aria-label={panel === 'info' ? tr('Informations') : tr('Options')}>
-              <div style={styles.infoHeader}>
-                <strong>{panel === 'info' ? tr('Informations') : tr('Options')}</strong>
-                <button style={styles.infoClose} onClick={() => setPanel(null)} aria-label={tr('Fermer')}>✕</button>
-              </div>
-              {panel === 'info' && (
-                <div style={styles.tabs} role="tablist">
-                  {[['client', tr('Client')], ['server', tr('Serveur')]].map(([id, label]) => (
-                    <button key={id} role="tab" aria-selected={infoTab === id}
-                      style={infoTab === id ? { ...styles.tab, ...styles.tabSelected } : styles.tab}
-                      onClick={() => setInfoTab(id)}>{label}</button>
-                  ))}
-                </div>
-              )}
+            <InfoPanel panel={panel} infoTab={infoTab} setInfoTab={setInfoTab} close={() => setPanel(null)}>
               {panel === 'info' && infoTab === 'server' && (
                 <ServerPanel
                   sections={infoSections(serverRows)}
@@ -149,7 +136,7 @@ function App() {
                     openDialog={setPluginDialog} />
                 </>
               )}
-            </div>
+            </InfoPanel>
           )}
           {panel === 'options' && pluginDialog && (
             <PluginDialog dialog={pluginDialog} settings={settings} updateSettings={updateSettings}
