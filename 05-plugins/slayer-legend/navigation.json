@@ -931,7 +931,9 @@
       0.17,
       0.86
      ],
-     "label": "Equip tag under the selected weapon"
+     "label": "Equip tag under the selected weapon",
+     "forbidden": true,
+     "reason": "on the equipped weapon the same tag reads Unequip (seen 2026-10-21): refused until Equip and Unequip are told apart"
     },
     {
      "id": "engraving",
@@ -949,7 +951,7 @@
       0.47,
       0.841
      ],
-     "label": "Craft",
+     "label": "Craft (reads Harvest on a crafted weapon)",
      "forbidden": true,
      "reason": "overwrites or re-rolls the user's equipment"
     },

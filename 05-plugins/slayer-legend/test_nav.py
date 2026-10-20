@@ -40,10 +40,14 @@ class Graph(unittest.TestCase):
             self.assertIn("forbidden", nav.guard(screen, move, *point))
 
     def test_allowed_move_on_a_forbidden_spot(self):
-        # The Equip tag is orange like Breakdown: a tap meant for it but
-        # landing on Breakdown is refused.
-        self.assertIsNotNone(nav.guard("soul_weapon", "equip", 0.80, 0.84))
-        self.assertIsNone(nav.guard("soul_weapon", "equip", 0.09, 0.847))
+        # A tap meant for the weapon list but landing on Breakdown is
+        # refused.
+        self.assertIsNotNone(nav.guard("soul_weapon", "select", 0.80, 0.84))
+        self.assertIsNone(nav.guard("soul_weapon", "select", 0.09, 0.70))
+
+    def test_equip_tag_refused(self):
+        # On the equipped weapon the tag reads Unequip: refused for now.
+        self.assertIn("forbidden", nav.guard("soul_weapon", "equip", 0.09, 0.847))
 
     def test_ad_summons(self):
         # Summons by ad are allowed, the paid ones beside them are not.
