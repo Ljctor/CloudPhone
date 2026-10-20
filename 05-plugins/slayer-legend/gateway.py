@@ -20,6 +20,7 @@ GET  /mine, POST /mine, /mine/timer    features/mine.py
 GET  /mode, POST /mode, /mode/timer    features/mode.py
 GET  /engravings, /engraving?id=N      features/engraving.py
 GET  /loadout, POST /loadout           features/engraving.py
+GET, POST, DELETE /lease               features/lease.py (ports.Lease)
 
 The mode and its timer, the mine's floor, area, timer and on/off, each
 farming mode's loadout (its stage, Battle settings preset, soul weapon
@@ -57,6 +58,7 @@ def setup(context):
     engraving = feature("engraving").engraving(ports, feature("engraving_rules"))
     mine = feature("mine").mine(ports, screens, module("mine"), feature("mine_rules"), timer, values)
     features = [
+        feature("lease").lease(ports),
         feature("counters").counters(ports, module("emerald_mask")),
         feature("screen").screen(ports, screens, stage, feature("screen_rules"), values, table),
         feature("launch").launch(ports, screens, feature("launch_rules")),
@@ -73,4 +75,8 @@ def setup(context):
     for part in features:
         context.app.on_startup.extend(part.get("startup", []))
         for method, path, handler in part["routes"]:
-            (context.add_get if method == "GET" else context.add_post)(path, handler)
+            add = {"GET": context.add_get, "POST": context.add_post,
+                   "DELETE": getattr(context, "add_delete", None)}[method]
+            # An older gateway without add_delete: that route is left out.
+            if add:
+                add(path, handler)

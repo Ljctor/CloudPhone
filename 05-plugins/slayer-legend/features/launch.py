@@ -5,7 +5,8 @@ GET  /launch   {state, message} of the last launch
 POST /launch   starts one (409 while one runs)
 
 What it presses and when is in launch_rules.py; every press goes through
-the navigation guard (ports.tap, ports.hold).
+the navigation guard (ports.tap, ports.hold), under the shared lease
+(holder "launch"): while another holder has it, the launch does not start.
 """
 
 import asyncio
@@ -19,43 +20,51 @@ def launch(ports, screens, rules):
         status["state"], status["message"] = state, message
         logging.info(f"Slayer Legend launch: {state} {message}".rstrip())
 
-    async def run():
-        try:
-            report("starting", "Ouverture du jeu")
-            if not await ports.start_game():
-                report("failed", "Android ne répond pas")
+    async def steps():
+        report("starting", "Ouverture du jeu")
+        if not await ports.start_game():
+            report("failed", "Android ne répond pas")
+            return
+        deadline = ports.clock.monotonic() + rules.DEADLINE
+        memory = rules.fresh()
+        while ports.clock.monotonic() < deadline:
+            await ports.clock.sleep(rules.LOOK_EVERY)
+            shot = await ports.capture()
+            if not shot:
+                continue
+            screen = await ports.analyse(screens.classify, shot)
+            if screen in ("battle", "menu") and await ports.focused():
+                report("done", "Le jeu est sur l’écran de combat")
                 return
-            deadline = ports.clock.monotonic() + rules.DEADLINE
-            memory = rules.fresh()
-            while ports.clock.monotonic() < deadline:
-                await ports.clock.sleep(rules.LOOK_EVERY)
-                shot = await ports.capture()
-                if not shot:
-                    continue
-                screen = await ports.analyse(screens.classify, shot)
-                if screen in ("battle", "menu") and await ports.focused():
-                    report("done", "Le jeu est sur l’écran de combat")
-                    return
-                move, memory = rules.step(screen, memory, ports.clock.monotonic())
-                if move == "confirm":
-                    await ports.tap(shot, "save_notice", "confirm", screens.CONFIRM_TAP)
-                    report("loading", "Dernière sauvegarde confirmée, chargement")
-                    await ports.clock.sleep(rules.AFTER_CONFIRM)
-                elif move == "leave_saver":
-                    await ports.hold(shot, "saver", "leave", screens.SAVER_TAP, screens.SAVER_HOLD_MS)
-                    memory["last_tap"] = ports.clock.monotonic()
-                    report("loading", "Sortie du mode économie d’énergie")
-                elif move == "blocked_saver":
-                    report("blocked", "Le mode économie d’énergie ne se ferme pas : touche son bouton à la main")
-                    return
-                elif move == "start":
-                    await ports.tap(shot, "title", "start", screens.START_TAP)
-                    memory["last_tap"] = ports.clock.monotonic()
-                    report("starting", "Écran titre touché, connexion")
-                elif move == "blocked_other":
-                    report("blocked", "Écran inattendu : termine le lancement à la main")
-                    return
-            report("blocked", "Le jeu n’a pas atteint l’écran de combat en 3 minutes")
+            move, memory = rules.step(screen, memory, ports.clock.monotonic())
+            if move == "confirm":
+                await ports.tap(shot, "save_notice", "confirm", screens.CONFIRM_TAP)
+                report("loading", "Dernière sauvegarde confirmée, chargement")
+                await ports.clock.sleep(rules.AFTER_CONFIRM)
+            elif move == "leave_saver":
+                await ports.hold(shot, "saver", "leave", screens.SAVER_TAP, screens.SAVER_HOLD_MS)
+                memory["last_tap"] = ports.clock.monotonic()
+                report("loading", "Sortie du mode économie d’énergie")
+            elif move == "blocked_saver":
+                report("blocked", "Le mode économie d’énergie ne se ferme pas : touche son bouton à la main")
+                return
+            elif move == "start":
+                await ports.tap(shot, "title", "start", screens.START_TAP)
+                memory["last_tap"] = ports.clock.monotonic()
+                report("starting", "Écran titre touché, connexion")
+            elif move == "blocked_other":
+                report("blocked", "Écran inattendu : termine le lancement à la main")
+                return
+        report("blocked", "Le jeu n’a pas atteint l’écran de combat en 3 minutes")
+
+    async def run(holder="launch", user=True):
+        """The launch under the shared lease: holder "launch" on the user's
+        press (user: a user input does not stop it)."""
+        try:
+            async with ports.leased(holder, "Lancement du jeu", rules.DEADLINE + 60, user=user):
+                await steps()
+        except ports.Busy as e:
+            report("blocked", f"Lancement arrêté : {e}")
         except asyncio.CancelledError:
             raise
         except Exception as e:

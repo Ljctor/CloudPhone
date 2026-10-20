@@ -28,7 +28,8 @@ What the user does: context.last_input() is the last touch, swipe or key
 from any page ({monotonic, wall} seconds, None since the gateway started;
 see http/activity.py), context.viewers() the viewers connected now, so
 that what a plugin does on its own can wait while someone plays. Both are
-additions to API 1: a plugin for older gateways checks they exist.
+additions to API 1: a plugin for older gateways checks they exist. So is
+context.add_delete(path, handler), beside add_get and add_post.
 
 A plugin may keep files in its own data directory, DATA_DIR/<id>
 (--plugin_data, /var/lib/cloudphone/plugins on a server), created by the
@@ -126,6 +127,11 @@ class PluginContext:
     def add_post(self, path, handler):
         """POST /api/v1/plugins/<id><path>; the page token is checked."""
         self.app.router.add_post(f"{self.prefix}{path}", handler)
+
+    def add_delete(self, path, handler):
+        """DELETE /api/v1/plugins/<id><path>; the page token is checked.
+        An addition to API 1."""
+        self.app.router.add_delete(f"{self.prefix}{path}", handler)
 
     async def screenshot(self, max_age=0):
         """Android's screen as (width, height, RGB888 bytes), or None. With

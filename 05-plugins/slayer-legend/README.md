@@ -51,7 +51,8 @@ a decision comes out.
 |---|---|
 | `plugin.json` | id, title, version, plugin API (`api`) |
 | `gateway.py` | gateway side: builds the ports and wires the features of `features/`; its docstring lists each route under `/api/v1/plugins/slayer-legend/` with the feature serving it |
-| `features/ports.py` | the ports the features get from the gateway's context: screenshots (with `max_age`), analysis, tap, hold and swipe (each through the guard of `nav.py`, refused otherwise), whether the game is in front or running, starting it (the launch only), alerts, the clock, `state.json` |
+| `features/ports.py` | the ports the features get from the gateway's context: screenshots (with `max_age`), analysis, tap, hold and swipe (each through the guard of `nav.py`, refused otherwise, and only under the shared lease), the lease (`Lease`: one holder at a time, a reason, a time to live of at most 15 minutes renewed by its holder, released by its holder only, its expiry logged as a warning; a user input stops every holder but the user's own press for a minute), whether the game is in front or running, starting it (the launch only), alerts, the clock, `state.json` |
+| `features/lease.py` | `GET`/`POST`/`DELETE /lease`: the shared lease for a holder outside the plugin (`{holder, reason, seconds}`, the page token needed): while it holds it, the launch, the mine and the watchdog do not tap |
 | `features/counters.py` | `GET /emerald-mask`: a counter's mask off a screenshot, for browsers that cannot read the video |
 | `features/screen.py`, `screen_rules.py` | `GET /screen`, `GET /stages`: the screen and stage shown, the highest stage seen farmed |
 | `features/launch.py`, `launch_rules.py` | `GET`/`POST /launch`: the launch, on the user's press only |
@@ -87,7 +88,7 @@ a decision comes out.
 | `test_nav.py` | the graph is consistent; the guard lets the plugin's own actions through and refuses the forbidden ones (`python3 -m unittest test_nav`) |
 | `test_trace.py` | tests of `trace.py` on synthetic screenshots (`python3 -m unittest test_trace`) |
 | `test_engraving.py` | `engravings.json` is well formed and its variants fill their patterns; rotations, the gold layout, the pieces needed (`python3 -m unittest test_engraving`) |
-| `test_mine.py` | the mine on a scripted game, on virtual time, through the guard: an untick that will not take, the mine turned off and on in one tick (`python3 -m unittest test_mine`) |
+| `test_mine.py` | the mine on a scripted game, on virtual time, through the guard: an untick that will not take, the mine turned off and on in one tick, its taps waiting for the lease (a user input, an outside holder), the lease's routes and expiry, the free-play warning (`python3 -m unittest test_mine`) |
 
 The tests run in this directory and are not installed, nor is this README.
 

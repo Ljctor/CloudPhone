@@ -12,7 +12,9 @@ feathers again. When the gold scroll is gone, or at `until`, it unticks
 do not take leave it blocked (one alert), tapping nothing more. A mine
 whose timer ended while the gateway was down gets a stop pass at the
 gateway's start. When to do what is in mine_rules.py; every tap, hold and
-swipe goes through the navigation guard (ports). The mine's floor, area,
+swipe goes through the navigation guard (ports), each sequence of them
+under the shared lease (holder "mine"): while another holder has it, or
+for a minute after a user input, the mine waits for its next look. The mine's floor, area,
 timer and on/off are kept in state.json ("mine").
 """
 
@@ -36,6 +38,21 @@ def mine(ports, screens, readers, rules, timer, values):
     async def alert(text):
         """The Cloud Phone's phone alerts (ntfy), when the user turned them on."""
         await ports.notify(text)
+
+    async def leased(reason, sequence):
+        """sequence() under the shared lease; None when the mine may not
+        tap now (another holder has it, the user plays): said in its state,
+        tried again at a next look."""
+        try:
+            async with ports.leased("mine", reason, rules.LEASE_SECONDS):
+                return await sequence()
+        except ports.Busy as e:
+            report("waiting", f"En attente : {e}")
+            return None
+
+    async def hold_saver(shot):
+        await ports.hold(shot, "saver", "leave", screens.SAVER_TAP, screens.SAVER_HOLD_MS)
+        return True
 
     async def step(shot, screen, move, point, wait=2.5):
         """Taps point (move of screen) if the game is still in front; the
@@ -90,8 +107,11 @@ def mine(ports, screens, readers, rules, timer, values):
 
     async def untick(shot, reason):
         """The stop pass's untick: True once it is unticked and farming is
-        off; else blocked, with an alert."""
-        if not await unticked(shot):
+        off; None when it may not tap now; else blocked, with an alert."""
+        done = await leased("Décocher « Repeat entry »", lambda: unticked(shot))
+        if done is None:
+            return None
+        if not done:
             report("blocked", f"{reason}, mais « Repeat entry » ne se décoche pas")
             await alert(status["message"])
             return False
@@ -132,11 +152,15 @@ def mine(ports, screens, readers, rules, timer, values):
 
         async def untick_or_retry(shot, reason):
             """The farming loop's untick: "unticked" (farming is off),
-            "retry" (it did not take: the next look tries again) or, after
-            rules.MAX_UNTICK_FAILURES tries in a row that did not take,
-            "blocked" (farming is off, one alert, no more taps)."""
+            "retry" (it did not take, or may not tap now: the next look
+            tries again) or, after rules.MAX_UNTICK_FAILURES tries in a row
+            that did not take, "blocked" (farming is off, one alert, no more
+            taps)."""
             nonlocal memory
-            if await unticked(shot):
+            done = await leased("Décocher « Repeat entry »", lambda: unticked(shot))
+            if done is None:
+                return "retry"
+            if done:
                 stopped(reason)
                 return "unticked"
             memory, give_up = rules.untick_failed(memory)
@@ -167,9 +191,8 @@ def mine(ports, screens, readers, rules, timer, values):
                     facts, memory, ports.clock.monotonic(), ports.clock.wall(), status["until"])
                 if move == "leave_saver":
                     shot = await look_again()
-                    if shot:
+                    if shot and await leased("Sortie du mode économie d’énergie", lambda: hold_saver(shot)):
                         memory["last_hold"] = ports.clock.monotonic()
-                        await ports.hold(shot, "saver", "leave", screens.SAVER_TAP, screens.SAVER_HOLD_MS)
                 elif move == "stop_timer":
                     shot = await look_again()
                     result = await untick_or_retry(shot, "Durée écoulée") if shot else "retry"
@@ -209,7 +232,9 @@ def mine(ports, screens, readers, rules, timer, values):
                     if not shot:
                         continue
                     report("relaunching", f"Relance : étage {status['floor']}, zone {status['area']}")
-                    ok = await relaunch(shot)
+                    ok = await leased("Relance de la mine", lambda: relaunch(shot))
+                    if ok is None:
+                        continue
                     if not ok and status["state"] == "blocked":
                         await finish("blocked", status["message"])
                         return
@@ -263,10 +288,13 @@ def mine(ports, screens, readers, rules, timer, values):
                                  "screen: nothing to untick")
                     return
                 if move == "leave_saver":
-                    last_hold = ports.clock.monotonic()
-                    await ports.hold(shot, "saver", "leave", screens.SAVER_TAP, screens.SAVER_HOLD_MS)
+                    if await leased("Sortie du mode économie d’énergie", lambda: hold_saver(shot)):
+                        last_hold = ports.clock.monotonic()
                 elif move == "untick":
-                    if await untick(shot, reason):
+                    done = await untick(shot, reason)
+                    if done is None:
+                        continue
+                    if done:
                         logging.info("Slayer Legend mine: timer ended during a restart, Repeat entry unticked")
                     return
             report("blocked", "Durée écoulée pendant un redémarrage, combat de la mine pas vu en "
@@ -297,7 +325,10 @@ def mine(ports, screens, readers, rules, timer, values):
                 continue
             shot = await ports.capture(max_age=0)
             if shot and rules.in_fight(await ports.analyse(mine_facts, shot)):
-                if await untick(shot, reason):
+                done = await untick(shot, reason)
+                if done is None:
+                    continue
+                if done:
                     logging.info("Slayer Legend mine: fight seen after giving up, Repeat entry unticked")
                 return
         logging.warning(f"Slayer Legend mine: fight still not seen after {rules.WATCH_SECONDS // 60} more minutes")

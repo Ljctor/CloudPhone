@@ -82,6 +82,8 @@ gateways):
   keys count by themselves. A plugin that acts on its own waits while
   someone plays.
 - `context.viewers()`: the viewers connected now.
+- `context.add_delete(path, handler)`: a DELETE route, beside `add_get`
+  and `add_post`; the page token is checked, as for every method but GET.
 
 The API is described at the top of
 `04-cloud-phone-app/src/overlay/js/example/src/plugins.ts` (page) and

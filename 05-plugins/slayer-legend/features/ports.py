@@ -8,7 +8,14 @@ of the gateway, so what it may do to the game is all here.
 - tap, hold, swipe: the only ways to touch the game. Each names the screen
   recognised and the move wanted, and goes through the navigation guard
   (nav.py, navigation.json) first: refused (RuntimeError) unless it is an
-  allowed move of that screen landing where the move is.
+  allowed move of that screen landing where the move is. Each also needs
+  the shared lease, held by the task's sequence: refused (Busy) without it,
+  or once the user played since it was taken.
+- lease, leased(holder, reason, seconds, user=False), Busy: the one shared
+  lease on the game's taps (see Lease); `async with leased(...)` runs a
+  tapping sequence under it, Busy when another holder has it or the user
+  plays.
+- last_input(): the user's last input ({monotonic, wall}) or None.
 - focused(): the game is the app in front. running(): its process is
   there (False when gone, None when adb cannot tell). start_game(): opens
   it (the launch, on the user's press only).
@@ -21,6 +28,8 @@ of the gateway, so what it may do to the game is all here.
 """
 
 import asyncio
+import contextlib
+import contextvars
 import json
 import logging
 import os
@@ -101,6 +110,90 @@ class State:
         self.old = None
 
 
+# The lease's longest time to live, and how long a user input pauses every
+# holder that did not come from the user's own press (seconds).
+LEASE_MAX = 15 * 60
+INPUT_PAUSE = 60
+# Who holds the lease in the running task (and the tasks it spawns).
+HOLDER = contextvars.ContextVar("slayer_legend_lease_holder", default=None)
+
+
+class Busy(RuntimeError):
+    """A tapping sequence that may not run now: another holder has the
+    lease, the user plays, or the lease expired. Its text is French."""
+
+
+class Lease:
+    """The one shared lease on the game's taps: the launch, the mine, the
+    watchdog's repairs and the modes' sequences take it for each tapping
+    sequence (ports.leased), an outside holder through POST /lease. It has
+    a holder's name, a reason and a time to live (at most LEASE_MAX), is
+    renewed explicitly by the same holder (take again) and released by its
+    holder only; one that expires is logged as a warning. A user input (a
+    touch, a swipe or a key, context.last_input) refuses it for
+    INPUT_PAUSE seconds and stops the sequence under way, unless it was
+    taken on the user's own press (user=True)."""
+
+    def __init__(self, clock, last_input):
+        self.clock = clock
+        self.last_input = last_input
+        self.held = None
+
+    def current(self):
+        """{holder, reason, since, until (Unix), user, mark}, or None."""
+        held = self.held
+        if held and self.clock.wall() >= held["until"]:
+            logging.warning(f"Slayer Legend: lease of {held['holder']} expired ({held['reason']})")
+            self.held = held = None
+        return held
+
+    def input_since(self, mark):
+        """The user's last input came after monotonic time mark."""
+        last = self.last_input()
+        return last is not None and last["monotonic"] > mark
+
+    def playing(self):
+        return self.input_since(self.clock.monotonic() - INPUT_PAUSE)
+
+    def take(self, holder, reason, seconds, user=False):
+        """None once holder has it (taken or renewed until now + seconds),
+        or why not, in French."""
+        seconds = min(float(seconds), LEASE_MAX)
+        held = self.current()
+        if held and held["holder"] != holder:
+            return f"bail tenu par {held['holder']}"
+        if not user and self.playing():
+            return "l’utilisateur joue"
+        now = self.clock.wall()
+        self.held = {"holder": holder, "reason": reason, "since": held["since"] if held else now,
+                     "until": now + seconds, "user": user, "mark": self.clock.monotonic()}
+        logging.info(f"Slayer Legend: lease {'renewed' if held else 'taken'} by {holder} for {seconds:.0f} s: "
+                     f"{reason}")
+        return None
+
+    def release(self, holder):
+        """True when holder had it (only its own holder releases it)."""
+        held = self.current()
+        if not held or held["holder"] != holder:
+            return False
+        self.held = None
+        logging.info(f"Slayer Legend: lease released by {holder}")
+        return True
+
+    def check(self, holder):
+        """Before a tap, hold or swipe: Busy unless holder has the lease and
+        the user has not played since it was taken (or it was the user's)."""
+        held = self.current()
+        if not held or held["holder"] != holder or holder is None:
+            raise Busy(f"bail tenu par {held['holder']}" if held else "pas de bail")
+        if not held["user"] and self.input_since(held["mark"]):
+            raise Busy("l’utilisateur joue")
+
+    def state(self):
+        held = self.current()
+        return {key: held[key] for key in ("holder", "reason", "since", "until")} if held else None
+
+
 def build(context, nav):
     async def adb(*args, timeout=10):
         return await context.adb(*args, timeout=timeout)
@@ -113,18 +206,40 @@ def build(context, nav):
             logging.error(f"Slayer Legend: action refused: {refusal}")
             raise RuntimeError(f"Action refusée par le garde-fou : {refusal}")
 
+    clock = SimpleNamespace(wall=time.time, monotonic=time.monotonic, sleep=asyncio.sleep)
+    # Older gateways do not say when the user plays.
+    last_input = getattr(context, "last_input", None) or (lambda: None)
+    lease = Lease(clock, last_input)
+
+    @contextlib.asynccontextmanager
+    async def leased(holder, reason, seconds, user=False):
+        """The tapping sequence in the with block holds the lease (Busy
+        when it cannot); released at its end."""
+        why = lease.take(holder, reason, seconds, user)
+        if why:
+            raise Busy(why)
+        token = HOLDER.set(holder)
+        try:
+            yield
+        finally:
+            HOLDER.reset(token)
+            lease.release(holder)
+
     async def tap(shot, screen, move, point):
+        lease.check(HOLDER.get())
         allowed(screen, move, point)
         width, height, _ = shot
         await adb("shell", "input", "tap", str(round(point[0] * width)), str(round(point[1] * height)))
 
     async def hold(shot, screen, move, point, milliseconds):
+        lease.check(HOLDER.get())
         allowed(screen, move, point, "hold")
         width, height, _ = shot
         x, y = str(round(point[0] * width)), str(round(point[1] * height))
         await adb("shell", "input", "swipe", x, y, x, y, str(milliseconds), timeout=milliseconds / 1000 + 10)
 
     async def swipe(shot, screen, move, start, end, milliseconds):
+        lease.check(HOLDER.get())
         allowed(screen, move, start, "swipe")
         width, height, _ = shot
         await adb("shell", "input", "swipe", str(round(start[0] * width)), str(round(start[1] * height)),
@@ -157,9 +272,9 @@ def build(context, nav):
 
     return SimpleNamespace(
         capture=context.screenshot, analyse=context.analyse,
-        tap=tap, hold=hold, swipe=swipe,
+        tap=tap, hold=hold, swipe=swipe, lease=lease, leased=leased, Busy=Busy, last_input=last_input,
         focused=focused, running=running, start_game=start_game,
         notify=context.notify,
-        clock=SimpleNamespace(wall=time.time, monotonic=time.monotonic, sleep=asyncio.sleep),
+        clock=clock,
         spawn=spawn, store=State(data_dir), data_path=data_path, respond=context.json,
     )

@@ -342,3 +342,36 @@ fn slayer_legends_stages_are_its_loadouts() {
     assert_eq!(loadouts["mpw4"], json!({"stage": 41, "preset": "II", "soul_weapon": null, "weapon": null, "placeable": null}));
     assert_eq!(cp.get_json("api/v1/plugins/slayer-legend/mode")["stage18"], 920);
 }
+
+fn delete_lease(cp: &CloudPhone, holder: &str, token: bool) -> u16 {
+    let (url, page_token, body) = (cp.url("api/v1/plugins/slayer-legend/lease"), cp.page_token(), json!({"holder": holder}));
+    off_runtime(move || {
+        let mut request = client().delete(url).json(&body);
+        if token {
+            request = request.header("X-CloudPhone-Token", page_token);
+        }
+        request.send().unwrap().status().as_u16()
+    })
+}
+
+#[test]
+fn slayer_legends_lease_needs_the_page_token_and_only_its_holder_releases_it() {
+    let cp = with(json!([SLAYER_LEGEND]));
+    let path = "api/v1/plugins/slayer-legend/lease";
+    assert_eq!(cp.get_json(path)["lease"], Value::Null);
+    assert_eq!(post_without_token(&cp, path, None), 403, "POST without the token");
+    let taken = cp.post_json(path, &json!({"holder": "agent", "reason": "réglages", "seconds": 600}));
+    assert_eq!(taken.status(), 200, "{:?}", taken.text());
+    let lease = cp.get_json(path)["lease"].clone();
+    assert_eq!((lease["holder"].clone(), lease["reason"].clone()), (json!("agent"), json!("réglages")), "{lease}");
+    let ttl = lease["until"].as_f64().unwrap() - lease["since"].as_f64().unwrap();
+    assert!((599.0..=601.0).contains(&ttl), "{lease}");
+    let other = cp.post_json(path, &json!({"holder": "someone", "reason": "x", "seconds": 60}));
+    assert_eq!(other.status(), 409, "another holder waits");
+    assert_eq!(other.json().unwrap()["error"], "bail tenu par agent");
+    assert_eq!(delete_lease(&cp, "agent", false), 403, "DELETE without the token");
+    assert_eq!(delete_lease(&cp, "someone", true), 404, "not its lease");
+    assert_eq!(cp.get_json(path)["lease"]["holder"], "agent");
+    assert_eq!(delete_lease(&cp, "agent", true), 200);
+    assert_eq!(cp.get_json(path)["lease"], Value::Null);
+}

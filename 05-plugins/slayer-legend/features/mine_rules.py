@@ -46,6 +46,9 @@ SCROLL_TRIES = 12
 SCROLL_UP = (0.40, 0.65)
 SCROLL_DOWN = (0.65, 0.40)
 SCROLL_MS = 600
+# The shared lease's time to live for one of the mine's tapping sequences
+# (the longest, a relaunch scrolling the whole list, takes under a minute).
+LEASE_SECONDS = 120
 # A mine whose timer ended while the gateway was down, in a fight: how long
 # its stop pass looks for the fight to untick "Repeat entry", then how long
 # and how often it still watches for it, without touching anything else.

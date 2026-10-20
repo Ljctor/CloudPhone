@@ -24,6 +24,15 @@ FIGHT_GOLD = {"fight": True, "repeat": True, "gold_scroll": True}
 FLOORS = [(0.3, 3), (0.4, 4), (0.5, 5), (0.6, 6)]
 
 
+def load_feature(name):
+    """features/<name>.py (or a module beside this file, "../nav")."""
+    path = os.path.normpath(os.path.join(HERE, "features", f"{name}.py"))
+    spec = importlib.util.spec_from_file_location(f"slayer_legend_test_{os.path.basename(name)}", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 class Request:
     def __init__(self, body=None):
         self.query = {}
@@ -51,6 +60,8 @@ class Game:
         self.entered = 0.0
         self.taps = []
         self.alerts = []
+        # The user's last input (virtual monotonic seconds), or None.
+        self.input = None
         self.go(first)
 
     # -- the clock
@@ -127,13 +138,15 @@ class Game:
             app=SimpleNamespace(on_startup=[]), id="slayer-legend", directory=HERE, data_dir=None, routes=routes,
             add_get=lambda path, handler: routes.__setitem__(("GET", path), handler),
             add_post=lambda path, handler: routes.__setitem__(("POST", path), handler),
+            add_delete=lambda path, handler: routes.__setitem__(("DELETE", path), handler),
+            last_input=lambda: None if game.input is None else {"monotonic": game.input, "wall": EPOCH + game.input},
             screenshot=screenshot, adb=adb, analyse=analyse, notify=notify,
             json=lambda value, status=200: SimpleNamespace(status=status, body=value))
 
     async def run(self, script, horizon):
         """script: [(time, [(method, path, body), ...])]: the requests of
-        one item are made back to back, in one tick. Returns the answers
-        [(time, path, body)]."""
+        one item are made back to back, in one tick (method "INPUT": a user
+        input then). Returns the answers [(time, path, body)]."""
         spec = importlib.util.spec_from_file_location("slayer_legend_test_gateway", os.path.join(HERE, "gateway.py"))
         gateway = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(gateway)
@@ -151,6 +164,9 @@ class Game:
                 await asyncio.sleep(0)
             while script and script[0][0] <= self.now:
                 for method, path, body in script.pop(0)[1]:
+                    if method == "INPUT":
+                        self.input = self.now
+                        continue
                     response = await context.routes[(method, path)](Request(body))
                     answers.append((self.now, path, response.body))
                 for _ in range(30):
@@ -276,6 +292,75 @@ class Reenable(MineTest):
             (0, [to_mine]), (25, [("POST", "/mode", {"mode": "mpw18"}), to_mine]), (60, [GET_MINE])], 80)
         state = self.last(answers, "/mine")
         self.assertEqual((state["enabled"], state["state"]), (True, "farming"))
+
+
+RELAUNCH_SCENES = {
+    "fight": {**FIGHT_GOLD, "after": (45, "list")},
+    "list": {"floor_list": True, "floors": FLOORS, "on": {"tap": "area"}},
+    "area": {"floor_list": True, "area_popup": True, "on": {"tap": "feathers"}},
+    "feathers": {"floor_list": True, "feather_popup": True, "on": {"tap": "fight2"}},
+    "fight2": dict(FIGHT_GOLD),
+}
+INPUT = ("INPUT", None, None)
+
+
+class Lease(MineTest):
+    """The mine's taps wait for the shared lease: a minute after a user
+    input, and while another holder has it."""
+
+    def test_a_user_input_pauses_the_relaunch_a_minute(self):
+        game, answers = self.play(RELAUNCH_SCENES, "fight", [(0, [mine()]), (44, [INPUT]), (80, [GET_MINE]),
+                                                             (200, [GET_MINE])], 200)
+        self.assertEqual(len(game.taps), 3, game.taps)
+        self.assertGreaterEqual(game.taps[0][0], 44 + 60, game.taps)
+        waiting = [body for t, p, body in answers if t == 80][0]
+        self.assertEqual((waiting["state"], waiting["message"]), ("waiting", "En attente : l’utilisateur joue"))
+        self.assertEqual(self.last(answers, "/mine")["state"], "farming")
+
+    def test_an_outside_holder_defers_it_until_released(self):
+        take = ("POST", "/lease", {"holder": "agent", "reason": "réglages", "seconds": 600})
+        game, answers = self.play(RELAUNCH_SCENES, "fight", [
+            (0, [mine(), take]), (80, [GET_MINE, ("DELETE", "/lease", {"holder": "someone"})]),
+            (100, [("DELETE", "/lease", {"holder": "agent"}), ("GET", "/lease", None)]), (200, [GET_MINE])], 200)
+        self.assertTrue(game.taps and game.taps[0][0] >= 100, game.taps)
+        self.assertEqual(len(game.taps), 3)
+        at_80 = {p: body for t, p, body in answers if t == 80}
+        self.assertEqual(at_80["/mine"]["message"], "En attente : bail tenu par agent")
+        self.assertEqual(at_80["/lease"]["error"], "not your lease")
+        self.assertEqual([body for t, p, body in answers if t == 100 and p == "/lease"][-1], {"lease": None})
+
+    def test_no_tap_hold_or_swipe_without_the_lease(self):
+        game = Game({"fight": dict(FIGHT_GOLD)}, "fight")
+        ports = load_feature("ports").build(game.context(), load_feature("../nav"))
+        shot = (W, H, bytes(W * H * 3))
+
+        async def outside():
+            for action in (ports.tap(shot, "title", "start", (0.50, 0.836)),
+                           ports.hold(shot, "saver", "leave", (0.50, 0.88), 4000),
+                           ports.swipe(shot, "mine_list", "scroll", (0.5, 0.4), (0.5, 0.65), 600)):
+                with self.assertRaises(ports.Busy):
+                    await action
+
+        asyncio.run(outside())
+        self.assertEqual(game.taps, [])
+
+    def test_the_plugins_own_names_and_bad_bodies_are_refused(self):
+        for body in ({"holder": "mine", "reason": "x", "seconds": 60}, {"holder": "agent", "seconds": 60},
+                     {"holder": "agent", "reason": "x", "seconds": 0}, {"holder": "", "reason": "x", "seconds": 9},
+                     None):
+            _, answers = self.play({"fight": dict(FIGHT_GOLD)}, "fight", [(0, [("POST", "/lease", body)])], 1)
+            self.assertIn("error", answers[0][2], body)
+
+    def test_a_lease_expires_with_a_warning_and_is_renewed_by_its_holder(self):
+        take = ("POST", "/lease", {"holder": "agent", "reason": "réglages", "seconds": 60})
+        with self.assertLogs(level="WARNING") as logs:
+            _, answers = self.play({"fight": dict(FIGHT_GOLD)}, "fight", [
+                (0, [take]), (50, [take]), (100, [("GET", "/lease", None)]), (120, [("GET", "/lease", None)])], 120)
+        state = {t: body for t, p, body in answers}
+        self.assertEqual(state[100]["lease"]["since"], EPOCH, "renewed: since kept")
+        self.assertEqual(state[100]["lease"]["until"], EPOCH + 110)
+        self.assertIsNone(state[120]["lease"])
+        self.assertIn("lease of agent expired (réglages)", "\n".join(logs.output))
 
 
 class FreePlayWarning(MineTest):
