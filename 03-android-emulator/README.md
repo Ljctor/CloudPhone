@@ -54,6 +54,11 @@ the same conditions compare; fps is the game layer's SurfaceFlinger frames.
 | 2026-10-19 | lavapipe | 480×1040 | 4 / 8 GB | first 5 minutes | freshly restarted | 19.6–19.8 | the series of launch options below |
 | 2026-10-19 | lavapipe | 480×1040 | 4 / 8 GB | steady state | freshly restarted | 30.6 (worst 10 s 28.7) | p95 53 ms, p99 61 ms; main thread 94 % of one vCPU; emulator ~4.8 host cores |
 
+The game's Power Saving Mode saves nothing on this host: on its near-black
+screen (2026-10-20, emulator up 23 h, read-only, no baseline) the game layer
+still ran at 20.8 fps with the main thread at 98.6 % and lavapipe at 3.1 host
+cores, so the battle keeps being rendered underneath.
+
 With SwiftShader the bottleneck was the guest CPU and software rendering, not
 the video encoding or the network: a lower bitrate or a faster link did not
 raise the frame rate; fewer pixels and more host CPU did.

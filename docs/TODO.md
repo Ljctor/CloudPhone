@@ -17,6 +17,11 @@ the machine at once (wrap `cargo test` in `flock` on one shared lock file).
    same regime, three numbers: they say whether a scheduled game relaunch
    or a scheduled emulator restart (with no viewer connected) restores the
    frame rate. A relaunch costs about 5 minutes near 20 fps plus sign-in.
+   Step 1 on 2026-10-20 03:07 found the game in Power Saving Mode (emulator
+   up 23 h 08, game 22 h 25), so the battle reading waits for one guarded
+   hold. Read-only reading of that scene instead, 180 s from 03:08, no
+   baseline: 20.8 fps mean, p50 20.7, worst 10 s 19.9, UnityMain 98.6 %,
+   host idle 33 %.
 2. fps B7: the game's 30 fps cap through Game Mode (`cmd game set --mode 3
    --fps 30`), measured in both regimes (the first 5 minutes, where the
    paced steps become 30/15/10, and steady state); the worst-10 s column
