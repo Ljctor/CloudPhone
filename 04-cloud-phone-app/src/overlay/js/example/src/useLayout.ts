@@ -1,15 +1,21 @@
 // The layout's inputs from the browser and the gateway: the window's size,
-// Android's display size, the fitted screen kept up to date, and the reload
-// after a size change. The sizes are worked out in layout.ts.
+// this device's pixel ratio and screen, Android's display size, the fitted
+// screen kept up to date, and the reload after a size change. The sizes are
+// worked out in layout.ts.
 import { useEffect, useRef, useState } from 'react';
 import { DEFAULT_DISPLAY, displayFromStatus, fittedScreen, sizeKey } from './layout';
 
-export function viewportSize() {
+function viewportSize() {
   const viewport = window.visualViewport;
   return {
     width: Math.floor(viewport?.width || window.innerWidth),
     height: Math.floor(viewport?.height || window.innerHeight),
   };
+}
+
+// This device as the Client tab shows it: pixel ratio, screen and window.
+export function deviceSize() {
+  return { ratio: window.devicePixelRatio || 1, device: window.screen, viewport: viewportSize() };
 }
 
 function fitted(display, folded, docked) {

@@ -14,7 +14,7 @@ the browser and the gateway; `App.tsx` only assembles them.
 | `js/example/src/App.tsx` | the page's assembly: calls the hooks below, passes their state to the components, lays out the screen, the panels and the toolbar |
 | `js/example/src/main.tsx` | mounts `App` |
 | `js/example/src/layout.ts` | the screen's fitted size and the toolbar's place (side, below, overlay), Android's size from the emulator status, the running size's key, the toasts' top (pure) |
-| `js/example/src/useLayout.ts` | the window's size, the emulator status fetch, the screen refitted on resize and fullscreen, the reload after a screen size change |
+| `js/example/src/useLayout.ts` | the window's size, this device's pixel ratio and screen, the emulator status fetch, the screen refitted on resize and fullscreen, the reload after a screen size change |
 | `js/example/src/usePanels.ts` | which panel is open (information, options) and the information tab; information opens on the client tab; the flags the panel-only polls follow (server tab, information, options) |
 | `js/example/src/infoPanel.tsx` | the open panel's frame: its title, close button and, for information, the client and server tabs |
 | `js/example/src/streamRules.ts` | when to reconnect the stream (Android usable again, the video cut or stuck 20 s), its delays, the log line for a new stream state (pure) |

@@ -18,7 +18,7 @@ import { useStreamStats } from './useStreamStats';
 import { useInput } from './useInput';
 import { useStream } from './useStream';
 import { mainDirection, toastsTop } from './layout';
-import { useAndroidDisplay, useFittedScreen, useReloadOnResize, viewportSize } from './useLayout';
+import { deviceSize, useAndroidDisplay, useFittedScreen, useReloadOnResize } from './useLayout';
 import { usePanels } from './usePanels';
 import { Toolbar, useBarFold } from './toolbar';
 import { infoSections } from './infoRows';
@@ -70,9 +70,7 @@ function App() {
   });
   const clientRows = clientSections({
     stats, stream: state, inputPath: input.inputPath.current,
-    device: deviceRows({
-      ratio: window.devicePixelRatio || 1, device: window.screen, viewport: viewportSize(), shown: screen,
-    }),
+    device: deviceRows({ ...deviceSize(), shown: screen }),
   });
 
   return (
