@@ -5,12 +5,15 @@ of the gateway, so what it may do to the game is all here.
 - capture(max_age=0): Android's screen (width, height, RGB bytes) or None,
   a capture at most max_age seconds old shared with the other callers.
 - analyse(fn, *args): fn(*args) in a worker thread (pixel work).
-- tap, hold, swipe: the only ways to touch the game. Each names the screen
-  recognised and the move wanted, and goes through the navigation guard
-  (nav.py, navigation.json) first: refused (RuntimeError) unless it is an
-  allowed move of that screen landing where the move is. Each also needs
-  the shared lease, held by the task's sequence: refused (Busy) without it,
-  or once the user played since it was taken.
+- tap, hold, swipe, taps: the only ways to touch the game. Each names the
+  screen recognised and the move wanted, and goes through the navigation
+  guard (nav.py, navigation.json) first: refused (RuntimeError) unless it
+  is an allowed move of that screen landing where the move is; verified
+  says the caller checked the move's precondition. taps sends several taps
+  back to back in one adb call (controls that fold away within 2 s), all
+  guarded before the first is sent. Each also needs the shared lease, held
+  by the task's sequence: refused (Busy) without it, or once the user
+  played since it was taken.
 - lease, leased(holder, reason, seconds, user=False), Busy: the one shared
   lease on the game's taps (see Lease); `async with leased(...)` runs a
   tapping sequence under it, Busy when another holder has it or the user
@@ -238,10 +241,10 @@ def build(context, nav):
     async def adb(*args, timeout=10):
         return await context.adb(*args, timeout=timeout)
 
-    def allowed(screen, move, point, kind="tap"):
+    def allowed(screen, move, point, kind="tap", verified=False):
         """Every action goes through the navigation graph's guard first:
         refused unless it is an allowed move of the screen recognised."""
-        refusal = nav.guard(screen, move, point[0], point[1], kind)
+        refusal = nav.guard(screen, move, point[0], point[1], kind, verified)
         if refusal:
             logging.error(f"Slayer Legend: action refused: {refusal}")
             raise RuntimeError(f"Action refusée par le garde-fou : {refusal}")
@@ -265,11 +268,22 @@ def build(context, nav):
             HOLDER.reset(token)
             lease.release(holder)
 
-    async def tap(shot, screen, move, point):
+    async def tap(shot, screen, move, point, verified=False):
         lease.check(HOLDER.get())
-        allowed(screen, move, point)
+        allowed(screen, move, point, verified=verified)
         width, height, _ = shot
         await adb("shell", "input", "tap", str(round(point[0] * width)), str(round(point[1] * height)))
+
+    async def taps(shot, screen, moves, gap, verified=()):
+        """moves: [(move, point)], tapped gap seconds apart in one adb call;
+        verified: the moves whose precondition the caller checked."""
+        lease.check(HOLDER.get())
+        for move, point in moves:
+            allowed(screen, move, point, verified=move in verified)
+        width, height, _ = shot
+        script = f"; sleep {gap}; ".join(f"input tap {round(point[0] * width)} {round(point[1] * height)}"
+                                         for _, point in moves)
+        await adb("shell", script, timeout=gap * len(moves) + 10)
 
     async def hold(shot, screen, move, point, milliseconds):
         lease.check(HOLDER.get())
@@ -346,7 +360,7 @@ def build(context, nav):
 
     return SimpleNamespace(
         capture=context.screenshot, analyse=context.analyse,
-        tap=tap, hold=hold, swipe=swipe, lease=lease, leased=leased, Busy=Busy, last_input=last_input,
+        tap=tap, taps=taps, hold=hold, swipe=swipe, lease=lease, leased=leased, Busy=Busy, last_input=last_input,
         focused=focused, running=running, start_game=start_game, dialog=dialog, crashed=crashed, close_crash=close_crash, wait_anr=wait_anr,
         notify=context.notify,
         clock=clock,

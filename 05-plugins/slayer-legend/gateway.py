@@ -6,7 +6,8 @@ swipe, alerts, the clock, state.json) and wires the features together.
 Each feature is in features/, with its rules beside it as a pure module
 (features/<feature>_rules.py); the screens are read by the analysis
 modules beside this file (screens.py, stage.py, gold.py, mine.py,
-gold_scroll.py, emerald_mask.py, trace.py) and every move on the game
+gold_scroll.py, emerald_mask.py, trace.py, stage_select.py,
+battle_controls.py, with the pixel font of pixel_font.py) and every move on the game
 goes through the navigation guard (nav.py, navigation.json).
 
 Routes, under /api/v1/plugins/slayer-legend:
@@ -60,8 +61,10 @@ def setup(context):
     engraving = feature("engraving").engraving(ports, feature("engraving_rules"))
     mine = feature("mine").mine(ports, screens, module("mine"), feature("mine_rules"), timer, values)
     launch = feature("launch").launch(ports, screens, feature("launch_rules"))
+    farming = feature("stage_change").stage_change(ports, screens, module("stage_select"), module("battle_controls"),
+                                                   feature("stage_change_rules"), table)
     mode = feature("mode").mode(ports, feature("mode_rules"), timer, values, mine["api"], screens,
-                                module("gold_scroll"), engraving["api"])
+                                module("gold_scroll"), engraving["api"], farming["api"])
     screen_rules = feature("screen_rules")
     features = [
         feature("lease").lease(ports),
@@ -71,6 +74,7 @@ def setup(context):
         feature("trace").trace(ports, screens, module("trace")),
         feature("gold").gold(ports, screens, stage, module("gold"), feature("gold_rules")),
         mine,
+        farming,
         mode,
         engraving,
         feature("watchdog").watchdog(ports, screens, stage, feature("watchdog_rules"),

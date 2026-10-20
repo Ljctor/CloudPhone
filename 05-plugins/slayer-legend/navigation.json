@@ -137,6 +137,39 @@
      "label": "map icon left of the stage name (no panel open; with a panel open it only closes the panel)"
     },
     {
+     "id": "preset_arrow",
+     "to": "battle",
+     "tap": [
+      0.975,
+      0.444
+     ],
+     "label": "◀ on the right edge (no panel open): unfolds the preset badge and AUTO for about 2 s",
+     "precondition": "the controls read folded (no badge, no AUTO label): unfolded, this spot is on the AUTO tile",
+     "source": "measured 2026-10-21"
+    },
+    {
+     "id": "preset_badge",
+     "to": "battle_settings",
+     "tap": [
+      0.965,
+      0.405
+     ],
+     "label": "preset badge (its Roman numeral), once unfolded: opens Battle settings; sent in the same adb call as preset_arrow",
+     "source": "measured 2026-10-21"
+    },
+    {
+     "id": "auto",
+     "to": "battle",
+     "tap": [
+      0.93,
+      0.447
+     ],
+     "label": "AUTO gear, once unfolded: toggles AUTO; sent in the same adb call as preset_arrow",
+     "precondition": "AUTO reads OFF (the gear stands still on two fresh screenshots): never tapped while it is on",
+     "effect": "turns AUTO on or off",
+     "source": "measured 2026-10-21"
+    },
+    {
      "id": "top_menu",
      "to": "top_menu",
      "tap": [
@@ -190,6 +223,15 @@
    "recognise": "panel tabs Enhance/Growth/Promotion at y 0.537, Enhance selected",
    "source": "explored 2026-10-18",
    "moves": [
+    {
+     "id": "close",
+     "to": "battle",
+     "tap": [
+      0.073,
+      0.966
+     ],
+     "label": "its own bottom tab again: closes the panel (seen on Shop, 2026-10-21)"
+    },
     {
      "id": "menu_skill",
      "to": "skill",
@@ -285,6 +327,15 @@
    "source": "explored 2026-10-18",
    "moves": [
     {
+     "id": "close",
+     "to": "battle",
+     "tap": [
+      0.073,
+      0.966
+     ],
+     "label": "its own bottom tab again: closes the panel (seen on Shop, 2026-10-21)"
+    },
+    {
      "id": "menu_skill",
      "to": "skill",
      "tap": [
@@ -379,6 +430,15 @@
    "source": "explored 2026-10-18",
    "moves": [
     {
+     "id": "close",
+     "to": "battle",
+     "tap": [
+      0.073,
+      0.966
+     ],
+     "label": "its own bottom tab again: closes the panel (seen on Shop, 2026-10-21)"
+    },
+    {
      "id": "menu_skill",
      "to": "skill",
      "tap": [
@@ -471,6 +531,15 @@
    "source": "explored 2026-10-18",
    "moves": [
     {
+     "id": "close",
+     "to": "battle",
+     "tap": [
+      0.24,
+      0.966
+     ],
+     "label": "its own bottom tab again: closes the panel (seen on Shop, 2026-10-21)"
+    },
+    {
      "id": "menu_character",
      "to": "character_enhance",
      "tap": [
@@ -548,6 +617,15 @@
    "recognise": "tabs Weapon/Accessories/Relic/Spirit at y 0.414, Weapon selected, weapon grid, Batch Combine",
    "source": "explored 2026-10-18",
    "moves": [
+    {
+     "id": "close",
+     "to": "battle",
+     "tap": [
+      0.41,
+      0.966
+     ],
+     "label": "its own bottom tab again: closes the panel (seen on Shop, 2026-10-21)"
+    },
     {
      "id": "menu_character",
      "to": "character_enhance",
@@ -648,6 +726,15 @@
    "source": "explored 2026-10-18",
    "moves": [
     {
+     "id": "close",
+     "to": "battle",
+     "tap": [
+      0.41,
+      0.966
+     ],
+     "label": "its own bottom tab again: closes the panel (seen on Shop, 2026-10-21)"
+    },
+    {
      "id": "menu_character",
      "to": "character_enhance",
      "tap": [
@@ -746,6 +833,15 @@
    "recognise": "Relic tab selected, relics with 'Enhance MAX'",
    "source": "explored 2026-10-18",
    "moves": [
+    {
+     "id": "close",
+     "to": "battle",
+     "tap": [
+      0.41,
+      0.966
+     ],
+     "label": "its own bottom tab again: closes the panel (seen on Shop, 2026-10-21)"
+    },
     {
      "id": "menu_character",
      "to": "character_enhance",
@@ -1036,6 +1132,15 @@
    "source": "explored 2026-10-18",
    "moves": [
     {
+     "id": "close",
+     "to": "battle",
+     "tap": [
+      0.585,
+      0.966
+     ],
+     "label": "its own bottom tab again: closes the panel (seen on Shop, 2026-10-21)"
+    },
+    {
      "id": "menu_character",
      "to": "character_enhance",
      "tap": [
@@ -1162,6 +1267,15 @@
    "source": "explored 2026-10-18",
    "moves": [
     {
+     "id": "close",
+     "to": "battle",
+     "tap": [
+      0.755,
+      0.966
+     ],
+     "label": "its own bottom tab again: closes the panel (seen on Shop, 2026-10-21)"
+    },
+    {
      "id": "menu_character",
      "to": "character_enhance",
      "tap": [
@@ -1278,6 +1392,15 @@
    "recognise": "Dungeon tab selected, map 'Aslan'",
    "source": "explored 2026-10-18",
    "moves": [
+    {
+     "id": "close",
+     "to": "battle",
+     "tap": [
+      0.755,
+      0.966
+     ],
+     "label": "its own bottom tab again: closes the panel (seen on Shop, 2026-10-21)"
+    },
     {
      "id": "menu_character",
      "to": "character_enhance",
@@ -1606,7 +1729,8 @@
       0.88,
       0.8
      ],
-     "label": "Move on a stage row (changes the farmed stage)"
+     "label": "Move on a stage row (changes the farmed stage)",
+     "precondition": "the row's name, read beside it, is the stage wanted"
     },
     {
      "id": "info",
@@ -1617,7 +1741,9 @@
       0.2,
       0.8
      ],
-     "label": "i (not explored)"
+     "label": "i (not explored)",
+     "forbidden": true,
+     "reason": "not explored"
     }
    ]
   },
@@ -1678,6 +1804,15 @@
    "recognise": "tabs Summon/Package/Goods/Golden Key/Event at y 0.438, summons priced in diamonds",
    "source": "explored 2026-10-18",
    "moves": [
+    {
+     "id": "close",
+     "to": "battle",
+     "tap": [
+      0.925,
+      0.966
+     ],
+     "label": "its own bottom tab again: closes the panel (seen on Shop, 2026-10-21)"
+    },
     {
      "id": "menu_character",
      "to": "character_enhance",

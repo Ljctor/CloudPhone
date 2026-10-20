@@ -75,6 +75,38 @@ class Graph(unittest.TestCase):
         self.assertIn("forbidden", nav.guard("anr_dialog", "close", 0.5, 0.6))
         self.assertIn("forbidden", nav.guard("anr_dialog", "app_info", 0.5, 0.6))
 
+    def test_panels_close_with_their_own_tab(self):
+        for screen, x in [("character_enhance", 0.073), ("character_growth", 0.073), ("skill", 0.24),
+                          ("equipment_weapon", 0.41), ("equipment_relic", 0.41), ("companion", 0.585),
+                          ("adventure_map", 0.755), ("dungeon_map", 0.755), ("shop_summon", 0.925)]:
+            self.assertIsNone(nav.guard(screen, "close", x, 0.966), screen)
+            self.assertEqual(next(m for m in nav.connections(screen) if m["id"] == "close")["to"], "battle")
+        # Another tab's spot is not the panel's close.
+        self.assertIsNotNone(nav.guard("shop_summon", "close", 0.073, 0.966))
+
+    def test_battle_controls(self):
+        # The arrow's spot is on the AUTO tile once unfolded: tapped only
+        # once the controls read folded; AUTO only once it reads off.
+        self.assertIn("check first", nav.guard("battle", "preset_arrow", 0.975, 0.444))
+        self.assertIsNone(nav.guard("battle", "preset_arrow", 0.975, 0.444, verified=True))
+        self.assertIsNone(nav.guard("battle", "preset_badge", 0.965, 0.405))
+        self.assertIn("check first", nav.guard("battle", "auto", 0.93, 0.447))
+        self.assertIsNone(nav.guard("battle", "auto", 0.93, 0.447, verified=True))
+        self.assertIsNone(nav.guard("battle_settings", "preset", 0.66, 0.305))
+        self.assertIsNone(nav.guard("battle_settings", "close", 0.09, 0.965))
+
+    def test_select_region(self):
+        self.assertIsNone(nav.guard("battle", "stage_select", 0.30, 0.07))
+        self.assertIsNone(nav.guard("stage_select", "next_region", 0.875, 0.345))
+        self.assertIsNone(nav.guard("stage_select", "previous_region", 0.125, 0.345))
+        self.assertIsNone(nav.guard("stage_select", "scroll", 0.5, 0.75, "swipe"))
+        self.assertIsNone(nav.guard("stage_select", "scroll", 0.5, 0.45, "swipe"))
+        # Move only on a row read as the target; never the info button.
+        self.assertIn("check first", nav.guard("stage_select", "move", 0.78, 0.757))
+        self.assertIsNone(nav.guard("stage_select", "move", 0.78, 0.757, verified=True))
+        self.assertIn("forbidden", nav.guard("stage_select", "info", 0.16, 0.6))
+        self.assertIsNone(nav.guard("stage_select", "close", 0.5, 0.94))
+
     def test_refused_by_default(self):
         self.assertIsNotNone(nav.guard("battle", "no_such_move", 0.5, 0.5))
         self.assertIsNotNone(nav.guard("no_such_screen", "start", 0.5, 0.836))

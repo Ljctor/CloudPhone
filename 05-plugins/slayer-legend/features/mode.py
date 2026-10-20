@@ -8,8 +8,10 @@ POST /mode         {mode, until, stage18, stage4, highest, floor, area}: a numbe
                    timer, null clears it (no time limit)
 POST /mode/timer   {add: minutes}: moves the end of the mode (and of the mine)
 
-Switching stages in the game is not learned yet: it says what to do by
-hand (and alerts) instead of tapping. While farming mpw4 it looks for the
+Entering mpw18 or mpw4 farming brings the game there in the background
+(features/stage_change.py): the mode's stage, its Battle settings preset,
+AUTO on; a step that fails stops it with one alert naming the step. While
+farming mpw4 it looks for the
 gold scroll every 30 s on the battle screen (gold: true, false once missing
 for 2 looks, null unknown) and alerts once when it goes, then once when it
 is back (gold_scroll.py, shared with the mine). Free play alerts once 2
@@ -28,13 +30,14 @@ import logging
 REASONS = {"mine done": "Mine terminée", "mine stopped": "Mine arrêtée", "timer": "Minuteur écoulé"}
 
 
-def mode(ports, rules, timer, values, mines, screens, scroll, loadouts):
+def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming):
     """mines: the mine feature's api (start, stop, state, set_until, ended);
-    scroll: gold_scroll.py; loadouts: the engraving feature's api (stage,
-    set_stage, adopt_stage), which holds the mpw18 and mpw4 stages."""
+    scroll: gold_scroll.py; loadouts: the engraving feature's api (loadout,
+    stage, set_stage, adopt_stage), which holds the mpw18 and mpw4 stages
+    and presets; farming: the stage change feature's api (farm)."""
     status = {"mode": rules.DEFAULT, "until": None, "highest": None,
               "configured": False, "state": "idle", "message": "", "task": None,
-              "scroll": scroll.fresh(), "gold_look": None, "warned": None}
+              "scroll": scroll.fresh(), "gold_look": None, "warned": None, "change": None}
     ports.store.register("mode", lambda: {key: status[key] for key in (
         "mode", "until", "highest", "configured")})
 
@@ -55,17 +58,28 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts):
         return answer
 
     async def set_stage(number, mpw):
-        """Brings the game to farming that stage with its loadout. The
-        screens for it are not learned yet: says so instead of tapping."""
-        report("todo", f"Passage au stage {number} (mpw{mpw}) : navigation pas encore apprise, fais-le à la main")
-        await ports.notify(f"À faire à la main : passer au stage {number} (mpw{mpw})")
-        return False
+        """Brings the game to farming that stage with its loadout's preset,
+        AUTO on. True once there; else one alert naming the step."""
+        preset = loadouts["loadout"](f"mpw{mpw}").get("preset")
+        report("moving", f"Passage au stage {number} (mpw{mpw})")
+        failure = await farming["farm"](number, preset)
+        if failure:
+            report("failed", f"Passage au stage {number} (mpw{mpw}) arrêté : {failure}"[:200])
+            await ports.notify(f"Passage au stage {number} (mpw{mpw}) arrêté : {failure}")
+            return False
+        report("farming", f"Farming mpw{mpw} au stage {number}" + (f", preset {preset}" if preset else ""))
+        return True
 
     async def enter(name):
-        """What changing to mode name does (rules.entered)."""
+        """What changing to mode name does (rules.entered): a stage change
+        runs in the background, the one under way is dropped."""
+        change = status["change"]
+        if change is not None and not change.done():
+            change.cancel()
+        status["change"] = None
         move = rules.entered(name, stages()["stage18"], stages()["stage4"])
         if move[0] == "stage":
-            await set_stage(move[1], move[2])
+            status["change"] = ports.spawn(set_stage(move[1], move[2]))
         elif move[0] == "choose":
             report("idle", f"Farming mpw{move[1]} : choisis le stage")
         elif move[0] == "free":
