@@ -15,9 +15,12 @@ export default function goldFeature(api, { overlay, topBar = [] }) {
     gold.font = font;
     showGold();
   });
-  // The lines, under the player's level (top left).
+  // The lines, top left, under the active scrolls' icons and timers
+  // (under the player's level, y 6–8.7 %), above the event banner (from
+  // 14 %): three lines of 8-game-pixel glyphs are 30 of the 1040 game
+  // pixels, so the lines take 9.2–12.1 %. Redo this if the banner moves.
   const label = document.createElement('canvas');
-  label.style.cssText = 'position:absolute;image-rendering:pixelated;left:3%;top:5.6%';
+  label.style.cssText = 'position:absolute;image-rendering:pixelated;left:3%;top:9.2%';
   let drawn = '';
   const showLabel = (shown) => {
     if (!shown) {
