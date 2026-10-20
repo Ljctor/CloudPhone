@@ -136,7 +136,7 @@ const ENGLISH = {
   'Désactivé': 'Off',
   'Parcours enregistrés': 'Recorded paths',
   '{nodes} écrans, {taps} appuis': '{nodes} screens, {taps} taps',
-  'indisponible (passerelle sans dossier de données)': 'unavailable (the gateway has no data directory)',
+  'indisponible (gateway sans dossier de données)': 'unavailable (the gateway has no data directory)',
 };
 
 export default function activate(api) {

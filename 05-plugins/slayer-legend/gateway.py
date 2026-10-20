@@ -6,8 +6,8 @@ swipe, alerts, the clock, state.json) and wires the features together.
 Each feature is in features/, with its rules beside it as a pure module
 (features/<feature>_rules.py); the screens are read by the analysis
 modules beside this file (screens.py, stage.py, gold.py, mine.py,
-emerald_mask.py, trace.py) and every move on the game goes through the
-navigation guard (nav.py, navigation.json).
+gold_scroll.py, emerald_mask.py, trace.py) and every move on the game
+goes through the navigation guard (nav.py, navigation.json).
 
 Routes, under /api/v1/plugins/slayer-legend:
 
@@ -59,7 +59,8 @@ def setup(context):
         feature("trace").trace(ports, screens, module("trace")),
         feature("gold").gold(ports, screens, stage, module("gold"), feature("gold_rules")),
         mine,
-        feature("mode").mode(ports, feature("mode_rules"), timer, values, mine["api"]),
+        feature("mode").mode(ports, feature("mode_rules"), timer, values, mine["api"], screens,
+                             module("gold_scroll")),
     ]
     # Every feature registered its part of state.json: an old highest.json
     # becomes state.json now.

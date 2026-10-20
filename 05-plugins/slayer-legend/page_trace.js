@@ -33,7 +33,7 @@ export default function trace(api) {
           watchTrace();
           const answer = traced.answer;
           if (!answer) return '…';
-          if (!answer.enabled) return api.tr('indisponible (passerelle sans dossier de données)');
+          if (!answer.enabled) return api.tr('indisponible (gateway sans dossier de données)');
           return api.tr('{nodes} écrans, {taps} appuis', { nodes: answer.nodes, taps: answer.taps ?? answer.edges });
         },
       },

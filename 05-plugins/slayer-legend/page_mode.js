@@ -216,11 +216,10 @@ export default function modeFeature(api, { known }) {
           if (mode() === 'mine' && !Number(api.setting('mineFloor'))) return api.tr('Choisis l’étage et la zone');
           const answer = farm.answer;
           if (!answer) return '…';
-          if (answer.mode === 'mine') {
-            const warning = answer.mine?.gold === false ? ` ⚠ ${api.tr('plus de parchemin doré')}` : '';
-            return api.tr(answer.mine?.message || 'Mine') + warning;
-          }
-          return api.tr(answer.message || 'Farming mpw18');
+          const warning = (gold) => (gold === false ? ` ⚠ ${api.tr('plus de parchemin doré')}` : '');
+          if (answer.mode === 'mine') return api.tr(answer.mine?.message || 'Mine') + warning(answer.mine?.gold);
+          // mpw4 farming: the gateway's gold scroll check (gold, mpw4 only).
+          return api.tr(answer.message || 'Farming mpw18') + warning(answer.gold);
         },
       },
     ],

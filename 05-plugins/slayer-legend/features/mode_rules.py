@@ -11,6 +11,15 @@ DEFAULT = "mpw18"
 TIMED_MINUTES = 30
 # Seconds between two checks of a timed mode.
 WATCH_EVERY = 10
+# mpw4 farming: seconds between two looks for the gold scroll (on the
+# battle screen, gold_scroll.py), with a screenshot at most WATCH_EVERY old.
+GOLD_EVERY = 30
+
+
+def gold_due(last, now):
+    """mpw4 farming looks for the gold scroll now: last is the monotonic
+    time of its last look (None: none yet)."""
+    return last is None or now - last >= GOLD_EVERY
 
 
 def request(body):

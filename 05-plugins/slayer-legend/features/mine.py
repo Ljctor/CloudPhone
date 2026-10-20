@@ -164,7 +164,7 @@ def mine(ports, screens, readers, rules, timer, values):
                     continue
                 facts = await ports.analyse(mine_facts, shot)
                 move, memory, status["gold"], gone = rules.step(
-                    facts, memory, ports.clock.monotonic(), ports.clock.wall(), status["until"], status["gold"])
+                    facts, memory, ports.clock.monotonic(), ports.clock.wall(), status["until"])
                 if move == "leave_saver":
                     shot = await look_again()
                     if shot:
@@ -235,7 +235,7 @@ def mine(ports, screens, readers, rules, timer, values):
         restarted), it ends at once: nothing to untick. Without seeing the
         fight for rules.STOP_SECONDS it is "blocked" (alert), then watches
         for rules.WATCH_SECONDS more (watch_after_blocked)."""
-        reason = "Durée écoulée pendant un redémarrage de la passerelle"
+        reason = "Durée écoulée pendant un redémarrage du gateway"
         report("stopping", "Durée écoulée pendant un redémarrage : décoche « Repeat entry »")
         deadline = ports.clock.monotonic() + rules.STOP_SECONDS
         last_hold = 0.0
@@ -380,7 +380,7 @@ def mine(ports, screens, readers, rules, timer, values):
         if status["state"] == "stopping":
             status["stopper"] = ports.spawn(stop_after_restart())
         if status["enabled"]:
-            report("waiting", "Surveillance de la mine (reprise après un redémarrage de la passerelle)")
+            report("waiting", "Surveillance de la mine (reprise après un redémarrage du gateway)")
             status["task"] = ports.spawn(farm())
 
     saved = ports.store.saved.get("mine") or {}

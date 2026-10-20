@@ -2,12 +2,16 @@
 farming mpw4, free play or the Closed Mine; back to mpw18 when the timer
 ends (the mine ends its last entry first).
 
-GET  /mode         {mode, until, stage18, stage4, highest, configured, state, message, mine}
+GET  /mode         {mode, until, stage18, stage4, highest, configured, state, message, gold, mine}
 POST /mode         {mode, until, stage18, stage4, highest, floor, area}
 POST /mode/timer   {add: minutes}: moves the end of the mode (and of the mine)
 
 Switching stages in the game is not learned yet: it says what to do by
-hand (and alerts) instead of tapping. The rules are in mode_rules.py; the
+hand (and alerts) instead of tapping. While farming mpw4 it looks for the
+gold scroll every 30 s on the battle screen (gold: true, false once missing
+for 2 looks, null unknown) and alerts once when it goes, then once when it
+is back (gold_scroll.py, shared with the mine). The rules are in
+mode_rules.py; the
 mode and its timer are kept in state.json ("mode") and go on after a
 gateway restart.
 """
@@ -18,10 +22,12 @@ import logging
 REASONS = {"mine done": "Mine terminée", "mine stopped": "Mine arrêtée", "timer": "Minuteur écoulé"}
 
 
-def mode(ports, rules, timer, values, mines):
-    """mines: the mine feature's api (start, stop, state, set_until, ended)."""
+def mode(ports, rules, timer, values, mines, screens, scroll):
+    """mines: the mine feature's api (start, stop, state, set_until, ended);
+    scroll: gold_scroll.py."""
     status = {"mode": rules.DEFAULT, "until": None, "stage18": None, "stage4": None, "highest": None,
-              "configured": False, "state": "idle", "message": "", "task": None}
+              "configured": False, "state": "idle", "message": "", "task": None,
+              "scroll": scroll.fresh(), "gold_look": None}
     ports.store.register("mode", lambda: {key: status[key] for key in (
         "mode", "until", "stage18", "stage4", "highest", "configured")})
 
@@ -34,6 +40,7 @@ def mode(ports, rules, timer, values, mines):
     def state():
         answer = {key: status[key] for key in ("mode", "until", "stage18", "stage4", "highest", "configured",
                                                "state", "message")}
+        answer["gold"] = status["scroll"]["gold"] if status["mode"] == "mpw4" else None
         answer["mine"] = mines["state"]()
         return answer
 
@@ -62,15 +69,34 @@ def mode(ports, rules, timer, values, mines):
                            + (f" (stage {status['stage18']})" if status["stage18"] else ""))
         await enter(rules.DEFAULT)
 
+    def gold_facts(shot):
+        return scroll.seen(screens.classify(shot) == "battle", shot)
+
+    async def look_for_gold():
+        """mpw4 farming: one look for the gold scroll, with the shared
+        screenshot; one alert when it goes, one when it is back."""
+        shot = await ports.capture(max_age=rules.WATCH_EVERY)
+        if not shot:
+            return
+        status["scroll"], news = scroll.look(status["scroll"], await ports.analyse(gold_facts, shot))
+        if news:
+            logging.info(f"Slayer Legend mode mpw4: gold scroll {news}")
+            await ports.notify("Farming mpw4 : " + ("plus de parchemin doré" if news == "gone"
+                                                    else "parchemin doré rétabli"))
+
     async def watch():
         """Ends a timed mode: back to mpw18 farming once its time is up (the
-        mine ends its last entry first)."""
+        mine ends its last entry first). While farming mpw4, looks for the
+        gold scroll."""
         try:
             while status["mode"] != rules.DEFAULT:
                 await ports.clock.sleep(rules.WATCH_EVERY)
                 why = rules.due(status["mode"], status["until"], mines["state"](), ports.clock.wall())
                 if why:
                     await back_to_default(REASONS[why])
+                elif status["mode"] == "mpw4" and rules.gold_due(status["gold_look"], ports.clock.monotonic()):
+                    status["gold_look"] = ports.clock.monotonic()
+                    await look_for_gold()
         except asyncio.CancelledError:
             raise
         except Exception as e:
@@ -104,6 +130,7 @@ def mode(ports, rules, timer, values, mines):
         else:
             mines["stop"]()
         if changed:
+            status.update(scroll=scroll.fresh(), gold_look=None)
             await enter(name)
         watch_if_timed()
         ports.store.save()

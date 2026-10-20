@@ -3,12 +3,21 @@ last look saw (see mine_facts), what the loop remembers and the time go
 in; the move to make comes out. The feature (mine.py beside this file)
 makes the moves, every one through the navigation guard.
 
-The loop remembers {no_gold, gold_seen, last_hold, failures,
-untick_failures}: the checks in a row without the gold scroll, when it
-was last seen and when Power Saving Mode was last left (monotonic
+The loop remembers {scroll, gold_seen, last_hold, failures,
+untick_failures}: the gold scroll's warning record (gold_scroll.py beside
+the plugin's gateway.py, shared with mpw4 farming), when it was last seen and when Power Saving Mode was last left (monotonic
 seconds, 0: never), the relaunches that failed in a row, and the tries in
 a row to untick "Repeat entry" that did not take.
 """
+
+import importlib.util
+import os
+
+_spec = importlib.util.spec_from_file_location(
+    "cloudphone_plugin_slayer_legend_mine_rules_gold_scroll",
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "gold_scroll.py"))
+scroll = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(scroll)
 
 # Seconds between two looks of the farming loop.
 SECONDS = 10
@@ -46,7 +55,7 @@ WATCH_EVERY = 30
 
 
 def fresh():
-    return {"no_gold": 0, "gold_seen": 0.0, "last_hold": 0.0, "failures": 0, "untick_failures": 0}
+    return {"scroll": scroll.fresh(), "gold_seen": 0.0, "last_hold": 0.0, "failures": 0, "untick_failures": 0}
 
 
 def request(body):
@@ -76,10 +85,12 @@ def away(since, now):
     return since, False
 
 
-def step(facts, memory, now, wall, until, gold):
-    """The farming loop's move for what a look saw: see _move(). Any move
-    but an untick ends a run of failed unticks."""
-    move, memory, gold, gone = _move(facts, memory, now, wall, until, gold)
+def step(facts, memory, now, wall, until):
+    """The farming loop's (move, memory, gold, gone) for what a look saw:
+    see _move(); gold: the gold scroll as last told (None, True, False).
+    Any move but an untick ends a run of failed unticks."""
+    move, memory, gone = _move(facts, memory, now, wall, until)
+    gold = memory["scroll"]["gold"]
     if move not in UNTICKS:
         memory["untick_failures"] = 0
     return move, memory, gold, gone
@@ -92,11 +103,10 @@ def untick_failed(memory):
     return memory, memory["untick_failures"] >= MAX_UNTICK_FAILURES
 
 
-def _move(facts, memory, now, wall, until, gold):
-    """The farming loop's move for what a look saw: (move, memory, gold,
-    gone). now: monotonic seconds; wall: Unix seconds; until: the mine's
-    end or None; gold: the gold scroll as last told (None, True, False).
-    gone: the gold scroll was just found missing (alert once).
+def _move(facts, memory, now, wall, until):
+    """The farming loop's move for what a look saw: (move, memory, gone).
+    now: monotonic seconds; wall: Unix seconds; until: the mine's end or
+    None. gone: the gold scroll was just found missing (alert once).
 
     Moves: leave_saver, wait, stop_timer (untick, the time is up),
     gold (fight with the gold scroll), warn_no_gold (with a timer the user
@@ -107,30 +117,30 @@ def _move(facts, memory, now, wall, until, gold):
     memory = dict(memory)
     if facts["saver"]:
         # The buffs are hidden: leave Power Saving Mode to see them.
-        return ("leave_saver" if now - memory["last_hold"] > SAVER_EVERY else "wait"), memory, gold, False
+        return ("leave_saver" if now - memory["last_hold"] > SAVER_EVERY else "wait"), memory, False
     timed = until is not None
     over = timed and wall >= until
     if over and facts["fight"]:
-        return "stop_timer", memory, gold, False
+        return "stop_timer", memory, False
     if facts["fight"]:
         memory["failures"] = 0
+        memory["scroll"], news = scroll.look(memory["scroll"], facts["gold"], NO_GOLD)
         if facts["gold"]:
-            memory["no_gold"], memory["gold_seen"] = 0, now
-            return "gold", memory, True, False
-        memory["no_gold"] += 1
-        if memory["no_gold"] < NO_GOLD:
-            return "wait", memory, gold, False
-        return ("warn_no_gold" if timed else "stop_no_gold"), memory, False, gold is not False
+            memory["gold_seen"] = now
+            return "gold", memory, False
+        if memory["scroll"]["gold"] is not False:
+            return "wait", memory, False
+        return ("warn_no_gold" if timed else "stop_no_gold"), memory, news == "gone"
     if facts["other"]:
-        return "other", memory, gold, False
+        return "other", memory, False
     # The floor list: the 30 entries are done.
     if over:
-        return "finish_timer", memory, gold, False
+        return "finish_timer", memory, False
     if not timed and now - memory["gold_seen"] > GOLD_STALE:
-        return ("finish_no_gold" if memory["gold_seen"] else "wait_no_gold"), memory, gold, False
+        return ("finish_no_gold" if memory["gold_seen"] else "wait_no_gold"), memory, False
     if memory["failures"] >= MAX_FAILURES:
-        return "finish_failures", memory, gold, False
-    return "relaunch", memory, gold, False
+        return "finish_failures", memory, False
+    return "relaunch", memory, False
 
 
 def relaunched(memory, ok):

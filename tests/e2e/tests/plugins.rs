@@ -260,6 +260,7 @@ fn slayer_legends_timed_modes_start_with_30_minutes() {
         assert_eq!(set.status(), 200, "{mode}: {:?}", set.text());
         let answer = cp.get_json("api/v1/plugins/slayer-legend/mode");
         assert_eq!(answer["mode"], mode, "{answer}");
+        assert_eq!(answer["gold"], Value::Null, "the gold scroll is unknown off the battle screen: {answer}");
         let left = answer["until"].as_f64().unwrap_or_else(|| panic!("{mode}: no timer: {answer}")) - asked;
         assert!((1795.0..1805.0).contains(&left), "{mode}: {left} s left: {answer}");
     }

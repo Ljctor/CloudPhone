@@ -1,6 +1,7 @@
 """What the Closed Mine's screens show, from a screenshot (width, height,
 RGB bytes): the fight with its "Repeat entry" box, the floor list, the Area
-and feathers pop-ups, and whether the gold scroll buff is on.
+and feathers pop-ups, and whether the gold scroll buff is on (read by
+gold_scroll.py, shared with mpw4 farming).
 
 Positions are fractions of the screen, measured at 480x1040.
 """
@@ -14,14 +15,15 @@ _spec = importlib.util.spec_from_file_location(
     "cloudphone_plugin_slayer_legend_mine_stage", os.path.join(os.path.dirname(__file__), "stage.py"))
 stage = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(stage)
+_spec = importlib.util.spec_from_file_location(
+    "cloudphone_plugin_slayer_legend_mine_gold_scroll", os.path.join(os.path.dirname(__file__), "gold_scroll.py"))
+_scroll = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_scroll)
 
 # Fight: "Repeat entry" (white text) and its tick box, top right.
 REPEAT_TEXT = (0.79, 0.100, 0.93, 0.112)
 REPEAT_BOX = (0.94, 0.104, 0.99, 0.125)
 REPEAT_TAP = (0.9625, 0.1135)
-# The buff icons under the avatar; the gold scroll has bright gold pixels
-# (#ffbb33), which the other buffs (purple scroll, potion) do not.
-BUFFS = (0.017, 0.054, 0.29, 0.079)
 # Floor list: "Closed Mine" title, then rows of "<n> Floor" in yellow,
 # 89 px apart at 480x1040.
 LIST_TITLE = (0.38, 0.062, 0.62, 0.080)
@@ -51,10 +53,6 @@ def _white(r, g, b):
     return min(r, g, b) > 200
 
 
-def _gold(r, g, b):
-    return r > 230 and 150 < g < 215 and b < 90
-
-
 def _yellow(r, g, b):
     return r > 180 and g > 140 and b < 160 and r - b > 70
 
@@ -79,7 +77,7 @@ def repeat_ticked(shot):
 def gold_scroll(shot):
     """The gold scroll buff's icon is shown (only meaningful in the fight:
     pop-ups and the floor list cover it)."""
-    return _share(shot, BUFFS, _gold) > 0.005
+    return _scroll.shown(shot)
 
 
 def area_popup(shot):
