@@ -4,7 +4,9 @@
 // it started. Its state is asked every 10 s. Options: the "Mode et
 // farming" section. Overlay hook, called by page_gold.js while the
 // overlay applies: overlay(), the mode's lines on the game, top left (the
-// time left of a timed mode under its name).
+// time left of a timed mode under its name). The mpw18 and mpw4 dialogs
+// hold that mode's loadout (page_engraving.js).
+import loadout from './page_engraving.js';
 
 // This browser's copy of when the timed mode ends (Unix seconds), as the
 // gateway last said; sent again after a gateway restart.
@@ -41,6 +43,7 @@ const keep = (name, value) => {
 // known(): the last stage number read (page_screen.js).
 export default function modeFeature(api, { known }) {
   const farm = { answer: null, timer: null, stages: null };
+  const loadouts = loadout(api);
   const mode = () => api.setting('mode') || 'mpw18';
   // Only what this browser has: the gateway keeps its values for the rest.
   const modeOptions = () => Object.fromEntries(Object.entries({
@@ -126,7 +129,7 @@ export default function modeFeature(api, { known }) {
         select: { key: 'mode', value: 'mpw18', default: 'mpw18' },
         options: [
           { type: 'choice', key: 'stage18', label: 'Stage mpw18', choices: () => stageChoices(18) },
-          { type: 'status', label: 'Arme, gravure, réglages de combat', value: () => api.tr('à venir') },
+          ...loadouts.options('mpw18'),
         ],
       },
       {
@@ -135,6 +138,7 @@ export default function modeFeature(api, { known }) {
         select: { key: 'mode', value: 'mpw4', default: 'mpw18', disabled: () => !Number(api.setting('stage4')) },
         options: [
           { type: 'choice', key: 'stage4', label: 'Stage mpw4', choices: () => stageChoices(4) },
+          ...loadouts.options('mpw4'),
         ],
       },
       {

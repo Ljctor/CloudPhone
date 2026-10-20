@@ -11,6 +11,7 @@ use std::time::Duration;
 const PROBE: &str = "tests/fake-emulator/plugins/e2e-probe";
 const BROKEN: &str = "tests/fake-emulator/plugins/e2e-broken";
 const FUTURE: &str = "tests/fake-emulator/plugins/e2e-future";
+const SLAYER_LEGEND: &str = "05-plugins/slayer-legend";
 const O: &str = fr::OPTIONS_PANEL;
 
 async fn open_plugins(page: &Page) {
@@ -208,5 +209,64 @@ fn a_disabled_dialog_radio_cannot_be_chosen_until_it_is_enabled() {
         assert_eq!(b["checked"], true, "{b}");
         assert_eq!(page.control_state(&page.control(O, "Choix A").await).await["checked"], false, "one of the group");
         assert_eq!(page.stored_settings().await["plugins"]["e2e-probe"]["pick"], "b");
+    });
+}
+
+/// The `<option>` values of the select labelled `label` in the panel `dialog`.
+async fn option_values(page: &Page, dialog: &str, label: &str) -> Vec<String> {
+    let state = page.control_state(&page.control(dialog, label).await).await;
+    state["options"].as_array()
+        .map(|o| o.iter().filter_map(|v| v.as_str()).map(|v| v.split(':').next().unwrap().to_string()).collect())
+        .unwrap_or_default()
+}
+
+/// Waits until the select labelled `label` has an option `value`.
+async fn wait_option(page: &Page, dialog: &str, label: &str, value: &str) -> Vec<String> {
+    let start = std::time::Instant::now();
+    loop {
+        let values = option_values(page, dialog, label).await;
+        if values.iter().any(|v| v == value) {
+            return values;
+        }
+        assert!(start.elapsed() < Duration::from_secs(10), "{label}: no option {value:?} in {values:?}");
+        page.sleep(Duration::from_millis(300)).await;
+    }
+}
+
+#[test]
+fn slayer_legends_mpw18_loadout_is_chosen_in_its_dialog_and_saved() {
+    let cp = CloudPhone::start_with(json!({"plugins": [SLAYER_LEGEND]}));
+    let phone = cp.clone();
+    browser_test(&cp, Options::without_video(), |page| async move {
+        page.open_options().await;
+        page.wait_js("the plugin's options", Duration::from_secs(15),
+            "const d = document.querySelector('[role=dialog]'); return !!d && d.innerText.includes('Farming mpw18 (par défaut)')",
+            vec![]).await;
+        page.client.find(Locator::XPath(
+            "//div[@role='dialog']//label[contains(., 'Farming mpw18 (par défaut)')]/following-sibling::button")).await.unwrap()
+            .click().await.unwrap();
+        let settings = "Configuration : farming mpw18";
+        page.wait_dialog(settings).await;
+        page.control(settings, "Préréglage de combat").await.select_by_value("III").await.unwrap();
+        // The weapons and their variants come from the gateway (engravings.json).
+        wait_option(&page, settings, "Soul Weapon", "32").await;
+        page.control(settings, "Soul Weapon").await.select_by_value("32").await.unwrap();
+        let variants = wait_option(&page, settings, "Gravure", "Gold-maxed").await;
+        assert_eq!(variants, ["", "Balanced", "Crit", "Gold-maxed", "Gold-balanced"]);
+        page.control(settings, "Gravure").await.select_by_value("Gold-maxed").await.unwrap();
+        // Read-only: Ambition's grid, filled by four vertical bars, and the
+        // pieces it needs.
+        page.wait_dialog_value(settings, "Grille", Duration::from_secs(5), |v| v.chars().count() == 5).await;
+        assert_eq!(page.dialog_value(settings, "Pièces nécessaires").await.as_deref(), Some("4 × Line (I)"));
+        page.wait_dialog_value(settings, "Enregistré", Duration::from_secs(5), |v| v == "pas encore").await;
+        page.client.find(Locator::XPath(&format!(
+            "//div[@role='dialog'][@aria-label='{settings}']//button[normalize-space()='Enregistrer']"))).await.unwrap()
+            .click().await.unwrap();
+        page.wait_dialog_value(settings, "Enregistré", Duration::from_secs(10), |v| v == "III · Ambition (Gold-maxed)").await;
+        let p = phone.clone();
+        let saved = blocking(move || p.get_json("api/v1/plugins/slayer-legend/loadout"));
+        assert_eq!(saved["loadouts"]["mpw18"]["preset"], "III", "{saved}");
+        assert_eq!(saved["loadouts"]["mpw18"]["soul_weapon"], json!({"id": 32, "variant": "Gold-maxed"}), "{saved}");
+        assert_eq!(saved["loadouts"]["mpw4"]["soul_weapon"], serde_json::Value::Null, "{saved}");
     });
 }
