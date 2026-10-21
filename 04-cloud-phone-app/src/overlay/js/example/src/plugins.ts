@@ -32,6 +32,9 @@
 //   layer                 a <div> over the screen for drawing, pointer-events none
 //   screenWidth()         width of the shown screen in CSS pixels
 //   setting(key)          this plugin's stored option (true/false, or text)
+//   adopt(key, value)     stores value as the option, as the gateway says it
+//                         is now (a timed mode that ended): onSetting is not
+//                         called for it, so the plugin does not send it back
 //   refresh()             re-render the options panel (after a status change)
 //   onTap(listener)       calls listener({ x, y, kind[, end] }) after each touch
 //                         the user makes on the Android screen, once the finger
@@ -44,6 +47,7 @@
 //   tr, addTranslations
 import { useEffect, useRef, useState } from 'react';
 import { addTranslations, tr } from './i18n';
+import { pluginOptionChange } from './pluginSettings';
 
 // Every plugin's onTap listeners; App.tsx calls emitTap at each touch end.
 const tapListeners = new Set();
@@ -69,11 +73,17 @@ function unload(item) {
   stopTaps(item.taps);
 }
 
-export function usePlugins({ gatewayUrl, deviceRef, layerRef, screenWidth, settings, postFetch, postHeaders }) {
+export function usePlugins({
+  gatewayUrl, deviceRef, layerRef, screenWidth, settings, updateSettings, postFetch, postHeaders,
+}) {
   const [plugins, setPlugins] = useState([]);
   const [, setVersion] = useState(0);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
+  const updateRef = useRef(updateSettings);
+  updateRef.current = updateSettings;
+  // The options a plugin adopted: their next change is not told back to it.
+  const adopted = useRef({});
   const widthRef = useRef(screenWidth);
   widthRef.current = screenWidth;
   const active = useRef([]);
@@ -122,6 +132,11 @@ export function usePlugins({ gatewayUrl, deviceRef, layerRef, screenWidth, setti
           layer,
           screenWidth: () => widthRef.current,
           setting: (key) => settingsRef.current.plugins?.[plugin.id]?.[key] ?? null,
+          adopt: (key, value) => {
+            if ((settingsRef.current.plugins?.[plugin.id]?.[key] ?? null) === value) return;
+            adopted.current[`${plugin.id}\u0000${key}`] = value;
+            updateRef.current?.(pluginOptionChange(settingsRef.current, plugin.id, key, value));
+          },
           refresh,
           onTap: (listener) => {
             taps.add(listener);
@@ -167,7 +182,14 @@ export function usePlugins({ gatewayUrl, deviceRef, layerRef, screenWidth, setti
       const before = previous.current[plugin.id] ?? {};
       const after = next[plugin.id] ?? {};
       for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
-        if (before[key] !== after[key]) plugin.instance.onSetting?.(key, after[key] ?? null);
+        if (before[key] === after[key]) continue;
+        const id = `${plugin.id}\u0000${key}`;
+        if (id in adopted.current && adopted.current[id] === (after[key] ?? null)) {
+          delete adopted.current[id];
+          continue;
+        }
+        delete adopted.current[id];
+        plugin.instance.onSetting?.(key, after[key] ?? null);
       }
     }
     previous.current = next;

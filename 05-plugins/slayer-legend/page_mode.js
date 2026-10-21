@@ -42,7 +42,8 @@ const keep = (name, value) => {
 
 // known(): the last stage number read (page_screen.js).
 export default function modeFeature(api, { known }) {
-  const farm = { answer: null, timer: null, stages: null };
+  // chosen: when the mode was last chosen here; sending: a POST under way.
+  const farm = { answer: null, timer: null, stages: null, chosen: 0, sending: 0 };
   const loadouts = loadout(api);
   const mode = () => api.setting('mode') || 'mpw18';
   // Only what this browser has: the gateway keeps its values for the rest.
@@ -62,18 +63,29 @@ export default function modeFeature(api, { known }) {
     const end = new Date(farm.answer.until * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     return `${api.tr('reste {time}', { time: text })} (${end})`;
   };
-  const remember = (answer) => {
+  // asked: when the answer was asked (Date.now()).
+  const remember = (answer, asked = 0) => {
     farm.answer = answer;
     if (answer) keep(UNTIL, answer.until);
+    // The gateway changed the mode itself (a timed mode ended: back to
+    // mpw18): the radio follows, without sending it back (adopt), unless
+    // the answer is older than the user's last choice here. Older pages'
+    // APIs have no adopt.
+    if (answer?.configured && answer.mode && answer.mode !== mode() && !farm.sending && asked > farm.chosen) {
+      api.adopt?.('mode', answer.mode);
+    }
   };
   const askMode = async () => {
-    remember(await api.get('/mode').catch(() => null));
+    const asked = Date.now();
+    remember(await api.get('/mode').catch(() => null), asked);
     api.refresh();
     window.clearTimeout(farm.timer);
     farm.timer = window.setTimeout(askMode, 10000);
   };
   const sendMode = async () => {
+    farm.sending += 1;
     const result = await api.post('/mode', modeOptions()).catch(() => null);
+    farm.sending -= 1;
     if (result?.ok) remember(result.body);
     else if (result) farm.error = result.body?.error ?? `HTTP ${result.status}`;
     await askMode();
@@ -193,6 +205,7 @@ export default function modeFeature(api, { known }) {
       },
     ],
     onSetting: (key, value) => {
+      if (key === 'mode') farm.chosen = Date.now();
       if (key === 'mode' && value !== 'mpw18' && value !== farm.answer?.mode) {
         farm.answer = { ...farm.answer, until: Date.now() / 1000 + TIMED_MINUTES * 60 };
       }

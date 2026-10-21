@@ -316,3 +316,35 @@ fn slayer_legends_saved_loadout_survives_enregistrer_from_a_fresh_browser() {
         assert_eq!(after["loadouts"]["mpw18"]["stage"], 940, "{after}");
     });
 }
+
+#[test]
+fn slayer_legends_mode_radio_follows_the_gateway_when_a_timed_mode_ends() {
+    let cp = CloudPhone::start_with(json!({"plugins": [SLAYER_LEGEND]}));
+    let phone = cp.clone();
+    browser_test(&cp, Options::without_video(), |page| async move {
+        page.open_options().await;
+        page.wait_js("the plugin's options", Duration::from_secs(15),
+            "const d = document.querySelector('[role=dialog]'); return !!d && d.innerText.includes('Jeu libre')", vec![]).await;
+        page.js("window.__modes = []; const f = window.fetch; window.fetch = (url, init) => { \
+                 if (String(url).endsWith('/mode') && init && init.method === 'POST') window.__modes.push(init.body); \
+                 return f(url, init); }; return true", vec![]).await;
+        // Free play for 15 s, chosen elsewhere (another browser): the radio follows it.
+        let p = phone.clone();
+        let until = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() + 15;
+        let status = blocking(move || p.post_json("api/v1/plugins/slayer-legend/mode",
+                                                  &json!({"mode": "free", "until": until})).status());
+        assert_eq!(status, 200);
+        page.wait_js("the radio on free play", Duration::from_secs(25),
+            "const l = [...document.querySelectorAll('[role=dialog] label')].find(l => l.innerText.trim() === 'Jeu libre'); \
+             return !!l && l.control.checked", vec![]).await;
+        // Its timer ends: the gateway is back on mpw18, and so is the radio.
+        page.wait_js("the radio back on mpw18", Duration::from_secs(45),
+            "const l = [...document.querySelectorAll('[role=dialog] label')]\
+             .find(l => l.innerText.includes('Farming mpw18 (par défaut)')); return !!l && l.control.checked", vec![]).await;
+        assert_eq!(page.stored_settings().await["plugins"]["slayer-legend"]["mode"], "mpw18");
+        let p = phone.clone();
+        assert_eq!(blocking(move || p.get_json("api/v1/plugins/slayer-legend/mode"))["mode"], "mpw18");
+        page.sleep(Duration::from_secs(1)).await;
+        assert_eq!(page.js("return window.__modes", vec![]).await, json!([]), "the page sent no mode back");
+    });
+}

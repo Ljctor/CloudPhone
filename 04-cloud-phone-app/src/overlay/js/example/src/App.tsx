@@ -53,7 +53,8 @@ function App() {
   const alerts = useAlerts(gatewayUrl, optionsOpen);
   const pluginLayer = useRef(null);
   const plugins = usePlugins({
-    gatewayUrl, deviceRef, layerRef: pluginLayer, screenWidth: screen.width, settings, postFetch, postHeaders,
+    gatewayUrl, deviceRef, layerRef: pluginLayer, screenWidth: screen.width, settings, updateSettings, postFetch,
+    postHeaders,
   });
   const displayState = useDisplayState(gatewayUrl, changeInProgress(emulatorSettings));
   const input = useInput({ gatewayUrl, display, showMarker: settings.touchMarker });
