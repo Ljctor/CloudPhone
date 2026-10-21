@@ -276,19 +276,6 @@
      "label": "Android Back on the battle screen",
      "forbidden": true,
      "reason": "opens the game's quit dialog"
-    },
-    {
-     "id": "better_soul_weapon",
-     "to": "battle",
-     "area": [
-      0.71,
-      0.32,
-      1.0,
-      0.37
-     ],
-     "label": "toast « Better Soul Weapon / Equip » at the right (seen 2026-10-21)",
-     "forbidden": true,
-     "reason": "equips the game's choice of soul weapon, not the loadout's: only through the Soul Weapon screen"
     }
    ]
   },

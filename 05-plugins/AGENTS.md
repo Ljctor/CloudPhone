@@ -77,8 +77,7 @@ Rules:
       read Unequip with the name unchanged.
     - At most 10 list moves (selects, scrolls and Equip together); a move
       that changes nothing stops it, with one alert naming the step.
-    - Never the battle screen's « Better Soul Weapon / Equip » toast (it
-      equips the game's choice, not the loadout's).
+    - Never the « Better Soul Weapon / Equip » toast (below).
     - Never Unequip (any tap on a tag read Unequip is refused by the
       guard), Craft, Harvest or Breakdown; never Change on the engraving
       screen. The engraving screen (the card's big icon, read only) is not
