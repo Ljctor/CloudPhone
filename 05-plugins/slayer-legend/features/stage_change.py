@@ -12,9 +12,10 @@ is turned to "real" after a first run watched with the user. The AUTO
 gear itself stays plan-only (AUTO_TAP_LEARNED): its OFF reading is
 calibrated on an ON frame only, until a real OFF capture recalibrates it;
 until then POST /farming refuses auto "real" (400), and a "real" kept in
-state.json reads as "plan". The auto switch is the gear's tap only: AUTO
-is read (on the controls' unfold, as the preset is) whenever a switch is
-real.
+state.json reads as "plan". The auto switch is the gear's tap only: in a
+sequence, AUTO is read (on the controls' unfold, as the preset is)
+whenever a switch is real; read_controls (the watchdog's) only while the
+preset or auto switch is.
 
 Each step looks first (a fresh screenshot), makes one guarded move
 (ports, nav.py) and looks again for what it expects; anything else stops
@@ -291,9 +292,9 @@ def stage_change(ports, screens, select, controls, rules, table):
 
     async def read_controls():
         """{preset, auto} read on one unfold of the controls (a tap: under
-        the lease), or None: every switch is plan, the lease cannot be
-        had, or anything unexpected."""
-        if not any(real(name) for name in SWITCHES):
+        the lease), or None: the preset and auto switches are both plan,
+        the lease cannot be had, or anything unexpected."""
+        if not (real("preset") or real("auto")):
             return None
         try:
             async with ports.leased(HOLDER, "lecture du préréglage et d’AUTO", 30):

@@ -18,12 +18,43 @@ Rules:
   ever kills the app (`am start` without `-S`, no force-stop). On Android's
   "isn't responding" dialog the watchdog taps only "Wait", once, then
   alerts: never its "Close app", which kills the game.
-- Slayer Legend's launch taps only "TAP TO START", Confirm on the save
-  notice, "Close app" on Android's crash dialog (found by uiautomator, at
-  most 2 times), "Sign in with Google" on the sign-in screen (once per
-  launch; never Apple's), the one account of Google's chooser (found by
-  uiautomator, only when exactly one is listed) and the "Press here to
-  finish Power Saving Mode" button (held 4 s, at most 3 times), each only
-  when the screen shows it; on any other screen it stops.
+- What Slayer Legend's plugin taps by itself: this list is exhaustive.
+  Every move goes through the navigation guard (`navigation.json`) under
+  the shared lease, on a fresh capture showing that screen; anything else
+  stops the sequence with one alert. Nothing outside it is ever tapped.
+  - Launch:
+    - "TAP TO START": on the title screen, at most every 8 s.
+    - Confirm on the save notice: only when the notice shows (never Exit).
+    - "Close app" on Android's crash dialog: found by uiautomator, at most
+      2 times per launch.
+    - "Sign in with Google": on the sign-in screen, once per launch; never
+      "Sign in with Apple".
+    - The account of Google's chooser: found by uiautomator, only when
+      exactly one is listed and the launch's own tap opened the chooser.
+    - "Press here to finish Power Saving Mode": held 4 s, at most 3 times.
+  - Watchdog:
+    - "Wait" on Android's "isn't responding" dialog: once per dialog, never
+      its "Close app".
+    - The right edge's arrow that unfolds the controls, to read the preset
+      badge and AUTO: only with no viewer connected, at most every 5
+      minutes, only while the preset or auto switch is real.
+  - Stage change and preset (mode changes and the watchdog's repairs,
+    each only while its switch is real):
+    - Closing a bottom panel with its own tab: only when that tab reads lit.
+    - Opening Select Region (the stage map button on the battle screen).
+    - Select Region's region arrows: only while its banner reads one region.
+    - Scrolling Select Region's list: at most 10 moves.
+    - Move: only on the row whose name reads as the target stage.
+    - The preset badge: with the arrow that unfolds it, in one adb call,
+      only when the fresh capture reads the controls folded and the badge
+      reads another preset.
+    - The preset's button in Battle settings: only once Battle settings
+      reads open, and another preset reads selected.
+    - Battle settings' close button: after its preset reads selected.
+    - The AUTO gear: not tapped until a real AUTO-off capture calibrates
+      its reading (`AUTO_TAP_LEARNED`).
+  - Closed mine (mode "mine"): its floor row, the Area, 3 feathers,
+    scrolling its floor list, and unticking "Repeat entry" (at most 3
+    tries, then one alert).
 - Screenshots of a game go in the repository only when reviewed one by one
   (no Google account, no server address); never commit raw captures.

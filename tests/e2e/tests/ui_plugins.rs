@@ -348,3 +348,48 @@ fn slayer_legends_mode_radio_follows_the_gateway_when_a_timed_mode_ends() {
         assert_eq!(page.js("return window.__modes", vec![]).await, json!([]), "the page sent no mode back");
     });
 }
+
+#[test]
+fn slayer_legends_next_attempts_show_and_retry_now_clears_them() {
+    // A real failure on the fake: the game asks to sign in and Google's
+    // chooser lists two accounts, so the watchdog's relaunch stops.
+    let app = json!({"package": "com.gear2.growslayer", "activity": "com.google.firebase.MessagingUnityPlayerActivity",
+        "state": "signin", "start_seconds": 8, "sign_in_button": [0.245, 0.722, 0.755, 0.770],
+        "accounts": ["player@example.com", "other@example.com"],
+        "picture": [[0.36, 0.012, 0.42, 0.036, [40, 200, 60]], [0.0, 0.972, 1.0, 0.998, [225, 225, 225]]],
+        "sign_in_picture": [[0.0, 0.0, 1.0, 1.0, [90, 60, 35]],
+            [0.245, 0.722, 0.755, 0.770, [235, 235, 235]], [0.285, 0.738, 0.325, 0.756, [65, 131, 239]],
+            [0.37, 0.742, 0.66, 0.752, [117, 117, 116]],
+            [0.245, 0.788, 0.755, 0.836, [235, 235, 235]], [0.28, 0.802, 0.32, 0.822, [0, 0, 0]],
+            [0.37, 0.808, 0.66, 0.818, [0, 0, 0]]]});
+    let cp = CloudPhone::start_with(json!({"plugins": [SLAYER_LEGEND], "options": {"app": app}}));
+    wait_for("the relaunch's failure", Duration::from_secs(150), || {
+        let state = cp.try_get_json("api/v1/plugins/slayer-legend/watchdog")?;
+        state["counters"]["next_attempt"].get("relaunch").map(|_| ())
+    });
+    let phone = cp.clone();
+    browser_test(&cp, Options::without_video(), |page| async move {
+        page.open_options().await;
+        page.wait_dialog_value(O, "Prochains essais", Duration::from_secs(40), |v| v.starts_with("relance du jeu : "))
+            .await;
+        page.js("window.__retries = []; const f = window.fetch; window.fetch = async (url, init) => { \
+                 const r = await f(url, init); \
+                 if (String(url).endsWith('/watchdog/retry')) window.__retries.push({headers: init.headers, \
+                   body: JSON.parse(init.body), answer: await r.clone().json()}); \
+                 return r; }; return true", vec![]).await;
+        page.client.find(Locator::XPath(
+            "//div[@role='dialog']//label[contains(., 'relance du jeu')]/..//button[normalize-space()='Réessayer maintenant'] \
+             | //div[@role='dialog']//*[normalize-space()='relance du jeu']/following::button[normalize-space()='Réessayer maintenant'][1]"))
+            .await.unwrap().click().await.unwrap();
+        page.wait_js("the retry POST", Duration::from_secs(10), "return window.__retries.length === 1", vec![]).await;
+        let sent = page.js("return window.__retries[0]", vec![]).await;
+        let token = page.js("return document.querySelector('meta[name=\"cloudphone-token\"]').content", vec![]).await;
+        assert_eq!(sent["headers"]["X-CloudPhone-Token"], token, "with the page token: {sent}");
+        assert_eq!(sent["body"], json!({"kind": "relaunch"}));
+        assert_eq!(sent["answer"]["counters"]["next_attempt"], json!({}), "{sent}");
+        let p = phone.clone();
+        let records = blocking(move || p.get_json("api/v1/logs"));
+        assert!(records["records"].as_array().unwrap().iter()
+            .any(|r| r["text"] == "Réessayer maintenant : relance du jeu"), "{records}");
+    });
+}
