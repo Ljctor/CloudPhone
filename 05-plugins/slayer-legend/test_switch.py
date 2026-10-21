@@ -115,9 +115,29 @@ def harness(game):
 
     stages = {"mpw18": 905, "mpw4": 925}
     presets = {"mpw18": "IV", "mpw4": "II"}
-    loadouts = {"loadout": lambda mode: {"stage": stages[mode], "preset": presets[mode], "soul_weapon": None},
+    weapons = {"mpw18": None, "mpw4": None}
+    listeners = []
+    souls = []
+
+    def loadout(mode):
+        return {"stage": stages[mode], "preset": presets[mode], "soul_weapon": weapons[mode]}
+
+    def change(mode, **fields):
+        """A change of mode's loadout, as POST /loadout makes it."""
+        before = loadout(mode)
+        for key, value in fields.items():
+            {"stage": stages, "preset": presets, "soul_weapon": weapons}[key][mode] = value
+        for listener in listeners:
+            listener(mode, before, loadout(mode))
+
+    async def ensure_soul_weapon(mode, part=None):
+        souls.append((game.now, mode, part["soul_weapon"]))
+        await clock.sleep(5)
+        return {"result": "done", "text": "", "timings": {"soul_weapon": 5.0}}
+
+    loadouts = {"loadout": loadout,
                 "stage": lambda mode: stages[mode], "set_stage": lambda mode, n: stages.__setitem__(mode, n or stages[mode]),
-                "adopt_stage": lambda mode, n: None}
+                "adopt_stage": lambda mode, n: None, "on_change": listeners.append}
     mines = {"start": lambda *a: None, "stop": lambda: None, "set_until": lambda until: None, "ended": False,
              "state": lambda: {"enabled": False, "state": "off", "floor": None, "area": None}}
     values = SimpleNamespace(time_or_none=lambda v: v, number_or_none=lambda v, top: v)
@@ -126,7 +146,8 @@ def harness(game):
                              look=lambda kept, seen: (kept, None))
     screens = SimpleNamespace(classify=lambda shot: "battle")
     ports.store = base.Store()
-    part = mode_feature.mode(ports, mode_rules, None, values, mines, screens, scroll, loadouts, {"farm": farm})
+    part = mode_feature.mode(ports, mode_rules, None, values, mines, screens, scroll, loadouts,
+                             {"farm": farm, "ensure_soul_weapon": ensure_soul_weapon})
     post = next(h for method, path, h in part["routes"] if method == "POST" and path == "/mode")
     get = next(h for method, path, h in part["routes"] if method == "GET")
 
@@ -138,6 +159,7 @@ def harness(game):
             return self.body
 
     return SimpleNamespace(clock=clock, ports=ports, farmed=farmed, presets=presets, stages=stages,
+                           change=change, souls=souls,
                            post=lambda body: post(Request(body)), state=lambda: get(None))
 
 
@@ -240,6 +262,58 @@ class Switch(unittest.TestCase):
         self.assertGreaterEqual(int(game.alerts[0].split(" en ")[1].split(" ")[0]), 40)
         self.assertTrue(there(game, 925, "II"))
 
+    def test_a_preset_change_of_the_running_mode_is_applied_at_once(self):
+        game = SlowGame(stage=905, preset="IV")
+        h = harness(game)
+
+        async def go():
+            await h.post({"mode": "mpw4", "stage4": 925})
+            await h.clock.until(lambda: there(game, 925, "II") and any(l.startswith("switch ") for l in self.lines), 600)
+            start = game.now
+            h.change("mpw4", preset="V")
+            await h.clock.until(lambda: any(l.startswith("loadout ") for l in self.lines), start + 300)
+            return game.now - start, (await h.state())[1]
+        took, state = asyncio.run(go())
+        self.assertLessEqual(took, mode_rules.SWITCH_BUDGET)
+        self.assertTrue(there(game, 925, "V"))
+        self.assertEqual(state["state"], "farming", state["message"])
+        line = next(l for l in self.lines if l.startswith("loadout "))
+        self.assertRegex(line, r"^loadout mpw4 changed → applied in \d+ s \(.*\), done$")
+        self.assertRegex(game.alerts[-1], r"^Configuration mpw4 appliquée en \d+ s$")
+        self.assertEqual(len(h.farmed), 2, "the switch's own path, farm()")
+
+    def test_a_soul_weapon_change_runs_its_step_alone(self):
+        game = SlowGame(stage=905, preset="IV")
+        h = harness(game)
+        weapon = {"id": 36, "variant": "Gold-balanced"}
+
+        async def go():
+            await h.post({"mode": "mpw4", "stage4": 925})
+            await h.clock.until(lambda: there(game, 925, "II") and any(l.startswith("switch ") for l in self.lines), 600)
+            h.change("mpw4", soul_weapon=weapon)
+            await h.clock.until(lambda: any(l.startswith("loadout ") for l in self.lines), 900)
+        asyncio.run(go())
+        self.assertEqual([(mode, part) for _, mode, part in h.souls], [("mpw4", weapon)])
+        self.assertEqual(len(h.farmed), 1, "no farm() for the soul weapon alone")
+        self.assertEqual(game.alerts[-1], "Configuration mpw4 appliquée en 5 s")
+
+    def test_a_change_of_another_mode_or_the_same_values_does_nothing(self):
+        game = SlowGame(stage=905, preset="IV")
+        h = harness(game)
+
+        async def go():
+            await h.post({"mode": "mpw4", "stage4": 925})
+            await h.clock.until(lambda: there(game, 925, "II") and any(l.startswith("switch ") for l in self.lines), 600)
+            h.change("mpw18", preset="I")
+            h.change("mpw4", preset="II")
+            for _ in range(50):
+                await asyncio.sleep(0)
+            return (await h.state())[1]
+        state = asyncio.run(go())
+        self.assertEqual(len(h.farmed), 1)
+        self.assertFalse(state["setup"])
+        self.assertFalse(any(l.startswith("loadout ") for l in self.lines))
+
     def test_while_it_sets_up_the_state_says_so(self):
         game = SlowGame(stage=905, preset="IV")
         h = harness(game)
@@ -253,6 +327,16 @@ class Switch(unittest.TestCase):
             seen.append((await h.state())[1]["setup"])
         asyncio.run(go())
         self.assertEqual(seen, [True, False])
+
+    def test_loadout_changes_and_their_report(self):
+        old = {"stage": 920, "preset": "III", "soul_weapon": None}
+        self.assertEqual(mode_rules.loadout_changes(old, dict(old)), set())
+        self.assertEqual(mode_rules.loadout_changes(old, dict(old, preset="IV", soul_weapon={"id": 1})),
+                         {"preset", "soul_weapon"})
+        line, alert = mode_rules.switch_report("mpw18", "mpw18", 21.2, {"preset": 4.0}, applied=True)
+        self.assertEqual((line, alert), ("loadout mpw18 changed → applied in 21 s (preset 4 s)", None))
+        _, alert = mode_rules.switch_report("mpw18", "mpw18", 75, {"stage": 70}, applied=True)
+        self.assertTrue(alert.startswith("Configuration mpw18 appliquée en 75 s (plus de 60 s)"), alert)
 
     def test_the_ready_text(self):
         self.assertEqual(mode_rules.ready_text("mpw18", 34.4), "Farming mpw18 prêt en 34 s")

@@ -43,17 +43,27 @@ def next_look(until, now):
     return max(0.2, until - now + 0.1)
 
 
-STEP_NAMES = {"stage": "changement de stage", "preset": "préréglage", "auto": "AUTO"}
+STEP_NAMES = {"stage": "changement de stage", "preset": "préréglage", "auto": "AUTO",
+              "soul_weapon": "Soul Weapon"}
+# A farming mode's loadout fields whose change is applied at once.
+LOADOUT_FIELDS = ("stage", "preset", "soul_weapon")
 
 
-def switch_report(before, after, seconds, timings, waited=0.0):
+def loadout_changes(before, after):
+    """The fields of LOADOUT_FIELDS that differ."""
+    return {key for key in LOADOUT_FIELDS if (before or {}).get(key) != (after or {}).get(key)}
+
+
+def switch_report(before, after, seconds, timings, waited=0.0, applied=False):
     """(log line, alert or None) of one mode switch: before → after in
     seconds of the plugin's own time (farm()'s run), timings {step:
     seconds} (farm()'s), waited: seconds waiting for the lease before it,
     said apart and never counted; the alert (French) when the plugin's
-    time is over SWITCH_BUDGET, naming the slowest step."""
+    time is over SWITCH_BUDGET, naming the slowest step. applied: the
+    running mode's loadout changed (after: the mode), not a switch."""
     steps = ", ".join(f"{name} {round(value)} s" for name, value in timings.items())
-    line = f"switch {before}→{after} in {round(seconds)} s" + (f" ({steps})" if steps else "")
+    line = (f"loadout {after} changed → applied in {round(seconds)} s" if applied
+            else f"switch {before}→{after} in {round(seconds)} s") + (f" ({steps})" if steps else "")
     if round(waited):
         line += f" (+{round(waited)} s waiting for the lease)"
     if seconds <= SWITCH_BUDGET:
@@ -61,7 +71,8 @@ def switch_report(before, after, seconds, timings, waited=0.0):
     slowest = max(timings, key=timings.get) if timings else None
     why = (f" : étape la plus lente : {STEP_NAMES.get(slowest, slowest)} ({round(timings[slowest])} s)"
            if slowest else "")
-    return line, f"Passage {before} → {after} en {round(seconds)} s (plus de {SWITCH_BUDGET} s){why}"
+    what = f"Configuration {after} appliquée" if applied else f"Passage {before} → {after}"
+    return line, f"{what} en {round(seconds)} s (plus de {SWITCH_BUDGET} s){why}"
 
 
 def warn_due(mode, until, warned, now):

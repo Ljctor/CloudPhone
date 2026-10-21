@@ -17,7 +17,9 @@ places the engraving after reading the pieces there first
 are in engraving_rules.py; the loadouts are kept in state.json
 ("loadouts"). They are the one place of the mpw18 and mpw4 stages: the
 mode feature (POST /mode's stage18, stage4) and the watchdog read and set
-them through api (loadout, stage, set_stage, adopt_stage).
+them through api (loadout, stage, set_stage, adopt_stage); on_change(f)
+calls f(mode, before, after) on every change of a mode's loadout (POST
+/loadout or set_stage), for the mode feature to apply it at once.
 """
 
 
@@ -32,12 +34,21 @@ def engraving(ports, rules):
     oriented = table["shapes"] if rules.per_piece(table) else None
     loadouts = rules.kept_loadouts(ports.store.saved.get("loadouts"), table, rotate)
     ports.store.register("loadouts", lambda: loadouts)
+    listeners = []
+
+    def changed(mode, before):
+        after = loadouts[mode]
+        if before != after:
+            for listener in listeners:
+                listener(mode, before, dict(after))
 
     def set_stage(mode, number):
         """The stage farmed in mode (mpw18, mpw4); None clears it."""
         if loadouts[mode]["stage"] != rules.stage_or_none(number):
+            before = dict(loadouts[mode])
             loadouts[mode]["stage"] = rules.stage_or_none(number)
             ports.store.save()
+            changed(mode, before)
 
     def adopt_stage(mode, number):
         """A stage from an older state.json, kept only where none is set."""
@@ -53,7 +64,7 @@ def engraving(ports, rules):
 
     api = {"loadout": lambda mode: dict(loadouts[mode]), "stage": lambda mode: loadouts[mode]["stage"],
            "set_stage": set_stage, "adopt_stage": adopt_stage, "expected_cells": expected_cells,
-           "table": table}
+           "table": table, "on_change": listeners.append}
 
     def summary(entry):
         return {key: entry.get(key) for key in ("id", "name", "stage", "grid", "source", "verified_in_game",
@@ -110,8 +121,10 @@ def engraving(ports, rules):
         if error:
             return ports.respond({"error": error}, status=400)
         mode, part = asked
+        before = dict(loadouts[mode])
         loadouts[mode] = part
         ports.store.save()
+        changed(mode, before)
         return ports.respond(state())
 
     return {"api": api, "routes": [("GET", "/engravings", handle_list), ("GET", "/engraving", handle_one),

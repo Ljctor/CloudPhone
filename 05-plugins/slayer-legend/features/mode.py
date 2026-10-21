@@ -20,10 +20,12 @@ tried again on its own with a backoff (rules.retry_after) while within
 that budget, and only then alerts once; a mode left failed is farming
 again once the watchdog sees it farm (api confirm); once set up, one
 notification says how long it took since the mode was chosen (« Farming
-mpw18 prêt en 34 s »; « Configuration mpw18 appliquée en 21 s » for a
-change of the running mode's loadout); each switch is one log
-line with its steps' seconds, and one alert naming the slowest step when
-it took longer. While
+mpw18 prêt en 34 s »), the slowest step named when over the budget. A
+change of the running farming mode's loadout (engraving's on_change:
+stage, preset, soul weapon) runs the same path at once (loadout_changed),
+the soul weapon alone by its step alone (the stage change feature's
+ensure_soul_weapon), notified « Configuration mpw18 appliquée en 21 s ».
+Each switch is one log line with its steps' seconds. While
 farming mpw4 it looks for the
 gold scroll every 30 s on the battle screen (gold: true, false once missing
 for 2 looks, null unknown) and alerts once when it goes, then once when it
@@ -72,19 +74,19 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         answer["mine"] = mines["state"]()
         return answer
 
-    def switched(answer, since, waited):
+    def switched(answer, since, waited, applied=False):
         """The switch's log line, and its alert when over budget: since,
         its trigger; waited, the seconds it waited for the lease (the
         user's or another holder's, not counted)."""
         before, after = status["switch"] or ("?", status["mode"])
         line, alert = rules.switch_report(before, after, ports.clock.monotonic() - since - waited,
-                                          answer.get("timings") or {}, waited)
+                                          answer.get("timings") or {}, waited, applied)
         logging.getLogger("cloudphone.slayer-legend").log(
             logging.WARNING if alert else logging.INFO, f"{line}, {answer['result']}",
             extra={"source": "slayer-legend", "notify": bool(alert)})
         return alert
 
-    async def set_stage(number, mpw, applied=False):
+    async def set_stage(number, mpw, applied=False, step=None):
         """Brings the game to farming that stage with its loadout's preset,
         AUTO on. True once there; else one alert naming the step. While the
         shared lease cannot be had (the user played in the last minute,
@@ -92,7 +94,8 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         rules.LEASE_WAIT: then one alert, for the user. Set up: one
         notification with the seconds since the mode was chosen (applied:
         since its loadout changed), naming the slowest step when over
-        rules.SWITCH_BUDGET."""
+        rules.SWITCH_BUDGET. step: what runs in place of farm() (a
+        coroutine function: the soul weapon step alone)."""
         name = f"mpw{mpw}"
         preset = loadouts["loadout"](name).get("preset")
         report("moving", f"Passage au stage {number} ({name})")
@@ -101,7 +104,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         while True:
             began = ports.clock.monotonic()
             try:
-                answer = await farming["farm"](number, preset, name, status["highest"])
+                answer = await (step() if step else farming["farm"](number, preset, name, status["highest"]))
             except ports.Busy as e:
                 if ports.clock.monotonic() - since >= rules.LEASE_WAIT:
                     text = f"Passage au stage {number} ({name}) : bail toujours pris après 30 min ({e}), à faire à la main"
@@ -122,7 +125,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
                          f"attempt {failures + 1} in {delay} s")
             report("moving", f"Passage au stage {number} ({name}) : nouvel essai dans {delay} s ({answer['text']})"[:200])
             await ports.clock.sleep(delay)
-        alert = switched(answer, since, waited)
+        alert = switched(answer, since, waited, applied)
         if answer["result"] == "done":
             await ports.notify(rules.ready_text(name, ports.clock.monotonic() - since, applied, alert))
         if answer["result"] == "failed":
@@ -165,6 +168,29 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
             report("free", "Jeu libre : rien n’est touché jusqu’à la fin du minuteur")
         else:
             report("mine", "Mine")
+
+    def loadout_changed(name, before, after):
+        """The engraving feature's on_change: a change of the running
+        farming mode's loadout (its stage, preset or soul weapon) is
+        applied at once, by the switch's own path (rules.SWITCH_BUDGET,
+        retried, one notification « Configuration mpwN appliquée en N
+        s »); the soul weapon alone by its step alone."""
+        fields = rules.loadout_changes(before, after)
+        if not status["configured"] or name != status["mode"] or name not in ("mpw18", "mpw4") or not fields:
+            return
+        logging.info(f"Slayer Legend mode {name}: loadout changed ({', '.join(sorted(fields))}), applied now")
+        status.update(switch=(name, name), switch_at=ports.clock.monotonic())
+        change = status["change"]
+        if change is not None and not change.done():
+            change.cancel()
+        status["change"] = None
+        if not after.get("stage"):
+            report("idle", f"Farming {name} : choisis le stage")
+            return
+        step = None
+        if fields == {"soul_weapon"} and "ensure_soul_weapon" in farming:
+            step = lambda: farming["ensure_soul_weapon"](name, after)
+        status["change"] = ports.spawn(set_stage(after["stage"], int(name[3:]), applied=True, step=step))
 
     async def back_to_default(reason):
         before = status["mode"]
@@ -285,6 +311,10 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         logging.info(f"Slayer Legend: timer ended while the gateway was stopped ({', '.join(stopped)}): "
                      "back to mpw18 farming, mine off"
                      + (" once Repeat entry is unticked" if mines["state"]()["state"] == "stopping" else ""))
+
+    # After the stages of an older state.json moved: not a change to apply.
+    if "on_change" in loadouts:
+        loadouts["on_change"](loadout_changed)
 
     return {
         "routes": [("GET", "/mode", handle_state), ("POST", "/mode", handle_mode), ("POST", "/mode/timer", handle_timer)],

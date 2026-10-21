@@ -39,7 +39,8 @@ Rules:
     - The right edge's arrow that unfolds the controls, to read the preset
       badge and AUTO: at most every 5 minutes, whoever watches (only a
       user's input pauses it, a minute), only while the preset or auto switch is real.
-  - Stage change and preset (mode changes and the watchdog's repairs,
+  - Stage change and preset (mode changes, a change of the running
+    mode's loadout, and the watchdog's repairs,
     each only while its switch is real):
     - Closing a bottom panel with its own tab: only when that tab reads lit.
     - "Press here to finish Power Saving Mode": held 4 s, once per
