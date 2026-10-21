@@ -1,24 +1,21 @@
 // The game's screen and the stage it farms, asked to the gateway only
 // while the options panel shows them: each render asks again once the
-// last answer is 3 s old. Options: the "Jeu" section's stage rows; debug:
-// the detected screen. known(): the last stage number read, for the
-// mode's stage lists.
+// last answer is 3 s old. stage: the stage's row, under the mode's État;
+// debug: the detected screen. known(): the last stage number read, for
+// the mode's stage lists.
 
 const SCREENS = {
   title: 'Écran titre', save: 'Choix de la sauvegarde', battle: 'Combat',
   saver: 'Économie d’énergie', other: 'Autre (menu, chargement…)',
   menu: 'Menu du jeu', away: 'Autre application',
 };
-const GRADES = { Common: 'Commun', Great: 'Supérieur', Rare: 'Rare', Epic: 'Épique', Legendary: 'Légendaire' };
-const COLOURS = { green: 'verte', blue: 'bleue', red: 'rouge' };
+// The stage's soul colour, as a coloured dot.
+const DOTS = { green: '🟢', blue: '🔵', red: '🔴' };
 // The last stage number read, kept in this browser so that the gateway
 // still knows it after a restart (it reads it only in Power Saving Mode).
 const STORE = 'cloudphone-slayer-legend-stage';
 
 export default function screenFeature(api) {
-  const stageRow = (label, value) => ({
-    type: 'status', label, visible: () => Boolean(screen.answer?.stage?.name), value,
-  });
   const screen = { answer: null, at: 0, busy: false, timer: null };
   let remembered = null;
   try {
@@ -48,33 +45,26 @@ export default function screenFeature(api) {
 
   return {
     known: () => remembered,
-    options: [
-      { type: 'section', key: 'game', label: 'Jeu' },
-      {
-        type: 'status', label: 'Stage sélectionné',
-        visible: () => {
-          watchScreen();
-          return Boolean(screen.at);
-        },
-        value: () => {
-          const stage = screen.answer?.stage;
-          if (!stage?.number) return api.tr('inconnu');
-          return `${stage.number}${stage.name ? ` · ${stage.name}` : ''}`;
-        },
+    // The stage being farmed, one row under the mode's État (page_mode.js):
+    // « 920 · 🔴 · Arme · 5 par vague », or « inconnu ».
+    stage: {
+      type: 'status', label: 'Stage',
+      visible: () => {
+        watchScreen();
+        return Boolean(screen.at);
       },
-      stageRow('Monstres par vague', () => String(screen.answer.stage.monsters_per_wave ?? '–')),
-      stageRow('Équipement lâché', () => {
-        const stage = screen.answer.stage;
-        const [grade, level] = String(stage.grade ?? '').split(' ');
-        return `${api.tr(stage.drop === 'A' ? 'Accessoire' : 'Arme')}, ${api.tr(GRADES[grade] ?? grade)} ${level ?? ''}`.trim();
-      }),
-      stageRow('Couleur des âmes', () => {
-        const stage = screen.answer.stage;
-        if (!stage.soul_colour) return '–';
-        const colour = api.tr(COLOURS[stage.soul_colour] ?? stage.soul_colour);
-        return colour;
-      }),
-    ],
+      value: () => {
+        const stage = screen.answer?.stage;
+        if (!stage?.number) return api.tr('inconnu');
+        return [
+          String(stage.number),
+          DOTS[stage.soul_colour],
+          stage.drop ? api.tr(stage.drop === 'A' ? 'Accessoire' : 'Arme') : null,
+          stage.monsters_per_wave ? api.tr('{n} par vague', { n: stage.monsters_per_wave }) : null,
+        ].filter(Boolean).join(' · ');
+      },
+    },
+    options: [],
     debug: [
       {
         type: 'status', label: 'Écran détecté',

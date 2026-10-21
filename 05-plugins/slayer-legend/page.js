@@ -4,7 +4,8 @@
 // API returning its options, its onSetting and dispose hooks and, for the
 // mode, its overlay hook (its lines top left), and, for the developer, its
 // debug rows (the plugin's last section, « Debug & développement »):
-// - page_screen.js: the game's screen and stage ("Jeu").
+// - page_screen.js: the game's screen (debug) and stage (its row under
+//   the mode's État).
 // - page_launch.js: "Lancer le jeu": the gateway starts the game and
 //   brings it to the battle screen (TAP TO START, then Confirm).
 // - page_mode.js: the mode and its timer ("Mode et farming").
@@ -82,7 +83,6 @@ const ENGLISH = {
   'Lancer': 'Launch',
   'Lancement': 'Launch',
   'Compteur d’émeraudes': 'Emerald counter',
-  'Jeu': 'Game',
   'Mode et farming': 'Mode and farming',
   'Émeraudes': 'Emeralds',
   'Diamants': 'Diamonds',
@@ -120,20 +120,11 @@ const ENGLISH = {
   'Pas de capture d’écran': 'No screenshot',
   'Menu du jeu': 'Game menu',
   'Autre application': 'Another app',
-  'Stage sélectionné': 'Selected stage',
   'inconnu': 'unknown',
-  'Monstres par vague': 'Monsters per wave',
-  'Équipement lâché': 'Equipment dropped',
   'Arme': 'Weapon',
   'Accessoire': 'Accessory',
-  'Commun': 'Common',
-  'Supérieur': 'Great',
-  'Épique': 'Epic',
-  'Légendaire': 'Legendary',
-  'Couleur des âmes': 'Soul colour',
-  'verte': 'green',
-  'bleue': 'blue',
-  'rouge': 'red',
+  'Stage': 'Stage',
+  '{n} par vague': '{n} per wave',
   'Enregistrer mes parcours': 'Record my paths',
   'Activé': 'On',
   'Désactivé': 'Off',
@@ -224,13 +215,13 @@ export default function activate(api) {
   const launchPart = launch(api);
   const screenPart = screen(api);
   const watchdogPart = watchdog(api);
-  const modePart = mode(api, { known: screenPart.known, watchdog: watchdogPart });
+  const modePart = mode(api, { known: screenPart.known, watchdog: watchdogPart, stage: screenPart.stage });
   const goldPart = gold(api, { overlay: [modePart.overlay] });
   const tracePart = trace(api);
   const parts = [counterPart, launchPart, screenPart, modePart, goldPart, tracePart, watchdogPart];
   // ...and shown in this one, then « Debug & développement », last and
   // folded: the parts' developer rows and the plugin's log records.
-  const shown = [screenPart, launchPart, modePart, watchdogPart, goldPart, tracePart, counterPart];
+  const shown = [launchPart, modePart, goldPart, counterPart];
   const debug = [
     { type: 'section', key: 'debug', label: 'Debug & développement', folded: true },
     ...[screenPart, counterPart, watchdogPart, tracePart].flatMap((part) => part.debug ?? []),

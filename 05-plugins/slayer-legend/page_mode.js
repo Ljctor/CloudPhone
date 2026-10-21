@@ -43,8 +43,9 @@ const keep = (name, value) => {
 };
 
 // known(): the last stage number read (page_screen.js); watchdog: the
-// watchdog part (page_watchdog.js: line, retry).
-export default function modeFeature(api, { known, watchdog }) {
+// watchdog part (page_watchdog.js: line, retry); stage: the stage's row,
+// under État (page_screen.js).
+export default function modeFeature(api, { known, watchdog, stage }) {
   // chosen: when the mode was last chosen here; sending: a POST under way.
   const farm = { answer: null, timer: null, stages: null, chosen: 0, sending: 0 };
   const loadouts = loadout(api);
@@ -209,6 +210,7 @@ export default function modeFeature(api, { known, watchdog }) {
           return api.tr(answer.message || 'Farming mpw18') + warning(answer.gold) + looked;
         },
       },
+      ...(stage ? [stage] : []),
     ],
     onSetting: (key, value) => {
       loadouts.onSetting(key);

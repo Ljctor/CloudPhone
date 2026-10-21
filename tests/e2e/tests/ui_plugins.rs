@@ -463,7 +463,19 @@ fn slayer_legends_debug_section_is_last_folded_and_holds_the_developer_rows_and_
         let sections = slayer_sections(&page).await;
         let list = sections.as_array().unwrap_or_else(|| panic!("{sections}"));
         assert_eq!(list.last(), Some(&json!(["Debug & développement", false])), "last and folded: {sections}");
+        let names: Vec<&str> = list.iter().map(|s| s[0].as_str().unwrap()).collect();
+        assert_eq!(names, ["Mode et farming", "Gold", "Émeraudes", "Diamants", "Debug & développement"], "{sections}");
+        // The stage in one row under État; the rows for the developer, or
+        // that said nothing, are gone.
+        page.wait_dialog_value(O, "Stage", Duration::from_secs(15), |_| true).await;
         let lines = page.dialog_lines(O).await;
+        let state = lines.iter().position(|l| l == "État").unwrap_or_else(|| panic!("{lines:#?}"));
+        assert_eq!(lines.get(state + 2).map(String::as_str), Some("Stage"), "{lines:#?}");
+        for gone in ["Jeu", "Stage sélectionné", "Monstres par vague", "Équipement lâché", "Couleur des âmes", "Minuteur",
+                     "Plumes", "Farming mpw18 (par défaut)"] {
+            assert!(!lines.iter().any(|l| l == gone), "no {gone:?}: {lines:#?}");
+        }
+        assert!(!lines.iter().any(|l| l.contains("à confirmer") || l.contains("économie d’énergie ?")), "{lines:#?}");
         for hidden in ["Écran détecté", "Enregistrer mes parcours", "Parcours enregistrés", "Bail", "Surveillance",
                        "Détection du compteur", "Navigation"] {
             assert!(!lines.iter().any(|l| l == hidden), "{hidden:?} not shown while folded: {lines:#?}");
