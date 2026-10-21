@@ -329,6 +329,26 @@ class Lease(MineTest):
         self.assertEqual(at_80["/lease"]["error"], "not your lease")
         self.assertEqual([body for t, p, body in answers if t == 100 and p == "/lease"][-1], {"lease": None})
 
+    def test_the_plugin_off_taps_nothing_until_it_is_back_on(self):
+        off, on = ("POST", "/enabled", {"enabled": False}), ("POST", "/enabled", {"enabled": True})
+        game, answers = self.play(RELAUNCH_SCENES, "fight", [
+            (0, [mine(), off]), (80, [GET_MINE, ("GET", "/enabled", None)]), (100, [on]), (250, [GET_MINE])], 250)
+        self.assertTrue(game.taps and game.taps[0][0] >= 100, game.taps)
+        at_80 = {p: body for t, p, body in answers if t == 80}
+        self.assertEqual(at_80["/mine"]["message"], "Plugin désactivé")
+        self.assertEqual(at_80["/enabled"], {"enabled": False})
+        self.assertEqual(self.last(answers, "/mine")["state"], "farming")
+
+    def test_the_lease_is_refused_to_the_plugin_while_it_is_off(self):
+        game = Game({"fight": dict(FIGHT_GOLD)}, "fight")
+        ports = load_feature("ports").build(game.context(), load_feature("../nav"))
+        ports.set_enabled(False)
+        self.assertEqual(ports.lease.take("watchdog", "x", 60), "plugin désactivé")
+        self.assertIsNone(ports.lease.take("agent", "x", 60, user=True), "an outside holder still may")
+        ports.lease.release("agent")
+        ports.set_enabled(True)
+        self.assertIsNone(ports.lease.take("watchdog", "x", 60))
+
     def test_no_tap_hold_or_swipe_without_the_lease(self):
         game = Game({"fight": dict(FIGHT_GOLD)}, "fight")
         ports = load_feature("ports").build(game.context(), load_feature("../nav"))

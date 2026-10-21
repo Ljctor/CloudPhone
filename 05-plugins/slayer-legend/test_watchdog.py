@@ -585,6 +585,7 @@ class GoldTrigger(unittest.TestCase):
 
             store = types.SimpleNamespace(saved={}, register=lambda *a: None, save=lambda: None)
             lease = types.SimpleNamespace(state=lambda: None)
+            enabled = staticmethod(lambda: True)
             respond = staticmethod(lambda body, status=200: body if status == 200 else (status, body))
 
             class clock:
@@ -864,6 +865,7 @@ class WaitOnTheDialog(unittest.TestCase):
 
             store = types.SimpleNamespace(saved={}, register=lambda *a: None, save=lambda: None)
             lease = types.SimpleNamespace(state=lambda: None)
+            enabled = staticmethod(lambda: True)
             respond = staticmethod(lambda body: body)
 
             class clock:

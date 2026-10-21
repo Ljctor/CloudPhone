@@ -14,8 +14,9 @@ import { drawText } from './gold_text.js';
 const BAR_LEFT = '28%';
 const BAR_MIDDLE = '2.5%';
 
-// overlay: functions giving the lines written top left.
-export default function goldFeature(api, { overlay }) {
+// overlay: functions giving the lines written top left; enabled(): the
+// plugin is on (nothing is drawn while it is off).
+export default function goldFeature(api, { overlay, enabled = () => true }) {
   const gold = { answer: null, timer: null, font: null, line: '' };
   api.get('/gold-font').catch(() => null).then((font) => {
     gold.font = font;
@@ -85,7 +86,7 @@ export default function goldFeature(api, { overlay }) {
     const partial = answer?.span < 285 ? '~' : '';
     gold.line = api.setting('goldOverlay') === 'off' || !fresh ? ''
       : (answer.rate_text ? `${partial}${answer.rate_text}/S` : '...');
-    showLabel(Boolean(fresh && gold.font));
+    showLabel(Boolean(fresh && gold.font && enabled()));
   };
   const askGold = async () => {
     gold.answer = await api.get('/gold').catch(() => null);
@@ -97,6 +98,8 @@ export default function goldFeature(api, { overlay }) {
   askGold();
 
   return {
+    // Draws again (or removes) after the plugin was turned on or off.
+    update: () => showGold(),
     options: [
       { type: 'section', key: 'gold', label: 'Gold' },
       { type: 'status', label: 'Gold par seconde', value: goldText },

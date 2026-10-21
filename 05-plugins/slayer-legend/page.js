@@ -6,8 +6,9 @@
 // debug rows (the plugin's last section, « Debug & développement »):
 // - page_screen.js: the game's screen (debug) and stage (its row under
 //   the mode's État).
-// - page_launch.js: "Lancer le jeu": the gateway starts the game and
-//   brings it to the battle screen (TAP TO START, then Confirm).
+// - page_power.js: the plugin's on/off switch, at the top: while off the
+//   gateway taps nothing and nothing is drawn over the game. (The game is
+//   launched by the watchdog's relaunch only: no button.)
 // - page_mode.js: the mode and its timer ("Mode et farming").
 // - page_gold.js: gold per second ("Gold"), written in the game's top bar,
 //   and the mode's lines top left, in the gold counter's font
@@ -23,7 +24,7 @@
 //   (counter_rewrite.js, with emerald_mask.js and emerald_font.js).
 import counters from './page_counters.js';
 import gold from './page_gold.js';
-import launch from './page_launch.js';
+import power from './page_power.js';
 import mode from './page_mode.js';
 import screen from './page_screen.js';
 import trace from './page_trace.js';
@@ -80,9 +81,9 @@ const ENGLISH = {
   'Mine fermée : choisis d’abord l’étage (1 à 9999) et la zone (1 à 5)':
     'Closed Mine: choose the floor (1 to 9999) and the area (1 to 5) first',
   'arrêtée': 'off',
-  'Lancer le jeu': 'Launch the game',
-  'Lancer': 'Launch',
-  'Lancement': 'Launch',
+  'Plugin': 'Plugin',
+  'Plugin désactivé': 'Plugin off',
+  'En attente : plugin désactivé': 'Waiting: plugin off',
   'Compteur d’émeraudes': 'Emerald counter',
   'Mode et farming': 'Mode and farming',
   'Émeraudes': 'Emeralds',
@@ -95,11 +96,6 @@ const ENGLISH = {
   'détecté': 'detected',
   'non détecté': 'not detected',
   'Ouverture du jeu': 'Opening the game',
-  'Chargement du jeu': 'Loading the game',
-  'Lancement arrêté : termine-le à la main': 'Launch stopped: finish it by hand',
-  'Lancement différé': 'Launch deferred',
-  'Le lancement a échoué': 'The launch failed',
-  'Lancement en cours': 'Launching',
   'Écran titre touché, connexion': 'Title screen tapped, signing in',
   'Dernière sauvegarde confirmée, chargement': 'Latest save confirmed, loading',
   '« Sign in with Google » touché': '« Sign in with Google » tapped',
@@ -111,7 +107,6 @@ const ENGLISH = {
   'Écran inattendu : termine le lancement à la main': 'Unexpected screen: finish the launch by hand',
   'Le jeu n’a pas atteint l’écran de combat en 3 minutes': 'The game did not reach the battle screen in 3 minutes',
   'Android ne répond pas': 'Android does not answer',
-  'Un lancement est déjà en cours': 'A launch is already running',
   'Écran détecté': 'Detected screen',
   'Écran titre': 'Title screen',
   'Choix de la sauvegarde': 'Save choice',
@@ -212,17 +207,19 @@ const ENGLISH = {
 export default function activate(api) {
   api.addTranslations(ENGLISH);
   // Started in this order (each asks the gateway as it starts)...
-  const counterPart = counters(api);
-  const launchPart = launch(api);
+  // Turning the plugin on or off redraws what the parts draw (below).
+  const powerPart = power(api, { changed: () => drawers.forEach((part) => part.update()) });
+  const counterPart = counters(api, { enabled: powerPart.on });
   const screenPart = screen(api);
   const watchdogPart = watchdog(api);
   const modePart = mode(api, { known: screenPart.known, watchdog: watchdogPart, stage: screenPart.stage });
-  const goldPart = gold(api, { overlay: [modePart.overlay] });
+  const goldPart = gold(api, { overlay: [modePart.overlay], enabled: powerPart.on });
+  const drawers = [counterPart, goldPart];
   const tracePart = trace(api);
-  const parts = [counterPart, launchPart, screenPart, modePart, goldPart, tracePart, watchdogPart];
+  const parts = [powerPart, counterPart, screenPart, modePart, goldPart, tracePart, watchdogPart];
   // ...and shown in this one, then « Debug & développement », last and
   // folded: the parts' developer rows and the plugin's log records.
-  const shown = [launchPart, modePart, goldPart, counterPart];
+  const shown = [powerPart, modePart, goldPart, counterPart];
   const debug = [
     { type: 'section', key: 'debug', label: 'Debug & développement', folded: true },
     ...[screenPart, counterPart, watchdogPart, tracePart].flatMap((part) => part.debug ?? []),

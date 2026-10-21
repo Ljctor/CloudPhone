@@ -108,6 +108,9 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
             try:
                 answer = await (step() if step else farming["farm"](number, preset, name, status["highest"]))
             except ports.Busy as e:
+                if not ports.enabled():
+                    # The plugin off: it waits for as long, no alert.
+                    since = ports.clock.monotonic()
                 if ports.clock.monotonic() - since >= rules.LEASE_WAIT:
                     text = f"Passage au stage {number} ({name}) : bail toujours pris après 30 min ({e}), à faire à la main"
                     report("failed", text[:200])

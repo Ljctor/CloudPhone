@@ -22,6 +22,7 @@ GET  /mode, POST /mode, /mode/timer    features/mode.py
 GET  /engravings, /engraving?id=N      features/engraving.py
 GET  /loadout, POST /loadout           features/engraving.py
 GET, POST, DELETE /lease               features/lease.py (ports.Lease)
+GET  /enabled, POST /enabled           features/power.py (the plugin's on/off switch)
 GET  /watchdog                         features/watchdog.py
 GET  /farming, POST /farming           features/stage_change.py (its real/plan switches; the soul
                                        weapon's real/off, features/soul_weapon.py)
@@ -73,6 +74,7 @@ def setup(context):
     screen_rules = feature("screen_rules")
     gold = feature("gold").gold(ports, screens, stage, module("gold"), feature("gold_rules"))
     features = [
+        feature("power").power(ports),
         feature("lease").lease(ports),
         feature("counters").counters(ports, module("emerald_mask")),
         feature("screen").screen(ports, screens, stage, screen_rules, values, table),

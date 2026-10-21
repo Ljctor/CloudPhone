@@ -265,6 +265,11 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             status["mode"] = name
         moving = modes["state"]().get("state") == "moving"
         why = rules.paused(name, last["monotonic"] if last else None, now, moving)
+        if not ports.enabled():
+            # Off: no look at all, from scratch once back on.
+            why = "Plugin désactivé"
+            memory = rules.suspended(memory)
+            status["resumed"] = True
         status["paused"] = why
         if why:
             if name not in rules.MODE_NAMES or moving:

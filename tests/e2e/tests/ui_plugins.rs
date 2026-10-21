@@ -500,7 +500,7 @@ fn slayer_legends_debug_section_is_last_folded_and_holds_the_developer_rows_and_
         let state = lines.iter().position(|l| l == "État").unwrap_or_else(|| panic!("{lines:#?}"));
         assert_eq!(lines.get(state + 2).map(String::as_str), Some("Stage"), "{lines:#?}");
         for gone in ["Jeu", "Stage sélectionné", "Monstres par vague", "Équipement lâché", "Couleur des âmes", "Minuteur",
-                     "Plumes", "Farming mpw18 (par défaut)"] {
+                     "Plumes", "Farming mpw18 (par défaut)", "Lancer le jeu", "Lancement"] {
             assert!(!lines.iter().any(|l| l == gone), "no {gone:?}: {lines:#?}");
         }
         assert!(!lines.iter().any(|l| l.contains("à confirmer") || l.contains("économie d’énergie ?")), "{lines:#?}");
@@ -524,5 +524,38 @@ fn slayer_legends_debug_section_is_last_folded_and_holds_the_developer_rows_and_
              return r.some(t => t.includes('lease taken by agent')) ? r : null", vec![]).await;
         assert!(!log.as_array().unwrap().iter().any(|t| t.as_str().unwrap().contains("Le gateway a démarré")),
             "only the plugin's records: {log}");
+    });
+}
+
+#[test]
+fn slayer_legends_switch_is_first_and_turns_the_plugin_off_in_the_gateway() {
+    let cp = CloudPhone::start_with(json!({"plugins": [SLAYER_LEGEND]}));
+    let phone = cp.clone();
+    browser_test(&cp, Options::without_video(), |page| async move {
+        page.open_options().await;
+        page.wait_js("the plugin's options", Duration::from_secs(15),
+            "const d = document.querySelector('[role=dialog]'); return !!d && d.innerText.includes('Mode et farming')", vec![]).await;
+        let lines = page.dialog_lines(O).await;
+        let at = lines.iter().position(|l| l == "Slayer Legend").unwrap_or_else(|| panic!("{lines:#?}"));
+        assert_eq!(lines.get(at + 1).map(String::as_str), Some("Plugin"), "the switch first: {lines:#?}");
+        assert_eq!(page.control_state(&page.control(O, "Plugin").await).await["value"], "on", "on by default");
+        page.control(O, "Plugin").await.select_by_value("off").await.unwrap();
+        let p = phone.clone();
+        blocking(move || wait_for("the plugin off", Duration::from_secs(10), || {
+            (p.try_get_json("api/v1/plugins/slayer-legend/enabled")?["enabled"] == json!(false)).then_some(())
+        }));
+        // The watchdog no longer looks, and État says so.
+        let p = phone.clone();
+        blocking(move || wait_for("the watchdog off", Duration::from_secs(40), || {
+            (p.try_get_json("api/v1/plugins/slayer-legend/watchdog")?["status"]["template"] == "Plugin désactivé").then_some(())
+        }));
+        page.wait_dialog_value(O, "État", Duration::from_secs(25), |v| v.ends_with(" · Plugin désactivé")).await;
+        // A browser with no settings of its own shows the gateway's state.
+        page.js("localStorage.clear(); return true", vec![]).await;
+        page.reload(false).await;
+        page.open_options().await;
+        page.wait_js("the switch off", Duration::from_secs(15),
+            "const l = [...document.querySelectorAll('[role=dialog] label')].find(l => l.innerText.trim().startsWith('Plugin')); \
+             return !!l && l.control.value === 'off'", vec![]).await;
     });
 }

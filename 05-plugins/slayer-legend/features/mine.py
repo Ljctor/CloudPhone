@@ -176,6 +176,9 @@ def mine(ports, screens, readers, rules, timer, values):
                 await ports.clock.sleep(rules.SECONDS)
                 if status["task"] is not me:
                     return
+                if not ports.enabled():
+                    report("waiting", "Plugin désactivé")
+                    continue
                 if not await ports.focused():
                     # Its alert is the watchdog's (rules mine_away): one owner.
                     report("waiting", "Le jeu n’est pas au premier plan")

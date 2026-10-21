@@ -42,6 +42,11 @@ of the gateway, so what it may do to the game is all here.
   when it is not in front; choose_account(shot, point) taps it through the
   guard (account_chooser/account). The accounts are never logged.
 - notify(text): the Cloud Phone's phone alerts, when the user turned them on.
+- enabled(), set_enabled(on): the plugin's on/off switch (kept in
+  state.json, on by default). While off the lease is refused to the
+  plugin's own holders (PLUGIN_HOLDERS) and a sequence under way stops at
+  its next tap: the plugin taps nothing; the watchdog, the mine and the
+  mode switch wait.
 - clock: wall() (Unix seconds), monotonic(), sleep(seconds).
 - spawn(coroutine): runs it as a background task.
 - store: the state kept across gateway restarts (state.json, see State).
@@ -225,6 +230,11 @@ INPUT_PAUSE = 60
 HOLDER = contextvars.ContextVar("slayer_legend_lease_holder", default=None)
 
 
+# The plugin's own holders of the lease: refused while the plugin is off.
+PLUGIN_HOLDERS = ("launch", "mine", "watchdog", "mode", "stage_change")
+OFF = "plugin désactivé"
+
+
 class Busy(RuntimeError):
     """A tapping sequence that may not run now: another holder has the
     lease, the user plays, or the lease expired. Its text is French."""
@@ -241,9 +251,10 @@ class Lease:
     INPUT_PAUSE seconds and stops the sequence under way, unless it was
     taken on the user's own press (user=True)."""
 
-    def __init__(self, clock, last_input):
+    def __init__(self, clock, last_input, enabled=lambda: True):
         self.clock = clock
         self.last_input = last_input
+        self.enabled = enabled
         self.held = None
 
     def current(self):
@@ -266,6 +277,8 @@ class Lease:
         """None once holder has it (taken or renewed until now + seconds),
         or why not, in French."""
         seconds = min(float(seconds), LEASE_MAX)
+        if holder in PLUGIN_HOLDERS and not self.enabled():
+            return OFF
         held = self.current()
         if held and held["holder"] != holder:
             return f"bail tenu par {held['holder']}"
@@ -293,6 +306,8 @@ class Lease:
         held = self.current()
         if not held or held["holder"] != holder or holder is None:
             raise Busy(f"bail tenu par {held['holder']}" if held else "pas de bail")
+        if holder in PLUGIN_HOLDERS and not self.enabled():
+            raise Busy(OFF)
         if not held["user"] and self.input_since(held["mark"]):
             raise Busy("l’utilisateur joue")
 
@@ -317,7 +332,8 @@ def build(context, nav):
     clock = SimpleNamespace(wall=time.time, monotonic=time.monotonic, sleep=asyncio.sleep)
     # Older gateways do not say when the user plays.
     last_input = getattr(context, "last_input", None) or (lambda: None)
-    lease = Lease(clock, last_input)
+    power = {"on": True}
+    lease = Lease(clock, last_input, lambda: power["on"])
     viewers = getattr(context, "viewers", None) or (lambda: None)
 
     @contextlib.asynccontextmanager
@@ -442,6 +458,18 @@ def build(context, nav):
         return os.path.join(data_dir, name) if data_dir else None
 
     store = State(data_dir)
+    power["on"] = store.saved.get("enabled") is not False
+    store.register("enabled", lambda: power["on"])
+
+    def enabled():
+        return power["on"]
+
+    def set_enabled(on):
+        if bool(on) == power["on"]:
+            return
+        power["on"] = bool(on)
+        store.save()
+        logging.info(f"Slayer Legend: plugin turned {'on' if on else 'off'}")
 
     return SimpleNamespace(
         capture=context.screenshot, analyse=context.analyse,
@@ -449,7 +477,7 @@ def build(context, nav):
         viewers=viewers,
         focused=focused, focus=focus, running=running, start_game=start_game, dialog=dialog, crashed=crashed, close_crash=close_crash, wait_anr=wait_anr,
         account_chooser=account_chooser, choose_account=choose_account,
-        notify=context.notify,
+        notify=context.notify, enabled=enabled, set_enabled=set_enabled,
         clock=clock,
         spawn=spawn, store=store, data_path=data_path, respond=context.json,
     )

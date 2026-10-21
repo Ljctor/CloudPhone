@@ -201,7 +201,7 @@ class Game:
                                focused=focused,
                                notify=notify, clock=SimpleNamespace(sleep=sleep, wall=lambda: 1e9 + game.now,
                                                                      monotonic=lambda: game.now),
-                               leased=leased, Busy=Busy, store=store, respond=lambda value, status=200: (status, value))
+                               leased=leased, Busy=Busy, store=store, enabled=lambda: True, respond=lambda value, status=200: (status, value))
 
 
 def readers(game):

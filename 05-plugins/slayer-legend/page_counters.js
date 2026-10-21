@@ -3,7 +3,8 @@
 // debug: whether each counter is found on the screen.
 import { COUNTERS, modeOf, startEmeraldMask } from './counter_rewrite.js';
 
-export default function counters(api) {
+// enabled(): the plugin is on (no counter is rewritten while it is off).
+export default function counters(api, { enabled = () => true } = {}) {
   const emerald = { found: false, problem: null };
   let stopEmerald = null;
   const setEmerald = (on) => {
@@ -13,7 +14,7 @@ export default function counters(api) {
       stopEmerald = null;
     }
   };
-  setEmerald(Boolean(modeOf(api, COUNTERS.emerald)));
+  setEmerald(Boolean(modeOf(api, COUNTERS.emerald)) && enabled());
   const diamond = { found: false, problem: null };
   let stopDiamond = null;
   const setDiamond = (on) => {
@@ -23,7 +24,7 @@ export default function counters(api) {
       stopDiamond = null;
     }
   };
-  setDiamond(Boolean(modeOf(api, COUNTERS.diamond)));
+  setDiamond(Boolean(modeOf(api, COUNTERS.diamond)) && enabled());
 
   return {
     options: [
@@ -68,9 +69,14 @@ export default function counters(api) {
           : diamond.problem ? `${api.tr('non détecté')} (${diamond.problem})` : api.tr('non détecté')),
       },
     ],
+    // After the plugin was turned on or off.
+    update: () => {
+      setEmerald(Boolean(modeOf(api, COUNTERS.emerald)) && enabled());
+      setDiamond(Boolean(modeOf(api, COUNTERS.diamond)) && enabled());
+    },
     onSetting: (key, value) => {
-      if (key === 'emeraldMode') setEmerald(Boolean(value));
-      if (key === 'diamondMode') setDiamond(Boolean(value));
+      if (key === 'emeraldMode') setEmerald(Boolean(value) && enabled());
+      if (key === 'diamondMode') setDiamond(Boolean(value) && enabled());
     },
     dispose: () => {
       setEmerald(false);
