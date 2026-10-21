@@ -81,22 +81,18 @@ export function AlertsPanel({ alerts }) {
           </label>
           {alerts.value.enabled && alerts.value.url && (
             <>
+              {/* The link itself is shown only when it could not be copied. */}
               <div style={styles.infoRow}>
-                <span style={styles.infoLabel}>{tr('Abonne l’appli ntfy à')}</span>
-                <span style={styles.copyRow}>
-                  <a href={alerts.value.url} target="_blank" rel="noreferrer" style={styles.link}>
-                    {alerts.value.url.replace(/^https:\/\//, '')}
-                  </a>
-                  <button style={styles.iconButton} aria-label={tr('Copier l’adresse')} title={tr('Copier l’adresse')}
-                    onClick={async () => {
-                      const done = await copyText(alerts.value.url);
-                      setCopied(done);
-                      setNote(done ? '' : tr('Copie impossible : touche longuement le lien.'));
-                      if (done) window.setTimeout(() => setCopied(false), 2000);
-                    }}>
-                    <Icon name={copied ? 'check' : 'copy'} />
-                  </button>
-                </span>
+                <span style={styles.infoLabel}>{tr('Lien topic ntfy')}</span>
+                <button style={styles.iconButton} aria-label={tr('Copier le lien')} title={tr('Copier le lien')}
+                  onClick={async () => {
+                    const done = await copyText(alerts.value.url);
+                    setCopied(done);
+                    setNote(done ? '' : 'copy-failed');
+                    if (done) window.setTimeout(() => setCopied(false), 2000);
+                  }}>
+                  <Icon name={copied ? 'check' : 'copy'} />
+                </button>
               </div>
               <div style={styles.infoRow}>
                 <span style={styles.infoLabel}>{tr('Alerte de test')}</span>
@@ -105,11 +101,19 @@ export function AlertsPanel({ alerts }) {
                 }}>{tr('Envoyer')}</button>
               </div>
               <div style={styles.infoNote}>
-                {tr('Plantages et redémarrages d’Android, et les alertes des plugins. Elles passent par le service public ntfy.sh : quiconque connaît l’adresse peut les lire.')}
+                {tr('ntfy est une app de notifications (Android, iOS, web). Installe-la, touche + et colle le lien.')}
               </div>
             </>
           )}
-          {note && <div style={styles.infoNote}>{note}</div>}
+          {note === 'copy-failed' && alerts.value.url && (
+            <div style={styles.infoNote}>
+              {tr('Copie impossible : touche longuement le lien.')}{' '}
+              <a href={alerts.value.url} target="_blank" rel="noreferrer" style={styles.link}>
+                {alerts.value.url.replace(/^https:\/\//, '')}
+              </a>
+            </div>
+          )}
+          {note && note !== 'copy-failed' && <div style={styles.infoNote}>{note}</div>}
         </>
       )}
     </>

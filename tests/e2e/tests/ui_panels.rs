@@ -212,3 +212,23 @@ fn panel_values_keep_updating_while_open() {
         assert_ne!(last, first, "the panel's live values (ping, frames, buffer) refresh within 20 s");
     });
 }
+
+#[test]
+fn the_phone_alerts_give_a_copy_button_for_the_ntfy_link_without_showing_it() {
+    let cp = CloudPhone::start();
+    browser_test(&cp, Options::without_video(), |page| async move {
+        page.open_options().await;
+        let o = fr::OPTIONS_PANEL;
+        page.wait_js("the alerts' switch", Duration::from_secs(10),
+            "const d = document.querySelector('[role=dialog]'); return !!d && d.innerText.includes('Alertes par ntfy')", vec![]).await;
+        page.control(o, "Alertes par ntfy").await.click().await.unwrap();
+        page.wait_js("the topic's row", Duration::from_secs(10),
+            "const d = document.querySelector('[role=dialog]'); return !!d && d.innerText.includes('Lien topic ntfy')", vec![]).await;
+        let text = page.dialog_text(o).await;
+        assert!(!text.contains("ntfy.sh/"), "the link is not shown: {text}");
+        assert!(text.contains("ntfy est une app de notifications (Android, iOS, web). Installe-la, touche + et colle le lien."), "{text}");
+        let copy = page.js("return [...document.querySelectorAll('[role=dialog] button')].some(b => b.getAttribute('aria-label') === 'Copier le lien')",
+            vec![]).await;
+        assert_eq!(copy, json!(true), "{text}");
+    });
+}

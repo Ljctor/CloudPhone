@@ -10,6 +10,9 @@ gateway's own main with the command line it was given. Everything else
 (systemctl and adb through PATH and --adb, the discovery file, config.ini,
 the request and status files) goes through the gateway's normal options.
 
+Phone alerts are available (--notify_file in the fake's command line) but
+never reach ntfy.sh: adapters/ntfy.py's post only says it was taken.
+
 The gateway's web site also binds with SO_REUSEPORT: the fake holds its
 port (bound, not listening) for its whole life, so that no other process
 takes it between two gateways (reserve_port in fake_emulator.py).
@@ -30,7 +33,7 @@ redirect = {
 
 sys.path.insert(0, os.environ["FAKE_GATEWAY_PATH"])
 from videobridge_gateway import gateway_server  # noqa: E402
-from videobridge_gateway.adapters import host_files  # noqa: E402
+from videobridge_gateway.adapters import host_files, ntfy  # noqa: E402
 
 
 def fake_host_open(file, *args, **kwargs):
@@ -43,6 +46,10 @@ def fake_host_open(file, *args, **kwargs):
     return builtins.open(path, *args, **kwargs)
 
 
+async def fake_ntfy_post(url, text, headers):
+    return True
+
+
 class ReusePortSite(web.TCPSite):
     def __init__(self, *args, **kwargs):
         kwargs.setdefault("reuse_port", True)
@@ -50,5 +57,6 @@ class ReusePortSite(web.TCPSite):
 
 
 host_files.open = fake_host_open
+ntfy.post = fake_ntfy_post
 web.TCPSite = ReusePortSite
 gateway_server.run_main()
