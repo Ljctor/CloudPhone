@@ -20,7 +20,7 @@ EPOCH = 1_800_000_000.0
 # Stage 920's name ends with III in this table; 921 with IV.
 NUMERALS = {920: 3, 921: 4}
 PROFILE = rules.profile(None, 920)
-ALL = ("relaunch", "back_to_battle", "stage_change", "select_preset", "loadout")
+ALL = ("relaunch", "back_to_battle", "stage_change", "select_preset", "loadout", "auto_on")
 
 BATTLE = {"adb": True, "running": True, "focused": True, "screen": "battle", "numeral": 3}
 OTHER_STAGE = {**BATTLE, "numeral": 4}
@@ -322,7 +322,8 @@ class Repairs(unittest.TestCase):
         again.looks(GONE, 40)
         self.assertEqual(again.repairs, [], "the hour's three relaunches are kept")
         self.assertEqual(rules.counters(again.memory, again.wall())["repairs_this_hour"],
-                         {"relaunch": 3, "back_to_battle": 0, "stage_change": 0, "select_preset": 0, "loadout": 0})
+                         {"relaunch": 3, "back_to_battle": 0, "stage_change": 0, "select_preset": 0, "loadout": 0,
+                          "auto_on": 0})
 
     def test_a_restart_never_resumes_a_repair(self):
         w = Watch()
@@ -388,6 +389,40 @@ class Profile(unittest.TestCase):
         self.assertEqual((symptom, params), ("wrong_battle_settings", {"preset": "III"}))
         unread = rules.judge(BATTLE, profile, NUMERALS.get, None, False, rules.fresh(), 60)[0]
         self.assertIsNone(unread, "not read is not wrong")
+
+
+class StageAndControls(unittest.TestCase):
+    """The stage read whole (region and numeral), and the preset and AUTO
+    read on the unfolded controls, with the stage change feature's repairs."""
+
+    def test_another_region_with_the_same_numeral_is_a_wrong_stage(self):
+        # 940 ends with the same numeral as 920: read whole, it is wrong.
+        seen = {**BATTLE, "stage": 940}
+        symptom, _, params, _ = rules.judge(seen, PROFILE, NUMERALS.get, None, False, rules.fresh(), 60)
+        self.assertEqual((symptom, params), ("wrong_stage", {"stage": 920}))
+        good = rules.judge({**BATTLE, "stage": 920}, PROFILE, NUMERALS.get, None, False, rules.fresh(), 60)
+        self.assertEqual((good[0], good[1]), (None, "OK (stage {stage})"))
+
+    def test_wrong_stage_is_farmed_back_with_the_caps(self):
+        w = Watch()
+        w.looks({**BATTLE, "stage": 921}, 4)
+        self.assertEqual(w.kinds(), ["stage_change"])
+        w.looks({**BATTLE, "stage": 921}, 40)
+        self.assertLessEqual(w.kinds().count("stage_change"), rules.CAPS["stage_change"])
+
+    def test_auto_off_is_its_symptom_and_repair(self):
+        w = Watch()
+        w.looks({**BATTLE, "auto": "off"}, 3)
+        self.assertEqual(w.symptoms[-1], "auto_off")
+        self.assertEqual(w.kinds(), ["auto_on"])
+        self.assertIsNone(rules.judge({**BATTLE, "auto": None}, PROFILE, NUMERALS.get, None, False,
+                                      rules.fresh(), 60)[0], "unread is not off")
+
+    def test_a_switch_on_plan_plans_once(self):
+        w = Watch(act=False)
+        w.looks({**BATTLE, "auto": "off"}, 6)
+        self.assertEqual(w.kinds(), [])
+        self.assertEqual([kind for _, kind in w.plans], ["auto_on"])
 
 
 class NotResponding(unittest.TestCase):

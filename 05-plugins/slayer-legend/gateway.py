@@ -23,6 +23,7 @@ GET  /engravings, /engraving?id=N      features/engraving.py
 GET  /loadout, POST /loadout           features/engraving.py
 GET, POST, DELETE /lease               features/lease.py (ports.Lease)
 GET  /watchdog                         features/watchdog.py
+GET  /farming, POST /farming           features/stage_change.py (its real/plan switches)
 
 The mode and its timer, the mine's floor, area, timer and on/off, each
 farming mode's loadout (its stage, Battle settings preset, soul weapon
@@ -79,7 +80,8 @@ def setup(context):
         engraving,
         feature("watchdog").watchdog(ports, screens, stage, feature("watchdog_rules"),
                                      lambda number: screen_rules.name_numeral(table, stage, number),
-                                     mode["api"], mine["api"], launch["api"], engraving["api"]["loadout"]),
+                                     mode["api"], mine["api"], launch["api"], engraving["api"]["loadout"],
+                                     farming["api"]),
     ]
     # Every feature registered its part of state.json: an old highest.json
     # becomes state.json now.

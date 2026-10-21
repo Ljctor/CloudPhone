@@ -59,15 +59,28 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
 
     async def set_stage(number, mpw):
         """Brings the game to farming that stage with its loadout's preset,
-        AUTO on. True once there; else one alert naming the step."""
-        preset = loadouts["loadout"](f"mpw{mpw}").get("preset")
-        report("moving", f"Passage au stage {number} (mpw{mpw})")
-        failure = await farming["farm"](number, preset)
-        if failure:
-            report("failed", f"Passage au stage {number} (mpw{mpw}) arrêté : {failure}"[:200])
-            await ports.notify(f"Passage au stage {number} (mpw{mpw}) arrêté : {failure}")
+        AUTO on. True once there; else one alert naming the step. While the
+        shared lease cannot be had (the user played in the last minute,
+        another holder), it waits for its next look (WATCH_EVERY)."""
+        name = f"mpw{mpw}"
+        preset = loadouts["loadout"](name).get("preset")
+        report("moving", f"Passage au stage {number} ({name})")
+        while True:
+            try:
+                answer = await farming["farm"](number, preset, name, status["highest"])
+                break
+            except ports.Busy as e:
+                report("waiting", f"Passage au stage {number} ({name}) en attente : {e}")
+                await ports.clock.sleep(rules.WATCH_EVERY)
+        if answer["result"] == "failed":
+            text = f"Passage au stage {number} ({name}) arrêté : {answer['text']}"
+            report("failed", text[:200])
+            await ports.notify(text)
             return False
-        report("farming", f"Farming mpw{mpw} au stage {number}" + (f", preset {preset}" if preset else ""))
+        if answer["result"] == "plan":
+            report("plan", f"Passage au stage {number} ({name}), plan seul : {answer['text']}"[:200])
+            return False
+        report("farming", f"Farming {name} au stage {number}" + (f", preset {preset}" if preset else ""))
         return True
 
     async def enter(name):

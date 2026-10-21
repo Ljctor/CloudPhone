@@ -16,7 +16,7 @@ own holder names are refused here. The lease itself is ports.Lease.
 
 import re
 
-OWN = ("launch", "mine", "watchdog", "mode")
+OWN = ("launch", "mine", "watchdog", "mode", "stage_change")
 NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._-]{0,39}$")
 
 

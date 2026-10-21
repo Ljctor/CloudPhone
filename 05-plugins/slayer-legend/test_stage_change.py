@@ -5,6 +5,7 @@ state, virtual time). Nothing touches Android.
 Run: python3 -m unittest test_stage_change"""
 
 import asyncio
+import contextlib
 import importlib.util
 import json
 import os
@@ -77,17 +78,24 @@ class Game:
         self.now = 0.0
         self.state = {"screen": "battle", "panel": None, "stage": 915, "region": None, "offset": 0,
                       "preset": "III", "selected": None, "auto": True, "unfolded": None,
-                      "move_lands": None, "auto_unreadable": False, "focused": True}
+                      "move_lands": None, "auto_unreadable": False, "focused": True, "busy": None,
+                      "controls_unknown": False, "banner_stuck": False, "unfolded_forever": False}
         self.state.update(state)
         self.moves = []
+        self.calls = []
         self.alerts = []
+        self.leases = []
 
     # -- what a screenshot holds
     def snapshot(self):
         s = dict(self.state)
-        s["unfolded"] = s["unfolded"] is not None and self.now - s["unfolded"] < 2.0
+        s["unfolded"] = self.unfolded()
         s["now"] = self.now
         return (480, 1040, s)
+
+    def unfolded(self):
+        s = self.state
+        return s["unfolded_forever"] or s["unfolded"] is not None and self.now - s["unfolded"] < 2.0
 
     def rows(self, s):
         first = s["region"] * 20 + 1 + s["offset"]
@@ -101,7 +109,8 @@ class Game:
         elif move == "stage_select":
             s.update(screen="popup", region=(s["stage"] - 1) // 20, offset=max(0, min(17, (s["stage"] - 1) % 20 - 2)))
         elif move in ("next_region", "previous_region"):
-            s.update(region=s["region"] + (1 if move == "next_region" else -1), offset=0)
+            if not s["banner_stuck"]:
+                s.update(region=s["region"] + (1 if move == "next_region" else -1), offset=0)
         elif move == "scroll":
             s["offset"] = max(0, min(17, s["offset"] + (2 if point[1] > 0.6 else -2)))
         elif move == "move":
@@ -109,9 +118,13 @@ class Game:
             stage = self.rows(s)[row]
             s.update(screen="battle", stage=s["move_lands"] or stage)
         elif move == "preset_arrow":
+            # Tapped while unfolded, the arrow's spot is the AUTO tile.
+            if self.unfolded():
+                s["auto"] = not s["auto"]
             s["unfolded"] = self.now
         elif move == "preset_badge":
-            s.update(screen="settings", selected=s["preset"], unfolded=None)
+            if self.unfolded():
+                s.update(screen="settings", selected=s["preset"], unfolded=None, unfolded_forever=False)
         elif move == "preset":
             s["selected"] = controls.NUMERALS[controls.PRESET_X.index(point[0])]
         elif move == "close" and screen == "battle_settings":
@@ -119,8 +132,18 @@ class Game:
         elif move == "auto":
             s["auto"] = not s["auto"]
 
-    def ports(self):
+    def ports(self, switches="real"):
         game = self
+
+        class Busy(RuntimeError):
+            pass
+
+        @contextlib.asynccontextmanager
+        async def leased(holder, reason, seconds, user=False):
+            if game.state["busy"]:
+                raise Busy(game.state["busy"])
+            game.leases.append((holder, reason))
+            yield
 
         def guarded(screen, move, point, kind="tap", verified=False):
             refusal = nav.guard(screen, move, point[0], point[1], kind, verified)
@@ -141,6 +164,7 @@ class Game:
         async def taps(shot, screen, moves, gap, verified=()):
             for move, point in moves:
                 guarded(screen, move, point, verified=move in verified)
+            game.calls.append([move for move, _ in moves])
             for move, point in moves:
                 game.moves.append((screen, move))
                 game.apply(screen, move, point)
@@ -160,9 +184,11 @@ class Game:
         async def notify(text):
             game.alerts.append(text)
 
+        store = Store({"farming": {"switches": {name: switches for name in feature.SWITCHES}}})
         return SimpleNamespace(capture=capture, analyse=analyse, tap=tap, taps=taps, swipe=swipe, focused=focused,
                                notify=notify, clock=SimpleNamespace(sleep=sleep, wall=lambda: 1e9 + game.now,
-                                                                     monotonic=lambda: game.now))
+                                                                     monotonic=lambda: game.now),
+                               leased=leased, Busy=Busy, store=store, respond=lambda value, status=200: (status, value))
 
 
 def readers(game):
@@ -203,101 +229,211 @@ def readers(game):
                                   MOVE_TAP_X=select.MOVE_TAP_X)
     fake_controls = SimpleNamespace(
         ARROW_TAP=controls.ARROW_TAP, BADGE_TAP=controls.BADGE_TAP, AUTO_TAP=controls.AUTO_TAP,
-        folded=lambda shot: not shot[2]["unfolded"], badge=badge, auto=auto,
+        controls=lambda shot: None if shot[2]["controls_unknown"] else (
+            "unfolded" if shot[2]["unfolded"] else "folded"),
+        unfolded_now=lambda shot: shot[2]["unfolded"], badge=badge, auto=auto,
         settings_open=lambda shot: shot[2]["screen"] == "settings",
         selected=lambda shot: shot[2]["selected"] if shot[2]["screen"] == "settings" else None,
         preset_tap=controls.preset_tap)
     return fake_screens, fake_select, fake_controls
 
 
-def run(game, call):
-    part = feature.stage_change(game.ports(), *readers(game), rules, TABLE)
+def run(game, call, switches="real"):
+    part = feature.stage_change(game.ports(switches), *readers(game), rules, TABLE)
     return asyncio.run(call(part["api"]))
+
+
+def done():
+    return {"result": "done", "text": ""}
 
 
 class Sequence(unittest.TestCase):
     def test_from_a_panel_to_920_preset_iv(self):
         game = Game(panel="shop_summon")
-        self.assertIsNone(run(game, lambda api: api["farm"](920, "IV")))
+        self.assertEqual(run(game, lambda api: api["farm"](920, "IV", "mpw18")), done())
         self.assertEqual((game.state["stage"], game.state["preset"], game.state["auto"]), (920, "IV", True))
         until_move = game.moves[:game.moves.index(("stage_select", "move")) + 1]
         self.assertEqual(until_move[:2], [("shop_summon", "close"), ("battle", "stage_select")])
         self.assertEqual(set(until_move[2:-1]), {("stage_select", "scroll")})
         self.assertNotIn(("battle", "auto"), game.moves)
         self.assertIn(("battle_settings", "preset"), game.moves)
+        self.assertEqual(game.leases, [("stage_change", "farm mpw18")])
 
     def test_next_region(self):
         game = Game(stage=915)
-        self.assertIsNone(run(game, lambda api: api["change_stage"](922)))
+        self.assertEqual(run(game, lambda api: api["change_stage"](922)), done())
         self.assertEqual(game.state["stage"], 922)
         self.assertIn(("stage_select", "next_region"), game.moves)
 
+    def test_a_banner_that_does_not_follow_stops(self):
+        game = Game(stage=915, banner_stuck=True)
+        answer = run(game, lambda api: api["change_stage"](922))
+        self.assertEqual(answer["result"], "failed")
+        self.assertIn("bannière", answer["text"])
+        self.assertEqual(game.moves.count(("stage_select", "next_region")), 1)
+
     def test_already_there(self):
         game = Game(stage=920, preset="III")
-        self.assertIsNone(run(game, lambda api: api["farm"](920, "III")))
+        self.assertEqual(run(game, lambda api: api["farm"](920, "III", "mpw18")), done())
         # Only the unfolds that read the badge and AUTO.
         self.assertEqual(set(game.moves), {("battle", "preset_arrow")})
 
-    def test_auto_off_is_turned_on(self):
+    def test_past_the_highest_stage_is_refused(self):
+        game = Game(stage=915)
+        answer = run(game, lambda api: api["farm"](940, "III", "mpw18", 930))
+        self.assertEqual(answer["result"], "failed")
+        self.assertEqual(game.moves, [])
+
+    def test_plan_by_default_taps_nothing(self):
+        game = Game(stage=915, auto=False)
+        with self.assertLogs(level="INFO") as logs:
+            answer = run(game, lambda api: api["farm"](920, "IV", "mpw18"), switches="plan")
+        self.assertEqual(answer["result"], "plan")
+        self.assertIn("915 → 920", answer["text"])
+        self.assertEqual(game.moves, [])
+        self.assertTrue(any("plan only" in line for line in logs.output))
+
+    def test_auto_off_stays_plan_until_recalibrated(self):
         game = Game(stage=920, auto=False)
-        self.assertIsNone(run(game, lambda api: api["ensure_auto"]()))
+        answer = run(game, lambda api: api["ensure_auto"]())
+        self.assertEqual(answer["result"], "plan")
+        self.assertIn("AUTO lu arrêté", answer["text"])
+        self.assertNotIn(("battle", "auto"), game.moves)
+
+    def test_auto_off_is_turned_on_once_learned(self):
+        game = Game(stage=920, auto=False)
+        feature.AUTO_TAP_LEARNED = True
+        try:
+            self.assertEqual(run(game, lambda api: api["ensure_auto"]()), done())
+        finally:
+            feature.AUTO_TAP_LEARNED = False
         self.assertTrue(game.state["auto"])
         self.assertEqual(game.moves.count(("battle", "auto")), 1)
 
     def test_auto_unreadable_is_not_touched(self):
         game = Game(stage=920, auto=False, auto_unreadable=True)
-        self.assertIn("AUTO", run(game, lambda api: api["ensure_auto"]()))
+        self.assertIn("AUTO", run(game, lambda api: api["ensure_auto"]())["text"])
         self.assertNotIn(("battle", "auto"), game.moves)
-        self.assertIsNone(run(game, lambda api: api["auto_state"]()))
+
+    def test_unfold_and_badge_from_folded_in_one_call(self):
+        game = Game(stage=920, preset="III")
+        run(game, lambda api: api["set_preset"]("IV"))
+        self.assertIn(["preset_arrow", "preset_badge"], game.calls)
+        self.assertEqual(game.state["preset"], "IV")
+
+    def test_unfolded_controls_get_the_badge_tap_alone(self):
+        # Read unfolded, the arrow would fold them: the badge alone.
+        game = Game(stage=920, preset="III", unfolded_forever=True)
+        self.assertEqual(run(game, lambda api: api["set_preset"]("IV")), done())
+        self.assertEqual(game.calls[0], ["preset_badge"])
+        # Only the check on the badge afterwards unfolds them again.
+        self.assertEqual(game.moves[:3], [("battle", "preset_badge"), ("battle_settings", "preset"),
+                                          ("battle_settings", "close")])
+        self.assertEqual(game.state["preset"], "IV")
+        self.assertTrue(game.state["auto"])
+
+    def test_unknown_controls_tap_nothing(self):
+        game = Game(stage=920, preset="III", controls_unknown=True)
+        answer = run(game, lambda api: api["set_preset"]("IV"))
+        self.assertEqual(answer["result"], "failed")
+        self.assertIn("illisibles", answer["text"])
+        self.assertEqual(game.moves, [])
+
+    def test_busy_lease_goes_up(self):
+        game = Game(stage=915, busy="l’utilisateur joue")
+        with self.assertRaises(RuntimeError):
+            run(game, lambda api: api["farm"](920, "III", "mpw18"))
+        self.assertEqual(game.moves, [])
 
     def test_wrong_landing_stops(self):
         game = Game(stage=915, move_lands=916)
-        failure = run(game, lambda api: api["farm"](914, "III"))
-        self.assertIn("vérification après Move", failure)
-        self.assertIn("916", failure)
+        answer = run(game, lambda api: api["farm"](914, "III", "mpw18"))
+        self.assertIn("vérification après Move", answer["text"])
+        self.assertIn("916", answer["text"])
         # Stopped there: nothing after the Move.
         self.assertEqual(game.moves[-1], ("stage_select", "move"))
 
     def test_unexpected_screen_stops_untouched(self):
         game = Game(screen="other")
-        self.assertIn("écran inattendu", run(game, lambda api: api["farm"](920, "III")))
+        self.assertIn("écran inattendu", run(game, lambda api: api["farm"](920, "III", "mpw18"))["text"])
+        self.assertEqual(game.moves, [])
+
+    def test_an_unread_panel_is_an_unexpected_screen(self):
+        game = Game(panel="no_tab_lit")
+        self.assertIn("écran inattendu", run(game, lambda api: api["farm"](920, "III", "mpw18"))["text"])
         self.assertEqual(game.moves, [])
 
     def test_unknown_region(self):
         game = Game()
-        self.assertIn("hors des régions", run(game, lambda api: api["change_stage"](31)))
+        self.assertIn("hors des régions", run(game, lambda api: api["change_stage"](31))["text"])
         self.assertEqual(game.moves, [])
 
     def test_not_in_front(self):
         game = Game(panel="skill", focused=False)
-        self.assertIn("premier plan", run(game, lambda api: api["farm"](920, None)))
+        self.assertIn("premier plan", run(game, lambda api: api["farm"](920, None, "mpw18"))["text"])
         self.assertEqual(game.moves, [])
 
 
+class Switches(unittest.TestCase):
+    def test_plan_by_default_and_post(self):
+        game = Game()
+        ports = game.ports()
+        ports.store = Store({})
+        part = feature.stage_change(ports, *readers(game), rules, TABLE)
+        get = next(h for method, path, h in part["routes"] if method == "GET")
+        post = next(h for method, path, h in part["routes"] if method == "POST")
+
+        class Request:
+            def __init__(self, body):
+                self.body = body
+
+            async def json(self):
+                return self.body
+
+        async def go():
+            first = (await get(None))[1]["switches"]
+            changed = (await post(Request({"stage_change": "real"})))[1]["switches"]
+            refused = await post(Request({"auto": "yes"}))
+            return first, changed, refused
+        first, changed, refused = asyncio.run(go())
+        self.assertEqual(first, {"stage_change": "plan", "preset": "plan", "auto": "plan"})
+        self.assertEqual(changed, {"stage_change": "real", "preset": "plan", "auto": "plan"})
+        self.assertEqual(refused[0], 400)
+        self.assertEqual(ports.store.sections["farming"](), {"switches": changed})
+
+
 class Store:
-    saved = {}
+    def __init__(self, saved=None):
+        self.saved = saved or {}
+        self.sections = {}
 
     def register(self, section, snapshot):
-        pass
+        self.sections[section] = snapshot
 
     def save(self):
         pass
 
 
 class Mode(unittest.TestCase):
-    def enter(self, failure):
+    def enter(self, answers):
+        """answers: what farm does each time: an answer, or Busy's text."""
         game = Game()
         calls = []
+        answers = list(answers)
 
-        async def farm(stage, preset):
-            calls.append((stage, preset))
-            return failure
+        async def farm(stage, preset, mode, highest=None):
+            calls.append((stage, preset, mode))
+            answer = answers.pop(0)
+            if isinstance(answer, str):
+                raise ports.Busy(answer)
+            return answer
 
         ports = game.ports()
 
-        async def wait_forever(seconds):
-            await asyncio.Event().wait()  # the timed mode's watch waits: only entering is tested
-        ports.clock.sleep = wait_forever
+        async def wait(seconds):
+            if seconds != mode_rules.WATCH_EVERY or not answers:
+                await asyncio.Event().wait()  # the timed mode's watch waits: only entering is tested
+        ports.clock.sleep = wait
         ports.store = Store()
         ports.respond = lambda value, status=200: (status, value)
         mines = {"start": lambda *a: None, "stop": lambda: None, "set_until": lambda until: None, "ended": False,
@@ -318,8 +454,8 @@ class Mode(unittest.TestCase):
                 async def json(self):
                     return {"mode": "mpw4", "stage4": 931}
             await handler(Request())
-            await asyncio.sleep(0)
-            await asyncio.sleep(0)
+            for _ in range(10):
+                await asyncio.sleep(0)
             get = next(h for method, path, h in part["routes"] if method == "GET")
             return (await get(None))[1]
 
@@ -327,16 +463,28 @@ class Mode(unittest.TestCase):
         return calls, state, game.alerts
 
     def test_enter_farms_with_the_loadout(self):
-        calls, state, alerts = self.enter(None)
-        self.assertEqual(calls, [(931, "III")])
+        calls, state, alerts = self.enter([done()])
+        self.assertEqual(calls, [(931, "III", "mpw4")])
         self.assertEqual(state["state"], "farming", state["message"])
         self.assertEqual(alerts, [])
 
     def test_failure_is_one_alert(self):
-        calls, state, alerts = self.enter("ouverture de Select Region")
+        calls, state, alerts = self.enter([{"result": "failed", "text": "ouverture de Select Region"}])
         self.assertEqual(state["state"], "failed")
         self.assertEqual(len(alerts), 1)
         self.assertIn("ouverture de Select Region", alerts[0])
+
+    def test_a_user_who_plays_makes_it_wait_for_the_next_look(self):
+        calls, state, alerts = self.enter(["l’utilisateur joue", done()])
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(state["state"], "farming")
+        self.assertEqual(alerts, [])
+
+    def test_plan_is_said_not_alerted(self):
+        calls, state, alerts = self.enter([{"result": "plan", "text": "stage 915 → 931"}])
+        self.assertEqual(state["state"], "plan")
+        self.assertIn("plan seul", state["message"])
+        self.assertEqual(alerts, [])
 
 
 if __name__ == "__main__":

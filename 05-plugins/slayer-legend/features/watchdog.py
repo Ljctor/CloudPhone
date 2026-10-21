@@ -12,12 +12,18 @@ or Power Saving Mode is farming; on the battle screen the numeral ending
 the stage's name is compared with the mpw18 stage's. What it makes of a
 look is watchdog_rules.py's (judge, decide).
 
-The only repair done here is the relaunch (the launch feature's, holder
-"watchdog" of the shared lease, stopped by a user input): it never kills
-the game, closes Android's crash dialog by its button, takes the latest
-save, and leaves Power Saving Mode. The way back to battle from a game
-menu stays an alert (its close buttons differ per panel); the stage, the
-Battle settings preset and the loadout wait for phases 2 and 3.
+The repairs: the relaunch (the launch feature's, holder "watchdog" of the
+shared lease, stopped by a user input): it never kills the game, closes
+Android's crash dialog by its button, takes the latest save, and leaves
+Power Saving Mode. A wrong stage or Battle settings preset: the stage
+change feature's farm(); AUTO read off: its ensure_auto (each under its
+own holder "stage_change", and plan-only while its switch says so, see
+features/stage_change.py). On the battle screen the stage is read whole
+(region and numeral); the preset and AUTO are read on one unfold of the
+right edge's controls (a tap, under the lease) at most every
+CONTROLS_EVERY seconds, only when a switch of theirs is real. The way
+back to battle from a game menu stays an alert (its close buttons differ
+per panel); the soul weapon and its engraving wait for phase 3.
 
 Free play, the timed modes and the mine (with or without a time limit)
 suspend it: the mine's own "jeu absent" alert and the watchdog's never
@@ -31,16 +37,22 @@ import logging
 
 LEVELS = {"normal": logging.INFO, "warning": logging.WARNING, "error": logging.ERROR}
 AVAILABLE = ("relaunch",)
+# Repairs by the stage change feature, and the switch that makes each real.
+FARMING = {"stage_change": "stage_change", "select_preset": "preset", "auto_on": "auto"}
+# Seconds between two readings of the preset and AUTO (each an unfold).
+CONTROLS_EVERY = 60
 
 
-def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, loadout):
+def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, loadout, farming=None):
     """numeral_of(number): the numeral ending stage number's name; modes,
     mines, launches: the mode, mine and launch features' api; loadout(mode):
     the engraving feature's loadout of a farming mode ({stage, preset,
-    soul_weapon}), read only."""
+    soul_weapon}), read only; farming: the stage change feature's api (None:
+    the relaunch only)."""
     memory = rules.fresh(ports.store.saved.get("watchdog"))
     status = {"template": "Démarrage", "params": {}, "symptom": None, "paused": None, "repairing": None,
-              "mode": None, "ended_at": None, "resumed": False, "anr_waited": False}
+              "mode": None, "ended_at": None, "resumed": False, "anr_waited": False, "controls": None}
+    available = AVAILABLE + (tuple(FARMING) if farming else ())
     ports.store.register("watchdog", lambda: rules.persisted(memory))
 
     def say(level, template, params, notify=False):
@@ -66,13 +78,17 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
 
     def facts(shot):
         name = screens.classify(shot)
-        return name, stage.read_battle(shot) if name == "battle" else None
+        if name == "menu" and farming and screens.plain_battle(shot):
+            name = "battle"  # the skill bar shows: no panel over the battle
+        battle = name == "battle"
+        return (name, stage.read_battle(shot) if battle else None,
+                farming["battle_stage"](shot) if battle and farming else None)
 
     async def look():
         """What one look sees (watchdog_rules.judge's seen)."""
         running = await ports.running()
         seen = {"adb": running is not None, "running": bool(running), "crash": False, "anr": False,
-                "focused": False, "screen": None, "numeral": None}
+                "focused": False, "screen": None, "numeral": None, "stage": None}
         if running is None:
             return seen
         dialog = await ports.dialog()
@@ -82,8 +98,47 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         if seen["focused"]:
             shot = await ports.capture(max_age=rules.MAX_AGE)
             if shot:
-                seen["screen"], seen["numeral"] = await ports.analyse(facts, shot)
+                seen["screen"], seen["numeral"], seen["stage"] = await ports.analyse(facts, shot)
         return seen
+
+    async def read_controls(seen):
+        """The preset and AUTO, read on one unfold at most every
+        CONTROLS_EVERY seconds on the battle screen (kept in between)."""
+        if not farming or seen["screen"] != "battle":
+            return
+        now = ports.clock.monotonic()
+        kept = status["controls"]
+        if kept is None or now - kept[1] >= CONTROLS_EVERY:
+            reading = await farming["read_controls"]()
+            kept = status["controls"] = (reading, now) if reading else None
+        if kept:
+            seen["battle_settings"], seen["auto"] = kept[0]["preset"], kept[0]["auto"]
+
+    async def farm_repair(kind):
+        """A stage change repair: farm() for the stage and the preset,
+        ensure_auto for AUTO; read again at the next look."""
+        status["controls"] = None
+        part = profile()
+        status["repairing"] = kind
+        show("Réparation en cours : {repair}", {"repair": rules.REPAIR_NAMES[kind]})
+        try:
+            if kind == "auto_on":
+                answer = await farming["ensure_auto"]("mpw18")
+            else:
+                answer = await farming["farm"](part["stage"], part["preset"], "mpw18")
+        except ports.Busy as e:
+            say("normal", "Réparation différée : {repair} ({why})",
+                {"repair": rules.REPAIR_NAMES[kind], "why": str(e)})
+            return
+        finally:
+            status["repairing"] = None
+        if answer["result"] == "failed":
+            text = say("warning", "Réparation arrêtée : {repair} : {why}",
+                       {"repair": rules.REPAIR_NAMES[kind], "why": answer["text"]}, notify=True)
+            await ports.notify(text)
+        elif answer["result"] == "plan":
+            say("normal", "Plan seul : {repair} : {plan}",
+                {"repair": rules.REPAIR_NAMES[kind], "plan": answer["text"]})
 
     async def wait_anr():
         """Android says the game is not responding: "Wait", once per
@@ -148,6 +203,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             await wait_anr()
         else:
             status["anr_waited"] = False
+        await read_controls(seen)
         after_mode = status["ended_at"] is not None and now - status["ended_at"] < rules.AFTER_MODE
         symptom, text, params, memory = rules.judge(
             seen, profile(), numeral_of, last["monotonic"] if last else None, status["resumed"], memory, now,
@@ -157,7 +213,8 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         held = ports.lease.state()
         context = {"input_wall": last["wall"] if last else None,
                    "lease": held["holder"] if held and held["holder"] != "watchdog" else None,
-                   "act": {}, "available": AVAILABLE}
+                   "act": {kind: farming["switches"]()[switch] == "real" for kind, switch in FARMING.items()}
+                   if farming else {}, "available": available}
         memory, actions = rules.decide(memory, symptom, text, params, context, wall)
         ports.store.save()
         show(text, params)
@@ -172,6 +229,13 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                 ports.store.save()
                 await relaunch()
                 repaired = True
+            elif action[0] == "repair" and action[1] in FARMING:
+                ports.store.save()
+                await farm_repair(action[1])
+                repaired = True
+            elif action[0] == "plan":
+                say("normal", "Plan seul (interrupteur sur plan) : {repair}",
+                    {"repair": rules.REPAIR_NAMES[action[1]]})
         return repaired
 
     async def watch():

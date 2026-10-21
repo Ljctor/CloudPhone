@@ -33,6 +33,8 @@ Symptom → response, one look at a time (SYMPTOMS, REPAIRS):
 |                                           | a battle look can say "wrong stage"   |
 | wrong Battle settings preset              | select the preset (phase 3)           |
 | (mpw18's loadout, the engraving's store)  |                                       |
+| AUTO read off (a still gear, on the       | AUTO on (stage_change.ensure_auto)    |
+| controls' check)                          |                                       |
 | wrong soul weapon or engraving            | loadout (phase 3)                     |
 | another screen (a stage transition, a     | no tap: observed, an alert after      |
 | loading screen, an unknown pop-up)        | ALERT_AFTER_OTHER looks               |
@@ -70,9 +72,10 @@ screen (Power Saving Mode needs none).
 - While another holder has the lease, the repair is deferred, said at
   normal level once per holder ("réparation différée : bail tenu par X").
 
-The stage check reads only the numeral ending the stage's name, so
-another region's stage with the same numeral passes; the region's banner
-is mapped in phase 2. Until then the status says "OK (numéral III)".
+The stage check reads the stage's name whole (region and numeral,
+stage_select.py) when the stage change feature is there; else only the
+numeral ending it, so that another region's stage with the same numeral
+passes, and the status says "OK (numéral III)".
 
 Texts are French templates with their parameters ({stage}, {holder}...),
 for the page to translate (tr).
@@ -113,6 +116,7 @@ SYMPTOMS = {
     "wrong_stage": "mauvais stage : pas le stage {stage}",
     "wrong_battle_settings": "mauvais préréglage de combat : pas le {preset}",
     "wrong_loadout": "mauvais équipement : {what}",
+    "auto_off": "AUTO est arrêté",
     "unexpected": "écran inattendu",
 }
 # The repair of each symptom (None: alert only).
@@ -128,13 +132,14 @@ REPAIRS = {
     "wrong_stage": "stage_change",
     "wrong_battle_settings": "select_preset",
     "wrong_loadout": "loadout",
+    "auto_off": "auto_on",
     "unexpected": None,
 }
 REPAIR_NAMES = {"relaunch": "relance du jeu", "back_to_battle": "retour au combat",
                 "stage_change": "changement de stage", "select_preset": "choix du préréglage de combat",
-                "loadout": "rééquipement"}
+                "loadout": "rééquipement", "auto_on": "remise en marche d’AUTO"}
 # Repairs of each kind at most per hour.
-CAPS = {"relaunch": 3, "back_to_battle": 10, "stage_change": 3, "select_preset": 3, "loadout": 3}
+CAPS = {"relaunch": 3, "back_to_battle": 10, "stage_change": 3, "select_preset": 3, "loadout": 3, "auto_on": 3}
 ERRORS = ("adb_missing",)
 # Repairs that are never plan-only.
 ALWAYS_REAL = ("relaunch", "back_to_battle")
@@ -188,7 +193,9 @@ def judge(seen, profile, numeral_of, last_input, resumed, memory, now, after_mod
     Android error window in front), anr (its "not responding" one), screen (None: no capture), numeral
     (battle: the numeral ending the stage's name, None: unread),
     battle_settings (the preset's name read, None: not read), loadout
-    (None: not checked; else what is wrong, "" when nothing)}.
+    (None: not checked; else what is wrong, "" when nothing), stage (battle:
+    the stage number its name reads as, region and numeral, None: unread),
+    auto ("on", "off", None: not read)}.
     profile: see profile(); numeral_of(number): the numeral the stage's
     name ends with in the table, or None. resumed: a mode just ended (no
     menu grace); after_mode: one ended less than AFTER_MODE ago (another
@@ -235,13 +242,19 @@ def judge(seen, profile, numeral_of, last_input, resumed, memory, now, after_mod
     if screen == "battle":
         wanted = profile.get("stage")
         numeral, expected = seen.get("numeral"), numeral_of(wanted) if wanted else None
-        if numeral is not None and expected is not None and numeral != expected:
+        number = seen.get("stage")
+        if wanted and (number is not None and number != wanted
+                       or number is None and numeral is not None and expected is not None and numeral != expected):
             return "wrong_stage", SYMPTOMS["wrong_stage"], {"stage": wanted}, memory
         preset = profile.get("preset")
         if preset and seen.get("battle_settings") is not None and seen["battle_settings"] != preset:
             return "wrong_battle_settings", SYMPTOMS["wrong_battle_settings"], {"preset": preset}, memory
         if seen.get("loadout"):
             return "wrong_loadout", SYMPTOMS["wrong_loadout"], {"what": seen["loadout"]}, memory
+        if seen.get("auto") == "off":
+            return "auto_off", SYMPTOMS["auto_off"], {}, memory
+        if number is not None and number == wanted:
+            return None, "OK (stage {stage})", {"stage": wanted}, memory
         if numeral is not None and numeral == expected:
             return None, "OK (numéral {numeral})", {"numeral": roman(numeral)}, memory
         return None, "OK", {}, memory
