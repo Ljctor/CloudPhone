@@ -1,12 +1,17 @@
 """What the game is set to do, and when it goes back to the default. Pure.
 
-"mpw18" (farming a stage with 18 monsters per wave) is the default; the
-others ("mpw4", "free": nothing is touched, "mine": the Closed Mine) run
-until a time, then it goes back to it.
+The default mode (the user's « Mode par défaut »: "mpw18", farming a
+stage with 18 monsters per wave, unless set to "mpw4" or "free") has no
+timer; the others ("mpw4", "free": nothing is touched, "mine": the
+Closed Mine) run until a time, then it goes back to it.
 """
 
 MODES = ("mpw18", "mpw4", "free", "mine")
 DEFAULT = "mpw18"
+# What the default mode may be (never the mine: it ends by itself).
+DEFAULTS = ("mpw18", "mpw4", "free")
+# « retour … » once a timed mode ends, per default mode.
+BACK_TO = {"mpw18": "retour au farming mpw18", "mpw4": "retour au farming mpw4", "free": "retour au jeu libre"}
 # A timed mode chosen without an end time runs this long.
 TIMED_MINUTES = 30
 # Seconds between two checks of a timed mode.
@@ -91,14 +96,14 @@ def gold_due(last, now):
 NUMBERS = ("stage18", "stage4", "highest", "floor", "area")
 
 
-def request(body, stored=None):
+def request(body, stored=None, default=DEFAULT):
     """POST /mode's {mode, until, stage18, stage4, highest, floor, area}:
     ((mode, until, numbers, given), None) or (None, the error, in French:
     the page shows it). A number absent or null keeps its stored value
     (stored: the numbers as they are, e.g. after a gateway restart a
     browser that does not know one). given: whether the body has until (a
     null one clears the timer; an absent one keeps it, see timer_for). The
-    default mode has no timer."""
+    default mode (default: the body's, else the one kept) has no timer."""
     try:
         mode = body.get("mode") or DEFAULT
         given = "until" in body
@@ -115,17 +120,31 @@ def request(body, stored=None):
     if mode == "mine" and not (numbers["floor"] and 1 <= numbers["floor"] <= 9999
                                and numbers["area"] and 1 <= numbers["area"] <= 5):
         return None, "Mine fermée : choisis d’abord l’étage (1 à 9999) et la zone (1 à 5)"
-    if mode == DEFAULT:
+    if mode == (body.get("default") if body.get("default") in DEFAULTS else default):
         until = None
     return (mode, until, numbers, given), None
 
 
-def timer_for(mode, until, given, current, current_until, now):
+def default_request(body, numbers, current):
+    """POST /mode's default (absent: current kept): (default, None) or
+    (None, the error, in French). mpw4 only once its stage is chosen, as
+    its radio button."""
+    default = body.get("default") if isinstance(body, dict) else None
+    if default is None:
+        return current, None
+    if default not in DEFAULTS:
+        return None, f"default: one of {', '.join(DEFAULTS)}"
+    if default == "mpw4" and not numbers.get("stage4"):
+        return None, "Farming mpw4 : choisis d’abord son stage"
+    return default, None
+
+
+def timer_for(mode, until, given, current, current_until, now, default=DEFAULT):
     """The end of mode once POST /mode chose it: until when the body gave
     one (null: no time limit, e.g. the mine farming until stopped); else
     the timer running when the mode stays the same, or TIMED_MINUTES from
     now for a timed mode just chosen. The default mode has none."""
-    if mode == DEFAULT:
+    if mode == default:
         return None
     if given:
         return until
@@ -159,17 +178,25 @@ def due(mode, until, mine, now):
     return None
 
 
-def restored(mode, until, mine_enabled, now):
+def restored(mode, until, mine_enabled, now, default=DEFAULT):
     """(mode, until, ended) from state.json after a gateway restart: a
     timer that ended while the gateway was down ends its mode (ended), back
     to the default; so does the mine's mode when the mine is not farming
     any more."""
-    ended = mode != DEFAULT and until is not None and until <= now
+    ended = mode != default and until is not None and until <= now
     if ended:
-        mode, until = DEFAULT, None
+        mode, until = default, None
     if mode == "mine" and not mine_enabled:
-        mode, until = DEFAULT, None
+        mode, until = default, None
+    if mode == default:
+        until = None
     return mode, until, ended
+
+
+def watched(mode, default):
+    """The mode feature's watch runs: a timed mode (its end), or mpw4
+    farming (its gold scroll looks), even as the default."""
+    return mode != default or mode == "mpw4"
 
 
 def retry_after(failures, elapsed):

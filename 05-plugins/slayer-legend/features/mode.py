@@ -2,10 +2,11 @@
 farming mpw4, free play or the Closed Mine; back to mpw18 when the timer
 ends (the mine ends its last entry first).
 
-GET  /mode         {mode, until, stage18, stage4, highest, configured, state, message, setup, gold, mine}
+GET  /mode         {mode, default, until, stage18, stage4, highest, configured, state, message, setup, gold,
+                    mine}
                    setup: true while the mode is being set up (its switch,
                    waiting for the lease or tried again), for the overlay
-POST /mode         {mode, until, stage18, stage4, highest, floor, area}: a number
+POST /mode         {mode, default, until, stage18, stage4, highest, floor, area}: a number
                    absent or null keeps its value; until absent keeps the
                    timer, null clears it (no time limit)
 POST /mode/timer   {add: minutes}: moves the end of the mode (and of the mine)
@@ -50,12 +51,12 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
     scroll: gold_scroll.py; loadouts: the engraving feature's api (loadout,
     stage, set_stage, adopt_stage), which holds the mpw18 and mpw4 stages
     and presets; farming: the stage change feature's api (farm)."""
-    status = {"mode": rules.DEFAULT, "until": None, "highest": None,
+    status = {"mode": rules.DEFAULT, "default": rules.DEFAULT, "until": None, "highest": None,
               "configured": False, "state": "idle", "message": "", "task": None,
               "scroll": scroll.fresh(), "gold_look": None, "warned": None, "change": None,
               "switch": None, "switch_at": None}
     ports.store.register("mode", lambda: {key: status[key] for key in (
-        "mode", "until", "highest", "configured")})
+        "mode", "default", "until", "highest", "configured")})
 
     def stages():
         return {"stage18": loadouts["stage"]("mpw18"), "stage4": loadouts["stage"]("mpw4")}
@@ -67,7 +68,8 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         ports.store.save()
 
     def state():
-        answer = {key: status[key] for key in ("mode", "until", "highest", "configured", "state", "message")}
+        answer = {key: status[key] for key in ("mode", "default", "until", "highest", "configured", "state",
+                                               "message")}
         answer.update(stages())
         answer["setup"] = status["state"] in ("moving", "waiting")
         answer["gold"] = status["scroll"]["gold"] if status["mode"] == "mpw4" else None
@@ -165,7 +167,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         elif move[0] == "choose":
             report("idle", f"Farming mpw{move[1]} : choisis le stage")
         elif move[0] == "free":
-            report("free", "Jeu libre : rien n’est touché jusqu’à la fin du minuteur")
+            report("free", free_text())
         else:
             report("mine", "Mine")
 
@@ -192,12 +194,18 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
             step = lambda: farming["ensure_soul_weapon"](name, after)
         status["change"] = ports.spawn(set_stage(after["stage"], int(name[3:]), applied=True, step=step))
 
+    def free_text():
+        return ("Jeu libre : rien n’est touché jusqu’à la fin du minuteur" if status["until"]
+                else "Jeu libre : rien n’est touché")
+
     async def back_to_default(reason):
-        before = status["mode"]
-        status.update(mode=rules.DEFAULT, until=None)
-        await ports.notify(f"{reason} : retour au farming mpw18"
-                           + (f" (stage {stages()['stage18']})" if stages()["stage18"] else ""))
-        await enter(rules.DEFAULT, before)
+        """A timed mode ended: back to the default mode (« Mode par
+        défaut »), by the same switch."""
+        before, default = status["mode"], status["default"]
+        status.update(mode=default, until=None)
+        stage = loadouts["stage"](default) if default in ("mpw18", "mpw4") else None
+        await ports.notify(f"{reason} : {rules.BACK_TO[default]}" + (f" (stage {stage})" if stage else ""))
+        await enter(default, before)
 
     def gold_facts(shot):
         return scroll.seen(screens.classify(shot) == "battle", shot)
@@ -215,11 +223,11 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
                                                     else "parchemin doré rétabli"))
 
     async def watch():
-        """Ends a timed mode: back to mpw18 farming once its time is up (the
-        mine ends its last entry first). While farming mpw4, looks for the
-        gold scroll."""
+        """Ends a timed mode: back to the default mode once its time is up
+        (the mine ends its last entry first). While farming mpw4, looks for
+        the gold scroll."""
         try:
-            while status["mode"] != rules.DEFAULT:
+            while rules.watched(status["mode"], status["default"]):
                 # Awake right at the timer's end: the switch back starts then.
                 await ports.clock.sleep(rules.next_look(status["until"], ports.clock.wall()))
                 why = rules.due(status["mode"], status["until"], mines["state"](), ports.clock.wall())
@@ -240,7 +248,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
 
     def watch_if_timed():
         task = status["task"]
-        if status["mode"] != rules.DEFAULT and (task is None or task.done()):
+        if rules.watched(status["mode"], status["default"]) and (task is None or task.done()):
             status["task"] = ports.spawn(watch())
 
     async def handle_state(request):
@@ -253,14 +261,19 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
             body = None
         mine = mines["state"]()
         asked, error = rules.request(body, {**stages(), "highest": status["highest"],
-                                            "floor": mine["floor"], "area": mine["area"]})
+                                            "floor": mine["floor"], "area": mine["area"]}, status["default"])
         if error:
             return ports.respond({"error": error}, status=400)
         name, until, numbers, given = asked
+        default, error = rules.default_request(body, numbers, status["default"])
+        if error:
+            return ports.respond({"error": error}, status=400)
         before = status["mode"]
         changed = name != before
-        until = rules.timer_for(name, until, given, status["mode"], status["until"], ports.clock.wall())
-        status.update(mode=name, until=until, configured=True, highest=numbers["highest"])
+        if default != status["default"]:
+            logging.info(f"Slayer Legend mode: default mode {status['default']} → {default}")
+        until = rules.timer_for(name, until, given, status["mode"], status["until"], ports.clock.wall(), default)
+        status.update(mode=name, default=default, until=until, configured=True, highest=numbers["highest"])
         loadouts["set_stage"]("mpw18", numbers["stage18"])
         loadouts["set_stage"]("mpw4", numbers["stage4"])
         if name == "mine":
@@ -289,13 +302,14 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
 
     async def resume(app):
         """At the gateway's start: the timed mode state.json kept goes on."""
-        if status["mode"] != rules.DEFAULT:
-            report(*{"free": ("free", "Jeu libre : rien n’est touché jusqu’à la fin du minuteur"),
+        if rules.watched(status["mode"], status["default"]):
+            report(*{"free": ("free", free_text()),
                      "mine": ("mine", "Mine")}.get(status["mode"], ("idle", f"Farming {status['mode']}")))
             status["task"] = ports.spawn(watch())
 
     saved = ports.store.saved.get("mode") or {}
     status.update(mode=saved.get("mode") if saved.get("mode") in rules.MODES else rules.DEFAULT,
+                  default=saved.get("default") if saved.get("default") in rules.DEFAULTS else rules.DEFAULT,
                   until=values.time_or_none(saved.get("until")), configured=saved.get("configured") is True,
                   highest=values.number_or_none(saved.get("highest"), 99999))
     # Earlier versions kept the stages here: they move to the loadouts.
@@ -303,13 +317,14 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         loadouts["adopt_stage"](name, values.number_or_none(saved.get(key), 99999))
     before = status["mode"]
     status["mode"], status["until"], ended = rules.restored(status["mode"], status["until"],
-                                                            mines["state"]()["enabled"], ports.clock.wall())
+                                                            mines["state"]()["enabled"], ports.clock.wall(),
+                                                            status["default"])
     stopped = [f"mode {before}"] if ended else []
     if mines["ended"]:
         stopped.append("mine")
     if stopped:
         logging.info(f"Slayer Legend: timer ended while the gateway was stopped ({', '.join(stopped)}): "
-                     "back to mpw18 farming, mine off"
+                     f"back to the default mode {status['default']}, mine off"
                      + (" once Repeat entry is unticked" if mines["state"]()["state"] == "stopping" else ""))
 
     # After the stages of an older state.json moved: not a change to apply.

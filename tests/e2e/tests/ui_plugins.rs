@@ -260,10 +260,10 @@ fn slayer_legends_mpw18_loadout_is_chosen_in_its_dialog_and_saved_on_change() {
     browser_test(&cp, Options::without_video(), |page| async move {
         page.open_options().await;
         page.wait_js("the plugin's options", Duration::from_secs(15),
-            "const d = document.querySelector('[role=dialog]'); return !!d && d.innerText.includes('Farming mpw18')",
+            "const d = document.querySelector('[role=dialog]'); return !!d && d.innerText.includes('Mode par défaut')",
             vec![]).await;
         page.client.find(Locator::XPath(
-            "//div[@role='dialog']//label[contains(., 'Farming mpw18')]/following-sibling::button")).await.unwrap()
+            "//div[@role='dialog']//label[normalize-space()='Farming mpw18']/following-sibling::button")).await.unwrap()
             .click().await.unwrap();
         let settings = "Farming mpw18";
         page.wait_dialog(settings).await;
@@ -330,10 +330,10 @@ fn slayer_legends_saved_loadout_survives_a_change_from_a_fresh_browser() {
     browser_test(&cp, Options::without_video(), |page| async move {
         page.open_options().await;
         page.wait_js("the plugin's options", Duration::from_secs(15),
-            "const d = document.querySelector('[role=dialog]'); return !!d && d.innerText.includes('Farming mpw18')",
+            "const d = document.querySelector('[role=dialog]'); return !!d && d.innerText.includes('Mode par défaut')",
             vec![]).await;
         page.client.find(Locator::XPath(
-            "//div[@role='dialog']//label[contains(., 'Farming mpw18')]/following-sibling::button")).await.unwrap()
+            "//div[@role='dialog']//label[normalize-space()='Farming mpw18']/following-sibling::button")).await.unwrap()
             .click().await.unwrap();
         let settings = "Farming mpw18";
         page.wait_dialog(settings).await;
@@ -364,6 +364,34 @@ fn slayer_legends_saved_loadout_survives_a_change_from_a_fresh_browser() {
 }
 
 #[test]
+fn slayer_legends_default_mode_is_chosen_and_saved_on_change() {
+    let cp = CloudPhone::start_with(json!({"plugins": [SLAYER_LEGEND]}));
+    let phone = cp.clone();
+    browser_test(&cp, Options::without_video(), |page| async move {
+        page.open_options().await;
+        page.wait_js("the plugin's options", Duration::from_secs(15),
+            "const d = document.querySelector('[role=dialog]'); return !!d && d.innerText.includes('Mode par défaut')", vec![]).await;
+        let control = page.control(O, "Mode par défaut").await;
+        // mpw18 by default; mpw4 not offered while its stage is not chosen, never the mine.
+        let state = page.control_state(&control).await;
+        assert_eq!(state["value"], "mpw18", "{state}");
+        assert_eq!(state["options"], json!(["mpw18:Farming mpw18", "free:Jeu libre"]), "{state}");
+        control.select_by_value("free").await.unwrap();
+        let p = phone.clone();
+        blocking(move || wait_for("the default mode saved", Duration::from_secs(10), || {
+            let mode = p.try_get_json("api/v1/plugins/slayer-legend/mode")?;
+            (mode["default"] == "free").then_some(())
+        }));
+        assert_eq!(page.stored_settings().await["plugins"]["slayer-legend"]["defaultMode"], "free");
+        // The gateway refuses mpw4 as the default while its stage is not chosen.
+        let p = phone.clone();
+        let status = blocking(move || p.post_json("api/v1/plugins/slayer-legend/mode",
+                                                  &json!({"mode": "mpw18", "default": "mpw4"})).status());
+        assert_eq!(status, 400);
+    });
+}
+
+#[test]
 fn slayer_legends_mode_radio_follows_the_gateway_when_a_timed_mode_ends() {
     let cp = CloudPhone::start_with(json!({"plugins": [SLAYER_LEGEND]}));
     let phone = cp.clone();
@@ -386,7 +414,7 @@ fn slayer_legends_mode_radio_follows_the_gateway_when_a_timed_mode_ends() {
         // Its timer ends: the gateway is back on mpw18, and so is the radio.
         page.wait_js("the radio back on mpw18", Duration::from_secs(45),
             "const l = [...document.querySelectorAll('[role=dialog] label')]\
-             .find(l => l.innerText.includes('Farming mpw18')); return !!l && l.control.checked", vec![]).await;
+             .find(l => l.innerText.trim() === 'Farming mpw18'); return !!l && l.control.checked", vec![]).await;
         assert_eq!(page.stored_settings().await["plugins"]["slayer-legend"]["mode"], "mpw18");
         let p = phone.clone();
         assert_eq!(blocking(move || p.get_json("api/v1/plugins/slayer-legend/mode"))["mode"], "mpw18");

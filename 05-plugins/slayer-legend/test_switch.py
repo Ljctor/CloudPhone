@@ -75,7 +75,8 @@ class Clock:
             at, _, future = heapq.heappop(self.sleepers)
             assert at <= limit, f"not done by {limit} s"
             self.game.now = max(self.game.now, at)
-            future.set_result(None)
+            if not future.done():  # a sleep of a switch cancelled since
+                future.set_result(None)
 
 
 def harness(game):
@@ -219,6 +220,49 @@ class Switch(unittest.TestCase):
         self.assertLessEqual(took, mode_rules.SWITCH_BUDGET)
         self.assertEqual((state["mode"], state["state"]), ("mpw18", "farming"))
         self.assertTrue(any(line.startswith("switch mpw4→mpw18 in ") for line in self.lines), self.lines)
+
+    def test_the_timers_end_goes_back_to_the_default_mode(self):
+        # Default mpw4: mpw18 chosen for 2 minutes, then back to mpw4.
+        game = SlowGame(stage=905, preset="IV")
+        h = harness(game)
+
+        async def go():
+            answer = await h.post({"mode": "mpw4", "stage4": 925, "default": "mpw4"})
+            self.assertIsNone(answer[1]["until"], "the default has no timer")
+            await h.clock.until(lambda: there(game, 925, "II") and len(h.farmed) == 1, 300)
+            answer = await h.post({"mode": "mpw18"})
+            self.assertIsNotNone(answer[1]["until"], "mpw18 is timed now")
+            await h.clock.until(lambda: there(game, 905, "IV") and len(h.farmed) == 2, 600)
+            await h.post({"mode": "mpw18", "until": h.ports.clock.wall() + 120})
+            await h.clock.until(lambda: there(game, 925, "II") and len(h.farmed) == 3, 900)
+            return (await h.state())[1]
+        state = asyncio.run(go())
+        self.assertEqual((state["mode"], state["default"], state["until"]), ("mpw4", "mpw4", None))
+        self.assertIn("Minuteur écoulé : retour au farming mpw4 (stage 925)", game.alerts)
+
+    def test_free_play_as_the_default_touches_nothing_at_the_end(self):
+        game = SlowGame(stage=905, preset="IV")
+        h = harness(game)
+
+        async def go():
+            await h.post({"mode": "mpw4", "stage4": 925, "default": "free",
+                          "until": h.ports.clock.wall() + 120})
+            await h.clock.until(lambda: there(game, 925, "II") and len(h.farmed) == 1, 300)
+            await h.clock.until(lambda: "Minuteur écoulé : retour au jeu libre" in game.alerts, 900)
+            return (await h.state())[1]
+        state = asyncio.run(go())
+        self.assertEqual((state["mode"], state["until"], state["state"]), ("free", None, "free"))
+        self.assertEqual(state["message"], "Jeu libre : rien n’est touché")
+        self.assertEqual(len(h.farmed), 1)
+        self.assertIn("Minuteur écoulé : retour au jeu libre", game.alerts)
+
+    def test_mpw4_as_the_default_needs_its_stage(self):
+        game = SlowGame(stage=905, preset="IV")
+        h = harness(game)
+        h.stages["mpw4"] = None
+        answer = asyncio.run(h.post({"mode": "mpw18", "default": "mpw4"}))
+        self.assertEqual(answer[0], 400)
+        self.assertIn("stage", answer[1]["error"])
 
     def test_over_budget_it_completes_logs_and_alerts_the_slowest_step(self):
         game = SlowGame(stage=905, preset="IV")

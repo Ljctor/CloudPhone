@@ -1,5 +1,5 @@
-// The mode (mpw18 farming by default, or a timed mode: mpw4 farming, free
-// play, the mine) runs in the gateway; this browser's options are sent to
+// The mode (the default one, « Mode par défaut »: mpw18 farming unless set
+// to mpw4 farming or free play; or a timed mode) runs in the gateway; this browser's options are sent to
 // it when they change, and on load if the gateway has not been told since
 // it started. Its state is asked every 10 s. Options: the "Mode et
 // farming" section. Overlay hook, called by page_gold.js while the
@@ -50,9 +50,14 @@ export default function modeFeature(api, { known, watchdog, stage }) {
   const farm = { answer: null, timer: null, stages: null, chosen: 0, sending: 0 };
   const loadouts = loadout(api);
   const mode = () => api.setting('mode') || 'mpw18';
+  // The mode a timed one goes back to, with no timer itself.
+  const defaultMode = () => api.setting('defaultMode') || 'mpw18';
   // Only what this browser has: the gateway keeps its values for the rest.
   const modeOptions = () => Object.fromEntries(Object.entries({
     mode: mode(),
+    // Only once chosen here (or adopted from the gateway): a browser that
+    // never chose one does not reset it.
+    default: api.setting('defaultMode') || null,
     until: farm.answer?.until ?? (Number(load(UNTIL)) || null),
     stage18: Number(api.setting('stage18')) || null,
     stage4: Number(api.setting('stage4')) || null,
@@ -77,6 +82,10 @@ export default function modeFeature(api, { known, watchdog, stage }) {
     // APIs have no adopt.
     if (answer?.configured && answer.mode && answer.mode !== mode() && !farm.sending && asked > farm.chosen) {
       api.adopt?.('mode', answer.mode);
+    }
+    if (answer?.configured && answer.default && answer.default !== defaultMode() && !farm.sending
+        && asked > farm.chosen) {
+      api.adopt?.('defaultMode', answer.default);
     }
   };
   const askMode = async () => {
@@ -134,7 +143,7 @@ export default function modeFeature(api, { known, watchdog, stage }) {
       return [
         api.tr(MODE_NAMES[current] ?? current).toUpperCase(),
         ...(farm.answer?.setup ? [api.tr('MISE EN PLACE...')] : []),
-        `(${(current === 'mpw18' || !farm.answer?.until ? api.tr('défaut') : clock(seconds)).toUpperCase()})`,
+        `(${(current === defaultMode() || !farm.answer?.until ? api.tr('défaut') : clock(seconds)).toUpperCase()})`,
       ];
     },
     options: [
@@ -181,13 +190,24 @@ export default function modeFeature(api, { known, watchdog, stage }) {
         ],
       },
       {
+        // Saved on change. mpw4 only once its stage is chosen (as its radio
+        // button); never the mine.
+        type: 'choice', key: 'defaultMode', label: 'Mode par défaut',
+        choices: () => [
+          { value: 'mpw18', label: api.tr('Farming mpw18') },
+          ...(Number(api.setting('stage4')) || defaultMode() === 'mpw4'
+            ? [{ value: 'mpw4', label: api.tr('Farming mpw4') }] : []),
+          { value: 'free', label: api.tr('Jeu libre') },
+        ],
+      },
+      {
         type: 'status', label: 'Temps restant',
-        visible: () => mode() !== 'mpw18',
+        visible: () => mode() !== defaultMode(),
         value: left,
       },
       {
         type: 'buttons', label: 'Ajuster (minutes)',
-        visible: () => mode() !== 'mpw18',
+        visible: () => mode() !== defaultMode(),
         buttons: [30, 5, 1, -1, -5, -30].map((m) => ({
           label: m > 0 ? `+${m}` : `−${-m}`,
           run: () => moveTimer(m),
@@ -214,11 +234,11 @@ export default function modeFeature(api, { known, watchdog, stage }) {
     ],
     onSetting: (key, value) => {
       loadouts.onSetting(key);
-      if (key === 'mode') farm.chosen = Date.now();
-      if (key === 'mode' && value !== 'mpw18' && value !== farm.answer?.mode) {
+      if (key === 'mode' || key === 'defaultMode') farm.chosen = Date.now();
+      if (key === 'mode' && value !== defaultMode() && value !== farm.answer?.mode) {
         farm.answer = { ...farm.answer, until: Date.now() / 1000 + TIMED_MINUTES * 60 };
       }
-      if (['mode', 'stage18', 'stage4', 'mineFloor', 'mineArea'].includes(key)) {
+      if (['mode', 'defaultMode', 'stage18', 'stage4', 'mineFloor', 'mineArea'].includes(key)) {
         farm.error = null;
         sendMode();
       }

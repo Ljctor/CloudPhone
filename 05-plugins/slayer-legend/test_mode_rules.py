@@ -50,6 +50,41 @@ class Request(unittest.TestCase):
         self.assertIsNone(asked[1])
 
 
+class DefaultMode(unittest.TestCase):
+    NOW = 1_800_000_000.0
+
+    def test_what_it_may_be(self):
+        self.assertEqual(rules.default_request({}, {}, "free"), ("free", None))
+        self.assertEqual(rules.default_request({"default": "mpw18"}, {}, "free"), ("mpw18", None))
+        self.assertEqual(rules.default_request({"default": "free"}, {}, "mpw18"), ("free", None))
+        self.assertIsNotNone(rules.default_request({"default": "mine"}, {}, "mpw18")[1])
+        self.assertIsNotNone(rules.default_request({"default": "nope"}, {}, "mpw18")[1])
+
+    def test_mpw4_only_once_configured(self):
+        self.assertIn("stage", rules.default_request({"default": "mpw4"}, {"stage4": None}, "mpw18")[1])
+        self.assertEqual(rules.default_request({"default": "mpw4"}, {"stage4": 925}, "mpw18"), ("mpw4", None))
+
+    def test_the_default_has_no_timer_the_others_have(self):
+        asked, _ = rules.request({"mode": "mpw4", "stage4": 925, "until": self.NOW + 60}, {}, "mpw4")
+        self.assertIsNone(asked[1])
+        asked, _ = rules.request({"mode": "mpw18", "until": self.NOW + 60, "default": "free"}, {})
+        self.assertEqual(asked[1], self.NOW + 60)
+        self.assertIsNone(rules.timer_for("free", None, False, "mpw18", None, self.NOW, "free"))
+        self.assertEqual(rules.timer_for("mpw18", None, False, "free", None, self.NOW, "free"),
+                         self.NOW + rules.TIMED_MINUTES * 60)
+
+    def test_a_restart_after_the_end_is_back_to_the_default(self):
+        self.assertEqual(rules.restored("mpw18", self.NOW - 1, False, self.NOW, "mpw4"), ("mpw4", None, True))
+        self.assertEqual(rules.restored("mine", None, False, self.NOW, "free"), ("free", None, False))
+        self.assertEqual(rules.restored("free", self.NOW + 60, False, self.NOW, "free"), ("free", None, False))
+
+    def test_the_watch_runs_for_a_timed_mode_or_mpw4(self):
+        self.assertFalse(rules.watched("mpw18", "mpw18"))
+        self.assertFalse(rules.watched("free", "free"))
+        self.assertTrue(rules.watched("mpw4", "mpw4"), "its gold scroll looks")
+        self.assertTrue(rules.watched("mpw18", "free"))
+
+
 class Timer(unittest.TestCase):
     NOW = 1_800_000_000.0
 

@@ -44,6 +44,7 @@ const ENGLISH = {
   'Masqué': 'Hidden',
   'pas encore mesuré': 'not measured yet',
   'non visible': 'not visible',
+  'Mode par défaut': 'Default mode',
   'Farming mpw4': 'mpw4 farming',
   'Farming mpw18': 'mpw18 farming',
   'Jeu libre': 'Free play',
