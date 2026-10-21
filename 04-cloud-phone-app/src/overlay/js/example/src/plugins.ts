@@ -59,7 +59,10 @@
 //                         (held 500 ms or more) or 'swipe' (moved), with end:
 //                         { x, y } where a swipe ended. Returns a function that
 //                         stops it; stopped anyway when the plugin is unloaded.
-//   tr, addTranslations
+//   tr(text, params?)     text in the page's language: a French text, or
+//                         {template, params} as a gateway sends one (a param
+//                         of that shape translated too, others are data)
+//   addTranslations(english)   { French: English } entries, kept first come
 import { useEffect, useRef, useState } from 'react';
 import { addTranslations, english, tr } from './i18n';
 import { pageLog } from './logs';

@@ -1,6 +1,6 @@
 // The watchdog's part of the mode's État row (page_mode.js): what the
-// gateway's watchdog saw at its last look on the selected mode (a French
-// template with its parameters, translated with tr) and « Réessayer »
+// gateway's watchdog saw at its last look on the selected mode ({template,
+// params}, translated with tr: see templates.json) and « Réessayer »
 // while a repair backs off. No option rows of its own; debug: the shared
 // lease's holder and the watchdog's counters. Asked only while the panel
 // shows them, at most every 15 s (the watchdog's own pace).
@@ -47,7 +47,7 @@ export default function watchdog(api) {
       const answer = watched.answer;
       if (!answer?.line || answer.mode !== mode || mode === 'free') return '';
       if (answer.status?.template === 'En pause : entrée dans le mode {mode}') return '';
-      return ` · ${api.tr(answer.line.template, answer.line.params)}`;
+      return ` · ${api.tr(answer.line)}`;
     },
     // « Réessayer » while a repair backs off: each waiting kind starts over.
     retry: (mode) => {

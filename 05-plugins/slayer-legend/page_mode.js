@@ -105,7 +105,7 @@ export default function modeFeature(api, { known, watchdog, stage }) {
     const result = await api.post('/mode', modeOptions()).catch(() => null);
     farm.sending -= 1;
     if (result?.ok) remember(result.body);
-    else if (result) farm.error = result.body?.error ?? `HTTP ${result.status}`;
+    else if (result) farm.error = result.body?.error_t ?? `HTTP ${result.status}`;
     await askMode();
   };
   // The user's answer to a switch on hold: free play instead, or now.
@@ -113,7 +113,7 @@ export default function modeFeature(api, { known, watchdog, stage }) {
     const hold = farm.answer?.hold;
     const result = await api.post('/mode/hold', { action, ...(hold ? { hold: hold.id } : {}) }).catch(() => null);
     if (result?.ok) remember(result.body);
-    else if (result) api.toast(result.body?.error ?? `HTTP ${result.status}`);
+    else if (result) api.toast(result.body?.error_t ?? `HTTP ${result.status}`);
     await askMode();
   };
   // The hold's seconds left, counted down between two answers.
@@ -256,9 +256,9 @@ export default function modeFeature(api, { known, watchdog, stage }) {
           }
           const warning = (gold) => (gold === false ? ` ⚠ ${api.tr('plus de parchemin doré')}` : '');
           const looked = watchdog?.line(answer.mode) ?? '';
-          if (answer.mode === 'mine') return api.tr(answer.mine?.message || 'Mine') + warning(answer.mine?.gold) + looked;
+          if (answer.mode === 'mine') return api.tr(answer.mine?.message_t || 'Mine') + warning(answer.mine?.gold) + looked;
           // mpw4 farming: the gateway's gold scroll check (gold, mpw4 only).
-          return api.tr(answer.message || 'Farming mpw18') + warning(answer.gold) + looked;
+          return api.tr(answer.message_t || 'Farming mpw18') + warning(answer.gold) + looked;
         },
       },
       ...(stage ? [stage] : []),

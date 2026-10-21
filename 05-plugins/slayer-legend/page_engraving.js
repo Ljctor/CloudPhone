@@ -131,7 +131,7 @@ export default function loadoutFeature(api) {
     const result = await api.post('/loadout', body).catch(() => null);
     if (result?.ok) data.saved = result.body.loadouts;
     else {
-      const why = result?.body?.error
+      const why = result?.body?.error_t
         ?? (result ? `HTTP ${result.status}` : { template: 'gateway injoignable', params: {} });
       api.toast?.('équipement de {mode} non enregistré : {why}', { mode, why });
     }

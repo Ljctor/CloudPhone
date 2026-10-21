@@ -3,7 +3,11 @@
 // features, one module per feature beside it, each a function of the page
 // API returning its options, its onSetting and dispose hooks and, for the
 // mode, its overlay hook (its lines top left), and, for the developer, its
-// debug rows (the plugin's last section, « Debug & développement »):
+// debug rows (the plugin's last section, « Debug & développement »).
+// Labels are French with their English in ENGLISH below; the gateway's
+// texts are {template, params}, their English in templates.json (GET
+// /templates). Log records are English, shown as they come.
+// The parts:
 // - page_screen.js: the game's screen (debug) and stage (its row under
 //   the mode's État).
 // - page_power.js: the plugin's on/off switch, at the top: while off the
@@ -32,12 +36,8 @@ import trace from './page_trace.js';
 import watchdog from './page_watchdog.js';
 
 const ENGLISH = {
-  'Farmer la mine': 'Farm the mine',
   'Étage à farmer': 'Floor to farm',
-  'Mode': 'Mode',
   'défaut': 'default',
-  'Arme, gravure, réglages de combat': 'Weapon, engraving, battle settings',
-  'à venir': 'coming',
   'Gold': 'Gold',
   'Gold par seconde': 'Gold per second',
   'Overlay gold/s': 'Gold/s overlay',
@@ -45,7 +45,6 @@ const ENGLISH = {
   'EN ATTENTE': 'ON HOLD',
   '{mode} · en attente : tu joues · nouvel essai dans {seconds} s': '{mode} · on hold: you are playing · next try in {seconds} s',
   'Reprendre': 'Resume',
-  'Aucun passage de mode en attente': 'No mode switch on hold',
   'Affiché': 'Shown',
   'Masqué': 'Hidden',
   'pas encore mesuré': 'not measured yet',
@@ -64,32 +63,11 @@ const ENGLISH = {
   'Temps restant': 'Time left',
   'Ajuster (minutes)': 'Adjust (minutes)',
   'plus de parchemin doré': 'no gold scroll',
-  'Combat en cours, sans parchemin doré': 'Fighting, without the gold scroll',
   'Sans limite': 'No limit',
   'reste {time}': '{time} left',
-  'Durée écoulée : « Repeat entry » décoché, la mine s’arrête après cette entrée':
-    'Time is up: "Repeat entry" unticked, the mine stops after this entry',
-  'Durée écoulée : pas de relance': 'Time is up: no restart',
-  'Durée écoulée, mais « Repeat entry » ne se décoche pas': 'Time is up, but "Repeat entry" does not untick',
   'Mine': 'Mine',
-  'Surveillance de la mine': 'Watching the mine',
-  'Combat en cours, parchemin doré actif': 'Fighting, gold scroll on',
-  'Mine relancée': 'Mine started again',
-  'Le jeu n’est pas au premier plan': 'The game is not in front',
-  'Écran autre que la mine : rien à faire': 'Not a mine screen: nothing to do',
-  'Parchemin doré pas vu depuis 5 minutes : pas de relance': 'Gold scroll not seen for 5 minutes: no restart',
-  'Plus de parchemin doré : « Repeat entry » décoché, la mine s’arrête après cette entrée':
-    'Gold scroll gone: "Repeat entry" unticked, the mine stops after this entry',
-  'Plus de parchemin doré, mais « Repeat entry » ne se décoche pas': 'Gold scroll gone, but "Repeat entry" does not untick',
-  'La relance a échoué 3 fois : relance la mine à la main': 'Restarting failed 3 times: start the mine by hand',
   'Choisis l’étage et la zone': 'Choose the floor and the area',
-  'Farming mpw4 : choisis d’abord son stage': 'mpw4 farming: choose its stage first',
-  'Mine fermée : choisis d’abord l’étage (1 à 9999) et la zone (1 à 5)':
-    'Closed Mine: choose the floor (1 to 9999) and the area (1 to 5) first',
-  'arrêtée': 'off',
   'Plugin': 'Plugin',
-  'Plugin désactivé': 'Plugin off',
-  'En attente : plugin désactivé': 'Waiting: plugin off',
   'Compteur d’émeraudes': 'Emerald counter',
   'Mode et farming': 'Mode and farming',
   'Émeraudes': 'Emeralds',
@@ -101,18 +79,6 @@ const ENGLISH = {
   'Nombre affiché (vide : après la virgule)': 'Number shown (empty: after the comma)',
   'détecté': 'detected',
   'non détecté': 'not detected',
-  'Ouverture du jeu': 'Opening the game',
-  'Écran titre touché, connexion': 'Title screen tapped, signing in',
-  'Dernière sauvegarde confirmée, chargement': 'Latest save confirmed, loading',
-  '« Sign in with Google » touché': '« Sign in with Google » tapped',
-  'Compte Google choisi': 'Google account chosen',
-  'reconnexion Google impossible : à faire à la main': 'Google sign-in failed: do it by hand',
-  'Le jeu est sur l’écran de combat': 'The game is on the battle screen',
-  'Sortie du mode économie d’énergie': 'Leaving Power Saving Mode',
-  'Le mode économie d’énergie ne se ferme pas : touche son bouton à la main': 'Power Saving Mode does not close: tap its button by hand',
-  'Écran inattendu : termine le lancement à la main': 'Unexpected screen: finish the launch by hand',
-  'Le jeu n’a pas atteint l’écran de combat en 3 minutes': 'The game did not reach the battle screen in 3 minutes',
-  'Android ne répond pas': 'Android does not answer',
   'Écran détecté': 'Detected screen',
   'Écran titre': 'Title screen',
   'Choix de la sauvegarde': 'Save choice',
@@ -134,12 +100,7 @@ const ENGLISH = {
   '{nodes} écrans, {taps} appuis': '{nodes} screens, {taps} taps',
   'indisponible (gateway sans dossier de données)': 'unavailable (the gateway has no data directory)',
   'Bail': 'Lease',
-  'Démarrage': 'Starting',
-  'OK (numéral {numeral})': 'OK (numeral {numeral})',
-  'OK (économie d’énergie)': 'OK (Power Saving)',
-  'Jeu libre : rien n’est surveillé': 'Free play: nothing is watched',
   'En pause : entrée dans le mode {mode}': 'Paused: entering {mode}',
-  '{repair} dans {minutes} min': '{repair} in {minutes} min',
   '{holder} ({reason})': '{holder} ({reason})',
   'libre': 'free',
   'Surveillance': 'Watchdog',
@@ -148,34 +109,18 @@ const ENGLISH = {
   'Détection des émeraudes': 'Emerald detection',
   'Détection des diamants': 'Diamond detection',
   'Réessayer': 'Retry',
-  'le jeu n’est plus au premier plan': 'the game is no longer in front',
-  'En pause : l’utilisateur joue': 'Paused: the user is playing',
-  'Lancement du jeu en cours': 'Launching the game',
-  'Réparation en cours : {repair}': 'Repair under way: {repair}',
-  'Erreur : {error}': 'Error: {error}',
-  'pas de vérification (pas de capture d’écran)': 'not checked (no screenshot)',
-  'menu du jeu ouvert': 'game menu open',
-  'adb ne répond pas : l’émulateur ou adb manque': 'adb does not answer: the emulator or adb is missing',
-  'le jeu ne tourne pas': 'the game is not running',
-  'une autre application est au premier plan : {window}': 'another app is in front: {window}',
-  'pas de vérification (fenêtre de passage au premier plan)': 'not checked (a passing window in front)',
-  'pas de vérification (autre fenêtre au premier plan)': 'not checked (another window in front)',
-  'le jeu a planté (fenêtre d’erreur d’Android)': 'the game crashed (Android’s error window)',
-  'le jeu est revenu à son écran titre': 'the game is back on its title screen',
-  'le jeu demande de se reconnecter (Sign in with Google)': 'the game asks to sign in again (Sign in with Google)',
-  'écran inconnu après la fin du mode (connecté sur un autre appareil, ou choix de sauvegarde) : à faire à la main':
-    'unknown screen after the mode ended (signed in on another device, or a choice of saves): do it by hand',
-  'un menu du jeu est ouvert depuis plus d’une minute sans l’utilisateur': 'a game menu has been open over a minute without the user',
-  'mauvais stage, pas le {stage}': 'wrong stage, not {stage}',
-  'mauvais préréglage de combat : pas le {preset}': 'wrong battle settings preset: not {preset}',
-  'mauvais équipement : {what}': 'wrong equipment: {what}',
-  'écran inattendu': 'unexpected screen',
-  'le jeu ne répond pas (fenêtre d’Android), « Attendre » sans effet : à faire à la main':
-    'the game is not responding (Android’s window), « Wait » did not help: do it by hand',
 };
 
 export default function activate(api) {
   api.addTranslations(ENGLISH);
+  // The gateway's texts come as {template, params} (a field's `_t`, the
+  // watchdog's line and status): their English is templates.json's, served
+  // by the gateway. Without it they show in French.
+  api.get('/templates').catch(() => null).then((templates) => {
+    if (!templates || typeof templates !== 'object') return;
+    api.addTranslations(templates);
+    api.refresh();
+  });
   // Started in this order (each asks the gateway as it starts)...
   // Turning the plugin on or off redraws what the parts draw (below).
   const powerPart = power(api, { changed: () => drawers.forEach((part) => part.update()) });
