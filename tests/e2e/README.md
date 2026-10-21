@@ -132,7 +132,7 @@ configured count.
 | `tests/ui_settings.rs` | client options and language in `localStorage`, plugin options included |
 | `tests/ui_fullscreen.rs` | fullscreen, fold button, 3 s autofold, handle, docking |
 | `tests/ui_plugins.rs` | plugins in the page: options of each kind, dialog rows (no button with nothing to configure, a radio greyed out by `disabled()`), layer drawing, the 'grid' option's fixed cells, a status row's inline button (« Réessayer » while a repair backs off), stored options, failures (also a plugin the gateway refused), translations |
-| `tests/ui_english.rs` | English chosen in a French browser: the toolbar, the information panel (both tabs, the page's own records), the options panel with Slayer Legend unfolded and each of its dialogs show no accent and no French word, data values excepted; also on the gateway's states (the mine on, a refused mode, a switch on hold) |
+| `tests/ui_english.rs` | English chosen in a French browser: the toolbar, the information panel (both tabs, the page's own records), the options panel with Slayer Legend unfolded and each of its dialogs show no accent and no French word, data values excepted; also on the gateway's states (the watchdog paused, the mine on, a refused mode, a switch on hold) |
 | `tests/smoke.rs` | deployed instance only (`--features smoke`) |
 
 ## What took over from the jest tests

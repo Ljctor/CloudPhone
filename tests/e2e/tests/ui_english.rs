@@ -2,8 +2,9 @@
 //! the information panel (both tabs), the options panel with the Slayer
 //! Legend plugin unfolded, and each of its dialogs, show no French: no
 //! accented letter, no French word, in the visible text nor in the labels a
-//! screen reader reads. Also on the gateway's non-trivial states (the mine
-//! on, a refused mode, a switch on hold while the user plays). Data values
+//! screen reader reads. Also on the gateway's non-trivial states (the
+//! watchdog paused, the mine on, a refused mode, a switch on hold while the
+//! user plays). Data values
 //! are excepted (a language's own name). Log records are English at their
 //! source: the page's own (Client tab) are checked here; the server's are
 //! its data, left out.
@@ -15,6 +16,7 @@ use std::time::Duration;
 
 const SLAYER_LEGEND: &str = "05-plugins/slayer-legend";
 const MODE: &str = "api/v1/plugins/slayer-legend/mode";
+const WATCHDOG: &str = "api/v1/plugins/slayer-legend/watchdog";
 
 /// Every text shown or named inside the elements `arguments[0]` (a CSS
 /// selector) finds: text nodes (not those folded away), aria-label, title,
@@ -164,6 +166,19 @@ fn in_english_the_gateways_states_show_no_french() {
         choose_english(&page).await;
         open_plugin(&page).await;
         let mut seen = Vec::new();
+        // The watchdog paused while the user plays (an input), as the
+        // État row's end says it at the page's next ask (every 15 s).
+        let p = phone.clone();
+        blocking(move || {
+            assert_eq!(p.post_json("api/v1/input", &json!({})).status(), 200);
+            wait_for("the watchdog paused", Duration::from_secs(60), || {
+                let state = p.try_get_json(WATCHDOG)?;
+                (state["status"]["template"] == "En pause : l’utilisateur joue").then_some(())
+            });
+        });
+        page.sleep(Duration::from_secs(16)).await;
+        let paused = state_row(&page).await;
+        seen.extend(french_in(&page, &format!("watchdog paused ({paused})"), "[role=dialog]", true).await);
         // The mine on, configured and chosen in the page (no game on the
         // fake: its own status), at two looks.
         open_mine_dialog(&page).await;
