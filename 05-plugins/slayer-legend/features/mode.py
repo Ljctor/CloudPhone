@@ -116,6 +116,10 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
             return
         status["hold"] = None
         status["last_hold"] = {"id": hold["id"], "action": action}
+        # The alert's buttons are out of date.
+        revoke = getattr(ports, "revoke_action", None)
+        if revoke and hold.get("token"):
+            revoke(hold["token"])
         logging.info(f"Slayer Legend mode {hold['mode']}: hold {hold['id']} over ({action})")
 
     async def pause(seconds):
@@ -146,7 +150,12 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         hold["until"] = ports.clock.monotonic() + left
         report("waiting", rules.hold_message(name, left, applied))
         if not alerted:
-            await ports.notify(rules.hold_alert(name, left, applied))
+            # Its two buttons: a one-time token, never the page's.
+            issue = getattr(ports, "action_token", None)
+            hold["token"] = issue("/mode/hold", rules.HOLD_TOKEN_SECONDS) if issue else None
+            buttons = rules.hold_buttons(hold["id"], hold["token"])
+            text = rules.hold_alert(name, left, applied)
+            await (ports.notify(text, actions=buttons) if buttons else ports.notify(text))
         return left
 
     async def set_stage(number, mpw, applied=False, step=None):
@@ -165,13 +174,15 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         report("moving", f"Passage au stage {number} ({name})")
         since = status["switch_at"] if status["switch_at"] is not None else ports.clock.monotonic()
         waited, held, failures = 0.0, 0.0, 0
-        me, alerted = object(), False
+        # force: resumed at the user's request, the user's minute is not
+        # waited for, retries included, until an input of theirs stops it.
+        me, alerted, force = object(), False, False
         try:
             while True:
                 began = ports.clock.monotonic()
                 hold = status["hold"]
-                force = bool(hold and hold["owner"] is me and hold["action"] == "resume")
-                if force:
+                if hold and hold["owner"] is me and hold["action"] == "resume":
+                    force = True
                     end_hold("resume")
                     report("moving", f"Passage au stage {number} ({name}) : repris à ta demande")
                 try:
@@ -188,6 +199,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
                         await ports.notify(text)
                         return False
                     if str(e) == rules.USER_PLAYING:
+                        force = False
                         left = await on_hold(name, applied, me, alerted)
                         alerted = True
                         await pause(min(rules.BUSY_RETRY, left))

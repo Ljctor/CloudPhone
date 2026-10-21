@@ -52,7 +52,8 @@ the browser and the gateway; `App.tsx` only assembles them.
 | `js/src/components/emulator/views/webrtc_view.tsx` | `connected` only after a real decoded frame |
 | `gateway/src/videobridge_gateway/gateway_server.py` | the command line, the emulator's gRPC (status, keys, touch, GPS, screenshots), the health and metrics watches; wires the domains below into one HTTP server |
 | `gateway/src/videobridge_gateway/core/session.py` | the page token, same-origin rule, the token's meta tag, JSEP's end of session (no I/O) |
-| `gateway/src/videobridge_gateway/http/session.py` | serves the page with its token, the guard middleware (origin, token), the WebSocket JSEP bridge `GET /api/v1/emulator/ws-jsep` |
+| `gateway/src/videobridge_gateway/http/session.py` | serves the page with its token, the guard middleware (origin, token or one-time action token), the WebSocket JSEP bridge `GET /api/v1/emulator/ws-jsep` |
+| `gateway/src/videobridge_gateway/core/actions.py` | the phone alerts' buttons' one-time action tokens: drawn per path, short-lived, spent once (no I/O) |
 | `gateway/src/videobridge_gateway/adapters/videobridge.py` | the emulator's Video Bridge (gRPC Rtc): opens a stream, JSEP messages both ways |
 | `gateway/src/videobridge_gateway/core/viewers.py` | viewers and their signalling sessions, who was disconnected by another viewer, which arrivals and departures are news (no I/O) |
 | `gateway/src/videobridge_gateway/http/activity.py` | `POST /api/v1/input`, the user's last input (monotonic and Unix seconds) for the plugins |
@@ -116,6 +117,14 @@ Android keeps running. Reload the page (the index is never cached).
 - Each start draws a random token and writes it into `index.html` as
   `<meta name="cloudphone-token">`. Every POST must carry it in the
   `X-CloudPhone-Token` header, else 403 ("reload the page").
+- A phone alert's button (an ntfy http action) cannot carry that token:
+  the alerts go through the public ntfy.sh service. It carries instead a
+  one-time action token in `X-CloudPhone-Action` (`core/actions.py`): drawn
+  for one plugin path, at most 15 minutes, spent by the first POST to that
+  path (403 after, or on another path), revoked by the plugin once the
+  alert is out of date. The buttons post to `http://LISTEN_ADDRESS:WEB_PORT`
+  (`10.20.0.1` when it listens on every address), which the phone reaches
+  over WireGuard.
 - A request whose `Origin` is not this server is refused with 403 (GET,
   POST and the WebSocket alike). Requests without `Origin` pass.
 - `Cache-Control`: `/` and `/index.html` `no-cache`; `/assets/*` (hashed

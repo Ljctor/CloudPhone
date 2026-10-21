@@ -11,13 +11,15 @@ gateway's own main with the command line it was given. Everything else
 the request and status files) goes through the gateway's normal options.
 
 Phone alerts are available (--notify_file in the fake's command line) but
-never reach ntfy.sh: adapters/ntfy.py's post only says it was taken.
+never reach ntfy.sh: adapters/ntfy.py's post only says it was taken, and
+appends {text, headers} to $FAKE_ROOT/ntfy.jsonl for the tests.
 
 The gateway's web site also binds with SO_REUSEPORT: the fake holds its
 port (bound, not listening) for its whole life, so that no other process
 takes it between two gateways (reserve_port in fake_emulator.py).
 """
 import builtins
+import json
 import os
 import sys
 
@@ -47,6 +49,10 @@ def fake_host_open(file, *args, **kwargs):
 
 
 async def fake_ntfy_post(url, text, headers):
+    # Headers come as Latin-1 strings holding UTF-8 bytes (core/alerts.py).
+    readable = {name: value.encode("latin-1").decode("utf-8", "replace") for name, value in headers.items()}
+    with builtins.open(os.path.join(os.environ["FAKE_ROOT"], "ntfy.jsonl"), "a", encoding="utf-8") as f:
+        f.write(json.dumps({"text": text, "headers": readable}, ensure_ascii=False) + "\n")
     return True
 
 

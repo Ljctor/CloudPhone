@@ -84,6 +84,13 @@ gateways):
 - `context.viewers()`: the viewers connected now.
 - `context.add_delete(path, handler)`: a DELETE route, beside `add_get`
   and `add_post`; the page token is checked, as for every method but GET.
+- Buttons in a phone alert: `context.action_token(path, seconds)` draws a
+  one-time token for one POST to the plugin's `path` (at most 15 minutes,
+  spent by the first press, whichever button), `context.revoke_action(token)`
+  withdraws it once the alert is out of date, and `context.notify(text,
+  actions=[{label, path, body, token}])` sends the alert with up to 3
+  buttons (ntfy http actions posting `body` to the gateway over WireGuard).
+  Never the page token: the alerts go through the public ntfy.sh service.
 
 The API is described at the top of
 `04-cloud-phone-app/src/overlay/js/example/src/plugins.ts` (page) and

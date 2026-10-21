@@ -375,6 +375,33 @@ class Switch(unittest.TestCase):
         self.assertEqual(game.moves, [], "nothing tapped")
         self.assertEqual(game.alerts, ["Passage au farming mpw4 en attente : tu joues. Nouvel essai dans 60 s."])
 
+    def test_the_hold_alert_has_two_buttons_with_a_one_time_token_revoked_after(self):
+        game = SlowGame(stage=905, preset="IV", busy="l’utilisateur joue")
+        h = harness(game)
+        sent, issued, revoked = [], [], []
+        h.ports.action_token = lambda path, seconds: issued.append((path, seconds)) or "tok1"
+        h.ports.revoke_action = revoked.append
+        plain = h.ports.notify
+
+        async def notify(text, actions=None):
+            sent.append(actions)
+            await plain(text)
+        h.ports.notify = notify
+
+        async def resume(h):
+            hold = (await h.state())[1]["hold"]
+            return [await h.hold({"action": "resume", "hold": hold["id"]}), hold]
+        seen = self.on_hold(game, h, 10, resume)
+        self.assertEqual(issued, [("/mode/hold", mode_rules.HOLD_TOKEN_SECONDS)])
+        hold_id = seen["answers"][1]["id"]
+        self.assertEqual(sent[0], [
+            {"label": "Passer en jeu libre", "path": "/mode/hold", "body": {"action": "free", "hold": hold_id},
+             "token": "tok1"},
+            {"label": "Reprendre maintenant", "path": "/mode/hold", "body": {"action": "resume", "hold": hold_id},
+             "token": "tok1"}])
+        self.assertEqual(sent[1:], [None], "the ready notification has no buttons")
+        self.assertEqual(revoked, ["tok1"], "the hold over: its buttons no longer work")
+
     def test_nothing_on_hold_is_refused(self):
         game = SlowGame(stage=905, preset="IV")
         h = harness(game)

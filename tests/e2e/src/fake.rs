@@ -163,6 +163,16 @@ impl Fake {
         }
     }
 
+    /// The phone alerts the gateway sent ({text, headers}), oldest first
+    /// (they never reach ntfy.sh: tests/fake-emulator/gateway_shim.py).
+    pub fn ntfy_posts(&self) -> Vec<Value> {
+        std::fs::read_to_string(self.workdir.join("ntfy.jsonl"))
+            .unwrap_or_default()
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("an ntfy.jsonl line"))
+            .collect()
+    }
+
     /// The touches received so far.
     pub fn touches(&self) -> Vec<Value> {
         self.record()["touches"].as_array().cloned().unwrap_or_default()

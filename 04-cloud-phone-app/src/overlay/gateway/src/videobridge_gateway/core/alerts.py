@@ -68,12 +68,54 @@ def url(state, force=False):
     return f"{SERVER}/{topic}"
 
 
-def headers(title, tags=None):
-    """ntfy's headers; HTTP headers are Latin-1."""
-    result = {"Title": title.encode("utf-8").decode("latin-1", "replace")}
+def latin1(text):
+    """UTF-8 text as an HTTP header's Latin-1 (ntfy reads the bytes as UTF-8)."""
+    return text.encode("utf-8").decode("latin-1", "replace")
+
+
+def headers(title, tags=None, actions=None):
+    """ntfy's headers; HTTP headers are Latin-1. actions: the alert's
+    buttons (see actions_header)."""
+    result = {"Title": latin1(title)}
     if tags:
         result["Tags"] = tags
+    if actions:
+        result["Actions"] = latin1(actions_header(actions))
     return result
+
+
+# A value of ntfy's short action format: no quote of the kind around it.
+UNSAFE = re.compile(r"[\r\n']")
+
+
+def actions_header(actions):
+    """ntfy's Actions header: one http action (a POST, the notification
+    cleared once sent) per {label, url, body (JSON-able), headers}; at most
+    3, ntfy's limit. Values are single-quoted (a JSON body holds commas),
+    so none may hold one."""
+    parts = []
+    for action in actions[:3]:
+        values = [("", action["label"]), ("", action["url"]), ("method=", "POST")]
+        values += [(f"headers.{name}=", value) for name, value in (action.get("headers") or {}).items()]
+        if action.get("body") is not None:
+            values.append(("body=", json.dumps(action["body"], ensure_ascii=False, separators=(",", ":"))))
+        values.append(("clear=", "true"))
+        if any(UNSAFE.search(str(value)) or UNSAFE.search(key) for key, value in values):
+            raise ValueError("an alert's action may hold no quote nor line break")
+        parts.append(", ".join(["http"] + [f"{key}'{value}'" for key, value in values]))
+    return "; ".join(parts)
+
+
+# The gateway's own address as the user's phone reaches it (WireGuard) when
+# it listens on every address.
+WIREGUARD_ADDRESS = "10.20.0.1"
+
+
+def public_url(host, port):
+    """The gateway's base URL for an alert's buttons, from what it listens on."""
+    if host in ("", "0.0.0.0", "::"):
+        host = WIREGUARD_ADDRESS
+    return f"http://{host}:{port}"
 
 
 # Android's events worth an alert, and their sentence.

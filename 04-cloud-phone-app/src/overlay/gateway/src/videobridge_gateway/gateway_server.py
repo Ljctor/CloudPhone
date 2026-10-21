@@ -46,6 +46,7 @@ from .http import session
 from .core import settings as settings_rules
 from .core.session import bearer
 from .core import metrics as host_metrics
+from .core import alerts as alert_rules
 from .adapters import adb, host_files, systemd
 from .adapters.host_files import read_file
 
@@ -697,7 +698,8 @@ def init_app(videobridge_token, plugins_dir="", plugin_data=""):
         app.router.add_get("/index.html", index)
         app.router.add_static("/assets", os.path.join(WEB_ROOT, "assets"))
     load_plugins(app, plugins_dir, read_screenshot, adb_output, notify.send, plugin_data or None,
-                 activity=SimpleNamespace(last=activity.last, viewers=lambda: viewers.VIEWERS.count))
+                 activity=SimpleNamespace(last=activity.last, viewers=lambda: viewers.VIEWERS.count),
+                 actions=session.ACTIONS)
 
     return app
 
@@ -849,6 +851,8 @@ async def main():
     # token. Passing the token on the command line would expose it via /proc.
     bridge_token = args.videobridge_token or DISCOVERY_PROPS.get("grpc.token", "")
     app = init_app(bridge_token, args.plugins_dir, args.plugin_data)
+    # The phone alerts' buttons post here (plugins.PluginContext.notify).
+    app["public_url"] = alert_rules.public_url(args.host, args.port)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, args.host, args.port)

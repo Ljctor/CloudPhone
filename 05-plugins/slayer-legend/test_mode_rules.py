@@ -216,6 +216,14 @@ class Hold(unittest.TestCase):
             action, error = rules.hold_request(body, hold, last)
             self.assertEqual((action, error[0]), (None, 409), body)
 
+    def test_the_alerts_buttons(self):
+        self.assertIsNone(rules.hold_buttons("a1", None), "an older gateway: no buttons")
+        buttons = rules.hold_buttons("a1", "tok")
+        self.assertEqual([(b["label"], b["body"]) for b in buttons],
+                         [("Passer en jeu libre", {"action": "free", "hold": "a1"}),
+                          ("Reprendre maintenant", {"action": "resume", "hold": "a1"})])
+        self.assertEqual({(b["path"], b["token"]) for b in buttons}, {("/mode/hold", "tok")})
+
     def test_a_bad_body(self):
         for body in (None, {}, {"action": "later"}, []):
             self.assertEqual(rules.hold_request(body, {"id": "a1", "action": None}, None)[1][0], 400, body)

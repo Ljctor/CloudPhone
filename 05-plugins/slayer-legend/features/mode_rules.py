@@ -224,6 +224,20 @@ def ready_text(name, seconds, applied=False, alert=None, held=0.0):
 # the switch is on hold, said once, with a choice.
 USER_PLAYING = "l’utilisateur joue"
 HOLD_ACTIONS = ("free", "resume")
+# The hold alert's buttons: their one-time token works this long at most
+# (seconds), and not after the hold.
+HOLD_TOKEN_SECONDS = 10 * 60
+HOLD_BUTTONS = (("Passer en jeu libre", "free"), ("Reprendre maintenant", "resume"))
+
+
+def hold_buttons(hold_id, token):
+    """The hold alert's two buttons (ports.notify's actions), each posting
+    its answer to POST /mode/hold with the hold's one-time token; none
+    without a token (an older gateway)."""
+    if not token:
+        return None
+    return [{"label": label, "path": "/mode/hold", "body": {"action": action, "hold": hold_id}, "token": token}
+            for label, action in HOLD_BUTTONS]
 
 
 def hold_what(name, applied=False):

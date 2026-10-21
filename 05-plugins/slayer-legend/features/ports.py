@@ -44,7 +44,11 @@ of the gateway, so what it may do to the game is all here.
   the one account's centre, pixels, when there is exactly one), or None
   when it is not in front; choose_account(shot, point) taps it through the
   guard (account_chooser/account). The accounts are never logged.
-- notify(text): the Cloud Phone's phone alerts, when the user turned them on.
+- notify(text, actions=None): the Cloud Phone's phone alerts, when the
+  user turned them on; actions: its buttons [{label, path, body, token}]
+  (left out on a gateway without them). action_token(path, seconds): a
+  one-time token for one POST to the plugin's path from an alert's button
+  (None on an older gateway); revoke_action(token) withdraws it.
 - enabled(), set_enabled(on): the plugin's on/off switch (kept in
   state.json, on by default). While off the lease is refused to the
   plugin's own holders (PLUGIN_HOLDERS) and a sequence under way stops at
@@ -458,6 +462,22 @@ def build(context, nav):
         allowed("account_chooser", "account", (point[0] / width, point[1] / height), verified=True)
         await adb("shell", "input", "tap", str(point[0]), str(point[1]))
 
+    # Additions to the plugin API: an older gateway has no alert buttons.
+    issue = getattr(context, "action_token", None)
+    withdraw = getattr(context, "revoke_action", None)
+
+    def action_token(path, seconds):
+        return issue(path, seconds) if issue else None
+
+    def revoke_action(token):
+        if withdraw and token:
+            withdraw(token)
+
+    async def notify(text, actions=None):
+        if actions and issue:
+            return await context.notify(text, actions=actions)
+        return await context.notify(text)
+
     def spawn(coroutine):
         return asyncio.get_running_loop().create_task(coroutine)
 
@@ -488,7 +508,7 @@ def build(context, nav):
         viewers=viewers,
         focused=focused, focus=focus, running=running, start_game=start_game, dialog=dialog, crashed=crashed, close_crash=close_crash, wait_anr=wait_anr,
         account_chooser=account_chooser, choose_account=choose_account,
-        notify=context.notify, enabled=enabled, set_enabled=set_enabled,
+        notify=notify, action_token=action_token, revoke_action=revoke_action, enabled=enabled, set_enabled=set_enabled,
         clock=clock,
         spawn=spawn, store=store, data_path=data_path, respond=context.json,
     )

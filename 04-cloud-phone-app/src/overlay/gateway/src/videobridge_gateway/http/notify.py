@@ -39,12 +39,18 @@ def configure(enabled, new_topic=False):
     return alerts.describe(STATE, bool(STATE["file"]))
 
 
-async def send(text, title="Cloud Phone", tags=None, force=False):
-    """Posts one alert; True when ntfy.sh took it. Never raises."""
+async def send(text, title="Cloud Phone", tags=None, force=False, actions=None):
+    """Posts one alert; True when ntfy.sh took it. Never raises. actions:
+    its buttons ({label, url, body, headers}: see alerts.actions_header)."""
     url = alerts.url(STATE, force)
     if url is None:
         return False
-    return await ntfy.post(url, text, alerts.headers(title, tags))
+    try:
+        headers = alerts.headers(title, tags, actions)
+    except ValueError as e:
+        logging.warning(f"Alert's buttons left out: {e}")
+        headers = alerts.headers(title, tags)
+    return await ntfy.post(url, text, headers)
 
 
 async def get_notify(request):

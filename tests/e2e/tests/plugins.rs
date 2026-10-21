@@ -375,3 +375,62 @@ fn slayer_legends_lease_needs_the_page_token_and_only_its_holder_releases_it() {
     assert_eq!(delete_lease(&cp, "agent", true), 200);
     assert_eq!(cp.get_json(path)["lease"], Value::Null);
 }
+
+/// POST with a phone alert's one-time action token, without the page token.
+fn post_with_action_token(cp: &CloudPhone, path: &str, token: &str, body: &Value) -> u16 {
+    let (url, token, body) = (cp.url(path), token.to_string(), body.clone());
+    off_runtime(move || client().post(url).header("X-CloudPhone-Action", token).json(&body).send().unwrap().status().as_u16())
+}
+
+#[test]
+fn slayer_legends_switch_on_hold_while_the_user_plays_alerts_once_with_one_time_buttons() {
+    let cp = with(json!([SLAYER_LEGEND]));
+    let (mode, hold) = ("api/v1/plugins/slayer-legend/mode", "api/v1/plugins/slayer-legend/mode/hold");
+    assert_eq!(cp.post_json("api/v1/notify", &json!({"enabled": true})).status(), 200);
+    assert_eq!(cp.post_json(hold, &json!({"action": "resume"})).status(), 409, "nothing on hold");
+    // The user plays: the switch to mpw4 waits for the end of their minute.
+    assert_eq!(cp.post_json("api/v1/input", &json!({})).status(), 200);
+    assert_eq!(cp.post_json(mode, &json!({"mode": "mpw4", "stage4": 31})).status(), 200);
+    let held = wait_for("the switch on hold", Duration::from_secs(20), || {
+        let answer = cp.try_get_json(mode)?;
+        (!answer["hold"].is_null()).then_some(answer)
+    });
+    assert_eq!((held["hold"]["mode"].clone(), held["setup"].clone()), (json!("mpw4"), json!(true)), "{held}");
+    let left = held["hold"]["left"].as_u64().unwrap();
+    assert!((40..=60).contains(&left), "{held}");
+    // One alert, with the real delay and its two buttons.
+    let alert = wait_for("the hold's alert", Duration::from_secs(10), || {
+        cp.fake().ntfy_posts().into_iter().find(|p| p["text"].as_str().is_some_and(|t| t.contains("en attente")))
+    });
+    let text = alert["text"].as_str().unwrap().to_string();
+    assert!(text.starts_with("Passage au farming mpw4 en attente : tu joues. Nouvel essai dans ") && text.ends_with(" s."), "{text}");
+    let actions = alert["headers"]["Actions"].as_str().unwrap().to_string();
+    let buttons: Vec<&str> = actions.split("; ").collect();
+    assert_eq!(buttons.len(), 2, "{actions}");
+    assert!(buttons[0].starts_with("http, 'Passer en jeu libre', 'http://"), "{actions}");
+    assert!(buttons[1].starts_with("http, 'Reprendre maintenant', 'http://"), "{actions}");
+    let id = held["hold"]["id"].as_str().unwrap();
+    for (button, action) in buttons.iter().zip(["free", "resume"]) {
+        assert!(button.contains("/api/v1/plugins/slayer-legend/mode/hold', method='POST', "), "{button}");
+        assert!(button.contains(&format!("body='{{\"action\":\"{action}\",\"hold\":\"{id}\"}}'")), "{button}");
+    }
+    assert!(!actions.contains(&cp.page_token()), "never the page token: {actions}");
+    let token = actions.split("headers.X-CloudPhone-Action='").nth(1).unwrap().split('\'').next().unwrap().to_string();
+    assert_eq!(post_with_action_token(&cp, hold, "not-a-token", &json!({"action": "resume"})), 403);
+    assert_eq!(post_with_action_token(&cp, mode, &token, &json!({"mode": "free"})), 403, "only its own path");
+    // « Reprendre maintenant » from the phone: the switch runs now, once.
+    assert_eq!(post_with_action_token(&cp, hold, &token, &json!({"action": "resume", "hold": id})), 200);
+    assert_eq!(post_with_action_token(&cp, hold, &token, &json!({"action": "resume", "hold": id})), 403, "spent");
+    let resumed = wait_for("the switch resumed", Duration::from_secs(20), || {
+        let answer = cp.try_get_json(mode)?;
+        (answer["hold"].is_null() && answer["state"] != "waiting").then_some(answer)
+    });
+    assert_eq!(resumed["mode"], "mpw4", "{resumed}");
+    // The same answer again changes nothing; another one finds nothing on hold.
+    assert_eq!(cp.post_json(hold, &json!({"action": "resume"})).status(), 200);
+    assert_eq!(cp.post_json(hold, &json!({"action": "free"})).status(), 409);
+    assert_eq!(cp.post_json(hold, &json!({"action": "later"})).status(), 400);
+    let alerts: Vec<Value> = cp.fake().ntfy_posts().into_iter()
+        .filter(|p| p["text"].as_str().is_some_and(|t| t.contains("en attente"))).collect();
+    assert_eq!(alerts.len(), 1, "one alert: {alerts:?}");
+}

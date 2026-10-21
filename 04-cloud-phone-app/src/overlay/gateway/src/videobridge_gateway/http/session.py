@@ -4,7 +4,8 @@
     GET /api/v1/emulator/ws-jsep  the signalling WebSocket
 
 and guard(), the middleware that refuses cross-origin requests and POSTs
-without the token (see core/session.py for the rules,
+without the token, or without a one-time action token for that path (a
+phone alert's button, ACTIONS: see core/actions.py) (see core/session.py for the rules,
 adapters/videobridge.py for the emulator's side).
 """
 
@@ -13,15 +14,18 @@ import json
 import logging
 import os
 import secrets
+import time
 
 from aiohttp import web
 
 from ..adapters import host_files
 from ..adapters.videobridge import Bridge
-from ..core import session
+from ..core import actions, session
 from . import viewers
 
 TOKEN = secrets.token_urlsafe(32)
+# The one-time action tokens of the phone alerts' buttons (core/actions.py).
+ACTIONS = {}
 
 
 @web.middleware
@@ -30,6 +34,13 @@ async def guard(request, handler):
         logging.warning(f"Refused {request.method} {request.path} from origin {request.headers.get('Origin')!r}")
         return web.json_response({"error": "Cross-origin requests are not accepted"}, status=403)
     if session.token_needed(request.method):
+        action = request.headers.get(actions.ACTION_HEADER)
+        if action is not None:
+            # A phone alert's button: one POST to its own path, once.
+            if not actions.redeem(ACTIONS, action, request.method, request.path, time.time()):
+                logging.warning(f"Refused {request.method} {request.path}: action token unknown, spent or expired")
+                return web.json_response({"error": "Action token unknown, spent or expired"}, status=403)
+            return await handler(request)
         if not session.token_valid(request.headers.get(session.TOKEN_HEADER, ""), TOKEN):
             return web.json_response({"error": "Missing or invalid page token: reload the page"}, status=403)
     return await handler(request)

@@ -29,7 +29,13 @@ from any page ({monotonic, wall} seconds, None since the gateway started;
 see http/activity.py), context.viewers() the viewers connected now, so
 that what a plugin does on its own can wait while someone plays. Both are
 additions to API 1: a plugin for older gateways checks they exist. So is
-context.add_delete(path, handler), beside add_get and add_post.
+context.add_delete(path, handler), beside add_get and add_post. And
+buttons in a phone alert: context.action_token(path, seconds) gives a
+one-time token for one POST to the plugin's path (core/actions.py: short-
+lived, spent once, never the page token, which must not reach ntfy.sh),
+context.revoke_action(token) withdraws it, and context.notify(text,
+actions=[{label, path, body, token}]) puts the buttons in the alert, each
+posting body to the gateway's address as the phone reaches it.
 
 A plugin may keep files in its own data directory, DATA_DIR/<id>
 (--plugin_data, /var/lib/cloudphone/plugins on a server), created by the
@@ -49,8 +55,11 @@ import json
 import logging
 import os
 import re
+import time
 
 from aiohttp import web
+
+from .core import actions as action_tokens
 
 # The plugin API's major version (see "api" above).
 API_VERSION = 1
@@ -106,7 +115,7 @@ class PluginContext:
     """What a plugin's gateway.py may use. Passed to setup(context)."""
 
     def __init__(self, app, plugin_id, directory, screenshot, adb, notify=None, title=None, data_dir=None,
-                 screenshots=None, activity=None):
+                 screenshots=None, activity=None, actions=None):
         self.app = app
         self.id = plugin_id
         self.directory = directory
@@ -119,6 +128,8 @@ class PluginContext:
         self._notify = notify
         self._title = title or plugin_id
         self._activity = activity
+        # The gateway's one-time action tokens (http/session.py's ACTIONS).
+        self._actions = actions if actions is not None else {}
 
     def add_get(self, path, handler):
         """GET /api/v1/plugins/<id><path>."""
@@ -155,10 +166,30 @@ class PluginContext:
         plugin's handlers change; it returns what it found."""
         return await asyncio.get_running_loop().run_in_executor(ANALYSIS, functools.partial(fn, *args))
 
-    async def notify(self, text):
+    async def notify(self, text, actions=None):
         """Sends text to the user's phone when they turned alerts on (ntfy,
-        see http/notify.py), titled with the plugin's name; True when sent."""
-        return bool(self._notify) and await self._notify(text, title=self._title)
+        see http/notify.py), titled with the plugin's name; True when sent.
+        actions: its buttons, [{label, path, body, token}] (token: from
+        action_token for that path), at most 3."""
+        if not self._notify:
+            return False
+        if not actions:
+            return await self._notify(text, title=self._title)
+        base = self.app.get("public_url") or ""
+        buttons = [{"label": action["label"], "url": f"{base}{self.prefix}{action['path']}",
+                    "body": action.get("body"),
+                    "headers": {action_tokens.ACTION_HEADER: action["token"]}} for action in actions]
+        return await self._notify(text, title=self._title, actions=buttons)
+
+    def action_token(self, path, seconds):
+        """A one-time token for one POST to /api/v1/plugins/<id><path>
+        within seconds (at most core/actions.MAX_SECONDS), for a phone
+        alert's buttons."""
+        return action_tokens.issue(self._actions, f"{self.prefix}{path}", time.time(), seconds)
+
+    def revoke_action(self, token):
+        """The alert is out of date: its token no longer works."""
+        action_tokens.revoke(self._actions, token)
 
     def last_input(self):
         """The user's last touch, swipe or key, from any page: {monotonic,
@@ -211,10 +242,11 @@ def plugin_data_dir(data_dir, plugin_id):
     return path
 
 
-def load_plugins(app, plugins_dir, screenshot, adb, notify=None, data_dir=None, activity=None):
+def load_plugins(app, plugins_dir, screenshot, adb, notify=None, data_dir=None, activity=None, actions=None):
     """Registers every plugin found in plugins_dir; returns their manifests.
     data_dir: the parent of the plugins' data directories, or None.
-    activity: last() and viewers(), the user's activity (http/activity.py)."""
+    activity: last() and viewers(), the user's activity (http/activity.py).
+    actions: the one-time action tokens the guard accepts (http/session.py)."""
     loaded = []
     screenshots = Screenshots(screenshot)
     app["plugin_screenshots"] = screenshots
@@ -245,7 +277,7 @@ def load_plugins(app, plugins_dir, screenshot, adb, notify=None, data_dir=None, 
                 spec.loader.exec_module(module)
                 screenshots.counts.setdefault(plugin_id, 0)
                 module.setup(PluginContext(app, plugin_id, directory, screenshot, adb, notify, manifest.get("title"),
-                                           plugin_data_dir(data_dir, plugin_id), screenshots, activity))
+                                           plugin_data_dir(data_dir, plugin_id), screenshots, activity, actions))
             loaded.append(manifest)
             logging.info(f"Plugin {plugin_id} {manifest['version']} loaded")
         except Exception as e:
