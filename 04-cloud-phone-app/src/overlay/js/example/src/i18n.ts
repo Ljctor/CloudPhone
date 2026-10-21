@@ -55,7 +55,6 @@ const EN = {
   'Fermer': 'Close',
   // Panels
   'Serveur': 'Server',
-  'Cet appareil': 'This device',
   'État': 'Status',
   'injoignable': 'unreachable',
   'joignable': 'reachable',
@@ -81,7 +80,6 @@ const EN = {
   'Débit vidéo': 'Video bitrate',
   'Paquets perdus': 'Packets lost',
   'Gigue': 'Jitter',
-  'Android et flux vidéo': 'Android and video stream',
   'Flux vidéo': 'Video stream',
   'Images envoyées': 'Frames sent',
   'Codec': 'Codec',
@@ -110,7 +108,6 @@ const EN = {
   'Images/s du jeu': 'Game frames/s',
   'Moteur de rendu': 'Renderer',
   'Réglages d’Android': 'Android settings',
-  'Événements': 'Events',
   'Journaux du serveur': 'Server logs',
   'Configurer': 'Configure',
   'Journaux du client': 'Client logs',
@@ -181,7 +178,6 @@ const EN = {
   'Échec : {message}': 'Failed: {message}',
   'Gateway injoignable': 'Gateway unreachable',
   'Erreur {status}': 'Error {status}',
-  'Android va redémarrer en {size}.': 'Android will restart at {size}.',
   'Cela prend une à deux minutes. Les applications ouvertes se ferment ; les données sont conservées.':
     'This takes one to two minutes. Open apps close; data is kept.',
   // Status messages

@@ -108,6 +108,7 @@ a decision comes out.
 | `test_engraving_screen.py`, `test_engraving_setup_rules.py` | the engraving screen's readers on crops of one real capture (`fixtures/eg_*`) and the setup's rules on its readings (`python3 -m unittest test_engraving_screen test_engraving_setup_rules`) |
 | `test_mine.py` | the mine on a scripted game, on virtual time, through the guard: an untick that will not take, the mine turned off and on in one tick, its taps waiting for the lease (a user input, an outside holder), an input with the game away not waited for, the lease's routes and expiry, the free-play warning (`python3 -m unittest test_mine`) |
 | `test_switch.py` | a mode switch on virtual time with the phone's step latencies: under 60 s from a radio change, the timer's end switching back on time with no watchdog, the lease's wait said apart, one alert over budget, the hold while you play (one alert, resume now, free play instead, refused with nothing on hold) (`python3 -m unittest test_switch`) |
+| `test_i18n.py` | English means English, a source lint of this plugin's page side and part 04's page: every French literal has its English entry, no entry is orphaned (a literal, or a template of `templates.json`), `templates.json` maps each template to English with the same placeholders (`python3 -m unittest test_i18n`) |
 
 The tests run in this directory and are not installed, nor is this README.
 
