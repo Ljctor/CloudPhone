@@ -263,6 +263,19 @@
      "label": "Android Back on the battle screen",
      "forbidden": true,
      "reason": "opens the game's quit dialog"
+    },
+    {
+     "id": "better_soul_weapon",
+     "to": "battle",
+     "area": [
+      0.71,
+      0.32,
+      1.0,
+      0.37
+     ],
+     "label": "toast « Better Soul Weapon / Equip » at the right (seen 2026-10-21)",
+     "forbidden": true,
+     "reason": "equips the game's choice of soul weapon, not the loadout's: only through the Soul Weapon screen"
     }
    ]
   },
@@ -756,9 +769,9 @@
      "to": "soul_weapon",
      "tap": [
       0.92,
-      0.462
+      0.446
      ],
-     "label": "sword on a beige background: Soul Weapon"
+     "label": "sword on a beige background: Soul Weapon (only once the Weapon tab reads active: on Accessories the same spot opens Black Orb)"
     },
     {
      "id": "batch_combine",
@@ -1050,15 +1063,15 @@
   },
   "soul_weapon": {
    "name": "Soul Weapon",
-   "recognise": "title 'Soul Weapon', weapon list on the left, card with Craft and Breakdown",
-   "source": "seen 2026-10-18",
+   "recognise": "title 'Soul Weapon' (soul_weapon.title), weapon list on the left, card with the selected weapon's name, Owned : N, Craft or Harvest, and Breakdown",
+   "source": "seen 2026-10-18, captured 2026-10-21",
    "moves": [
     {
      "id": "close",
      "to": "equipment_weapon",
      "tap": [
       0.5,
-      0.95
+      0.955
      ],
      "label": "red X"
     },
@@ -1069,22 +1082,54 @@
       0.0,
       0.55,
       0.17,
-      0.92
+      0.93
      ],
-     "label": "weapon in the left list"
+     "label": "a whole cell of the left list, in its upper part (soul_weapon.select_point)",
+     "precondition": "the fresh capture read (seen): the point is on none of the orange tags in the list",
+     "needs": {
+      "off_tags": true
+     }
+    },
+    {
+     "id": "scroll",
+     "to": "soul_weapon",
+     "swipe": [
+      0.087,
+      0.86,
+      0.087,
+      0.62
+     ],
+     "label": "drag the left list up or down (starting in a cell's upper part, slowly: no fling)",
+     "precondition": "the fresh capture read (seen): the swipe starts on none of the orange tags in the list",
+     "needs": {
+      "off_tags": true
+     }
     },
     {
      "id": "equip",
      "to": "soul_weapon",
      "area": [
       0.0,
-      0.83,
+      0.55,
       0.17,
-      0.86
+      0.93
      ],
-     "label": "Equip tag under the selected weapon",
+     "label": "the orange tag under the selected weapon, when it reads Equip",
+     "precondition": "the fresh capture read (seen): the one tag reads Equip, the point is on it, and the card's name is the loadout's weapon (the target)",
+     "needs": {
+      "tag": "Equip",
+      "selected_is_target": true,
+      "on_tag": true
+     },
+     "effect": "equips the selected soul weapon; the tag then reads Unequip"
+    },
+    {
+     "id": "unequip",
+     "to": "soul_weapon",
+     "on_tag": "Unequip",
+     "label": "the same tag on the equipped weapon, reading Unequip (seen 2026-10-21 at 0.09, 0.847)",
      "forbidden": true,
-     "reason": "on the equipped weapon the same tag reads Unequip (seen 2026-10-21): refused until Equip and Unequip are told apart"
+     "reason": "takes the soul weapon off; a tap on a tag read Unequip is refused, whatever the move"
     },
     {
      "id": "engraving",
@@ -2113,7 +2158,12 @@
     {
      "id": "close",
      "label": "Close app / Fermer l’application",
-     "area": [0.0, 0.2, 1.0, 0.8],
+     "area": [
+      0.0,
+      0.2,
+      1.0,
+      0.8
+     ],
      "precondition": "uiautomator dump: the node android:id/aerr_close, tapped at its bounds' centre",
      "to": "unknown"
     },
@@ -2134,7 +2184,12 @@
     {
      "id": "wait",
      "label": "Wait / Attendre",
-     "area": [0.0, 0.2, 1.0, 0.8],
+     "area": [
+      0.0,
+      0.2,
+      1.0,
+      0.8
+     ],
      "precondition": "uiautomator dump: the node android:id/aerr_wait, tapped at its bounds' centre",
      "to": "unknown"
     },

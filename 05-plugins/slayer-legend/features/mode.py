@@ -10,7 +10,8 @@ POST /mode/timer   {add: minutes}: moves the end of the mode (and of the mine)
 
 Entering mpw18 or mpw4 farming brings the game there in the background
 (features/stage_change.py): the mode's stage, its Battle settings preset,
-AUTO on; a step that fails stops it with one alert naming the step. It
+AUTO on, then its soul weapon equipped; a step that fails stops it with
+one alert naming the step. It
 starts at once on its trigger (POST /mode, or the timer's end: the watch
 wakes on it), within rules.SWITCH_BUDGET seconds; each switch is one log
 line with its steps' seconds, and one alert naming the slowest step when

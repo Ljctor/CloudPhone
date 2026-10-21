@@ -17,6 +17,10 @@ def load(name):
 
 nav = load("nav")
 mine = load("mine")
+# What a fresh capture of the Soul Weapon screen showed: no tag, or the
+# tag where it was seen (0.09, 0.847).
+CLEAR = {"selected": None, "target": "Ambition", "tag": None, "tag_box": None, "tags": []}
+TAG = [0.03, 0.835, 0.15, 0.86]
 
 
 class Graph(unittest.TestCase):
@@ -32,6 +36,7 @@ class Graph(unittest.TestCase):
             ("shop_summon", "summon", (0.70, 0.60)),
             ("equipment_weapon", "batch_combine", (0.50, 0.905)),
             ("battle", "scroll", (0.94, 0.15)),
+            ("battle", "better_soul_weapon", (0.85, 0.345)),
             ("black_orb", "orb", (0.50, 0.60)),
             ("black_orb", "obtain", (0.89, 0.963)),
             ("black_orb", "summon", (0.50, 0.963)),
@@ -42,12 +47,43 @@ class Graph(unittest.TestCase):
     def test_allowed_move_on_a_forbidden_spot(self):
         # A tap meant for the weapon list but landing on Breakdown is
         # refused.
-        self.assertIsNotNone(nav.guard("soul_weapon", "select", 0.80, 0.84))
-        self.assertIsNone(nav.guard("soul_weapon", "select", 0.09, 0.70))
+        self.assertIsNotNone(nav.guard("soul_weapon", "select", 0.80, 0.84, verified=True, seen=CLEAR))
+        self.assertIsNone(nav.guard("soul_weapon", "select", 0.09, 0.70, verified=True, seen=CLEAR))
 
-    def test_equip_tag_refused(self):
-        # On the equipped weapon the tag reads Unequip: refused for now.
-        self.assertIn("forbidden", nav.guard("soul_weapon", "equip", 0.09, 0.847))
+    def test_soul_weapon_list_avoids_its_tags(self):
+        # Select and scroll need the fresh capture's tags, and stay off them.
+        self.assertIn("check first", nav.guard("soul_weapon", "select", 0.09, 0.70))
+        self.assertIn("needs what the fresh capture shows", nav.guard("soul_weapon", "select", 0.09, 0.70,
+                                                                      verified=True))
+        tagged = dict(CLEAR, tags=[TAG])
+        self.assertIn("on a tag", nav.guard("soul_weapon", "select", 0.09, 0.847, verified=True, seen=tagged))
+        self.assertIsNone(nav.guard("soul_weapon", "select", 0.09, 0.80, verified=True, seen=tagged))
+        self.assertIn("on a tag", nav.guard("soul_weapon", "scroll", 0.09, 0.847, "swipe", True, tagged))
+        self.assertIsNone(nav.guard("soul_weapon", "scroll", 0.087, 0.80, "swipe", True, tagged))
+
+    def test_equip_only_on_a_tag_read_equip_on_the_target(self):
+        equip = {"selected": "Ambition", "target": "Ambition", "tag": "Equip", "tag_box": TAG, "tags": [TAG]}
+        self.assertIn("check first", nav.guard("soul_weapon", "equip", 0.09, 0.847))
+        self.assertIn("needs what the fresh capture shows", nav.guard("soul_weapon", "equip", 0.09, 0.847,
+                                                                      verified=True))
+        self.assertIsNone(nav.guard("soul_weapon", "equip", 0.09, 0.847, verified=True, seen=equip))
+        # Off the tag, another weapon selected, an unread name or tag: refused.
+        self.assertIn("not on the tag", nav.guard("soul_weapon", "equip", 0.09, 0.70, verified=True, seen=equip))
+        self.assertIn("target", nav.guard("soul_weapon", "equip", 0.09, 0.847, verified=True,
+                                          seen=dict(equip, selected="Grand")))
+        self.assertIn("target", nav.guard("soul_weapon", "equip", 0.09, 0.847, verified=True,
+                                          seen=dict(equip, selected=None)))
+        self.assertIn("tag read", nav.guard("soul_weapon", "equip", 0.09, 0.847, verified=True,
+                                            seen=dict(equip, tag=None)))
+
+    def test_unequip_refused_forever(self):
+        # The tag read Unequip: refused, whatever the move and the checks.
+        unequip = {"selected": "Ambition", "target": "Ambition", "tag": "Unequip", "tag_box": TAG, "tags": [TAG]}
+        self.assertIn("forbidden", nav.guard("soul_weapon", "unequip", 0.09, 0.847, verified=True, seen=unequip))
+        for move, kind in (("equip", "tap"), ("select", "tap"), ("scroll", "swipe")):
+            self.assertIn("forbidden", nav.guard("soul_weapon", move, 0.09, 0.847, kind, True, unequip), move)
+        equip = next(m["precondition"] for m in nav.connections("soul_weapon") if m["id"] == "equip")
+        self.assertIn(("soul_weapon", "equip", equip), nav.preconditions())
 
     def test_ad_summons(self):
         # Summons by ad are allowed, the paid ones beside them are not.

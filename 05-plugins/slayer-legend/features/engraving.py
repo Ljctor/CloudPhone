@@ -10,9 +10,10 @@ GET  /loadout                    {loadouts: {mpw18, mpw4}}, each {stage, preset,
 POST /loadout                    {mode, stage, preset, soul_weapon: {id, variant}}: one mode's loadout;
                                  a field absent keeps its value, a null one clears it
 
-Read-only for the game: nothing is equipped or placed yet; a later phase
-compares the grid on the engraving screen with the pattern and reads the
-pieces there first (engraving_rules.feasible, missing_alert). The rules
+Nothing is placed yet: the soul weapon is equipped by the stage change
+feature (features/soul_weapon.py, from this loadout), and a later phase
+places the engraving after reading the pieces there first
+(engraving_rules.feasible, missing_alert). The rules
 are in engraving_rules.py; the loadouts are kept in state.json
 ("loadouts"). They are the one place of the mpw18 and mpw4 stages: the
 mode feature (POST /mode's stage18, stage4) and the watchdog read and set
@@ -43,8 +44,16 @@ def engraving(ports, rules):
         if loadouts[mode]["stage"] is None and rules.stage_or_none(number):
             set_stage(mode, number)
 
+    def expected_cells(weapon_id, name):
+        """The cells the weapon's variant name fills ([row, col]), None when
+        unknown."""
+        entry = rules.weapon_by_id(weapon_id, table)
+        variant = rules.variants(entry, rotate).get(name) if entry and entry.get("grid") else None
+        return sorted({tuple(cell) for piece in variant["pieces"] for cell in piece["cells"]}) if variant else None
+
     api = {"loadout": lambda mode: dict(loadouts[mode]), "stage": lambda mode: loadouts[mode]["stage"],
-           "set_stage": set_stage, "adopt_stage": adopt_stage}
+           "set_stage": set_stage, "adopt_stage": adopt_stage, "expected_cells": expected_cells,
+           "table": table}
 
     def summary(entry):
         return {key: entry.get(key) for key in ("id", "name", "stage", "grid", "source", "verified_in_game",

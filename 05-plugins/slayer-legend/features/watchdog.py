@@ -247,6 +247,9 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         ended = launches["state"]()
         # Said by the next look (repair done or without effect).
         logging.debug(f"Slayer Legend watchdog: relaunch ended: {ended['state']} {ended['message']}".rstrip())
+        if ended["state"] == "done" and farming and "relaunched" in farming:
+            # The game is back: its soul weapon read again (features/soul_weapon.py).
+            farming["relaunched"](mode_now())
         if ended["state"] == "deferred":
             memory = rules.not_run(memory, "relaunch")
         elif ended["state"] in ("blocked", "failed"):

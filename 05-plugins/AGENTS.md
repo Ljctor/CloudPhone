@@ -55,6 +55,32 @@ Rules:
     - Battle settings' close button: after its preset reads selected.
     - The AUTO gear: not tapped until a real AUTO-off capture calibrates
       its reading (`AUTO_TAP_LEARNED`).
+  - Soul weapon (last step of a mode change, after AUTO, and once after a
+    watchdog relaunch; never periodic; switch `soul_weapon`, real by
+    default, "off" stops it; skipped while the last check read the target
+    equipped and no relaunch or user input came since):
+    - Equipment (the bottom tab), from the battle screen with nothing over
+      it; the Weapon tab when the panel reads Accessories (whose same
+      top-right spot opens Black Orb).
+    - The Soul Weapon icon: only once the Weapon tab reads active; then its
+      title must read "Soul Weapon". Closed with its red X, then the panel
+      with its own tab.
+    - Selecting a weapon in the left list: a whole cell, in its upper part,
+      never on an orange tag the fresh capture shows.
+    - Scrolling that list: a slow drag from one whole cell's upper part to
+      another's, never starting on a tag.
+    - Equip (the orange tag): only when the fresh capture reads exactly one
+      tag, reading "Equip", the tap on it, and the card's name read as the
+      loadout's weapon, owned (Owned : 1 or more); afterwards the tag must
+      read Unequip with the name unchanged.
+    - At most 10 list moves (selects, scrolls and Equip together); a move
+      that changes nothing stops it, with one alert naming the step.
+    - Never the battle screen's « Better Soul Weapon / Equip » toast (it
+      equips the game's choice, not the loadout's).
+    - Never Unequip (any tap on a tag read Unequip is refused by the
+      guard), Craft, Harvest or Breakdown; never Change on the engraving
+      screen. The engraving screen (the card's big icon, read only) is not
+      opened until its readers are calibrated on a capture.
   - Closed mine (mode "mine"): its floor row, the Area, 3 feathers,
     scrolling its floor list, and unticking "Repeat entry" (at most 3
     tries, then one alert).

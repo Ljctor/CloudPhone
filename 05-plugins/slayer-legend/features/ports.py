@@ -305,10 +305,11 @@ def build(context, nav):
     async def adb(*args, timeout=10):
         return await context.adb(*args, timeout=timeout)
 
-    def allowed(screen, move, point, kind="tap", verified=False):
+    def allowed(screen, move, point, kind="tap", verified=False, seen=None):
         """Every action goes through the navigation graph's guard first:
-        refused unless it is an allowed move of the screen recognised."""
-        refusal = nav.guard(screen, move, point[0], point[1], kind, verified)
+        refused unless it is an allowed move of the screen recognised (seen:
+        what the fresh capture showed, for the moves that need it)."""
+        refusal = nav.guard(screen, move, point[0], point[1], kind, verified, seen)
         if refusal:
             logging.error(f"Slayer Legend: action refused: {refusal}")
             raise RuntimeError(f"Action refusée par le garde-fou : {refusal}")
@@ -333,9 +334,9 @@ def build(context, nav):
             HOLDER.reset(token)
             lease.release(holder)
 
-    async def tap(shot, screen, move, point, verified=False):
+    async def tap(shot, screen, move, point, verified=False, seen=None):
         lease.check(HOLDER.get())
-        allowed(screen, move, point, verified=verified)
+        allowed(screen, move, point, verified=verified, seen=seen)
         width, height, _ = shot
         await adb("shell", "input", "tap", str(round(point[0] * width)), str(round(point[1] * height)))
 
@@ -357,9 +358,9 @@ def build(context, nav):
         x, y = str(round(point[0] * width)), str(round(point[1] * height))
         await adb("shell", "input", "swipe", x, y, x, y, str(milliseconds), timeout=milliseconds / 1000 + 10)
 
-    async def swipe(shot, screen, move, start, end, milliseconds):
+    async def swipe(shot, screen, move, start, end, milliseconds, verified=False, seen=None):
         lease.check(HOLDER.get())
-        allowed(screen, move, start, "swipe")
+        allowed(screen, move, start, "swipe", verified, seen)
         width, height, _ = shot
         await adb("shell", "input", "swipe", str(round(start[0] * width)), str(round(start[1] * height)),
                   str(round(end[0] * width)), str(round(end[1] * height)), str(milliseconds))

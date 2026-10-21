@@ -2,9 +2,10 @@
 AUTO on: the moves the mode feature makes when a farming mode starts, and
 the watchdog's repairs.
 
-GET  /farming   {switches: {stage_change, preset, auto}, last}
+GET  /farming   {switches: {stage_change, preset, auto}, soul_weapon, last}
 POST /farming   {stage_change, preset, auto}: each "real" or "plan" (a
-                field absent keeps its value); needs the page token
+                field absent keeps its value); soul_weapon: "real" or
+                "off"; needs the page token
 
 Each repair has its switch, kept in state.json ("farming"), "plan" by
 default: then the plan is written to the log and nothing is tapped. Each
@@ -44,13 +45,23 @@ Every sequence holds the shared lease (holder "stage_change", reason
 in the last minute (the caller waits for its next look), and a user input
 during it stops it at the next tap.
 
-api: farm(stage, preset, mode) runs the three; change_stage, set_preset,
-ensure_auto alone; each answers {result: "done", "plan" or "failed",
-text}. read_controls() for the watchdog: {preset, auto} read on one
-unfold, or None.
+- Soul Weapon (last, after AUTO: a slow one never delays farming): the
+  mode's loadout's soul weapon equipped (features/soul_weapon.py). Its
+  switch, soul_weapon, is "real" by default (the user's choice: no plan
+  mode), "off" an emergency stop; kept in state.json ("soul_weapon").
+  Its failure is the sequence's, "Soul Weapon : <step>" (stage, preset and
+  AUTO are done by then). After a watchdog relaunch (relaunched(mode)) it
+  runs alone, with one alert if it fails.
+
+api: farm(stage, preset, mode) runs the four; change_stage, set_preset,
+ensure_auto, ensure_soul_weapon(mode, loadout=None) alone (the last for a
+loadout change of the active mode); each answers {result: "done", "plan"
+or "failed", text}. read_controls() for the watchdog: {preset, auto} read
+on one unfold, or None. relaunched(mode) for the watchdog's relaunch.
 """
 
 import logging
+from types import SimpleNamespace
 
 # After a move: a fresh capture every POLL seconds until the screen
 # expected shows, at most SETTLE seconds (MOVE_SETTLE for a stage to load).
@@ -69,6 +80,10 @@ LOOK_GAP = 0.4
 FOLD_SETTLE = 4.0
 SETTINGS_CLOSE = (0.09, 0.965)
 LEASE_SECONDS = 240
+# After a relaunch, the soul weapon's check waits for the lease this often,
+# this long at most (seconds).
+RELAUNCH_RETRY = 10
+RELAUNCH_WAIT = 300
 HOLDER = "stage_change"
 SWITCHES = ("stage_change", "preset", "auto")
 # The AUTO gear's tap waits for a real OFF capture (see above).
@@ -92,9 +107,11 @@ def kept_switches(saved):
             for name in SWITCHES}
 
 
-def stage_change(ports, screens, select, controls, rules, table):
+def stage_change(ports, screens, select, controls, rules, table, soul=None):
     """select: stage_select.py; controls: battle_controls.py; table:
-    stages.json."""
+    stages.json; soul: {feature (features/soul_weapon.py's soul_weapon),
+    reader, rules, table, loadout, expected_cells} for the soul weapon step
+    (None: no such step)."""
     names = select.regions(table)
     switches = kept_switches((ports.store.saved.get("farming") or {}).get("switches"))
     status = {"last": None}
@@ -130,9 +147,12 @@ def stage_change(ports, screens, select, controls, rules, table):
         if not await ports.focused():
             raise Stop("le jeu n’est plus au premier plan")
 
-    async def tap(shot, screen, move, point, verified=False):
+    async def tap(shot, screen, move, point, verified=False, seen=None):
         await front()
-        await ports.tap(shot, screen, move, point, verified=verified)
+        if seen is None:
+            await ports.tap(shot, screen, move, point, verified=verified)
+        else:
+            await ports.tap(shot, screen, move, point, verified=verified, seen=seen)
 
     async def to_battle(may_tap=True):
         """A fresh look at the battle screen with nothing over it: a bottom
@@ -299,16 +319,75 @@ def stage_change(ports, screens, select, controls, rules, table):
         status["last"] = {**answer, "mode": mode}
         return answer
 
+    souls = None
+    if soul:
+        souls = soul["feature"](ports, screens, soul["reader"], soul["rules"], soul["table"],
+                                SimpleNamespace(look=look, tap=tap, front=front, to_battle=to_battle, Stop=Stop),
+                                soul.get("expected_cells"))
+
+    async def equip_soul_weapon(mode, loadout=None):
+        """The mode's loadout's soul weapon equipped (loadout: that one
+        instead of the stored one; none chosen, or the switch off:
+        nothing)."""
+        part = loadout if loadout is not None else (soul["loadout"](mode) if souls else None)
+        chosen = (part or {}).get("soul_weapon") if souls else None
+        if not chosen or souls["switch"]() != "real":
+            return
+        try:
+            await souls["ensure"](chosen["id"], chosen.get("variant"))
+        except Stop as e:
+            raise Stop(f"Soul Weapon : {e}") from None
+
+    async def ensure_soul_weapon(mode, loadout=None):
+        """The soul weapon step alone, under the lease (e.g. the active
+        mode's loadout just changed): {result: "done" or "failed", text};
+        ports.Busy when the lease cannot be had (the caller retries). A
+        weapon read equipped since the last relaunch or user input is not
+        read again (≈0 s); another one is."""
+        return await run(mode, [("soul_weapon", lambda: equip_soul_weapon(mode, loadout))])
+
     async def farm(stage, preset, mode, highest=None):
-        """Farming stage with preset (None: kept as it is), AUTO on; never a
-        stage past highest (the highest seen farmed, None: unknown)."""
+        """Farming stage with preset (None: kept as it is), AUTO on, then the
+        loadout's soul weapon; never a stage past highest (the highest seen
+        farmed, None: unknown)."""
         if highest and stage > highest:
             return {"result": "failed", "text": f"stage {stage} au-delà du plus haut vu farmé ({highest})"}
         steps = [("stage", lambda: change_stage(stage))]
         if preset:
             steps.append(("preset", lambda: set_preset(preset)))
         steps.append(("auto", ensure_auto))
-        return await run(mode, steps)
+        steps.append(("soul_weapon", lambda: equip_soul_weapon(mode)))
+        answer = await run(mode, steps)
+        engraving = ((souls["state"]()["last"] or {}).get("engraving") if souls else None)
+        if answer["result"] != "failed" and engraving:
+            await ports.notify(engraving)
+        return answer
+
+    async def after_relaunch(mode):
+        """The soul weapon read again once the game is back: the lease
+        waited for (every RELAUNCH_RETRY, at most RELAUNCH_WAIT), one alert
+        on a failure."""
+        since = ports.clock.monotonic()
+        while True:
+            try:
+                answer = await run(mode, [("soul_weapon", lambda: equip_soul_weapon(mode))])
+                break
+            except ports.Busy:
+                if ports.clock.monotonic() - since >= RELAUNCH_WAIT:
+                    logging.info("Slayer Legend soul weapon after a relaunch: lease still taken, dropped")
+                    return
+                await ports.clock.sleep(RELAUNCH_RETRY)
+        if answer["result"] == "failed":
+            await ports.notify(f"Après la relance du jeu ({mode}) : {answer['text']}"[:200])
+
+    def relaunched(mode):
+        """For the watchdog, once its relaunch brought the game back."""
+        if not souls or mode not in ("mpw18", "mpw4"):
+            return None
+        souls["relaunched"]()
+        if not (soul["loadout"](mode) or {}).get("soul_weapon") or souls["switch"]() != "real":
+            return None
+        return ports.spawn(after_relaunch(mode))
 
     async def read_controls():
         """{preset, auto} read on one unfold of the controls (a tap: under
@@ -325,15 +404,18 @@ def stage_change(ports, screens, select, controls, rules, table):
             return None
 
     async def handle_get(request):
-        return ports.respond({"switches": dict(switches), "last": status["last"]})
+        return ports.respond({"switches": dict(switches), "last": status["last"],
+                              "soul_weapon": souls["state"]() if souls else None})
 
     async def handle_post(request):
         try:
             body = await request.json()
         except (ValueError, TypeError, AttributeError):
             body = None
-        if not isinstance(body, dict) or any(body.get(k) not in (None, "real", "plan") for k in SWITCHES):
-            return ports.respond({"error": "Expected {stage_change, preset, auto}: \"real\" or \"plan\""}, status=400)
+        if not isinstance(body, dict) or any(body.get(k) not in (None, "real", "plan") for k in SWITCHES) \
+                or body.get("soul_weapon") not in (None, "real", "off"):
+            return ports.respond({"error": "Expected {stage_change, preset, auto}: \"real\" or \"plan\"; "
+                                           "soul_weapon: \"real\" or \"off\""}, status=400)
         if body.get("auto") == "real" and not AUTO_TAP_LEARNED:
             return ports.respond({"error": AUTO_NOT_LEARNED}, status=400)
         for name in SWITCHES:
@@ -341,6 +423,8 @@ def stage_change(ports, screens, select, controls, rules, table):
                 if switches[name] != body[name]:
                     logging.info(f"Slayer Legend stage change: {name} switched to {body[name]}")
                 switches[name] = body[name]
+        if body.get("soul_weapon") and souls:
+            souls["set_switch"](body["soul_weapon"])
         ports.store.save()
         return await handle_get(request)
 
@@ -349,5 +433,7 @@ def stage_change(ports, screens, select, controls, rules, table):
            "set_preset": lambda name, mode="mpw18": run(mode, [("preset", lambda: set_preset(name))]),
            "ensure_auto": lambda mode="mpw18": run(mode, [("auto", ensure_auto)]),
            "read_controls": read_controls, "switches": lambda: dict(switches),
+           "relaunched": relaunched, "ensure_soul_weapon": ensure_soul_weapon,
+           "soul_weapon": lambda mode="mpw18": ensure_soul_weapon(mode),
            "battle_stage": lambda shot: select.battle_stage(shot, names)}
     return {"api": api, "routes": [("GET", "/farming", handle_get), ("POST", "/farming", handle_post)]}

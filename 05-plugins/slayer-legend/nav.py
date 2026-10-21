@@ -6,6 +6,14 @@ an action, the caller names the screen it recognised and the move it
 wants; guard() refuses unless that move is an allowed move of that screen,
 the point is where the move says, and no forbidden move of that screen
 covers the point. Deterministic: no guessing, refused by default.
+
+A move may need what the fresh capture showed (`needs`, checked against
+the caller's seen): the Soul Weapon list's moves avoid its orange tags
+(off_tags: seen["tags"], boxes), and its Equip needs the one tag read
+"Equip" (tag), the point on it (on_tag: seen["tag_box"]) and the card's
+name read as the target (selected_is_target: seen["selected"] ==
+seen["target"]). A forbidden move with `on_tag` covers seen["tag_box"]
+while seen["tag"] reads that text (Unequip): refused whatever the move.
 """
 
 import json
@@ -37,10 +45,34 @@ def connections(screen):
     return SCREENS.get(screen, {}).get("moves", [])
 
 
-def guard(screen, move_id, x=None, y=None, kind="tap", verified=False):
+def _inside(box, x, y):
+    return bool(box) and box[0] <= x <= box[2] and box[1] <= y <= box[3]
+
+
+def _needs(screen, move, x, y, seen):
+    """Why the move's needs are not met by seen (None: met)."""
+    needs = move.get("needs")
+    if not needs:
+        return None
+    where = f"{screen}/{move['id']}"
+    if not isinstance(seen, dict):
+        return f"{where} needs what the fresh capture shows (seen)"
+    if "tag" in needs and seen.get("tag") != needs["tag"]:
+        return f"{where} needs the tag read {needs['tag']!r}, not {seen.get('tag')!r}"
+    if needs.get("selected_is_target") and (not seen.get("selected") or seen.get("selected") != seen.get("target")):
+        return f"{where} needs the selected weapon read as the target ({seen.get('selected')!r}, {seen.get('target')!r})"
+    if needs.get("on_tag") and not _inside(seen.get("tag_box"), x, y):
+        return f"{where}: ({x}, {y}) is not on the tag read"
+    if needs.get("off_tags") and any(_inside(box, x, y) for box in seen.get("tags") or []):
+        return f"{where}: ({x}, {y}) is on a tag"
+    return None
+
+
+def guard(screen, move_id, x=None, y=None, kind="tap", verified=False, seen=None):
     """None when the action may be done, else why not. x and y are where it
     lands (fractions); kind is tap, hold, swipe (x, y: its start) or key.
-    verified says the caller checked the move's precondition, if it has one."""
+    verified says the caller checked the move's precondition, if it has one;
+    seen, what the fresh capture showed, for the moves that need it."""
     if screen not in SCREENS:
         return f"unknown screen {screen!r}"
     moves = connections(screen)
@@ -61,7 +93,11 @@ def guard(screen, move_id, x=None, y=None, kind="tap", verified=False):
     for other in moves:
         if other.get("forbidden") and _covers(other, x, y):
             return f"{screen}/{move_id}: ({x:.3f}, {y:.3f}) is on forbidden {other['id']} ({other.get('reason')})"
-    return None
+        if other.get("forbidden") and other.get("on_tag") and isinstance(seen, dict) \
+                and seen.get("tag") == other["on_tag"] and _inside(seen.get("tag_box"), x, y):
+            return (f"{screen}/{move_id}: ({x:.3f}, {y:.3f}) is on the tag read {other['on_tag']}: "
+                    f"forbidden {other['id']} ({other.get('reason')})")
+    return _needs(screen, move, x, y, seen)
 
 
 def check():
@@ -78,7 +114,11 @@ def check():
                 continue
             point = move.get("tap") or move.get("hold") or (move["swipe"][:2] if "swipe" in move else None)
             kind = "swipe" if "swipe" in move else "hold" if "hold" in move else "tap"
-            why = point and guard(name, move["id"], point[0], point[1], kind, verified=True)
+            # A move that needs a reading is checked with one that meets it.
+            needs = move.get("needs") or {}
+            seen = {"tags": [], "tag": needs.get("tag"), "selected": "target", "target": "target",
+                    "tag_box": [point[0] - 0.01, point[1] - 0.01, point[0] + 0.01, point[1] + 0.01]} if point else None
+            why = point and guard(name, move["id"], point[0], point[1], kind, verified=True, seen=seen)
             if why:
                 problems.append(f"{name}/{move['id']}: {why}")
     return problems
