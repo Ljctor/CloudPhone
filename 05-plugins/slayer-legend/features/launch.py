@@ -109,7 +109,9 @@ def launch(ports, screens, rules):
             async with ports.leased(holder, "Lancement du jeu", rules.DEADLINE + 60, user=user):
                 await steps()
         except ports.Busy as e:
-            report("blocked", f"Lancement arrêté : {e}")
+            # Not a failure of the launch: the lease or the user (the
+            # watchdog does not count it).
+            report("deferred", f"Lancement différé : {e}")
         except asyncio.CancelledError:
             raise
         except Exception as e:

@@ -559,7 +559,7 @@ class GoldTrigger(unittest.TestCase):
     (rules.EVERY apart), gold/s always 0 over a full window: when the
     preset and AUTO are read."""
 
-    def looks(self, count, auto, viewers=lambda look: 0, stage=920):
+    def looks(self, count, auto, viewers=lambda look: 0, stage=920, answer=None):
         """count looks, AUTO read as auto, viewers(look) connected; (the
         looks that read the controls, the alerts, the farming calls other
         than reading); self.state: GET /watchdog's at the end."""
@@ -575,7 +575,7 @@ class GoldTrigger(unittest.TestCase):
 
             store = types.SimpleNamespace(saved={}, register=lambda *a: None, save=lambda: None)
             lease = types.SimpleNamespace(state=lambda: None)
-            respond = staticmethod(lambda body: body)
+            respond = staticmethod(lambda body, status=200: body if status == 200 else (status, body))
 
             class clock:
                 now = 0.0
@@ -632,7 +632,7 @@ class GoldTrigger(unittest.TestCase):
 
         async def farm(*args):
             farmed.append(args)
-            return {"result": "plan", "text": "plan"}
+            return answer or {"result": "plan", "text": "plan"}
 
         farming = {"read_controls": read_controls, "battle_stage": lambda shot: stage, "ensure_auto": refused,
                    "farm": farm, "switches": lambda: {"stage_change": "real", "preset": "plan", "auto": "plan"}}
@@ -652,7 +652,28 @@ class GoldTrigger(unittest.TestCase):
             logging.getLogger("cloudphone.slayer-legend").info("GoldTrigger: %d looks", count)
             asyncio.run(run())
         self.state = asyncio.run(built["routes"][0][2](None))
+        self.retry = lambda body: asyncio.run(built["routes"][1][2](types.SimpleNamespace(json=lambda: body())))
         return read, alerts, other
+
+    def test_a_stopped_stage_change_is_one_failure_and_retry_clears_it(self):
+        _, alerts, _ = self.looks(8, "on", stage=940, answer={"result": "failed", "text": "écran inattendu"})
+        self.assertEqual(len(self.farmed), 1, "then its passive watch and delay")
+        self.assertEqual(self.state["counters"]["next_attempt"]["stage_change"]["failures"], 1, "counted once")
+        stopped = [a for a in alerts if "Réparation arrêtée" in a]
+        self.assertEqual(len(stopped), 1)
+        self.assertIn("écran inattendu", stopped[0])
+
+        async def body():
+            return {"kind": "stage_change"}
+        self.assertEqual(self.retry(body)["counters"]["next_attempt"], {})
+
+        async def wrong():
+            return {"kind": "nope"}
+        self.assertEqual(self.retry(wrong)[0], 400)
+
+    def test_a_plan_stage_change_is_no_failure(self):
+        self.looks(8, "on", stage=940, answer={"result": "plan", "text": "plan"})
+        self.assertEqual(self.state["counters"]["next_attempt"], {})
 
     def test_the_second_zero_reads_auto_at_once_and_auto_on_is_one_alert(self):
         read, alerts, other = self.looks(24, "on")
@@ -884,8 +905,43 @@ class Flapping(unittest.TestCase):
             w.looks(MENU, 6)
             w.look(BATTLE)
         self.assertLessEqual(len(w.notifications()), 3, w.notifications())
-        # Each way back worked (battle at the next look): no failure, no backoff.
+        # Each way back worked: no failure, no backoff, a way back each time.
         self.assertEqual(w.memory["backoff"], {})
+        self.assertEqual(w.kinds(), ["back_to_battle"] * 12)
+
+    def pop_ups(self, every, minutes):
+        """A pop-up (a menu over the battle) every `every` seconds for
+        `minutes`, each closed by the way back (or by itself: 1 good look
+        and it comes back when every is 0); (notifications per hour, ways
+        back, pop-ups)."""
+        w = Watch()
+        w.looks(BATTLE, 4)
+        start, shown = w.now, 0
+        while w.now - start < minutes * 60:
+            shown += 1
+            opened = w.now
+            while w.look(MENU) != "menu" or not w.repairs or w.repairs[-1][0] < opened:
+                pass
+            w.look(BATTLE)
+            while every and w.now - opened < every:
+                w.look(BATTLE)
+        hours = (w.now - start) / 3600
+        return len(w.notifications()) / max(hours, 1), len(w.repairs), shown
+
+    def test_b1_a_pop_up_back_after_one_good_look_for_22_minutes(self):
+        per_hour, repairs, shown = self.pop_ups(0, 22)
+        self.assertLessEqual(per_hour, 4)
+        self.assertEqual(repairs, shown, "one way back per pop-up, no cap")
+
+    def test_b2_a_pop_up_every_2_minutes_for_85_minutes(self):
+        per_hour, repairs, shown = self.pop_ups(120, 85)
+        self.assertLessEqual(per_hour, 4)
+        self.assertEqual(repairs, shown)
+
+    def test_b3_a_pop_up_every_6_minutes_for_an_hour(self):
+        per_hour, repairs, shown = self.pop_ups(360, 60)
+        self.assertLessEqual(per_hour, 4)
+        self.assertEqual(repairs, shown)
 
     def test_a_relaunch_then_a_pop_up_on_return(self):
         w = Watch()
@@ -893,6 +949,8 @@ class Flapping(unittest.TestCase):
         w.looks(AWAY, 3)
         w.looks(MENU, 6)
         w.looks(BATTLE, 4)
+        self.assertNotIn("Farming mpw18 : rétabli", w.notifications(), "repaired: 5 minutes of battle first")
+        w.looks(BATTLE, rules.RECOVERY_FLOOR // E)
         self.assertEqual(w.kinds(), ["relaunch", "back_to_battle"])
         self.assertLessEqual(len(w.notifications()), 2, w.notifications())
         self.assertEqual(w.notifications()[-1], "Farming mpw18 : rétabli")

@@ -54,8 +54,12 @@ screen (Power Saving Mode needs none).
 
 - A symptom ALERT_AFTER looks in a row (ALERT_AFTER_OTHER for another
   screen) is one warning alert (an error one for adb), never repeated
-  until the game has been well RECOVERED_AFTER looks in a row; then one
-  normal "rétabli". A game menu inside its grace, or a look with no
+  until the game has been well RECOVERED_AFTER looks in a row, or
+  RECOVERY_FLOOR seconds when a repair was made since the problem began;
+  then one normal "rétabli". A new alert of the same family (its repair,
+  or the symptom without one) within QUIET_AFTER_ALERT of the last one
+  notified is a warning record without phone alert, and no « rétabli »
+  follows it; the backoff's escalations are always notified. A game menu inside its grace, or a look with no
   capture, changes nothing.
 - A repair needs its symptom REPAIR_AFTER looks in a row (the same look
   as the alert), the repair learned (available) and, at the gateway's
@@ -67,8 +71,9 @@ screen (Power Saving Mode needs none).
   after its nth failure, no attempt of that kind for DELAYS[n] (1, 2, 4,
   8, 16 minutes, then 30 at most, each ±JITTER). Only a real failure
   counts: the repair ran and the next look still sees its symptom
-  (failed), or its sequence stopped (stopped); a deferral (the lease, a
-  user input) or a plan does not (not_run). The backoff of a kind starts
+  (failed), or its sequence stopped (stopped); a repair that worked is
+  never one, even when its symptom comes back; a deferral (the lease, a
+  user input) or a plan does not count either (not_run). The backoff of a kind starts
   over after a durable recovery: good looks for at least the last delay
   used, RECOVERY_FLOOR at least; a user input keeps it; the page's
   « Réessayer maintenant » clears it (retry). Its alerts: the first
@@ -162,6 +167,8 @@ DELAYS = (0, 60, 120, 240, 480, 960, 1800)
 JITTER = 0.1
 # A durable recovery: good looks for the last delay used, this long at least.
 RECOVERY_FLOOR = 5 * 60
+# Seconds after a notified alert during which another of its family is not.
+QUIET_AFTER_ALERT = 30 * 60
 # Delays (seconds) whose first reach is a phone alert.
 ESCALATE = (480, 1800)
 KINDS = tuple(REPAIR_NAMES)
@@ -192,6 +199,7 @@ def fresh(kept=None):
     kept = kept or {}
     return {"looks": 0, "streak": 0, "since_repair": 0, "good": 0, "symptom": None, "alerted": False,
             "alerts": 0, "backoff": kept_backoff(kept.get("backoff")), "good_since": None, "watch": {},
+            "repaired": False, "notified": {}, "alert_notified": False,
             "verifying": None, "menu_since": None, "planned": None, "deferred": None,
             "away": 0}
 
@@ -394,10 +402,11 @@ def waiting(memory, symptom, wall):
 
 def recovered(memory, wall):
     """Kinds whose good looks lasted their last delay (RECOVERY_FLOOR at
-    least) start over."""
+    least) start over; a repair that worked that long is done with."""
     since = memory["good_since"]
     if since is None:
         return memory
+
     return {**memory, "backoff": {kind: state for kind, state in memory["backoff"].items()
                                   if wall - since < max(state["delay"], RECOVERY_FLOOR)}}
 
@@ -429,10 +438,13 @@ def decide(memory, symptom, text, params, context, wall):
             memory["good_since"] = wall
         memory = recovered(memory, wall)
         memory.update(streak=0, since_repair=0, symptom=None, good=memory["good"] + 1)
-        if memory["good"] >= RECOVERED_AFTER:
-            if memory["alerted"]:
+        # After a repair, only a durable recovery is "rétabli".
+        if memory["good"] >= RECOVERED_AFTER and (not memory["repaired"]
+                                                  or wall - memory["good_since"] >= RECOVERY_FLOOR):
+            if memory["alerted"] and memory["alert_notified"]:
                 actions.append(record("normal", "Farming mpw18 : rétabli", notify=True))
-            memory.update(alerted=False, watch={}, planned=None, deferred=None)
+            memory.update(alerted=False, alert_notified=False, repaired=False, watch={}, planned=None,
+                          deferred=None)
         return memory, actions
     memory["good"] = 0
     memory["good_since"] = None
@@ -454,8 +466,13 @@ def decide(memory, symptom, text, params, context, wall):
     if memory["streak"] >= (ALERT_AFTER_OTHER if symptom == "unexpected" else ALERT_AFTER) and not memory["alerted"]:
         memory["alerted"] = True
         memory["alerts"] += 1
+        family = repair or symptom
+        quiet = wall - memory["notified"].get(family, -QUIET_AFTER_ALERT) < QUIET_AFTER_ALERT
+        memory["alert_notified"] = not quiet
+        if not quiet:
+            memory["notified"] = {**memory["notified"], family: wall}
         actions.append(record("error" if symptom in ERRORS else "warning", "Farming mpw18 : " + text, params,
-                              notify=True))
+                              notify=not quiet))
     if (repair is None or memory["since_repair"] < REPAIR_AFTER or memory["looks"] <= OBSERVE_FIRST
             or repair not in context.get("available", ())
             or memory["watch"].get(repair, 0) > wall
@@ -474,6 +491,7 @@ def decide(memory, symptom, text, params, context, wall):
             actions.append(("plan", repair))
         return memory, actions
     memory["verifying"] = repair
+    memory["repaired"] = True
     memory["since_repair"] = 0
     actions.append(record("normal", "Réparation : {repair}", {"repair": REPAIR_NAMES[repair]}))
     actions.append(("repair", repair))

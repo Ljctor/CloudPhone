@@ -4,6 +4,8 @@ farming is not going on, alerts and relaunches the game.
 
 GET /watchdog   {status: {template, params}, text, symptom, paused,
                  counters, lease, repairing, profile, controls}
+POST /watchdog/retry   {kind}: « Réessayer maintenant », that repair's
+                 backoff starts over (needs the page token)
 
 controls: {template, params} when the preset and AUTO are not checked
 (someone watches the screen), else None.
@@ -39,6 +41,7 @@ looks; the repairs' hourly counts are kept in state.json ("watchdog").
 
 import asyncio
 import logging
+import random
 
 LEVELS = {"normal": logging.INFO, "warning": logging.WARNING, "error": logging.ERROR}
 AVAILABLE = ("relaunch",)
@@ -146,9 +149,17 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         if kept:
             seen["battle_settings"], seen["auto"] = kept[0]["preset"], kept[0]["auto"]
 
+    async def notify_all(actions):
+        for _, level, template, values, notify in actions:
+            said = say(level, template, values, notify)
+            if notify:
+                await ports.notify(said)
+
     async def farm_repair(kind):
         """A stage change repair: farm() for the stage and the preset,
-        ensure_auto for AUTO; read again at the next look."""
+        ensure_auto for AUTO; read again at the next look. Deferred or a
+        plan: not a failure (rules.not_run); stopped: one (rules.stopped)."""
+        nonlocal memory
         status["controls"] = None
         part = profile()
         status["repairing"] = kind
@@ -160,16 +171,23 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                 answer = await farming["farm"](part["stage"], part["preset"], "mpw18",
                                                modes["state"]().get("highest"))
         except ports.Busy as e:
+            memory = rules.not_run(memory, kind)
             say("normal", "Réparation différée : {repair} ({why})",
                 {"repair": rules.REPAIR_NAMES[kind], "why": str(e)})
             return
         finally:
             status["repairing"] = None
         if answer["result"] == "failed":
+            memory, actions = rules.stopped(memory, kind, ports.clock.wall(), random.uniform(-1.0, 1.0))
+            # Why it stopped, with the backoff's alert (if it is one).
+            notify = any(action[4] for action in actions)
             text = say("warning", "Réparation arrêtée : {repair} : {why}",
-                       {"repair": rules.REPAIR_NAMES[kind], "why": answer["text"]}, notify=True)
-            await ports.notify(text)
+                       {"repair": rules.REPAIR_NAMES[kind], "why": answer["text"]}, notify=notify)
+            if notify:
+                await ports.notify(text)
+            await notify_all([(*action[:4], False) for action in actions])
         elif answer["result"] == "plan":
+            memory = rules.not_run(memory, kind)
             say("normal", "Plan seul : {repair} : {plan}",
                 {"repair": rules.REPAIR_NAMES[kind], "plan": answer["text"]})
 
@@ -196,9 +214,14 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             else "Le jeu ne répond pas : bouton « Attendre » introuvable", {})
 
     async def relaunch():
+        """The launch, holder "watchdog". Deferred (the lease, a user
+        input) or the user's own launch: not a failure; stopped (blocked,
+        failed): one."""
+        nonlocal memory
         task = launches["start"]("watchdog", False)
         if task is None:
             # The user's own launch runs: it is the repair.
+            memory = rules.not_run(memory, "relaunch")
             return
         status["repairing"] = "relaunch"
         show("Réparation en cours : {repair}", {"repair": rules.REPAIR_NAMES["relaunch"]})
@@ -209,6 +232,11 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         ended = launches["state"]()
         # Said by the next look (repair done or without effect).
         logging.debug(f"Slayer Legend watchdog: relaunch ended: {ended['state']} {ended['message']}".rstrip())
+        if ended["state"] == "deferred":
+            memory = rules.not_run(memory, "relaunch")
+        elif ended["state"] in ("blocked", "failed"):
+            memory, actions = rules.stopped(memory, "relaunch", ports.clock.wall(), random.uniform(-1.0, 1.0))
+            await notify_all(actions)
 
     async def tick():
         nonlocal memory
@@ -247,10 +275,14 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         context = {"input_wall": last["wall"] if last else None,
                    "lease": held["holder"] if held and held["holder"] != "watchdog" else None,
                    "act": {kind: farming["switches"]()[switch] == "real" for kind, switch in FARMING.items()}
-                   if farming else {}, "available": available}
+                   if farming else {}, "available": available, "jitter": random.uniform(-1.0, 1.0)}
         memory, actions = rules.decide(memory, symptom, text, params, context, wall)
         ports.store.save()
-        show(text, params)
+        minutes = rules.waiting(memory, symptom, wall)
+        if minutes is not None:
+            show(text + " ; prochain essai dans {minutes} min", {**params, "minutes": minutes})
+        else:
+            show(text, params)
         repaired = False
         for action in actions:
             if action[0] == "record":
@@ -297,4 +329,19 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
     async def handle_state(request):
         return ports.respond(state())
 
-    return {"routes": [("GET", "/watchdog", handle_state)], "startup": [start]}
+    async def handle_retry(request):
+        nonlocal memory
+        try:
+            body = await request.json()
+        except (ValueError, TypeError, AttributeError):
+            body = None
+        kind = body.get("kind") if isinstance(body, dict) else None
+        if kind not in rules.REPAIR_NAMES:
+            return ports.respond({"error": f"Expected {{kind}}: one of {', '.join(rules.REPAIR_NAMES)}"}, status=400)
+        memory = rules.retry(memory, kind)
+        ports.store.save()
+        say("normal", "Réessayer maintenant : {repair}", {"repair": rules.REPAIR_NAMES[kind]})
+        return ports.respond(state())
+
+    return {"routes": [("GET", "/watchdog", handle_state), ("POST", "/watchdog/retry", handle_retry)],
+            "startup": [start]}

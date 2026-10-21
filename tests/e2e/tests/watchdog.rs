@@ -104,7 +104,7 @@ fn a_crashed_game_is_closed_relaunched_and_farming_again_within_a_minute() {
     assert!(has_record(&cp, "normal", "Réparation : relance du jeu", false), "{:#?}", plugin_records(&cp));
     assert!(has_record(&cp, "normal", "Réparation réussie : relance du jeu", false), "{:#?}", plugin_records(&cp));
     let counters = &watchdog(&cp)["counters"];
-    assert_eq!(counters["repairs_this_hour"]["relaunch"], 1, "{counters}");
+    assert_eq!(counters["next_attempt"], json!({}), "the relaunch worked: no backoff {counters}");
     assert_eq!(counters["alerts"], 1, "{counters}");
 }
 
