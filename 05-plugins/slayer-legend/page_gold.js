@@ -5,6 +5,7 @@
 // The overlay applies while the counter was read lately (the game's
 // battle screen).
 import { drawText } from './gold_text.js';
+import { GOLD } from './page_icons.js';
 
 // Where the rate goes in the game's top bar: right of the player's name
 // (which ends at about 27 % of the width), before the emerald counter (its
@@ -101,7 +102,7 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
     // Draws again (or removes) after the plugin was turned on or off.
     update: () => showGold(),
     options: [
-      { type: 'section', key: 'gold', label: 'Gold' },
+      { type: 'section', key: 'gold', label: 'Gold', icon: GOLD },
       { type: 'status', label: 'Gold par seconde', value: goldText },
       {
         type: 'choice', key: 'goldOverlay', label: 'Overlay gold/s',

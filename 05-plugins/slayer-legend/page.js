@@ -25,6 +25,7 @@
 import counters from './page_counters.js';
 import gold from './page_gold.js';
 import power from './page_power.js';
+import { SWORD } from './page_icons.js';
 import mode from './page_mode.js';
 import screen from './page_screen.js';
 import trace from './page_trace.js';
@@ -226,6 +227,7 @@ export default function activate(api) {
     { type: 'log', match: (record) => record.source === api.id || record.text.startsWith('Slayer Legend') },
   ];
   return {
+    icon: SWORD,
     options: [...shown.flatMap((part) => part.options), ...debug],
     onSetting: (key, value) => {
       for (const part of parts) part.onSetting?.(key, value);

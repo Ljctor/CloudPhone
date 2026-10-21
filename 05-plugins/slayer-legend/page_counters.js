@@ -2,6 +2,7 @@
 // this screen only (counter_rewrite.js). Options: their two sections;
 // debug: whether each counter is found on the screen.
 import { COUNTERS, modeOf, startEmeraldMask } from './counter_rewrite.js';
+import { DIAMOND, EMERALD } from './page_icons.js';
 
 // enabled(): the plugin is on (no counter is rewritten while it is off).
 export default function counters(api, { enabled = () => true } = {}) {
@@ -28,7 +29,7 @@ export default function counters(api, { enabled = () => true } = {}) {
 
   return {
     options: [
-      { type: 'section', key: 'emerald', label: 'Émeraudes', folded: true },
+      { type: 'section', key: 'emerald', label: 'Émeraudes', folded: true, icon: EMERALD },
       {
         type: 'choice', key: 'emeraldMode', label: 'Compteur d’émeraudes',
         choices: [
@@ -41,7 +42,7 @@ export default function counters(api, { enabled = () => true } = {}) {
         type: 'number', key: 'emeraldCount', label: 'Nombre affiché (vide : après la virgule)', placeholder: '86',
         visible: () => modeOf(api, COUNTERS.emerald) === 'rewrite',
       },
-      { type: 'section', key: 'diamond', label: 'Diamants', folded: true },
+      { type: 'section', key: 'diamond', label: 'Diamants', folded: true, icon: DIAMOND },
       {
         type: 'choice', key: 'diamondMode', label: 'Compteur de diamants',
         choices: [

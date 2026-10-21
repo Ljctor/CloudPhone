@@ -493,6 +493,14 @@ fn slayer_legends_debug_section_is_last_folded_and_holds_the_developer_rows_and_
         assert_eq!(list.last(), Some(&json!(["Debug & développement", false])), "last and folded: {sections}");
         let names: Vec<&str> = list.iter().map(|s| s[0].as_str().unwrap()).collect();
         assert_eq!(names, ["Mode et farming", "Gold", "Émeraudes", "Diamants", "Debug & développement"], "{sections}");
+        // Icons drawn by the plugin: its own before its title, and the game's
+        // currencies before theirs.
+        let icons = page.wait_js("the icons drawn", Duration::from_secs(10),
+            "const p = [...document.querySelectorAll('[role=dialog] details')].find(d => d.querySelector(':scope > summary').innerText.trim() === 'Slayer Legend'); \
+             if (!p) return null; const drawn = (s) => { const i = s.querySelector(':scope > img'); return !!i && i.complete && i.naturalWidth > 0; }; \
+             const r = [drawn(p.querySelector(':scope > summary')), ...[...p.querySelectorAll(':scope > details > summary')].filter(drawn).map(s => s.innerText.trim())]; \
+             return r.length === 4 ? r : null", vec![]).await;
+        assert_eq!(icons, json!([true, "Gold", "Émeraudes", "Diamants"]));
         // The stage in one row under État; the rows for the developer, or
         // that said nothing, are gone.
         page.wait_dialog_value(O, "Stage", Duration::from_secs(15), |_| true).await;

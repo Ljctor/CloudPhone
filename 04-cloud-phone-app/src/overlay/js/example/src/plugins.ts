@@ -5,7 +5,8 @@
 // "Plugins".
 //
 // A plugin's page.js is an ES module whose default export is
-//   activate(api) => { options: Option[], dispose?(), onSetting?(key, value) }
+//   activate(api) => { options: Option[], icon?, dispose?(), onSetting?(key, value) }
+// icon: an image URL (a data: URL drawn by the plugin, say) shown before its title
 // where an Option is one of
 //   { type: 'toggle', key, label }                 stored per plugin, off by default
 //   { type: 'number', key, label, placeholder? }   digits, stored as text
@@ -22,7 +23,8 @@
 //   { type: 'log', match?(record) }               the server's log records match() keeps
 //                                                  ({time, level, source, text[, template,
 //                                                  params]}; all without it), with the level filter
-//   { type: 'section', key, label, folded? }       starts a foldable sub-section (folded: default)
+//   { type: 'section', key, label, folded?, icon? }   starts a foldable sub-section (folded: default;
+//                                                  icon: an image URL before its title)
 //   { type: 'dialog', label, button?, title?, options: Option[], select? }   a button opening
 //                                                  these options in a dialog over the panel;
 //                                                  select: { key, value, default } puts a radio

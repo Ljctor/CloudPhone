@@ -61,6 +61,8 @@ export const styles = {
   pluginGridEmpty: { border: '1px solid #8a919c' },
   pluginSectionTitle: { marginTop: '4px', color: '#c4cad3', fontWeight: 600, cursor: 'pointer' },
   pluginTitle: { marginTop: '6px', fontWeight: 600, cursor: 'pointer' },
+  // A plugin's or a section's icon before its title (pixel art kept sharp).
+  pluginIcon: { width: '14px', height: '14px', marginRight: '6px', verticalAlign: '-2px', imageRendering: 'pixelated' },
   numberInput: {
     width: '96px', padding: '3px 6px', borderRadius: '6px', border: '1px solid #3a3f47',
     background: '#1b1d22', color: '#e8ebf0', font: 'inherit', textAlign: 'right',

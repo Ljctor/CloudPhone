@@ -35,7 +35,10 @@ function pluginSections(context, plugin) {
           const now = !event.currentTarget.open;
           if (now !== folded) updateSettings(foldedChange(settings, 'foldedPlugins', id, now));
         }}>
-        <summary style={styles.pluginSectionTitle}>{tr(section.label)}</summary>
+        <summary style={styles.pluginSectionTitle}>
+          {section.icon && <img src={resolved(section.icon)} alt="" style={styles.pluginIcon} />}
+          {tr(section.label)}
+        </summary>
         {items}
       </details>
     );
@@ -199,7 +202,10 @@ export function PluginList({ plugins, settings, updateSettings, openDialog }) {
               updateSettings(foldedChange(settings, 'foldedPlugins', plugin.id, folded));
             }
           }}>
-          <summary style={styles.pluginTitle}>{plugin.title}</summary>
+          <summary style={styles.pluginTitle}>
+            {plugin.instance?.icon && <img src={plugin.instance.icon} alt="" style={styles.pluginIcon} />}
+            {plugin.title}
+          </summary>
           {plugin.error && <div style={styles.infoWarning}>{tr('Échec : {message}', { message: plugin.error })}</div>}
           {pluginSections(context, plugin)}
         </details>
