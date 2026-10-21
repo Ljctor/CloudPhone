@@ -397,8 +397,8 @@ service:
 
 1. Install the **ntfy** app on the phone.
 2. In the page: cog → Options → **Alertes sur le téléphone**, tick **Alertes
-   par ntfy**. An address `ntfy.sh/cloudphone-…` appears under it; copy it
-   with the button beside it.
+   par ntfy**. Copy the link with the button of **Lien topic ntfy** (ntfy
+   topic link); the link itself is shown only if it cannot be copied.
 3. In the ntfy app: **+** (subscribe to topic), paste the part after
    `ntfy.sh/`, subscribe.
 4. Back in the page, **Alerte de test** → **Envoyer**: the phone shows a

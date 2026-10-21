@@ -355,7 +355,9 @@ checks. The `id` must equal the directory name and match
 `page.js`, gives it the API described at the
 top of `plugins.ts` (video element, a drawing layer over the screen, stored
 options, gateway calls) and renders its options (toggle, number, choice, action,
-buttons, status) in Options → Plugins, one foldable section per plugin.
+buttons, dialog, status, grid, log: the server's records it keeps, and
+foldable sub-sections) in Options → Plugins, one foldable section per
+plugin, with the plugin's and its sections' optional icons.
 `context` offers `add_get`/`add_post`, `screenshot(max_age=0)` (one
 screenshot shared by every plugin: a capture younger than `max_age`
 seconds, or one under way, is given instead of a new one; a plugin's own

@@ -247,8 +247,8 @@ journalctl -t cloudphone-gateway -p warning      # warnings and errors only; add
 phone through [ntfy](https://ntfy.sh/): when an app crashes or stops
 responding, when Android or the emulator restarts, and when a plugin sends
 one. Turn them on in cog → Options → **Alertes sur le téléphone** (Phone
-alerts): the page then shows an address `ntfy.sh/cloudphone-…`; subscribe
-the ntfy app on your phone to it, and **Envoyer** (Send) a test alert.
+alerts): **Lien topic ntfy** (ntfy topic link) then copies its link
+`ntfy.sh/cloudphone-…`; subscribe the ntfy app on your phone to it, and **Envoyer** (Send) a test alert.
 
 - The topic name is long and random, and anyone who knows it can read the
   alerts: treat it like a password. It is shown only on the page.
