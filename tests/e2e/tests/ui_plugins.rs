@@ -567,3 +567,39 @@ fn slayer_legends_switch_is_first_and_turns_the_plugin_off_in_the_gateway() {
              return !!l && l.control.value === 'off'", vec![]).await;
     });
 }
+
+#[test]
+fn slayer_legends_switch_on_hold_shows_in_the_state_row_with_free_play_and_resume() {
+    let cp = CloudPhone::start_with(json!({"plugins": [SLAYER_LEGEND]}));
+    let mode = "api/v1/plugins/slayer-legend/mode";
+    // The user plays: the switch to mpw4 is on hold.
+    assert_eq!(cp.post_json("api/v1/input", &json!({})).status(), 200);
+    assert_eq!(cp.post_json(mode, &json!({"mode": "mpw4", "stage4": 31})).status(), 200);
+    wait_for("the switch on hold", Duration::from_secs(20), || {
+        (!cp.try_get_json(mode)?["hold"].is_null()).then_some(())
+    });
+    let phone = cp.clone();
+    browser_test(&cp, Options::without_video(), |page| async move {
+        page.open_options().await;
+        let state = page.wait_dialog_value(O, "État", Duration::from_secs(20),
+            |v| v.contains(" · en attente : tu joues · nouvel essai dans ")).await;
+        assert!(state.starts_with("Farming mpw4 · en attente : tu joues · nouvel essai dans "), "{state}");
+        assert!(state.ends_with(" s Jeu libre Reprendre"), "both buttons inline: {state}");
+        page.client.find(Locator::XPath(
+            "//div[@role='dialog']//div[span[normalize-space()='État']]//button[normalize-space()='Jeu libre']"))
+            .await.unwrap().click().await.unwrap();
+        let p = phone.clone();
+        let answer = blocking(move || wait_for("free play", Duration::from_secs(10), || {
+            let answer = p.try_get_json("api/v1/plugins/slayer-legend/mode")?;
+            (answer["mode"] == "free").then_some(answer)
+        }));
+        assert_eq!(answer["hold"], serde_json::Value::Null, "{answer}");
+        // The page follows: no more buttons, the radio on free play.
+        page.wait_dialog_value(O, "État", Duration::from_secs(20), |v| v.starts_with("Jeu libre")).await;
+        let start = std::time::Instant::now();
+        while page.stored_settings().await["plugins"]["slayer-legend"]["mode"] != "free" {
+            assert!(start.elapsed() < Duration::from_secs(15), "the radio follows free play");
+            tokio::time::sleep(Duration::from_millis(300)).await;
+        }
+    });
+}

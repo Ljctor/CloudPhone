@@ -172,15 +172,21 @@ function pluginOption(context, plugin, option, index) {
     const value = option.value?.() ?? '–';
     const href = option.href?.();
     const shown = href ? <a href={href} target="_blank" rel="noreferrer" style={styles.link}>{value}</a> : value;
-    // An inline button after the value, while button() gives one.
-    const button = option.button?.();
-    return infoRow(tr(option.label), button ? (
+    // Inline buttons after the value, while button() gives one (or a list).
+    const given = option.button?.();
+    const buttons = (Array.isArray(given) ? given : [given]).filter(Boolean);
+    return infoRow(tr(option.label), buttons.length ? (
       <>
-        {shown}{' '}
-        <button style={styles.smallButton}
-          onClick={() => Promise.resolve(button.run?.()).catch((error) => console.error(error))}>
-          {tr(button.label)}
-        </button>
+        {shown}
+        {buttons.map((button) => (
+          <React.Fragment key={button.label}>
+            {' '}
+            <button style={styles.smallButton}
+              onClick={() => Promise.resolve(button.run?.()).catch((error) => console.error(error))}>
+              {tr(button.label)}
+            </button>
+          </React.Fragment>
+        ))}
       </>
     ) : shown);
   }

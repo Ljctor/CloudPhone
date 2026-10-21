@@ -5,7 +5,10 @@
 // farming" section. Overlay hook, called by page_gold.js while the
 // overlay applies: overlay(), the mode's lines on the game, top left (the
 // time left of a timed mode under its name, and "MISE EN PLACE..." under
-// it while the gateway sets the mode up; asked every 2 s then). The mpw18 and mpw4 dialogs
+// it while the gateway sets the mode up, "EN ATTENTE" while the switch
+// waits for the user to stop playing; asked every 2 s then). While a
+// switch is on hold, the État row says so with « Jeu libre » and
+// « Reprendre » inline (POST /mode/hold). The mpw18 and mpw4 dialogs
 // hold that mode's loadout (page_engraving.js). The État row ends with
 // the watchdog's look at the selected mode (page_watchdog.js).
 import loadout from './page_engraving.js';
@@ -47,7 +50,8 @@ const keep = (name, value) => {
 // under État (page_screen.js).
 export default function modeFeature(api, { known, watchdog, stage }) {
   // chosen: when the mode was last chosen here; sending: a POST under way.
-  const farm = { answer: null, timer: null, stages: null, chosen: 0, sending: 0 };
+  // at: when answer came (Date.now()), for the hold's countdown.
+  const farm = { answer: null, timer: null, stages: null, chosen: 0, sending: 0, at: 0 };
   const loadouts = loadout(api);
   const mode = () => api.setting('mode') || 'mpw18';
   // The mode a timed one goes back to, with no timer itself.
@@ -75,6 +79,7 @@ export default function modeFeature(api, { known, watchdog, stage }) {
   // asked: when the answer was asked (Date.now()).
   const remember = (answer, asked = 0) => {
     farm.answer = answer;
+    farm.at = Date.now();
     if (answer) keep(UNTIL, answer.until);
     // The gateway changed the mode itself (a timed mode ended: back to
     // mpw18): the radio follows, without sending it back (adopt), unless
@@ -103,6 +108,16 @@ export default function modeFeature(api, { known, watchdog, stage }) {
     else if (result) farm.error = result.body?.error ?? `HTTP ${result.status}`;
     await askMode();
   };
+  // The user's answer to a switch on hold: free play instead, or now.
+  const answerHold = async (action) => {
+    const hold = farm.answer?.hold;
+    const result = await api.post('/mode/hold', { action, ...(hold ? { hold: hold.id } : {}) }).catch(() => null);
+    if (result?.ok) remember(result.body);
+    else if (result) api.toast(api.tr(result.body?.error ?? `HTTP ${result.status}`));
+    await askMode();
+  };
+  // The hold's seconds left, counted down between two answers.
+  const holdLeft = () => Math.max(1, Math.round((farm.answer?.hold?.left ?? 0) - (Date.now() - farm.at) / 1000));
   const moveTimer = async (minutes) => {
     const result = await api.post('/mode/timer', { add: minutes }).catch(() => null);
     if (result?.ok) remember(result.body);
@@ -142,7 +157,8 @@ export default function modeFeature(api, { known, watchdog, stage }) {
       const seconds = Math.max(0, Math.round((farm.answer?.until ?? 0) - Date.now() / 1000));
       return [
         api.tr(MODE_NAMES[current] ?? current).toUpperCase(),
-        ...(farm.answer?.setup ? [api.tr('MISE EN PLACE...')] : []),
+        ...(farm.answer?.hold ? [api.tr('EN ATTENTE')]
+          : farm.answer?.setup ? [api.tr('MISE EN PLACE...')] : []),
         `(${(current === defaultMode() || !farm.answer?.until ? api.tr('défaut') : clock(seconds)).toUpperCase()})`,
       ];
     },
@@ -216,13 +232,24 @@ export default function modeFeature(api, { known, watchdog, stage }) {
       },
       {
         type: 'status', label: 'État',
+        // While a switch is on hold: « Jeu libre », « Reprendre »; else
         // « Réessayer » inline while a repair backs off.
-        button: () => (farm.answer ? watchdog?.retry(farm.answer.mode) ?? null : null),
+        button: () => {
+          if (farm.answer?.hold) {
+            return [{ label: 'Jeu libre', run: () => answerHold('free') },
+              { label: 'Reprendre', run: () => answerHold('resume') }];
+          }
+          return farm.answer ? watchdog?.retry(farm.answer.mode) ?? null : null;
+        },
         value: () => {
           if (farm.error) return api.tr(farm.error);
           if (mode() === 'mine' && !Number(api.setting('mineFloor'))) return api.tr('Choisis l’étage et la zone');
           const answer = farm.answer;
           if (!answer) return '…';
+          if (answer.hold) {
+            return api.tr('{mode} · en attente : tu joues · nouvel essai dans {seconds} s',
+              { mode: api.tr(MODE_NAMES[answer.hold.mode] ?? answer.hold.mode), seconds: holdLeft() });
+          }
           const warning = (gold) => (gold === false ? ` ⚠ ${api.tr('plus de parchemin doré')}` : '');
           const looked = watchdog?.line(answer.mode) ?? '';
           if (answer.mode === 'mine') return api.tr(answer.mine?.message || 'Mine') + warning(answer.mine?.gold) + looked;

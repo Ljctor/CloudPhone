@@ -15,8 +15,9 @@
 //   { type: 'action', label, button, run(), disabled?() }
 //   { type: 'buttons', label, buttons: [{ label, run(), disabled?() }] }   a row of small buttons
 //   { type: 'status', label, value(), href?(), button?() }   href makes the value a link;
-//                                                  button() => { label, run() } or null: a small
-//                                                  button after the value, while it gives one
+//                                                  button() => { label, run() }, a list of them,
+//                                                  or null: small buttons after the value, while
+//                                                  it gives some
 //   { type: 'grid', label, rows() }               a grid of fixed-size cells, rows() =>
 //                                                  [[cell, ...], ...], a cell: a CSS colour (filled),
 //                                                  'empty' (outlined) or null (not part of the grid)
