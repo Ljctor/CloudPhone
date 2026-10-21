@@ -210,6 +210,7 @@ export default function modeFeature(api, { known, watchdog }) {
       },
     ],
     onSetting: (key, value) => {
+      loadouts.onSetting(key);
       if (key === 'mode') farm.chosen = Date.now();
       if (key === 'mode' && value !== 'mpw18' && value !== farm.answer?.mode) {
         farm.answer = { ...farm.answer, until: Date.now() / 1000 + TIMED_MINUTES * 60 };
@@ -220,6 +221,7 @@ export default function modeFeature(api, { known, watchdog }) {
       }
     },
     dispose: () => {
+      loadouts.dispose();
       window.clearTimeout(farm.timer);
     },
   };

@@ -254,7 +254,7 @@ async fn wait_option(page: &Page, dialog: &str, label: &str, value: &str) -> Vec
 }
 
 #[test]
-fn slayer_legends_mpw18_loadout_is_chosen_in_its_dialog_and_saved() {
+fn slayer_legends_mpw18_loadout_is_chosen_in_its_dialog_and_saved_on_change() {
     let cp = CloudPhone::start_with(json!({"plugins": [SLAYER_LEGEND]}));
     let phone = cp.clone();
     browser_test(&cp, Options::without_video(), |page| async move {
@@ -275,16 +275,20 @@ fn slayer_legends_mpw18_loadout_is_chosen_in_its_dialog_and_saved() {
         assert_eq!(variants, ["", "Balanced", "Crit", "Gold-maxed", "Gold-balanced"]);
         page.control(settings, "Gravure").await.select_by_value("Gold-maxed").await.unwrap();
         // Read-only: Ambition's grid, its 16 cells filled by four vertical
-        // bars, and the pieces it needs.
+        // bars.
         let grid = grid_shape(&page, settings, 16).await;
         assert_eq!((grid["slots"].as_u64(), grid["filled"].as_u64(), grid["empty"].as_u64()),
                    (Some(25), Some(16), Some(0)), "{grid}");
-        assert_eq!(page.dialog_value(settings, "Pièces nécessaires").await.as_deref(), Some("4 × Line (I)"));
-        page.wait_dialog_value(settings, "Enregistré", Duration::from_secs(5), |v| v == "pas encore").await;
-        page.client.find(Locator::XPath(&format!(
-            "//div[@role='dialog'][@aria-label='{settings}']//button[normalize-space()='Enregistrer']"))).await.unwrap()
-            .click().await.unwrap();
-        page.wait_dialog_value(settings, "Enregistré", Duration::from_secs(10), |v| v == "III · Ambition (Gold-maxed)").await;
+        // Saved on change, with no button and no row saying so.
+        let p = phone.clone();
+        blocking(move || wait_for("the loadout saved", Duration::from_secs(10), || {
+            let saved = p.try_get_json("api/v1/plugins/slayer-legend/loadout")?;
+            (saved["loadouts"]["mpw18"]["soul_weapon"] == json!({"id": 32, "variant": "Gold-maxed"})).then_some(())
+        }));
+        let text = page.dialog_text(settings).await;
+        for gone in ["Enregistrer", "Enregistré", "Pièces nécessaires", "Source", "Équipement de combat"] {
+            assert!(!text.lines().any(|l| l.trim() == gone), "no {gone:?}: {text}");
+        }
         // Vision: pieces keep their dropped orientation ("per-piece"), so
         // its Gold-balanced exists; its grid shows its 16 active cells, not
         // a square of 25 (columns 1 to 4 of rows 0 to 4), all the same
@@ -299,19 +303,24 @@ fn slayer_legends_mpw18_loadout_is_chosen_in_its_dialog_and_saved() {
         assert_ne!(grid["cells"].as_u64(), Some(25), "not a square: {grid}");
         assert_eq!(grid["sizes"].as_array().map(|s| s.len()), Some(1), "fixed-size cells: {grid}");
         assert_eq!(grid["text"], "", "no emoji: {grid}");
-        assert_eq!(page.dialog_value(settings, "Pièces nécessaires").await.as_deref(),
-                   Some("2 × Line (I), 2 × L-Shape (L)"));
         assert_eq!(page.dialog_value(settings, "Attention").await, None);
+        // Choosing Vision's variant saves it too; the test then waits for
+        // it before checking what was kept.
+        let p = phone.clone();
+        blocking(move || wait_for("the loadout saved", Duration::from_secs(10), || {
+            let saved = p.try_get_json("api/v1/plugins/slayer-legend/loadout")?;
+            (saved["loadouts"]["mpw18"]["soul_weapon"] == json!({"id": 36, "variant": "Gold-balanced"})).then_some(())
+        }));
         let p = phone.clone();
         let saved = blocking(move || p.get_json("api/v1/plugins/slayer-legend/loadout"));
         assert_eq!(saved["loadouts"]["mpw18"]["preset"], "III", "{saved}");
-        assert_eq!(saved["loadouts"]["mpw18"]["soul_weapon"], json!({"id": 32, "variant": "Gold-maxed"}), "{saved}");
+        assert_eq!(saved["loadouts"]["mpw18"]["soul_weapon"], json!({"id": 36, "variant": "Gold-balanced"}), "{saved}");
         assert_eq!(saved["loadouts"]["mpw4"]["soul_weapon"], serde_json::Value::Null, "{saved}");
     });
 }
 
 #[test]
-fn slayer_legends_saved_loadout_survives_enregistrer_from_a_fresh_browser() {
+fn slayer_legends_saved_loadout_survives_a_change_from_a_fresh_browser() {
     let cp = CloudPhone::start_with(json!({"plugins": [SLAYER_LEGEND]}));
     let saved = json!({"mode": "mpw18", "stage": 940, "preset": "III", "soul_weapon": {"id": 32, "variant": "Gold-maxed"}});
     assert_eq!(cp.post_json("api/v1/plugins/slayer-legend/loadout", &saved).status(), 200);
@@ -328,30 +337,28 @@ fn slayer_legends_saved_loadout_survives_enregistrer_from_a_fresh_browser() {
             .click().await.unwrap();
         let settings = "Configuration : farming mpw18";
         page.wait_dialog(settings).await;
-        page.wait_dialog_value(settings, "Enregistré", Duration::from_secs(10), |v| v == "III · Ambition (Gold-maxed)").await;
         wait_option(&page, settings, "Gravure", "Gold-maxed").await;
         for (label, value) in [("Préréglage de combat", "III"), ("Soul Weapon", "32"), ("Gravure", "Gold-maxed")] {
             let state = page.control_state(&page.control(settings, label).await).await;
             assert_eq!(state["value"], value, "{label} shows the saved value: {state}");
         }
-        assert_eq!(page.dialog_value(settings, "Pièces nécessaires").await.as_deref(), Some("4 × Line (I)"));
         assert_eq!(page.stored_settings().await["plugins"]["slayer-legend"]["mpw18Preset"], serde_json::Value::Null,
             "nothing chosen in this browser");
-        // « Enregistrer » without touching anything sends no field: nothing changes.
+        // A change here saves that field alone, at once: the rest is kept.
         page.js("window.__posts = []; const f = window.fetch; window.fetch = (url, init) => { \
                  if (String(url).includes('/loadout') && init && init.method === 'POST') window.__posts.push(init.body); \
                  return f(url, init); }; return true", vec![]).await;
-        page.client.find(Locator::XPath(&format!(
-            "//div[@role='dialog'][@aria-label='{settings}']//button[normalize-space()='Enregistrer']"))).await.unwrap()
-            .click().await.unwrap();
+        page.control(settings, "Préréglage de combat").await.select_by_value("IV").await.unwrap();
         page.wait_js("the POST sent", Duration::from_secs(10), "return window.__posts.length === 1", vec![]).await;
         let sent = page.js("return JSON.parse(window.__posts[0])", vec![]).await;
-        assert_eq!(sent, json!({"mode": "mpw18"}), "only the mode: nothing was chosen here");
-        page.sleep(Duration::from_millis(500)).await;
-        assert_eq!(page.dialog_value(settings, "Enregistré").await.as_deref(), Some("III · Ambition (Gold-maxed)"));
+        assert_eq!(sent, json!({"mode": "mpw18", "preset": "IV"}), "only what was chosen here");
+        page.sleep(Duration::from_millis(800)).await;
+        assert_eq!(page.js("return window.__posts.length", vec![]).await, json!(1), "once, debounced");
         let p = phone.clone();
         let after = blocking(move || p.get_json("api/v1/plugins/slayer-legend/loadout"));
-        assert_eq!(after, before, "the saved loadout is unchanged");
+        let mut expected = before.clone();
+        expected["loadouts"]["mpw18"]["preset"] = json!("IV");
+        assert_eq!(after, expected, "the rest of the saved loadout is kept");
         assert_eq!(after["loadouts"]["mpw18"]["stage"], 940, "{after}");
     });
 }

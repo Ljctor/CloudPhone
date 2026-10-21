@@ -1,12 +1,16 @@
 // The loadout of a farming mode (mpw18, mpw4): the Battle settings preset
 // (I to V), the soul weapon and its engraving variant, chosen in that
 // mode's dialog of page_mode.js (options(mode)) and saved in the gateway
-// (POST /loadout). The weapons and their variants come from the gateway
-// (GET /engravings, GET /engraving?id=N, from engravings.json); the
-// variant's grid is drawn read-only (a 'grid' option), with the pieces it needs. Nothing is
-// equipped or placed in the game yet.
+// on change, SAVE_AFTER ms after the last one (POST /loadout, merge: only
+// what was chosen here), silently: a toast only when it is refused. The
+// weapons and their variants come from the gateway (GET /engravings, GET
+// /engraving?id=N, from engravings.json); the variant's grid is drawn
+// read-only (a 'grid' option). Nothing is equipped or placed in the game
+// yet.
 
 const PRESETS = ['I', 'II', 'III', 'IV', 'V'];
+const SAVE_AFTER = 500;
+const FIELDS = ['Preset', 'Weapon', 'Variant'];
 // The sheet's piece colours as CSS colours; the gold variants' pieces
 // have none and take these in turn.
 const FILLS = { red: '#e0453a', blue: '#3b82f6', purple: '#9b5de5', green: '#3fb950', yellow: '#f2c230' };
@@ -19,33 +23,15 @@ const ENGLISH = {
   'Soul Weapon': 'Soul Weapon',
   'Gravure': 'Engraving',
   'Grille': 'Grid',
-  'Pièces nécessaires': 'Pieces needed',
-  'Source': 'Source',
   'Attention': 'Warning',
-  'Enregistrer': 'Save',
-  'Enregistré': 'Saved',
-  'Équipement de combat': 'Battle loadout',
-  'feuille de l’utilisateur': 'the user’s sheet',
-  'wiki : même grille (captures)': 'wiki: same grid (screenshots)',
-  'wiki : même grille (joueurs)': 'wiki: same grid (players)',
-  'wiki : grille différente': 'wiki: another grid',
-  'wiki : pas de grille': 'wiki: no grid',
   'grille à vérifier en jeu d’abord': 'grid to check in game first',
-  'rien': 'nothing',
-  'pas encore': 'not yet',
-};
-
-const WIKI = {
-  'screenshots-agree': 'wiki : même grille (captures)',
-  'community-agrees': 'wiki : même grille (joueurs)',
-  'screenshots-differ': 'wiki : grille différente',
-  'community-differs': 'wiki : grille différente',
-  none: 'wiki : pas de grille',
+  'équipement de {mode} non enregistré : {why}': '{mode} loadout not saved: {why}',
+  'gateway injoignable': 'gateway unreachable',
 };
 
 export default function loadoutFeature(api) {
   api.addTranslations(ENGLISH);
-  const data = { list: null, weapons: {}, asking: new Set(), saved: null, error: {} };
+  const data = { list: null, weapons: {}, asking: new Set(), saved: null };
   const loadList = async () => {
     data.list = await api.get('/engravings').catch(() => null);
     api.refresh();
@@ -126,34 +112,12 @@ export default function loadoutFeature(api) {
       return colour[key] ?? (active.has(key) ? 'empty' : null);
     }));
   };
-  const needed = (mode) => {
-    const chosen = variant(mode);
-    if (!chosen) return '—';
-    const names = data.list?.shapes ?? {};
-    return Object.entries(chosen.needed).map(([shape, count]) => `${count} × ${names[shape] ?? shape} (${shape})`)
-      .join(', ') || api.tr('rien');
-  };
-  const source = (mode) => {
-    const entry = weapon(mode);
-    if (!entry) return '—';
-    return [
-      api.tr(entry.source === 'user-sheet' ? 'feuille de l’utilisateur' : entry.source),
-      api.tr(WIKI[entry.wiki_check] ?? entry.wiki_check),
-    ].filter(Boolean).join(', ');
-  };
   // Only what must be done before placing: the confidence of the data
   // stays in engravings.json and the README.
   const warnings = (mode) => {
     const entry = weapon(mode);
     if (!entry || !variant(mode)) return [];
     return entry.wiki_check === 'community-differs' ? [api.tr('grille à vérifier en jeu d’abord')] : [];
-  };
-  const saved = (mode) => {
-    if (data.error[mode]) return data.error[mode];
-    const part = data.saved?.[mode];
-    if (!part || (!part.preset && !part.soul_weapon)) return api.tr('pas encore');
-    const what = part.soul_weapon ? `${part.weapon} (${part.soul_weapon.variant})` : '';
-    return [part.preset, what].filter(Boolean).join(' · ');
   };
   const save = async (mode) => {
     // Only what was chosen in this browser: a field left out keeps the
@@ -166,10 +130,22 @@ export default function loadoutFeature(api) {
       if (!value(mode, 'Weapon')) body.soul_weapon = null;
       else if (chosen) body.soul_weapon = { id: weapon(mode).id, variant: chosen.name };
     }
+    if (Object.keys(body).length === 1) return;
     const result = await api.post('/loadout', body).catch(() => null);
-    data.error[mode] = result?.ok ? null : (result?.body?.error ?? (result ? `HTTP ${result.status}` : '…'));
     if (result?.ok) data.saved = result.body.loadouts;
+    else {
+      const why = result?.body?.error ?? (result ? `HTTP ${result.status}` : api.tr('gateway injoignable'));
+      api.toast?.(api.tr('équipement de {mode} non enregistré : {why}', { mode, why }));
+    }
     api.refresh();
+  };
+  // Saved on change, once the choices stop for SAVE_AFTER ms.
+  const timers = {};
+  const changed = (key) => {
+    const mode = ['mpw18', 'mpw4'].find((name) => FIELDS.some((field) => key === `${name}${field}`));
+    if (!mode) return;
+    window.clearTimeout(timers[mode]);
+    timers[mode] = window.setTimeout(() => save(mode), SAVE_AFTER);
   };
 
   return {
@@ -184,14 +160,12 @@ export default function loadoutFeature(api) {
         visible: () => Boolean(value(mode, 'Weapon')), choices: () => variantChoices(mode),
       },
       { type: 'grid', label: 'Grille', visible: () => Boolean(variant(mode)), rows: () => gridRows(mode) },
-      { type: 'status', label: 'Pièces nécessaires', visible: () => Boolean(variant(mode)), value: () => needed(mode) },
-      { type: 'status', label: 'Source', visible: () => Boolean(weapon(mode)), value: () => source(mode) },
       {
         type: 'status', label: 'Attention', visible: () => warnings(mode).length > 0,
         value: () => `⚠ ${warnings(mode).join(' ; ')}`,
       },
-      { type: 'action', label: 'Équipement de combat', button: 'Enregistrer', run: () => save(mode) },
-      { type: 'status', label: 'Enregistré', value: () => saved(mode) },
     ],
+    onSetting: changed,
+    dispose: () => Object.values(timers).forEach((timer) => window.clearTimeout(timer)),
   };
 }
