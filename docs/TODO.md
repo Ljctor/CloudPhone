@@ -6,6 +6,18 @@ page; fix or explain each before the hexagonal refactor reaches its domain.
 
 None at the moment.
 
+## Game incidents
+
+- 2026-10-21, Slayer Legend: a guarded tap meant for the small arrow on
+  the battle screen's right edge landed on the AUTO gear and turned AUTO
+  off. Cause: the arrow unfolds the preset badge and the AUTO gear, which
+  fold away again after about 2 s; a guarded tap (guard, then the ssh/adb
+  round trip) arrived after the fold, on the gear. AUTO was turned back
+  on the same night (gear spinning, skills on cooldown). Fix: unfold and
+  next tap in one adb call, both guarded first, only when a fresh capture
+  reads the controls folded; the AUTO gear is tapped only after an OFF
+  reading (a still gear) and never to turn AUTO off.
+
 # Planned work
 
 In order of value. One worktree per track; never two black-box suites on
