@@ -13,7 +13,9 @@
 // choices and placeholder may also be functions, read at each render.
 //   { type: 'action', label, button, run(), disabled?() }
 //   { type: 'buttons', label, buttons: [{ label, run(), disabled?() }] }   a row of small buttons
-//   { type: 'status', label, value(), href?() }    href makes the value a link
+//   { type: 'status', label, value(), href?(), button?() }   href makes the value a link;
+//                                                  button() => { label, run() } or null: a small
+//                                                  button after the value, while it gives one
 //   { type: 'grid', label, rows() }               a grid of fixed-size cells, rows() =>
 //                                                  [[cell, ...], ...], a cell: a CSS colour (filled),
 //                                                  'empty' (outlined) or null (not part of the grid)

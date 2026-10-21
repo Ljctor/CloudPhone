@@ -1,11 +1,19 @@
-"""The mpw18 watchdog: while the game should farm mpw18 (the default mode,
-no mine), it looks at the game every rules.EVERY seconds and, when the
-farming is not going on, alerts and relaunches the game.
+"""The watchdog: it checks that the game does what the selected mode
+says, looking at it every rules.EVERY seconds, and when it does not,
+alerts and repairs: mpw18 and mpw4 farming each with its own loadout
+(stage, Battle settings preset, AUTO); the Closed Mine, whose screens are
+the mine feature's, for its one "game away" alert (rules.mine_away); free
+play, nothing.
 
-GET /watchdog   {status: {template, params}, text, symptom, paused,
-                 counters, lease, repairing, profile, controls}
-POST /watchdog/retry   {kind}: « Réessayer maintenant », that repair's
-                 backoff starts over (needs the page token)
+GET /watchdog   {mode, status: {template, params}, text, line: {template,
+                 params}, symptom, paused, counters, waiting, lease,
+                 repairing, profile, controls}
+POST /watchdog/retry   {kind}: « Réessayer », that repair's backoff starts
+                 over (needs the page token)
+
+line: the watchdog's part of the mode's État row ("OK", the symptom,
+"relance du jeu dans 4 min" while a repair backs off); waiting: the kinds
+backing off now (each its next attempt still ahead), for « Réessayer ».
 
 controls: {template, params} when the preset and AUTO are not checked
 (someone watches the screen), else None.
@@ -15,7 +23,8 @@ front, that the game's process runs and is in front, then the screen
 (the shared capture, at most rules.MAX_AGE seconds old): the battle screen
 or Power Saving Mode is farming; on the battle screen the numeral ending
 the stage's name is compared with the mpw18 stage's. What it makes of a
-look is watchdog_rules.py's (judge, decide).
+look is watchdog_rules.py's (judge, decide); its profile is the selected
+mode's (rules.profile).
 
 The repairs: the relaunch (the launch feature's, holder "watchdog" of the
 shared lease, stopped by a user input): it never kills the game, closes
@@ -32,10 +41,10 @@ checked. The way
 back to battle from a game menu stays an alert (its close buttons differ
 per panel); the soul weapon and its engraving wait for phase 3.
 
-Free play, the timed modes and the mine (with or without a time limit)
-suspend it: the mine's own "jeu absent" alert and the watchdog's never
-overlap. A user input pauses it a minute; another holder of the lease
-defers its repair. At the gateway's start it only observes its first
+Free play suspends it, and so does a mode's entry while its sequence
+runs (the mode feature's state "moving", under the lease): the watchdog
+waits for it. A user input pauses it a minute; another holder of the
+lease defers its repair. At the gateway's start it only observes its first
 looks; the repairs' hourly counts are kept in state.json ("watchdog").
 """
 
@@ -50,6 +59,8 @@ FARMING = {"stage_change": "stage_change", "select_preset": "preset", "auto_on":
 # Seconds between two readings of the preset and AUTO (each an unfold).
 CONTROLS_EVERY = 300
 UNCHECKED = "Préréglage et AUTO non vérifiés : quelqu’un regarde l’écran"
+# The farming modes (their own stage, preset and AUTO).
+FARMED = ("mpw18", "mpw4")
 
 
 def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, loadout, farming=None, gold=None):
@@ -84,9 +95,12 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         return "mine" if mines["state"]()["enabled"] else modes["state"]()["mode"]
 
     def profile():
-        """The mpw18 stage and mpw18's loadout."""
-        part = loadout("mpw18") or {}
-        return rules.profile(part, part.get("stage"))
+        """The selected mode's stage and loadout (none for the mine)."""
+        name = status["mode"] or mode_now()
+        if name not in FARMED:
+            return rules.profile(None, None, name)
+        part = loadout(name) or {}
+        return rules.profile(part, part.get("stage"), name)
 
     def facts(shot):
         name = screens.classify(shot)
@@ -125,7 +139,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         while no viewer is connected (else not checked, and the status
         says so; a trigger waits for them to leave). AUTO read on while
         gold/s stays at 0: one alert."""
-        if not farming or seen["screen"] != "battle":
+        if not farming or seen["screen"] != "battle" or status["mode"] not in FARMED:
             return
         now = ports.clock.monotonic()
         if gold:
@@ -162,13 +176,14 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         nonlocal memory
         status["controls"] = None
         part = profile()
+        name = part["mode"]
         status["repairing"] = kind
         show("Réparation en cours : {repair}", {"repair": rules.REPAIR_NAMES[kind]})
         try:
             if kind == "auto_on":
-                answer = await farming["ensure_auto"]("mpw18")
+                answer = await farming["ensure_auto"](name)
             else:
-                answer = await farming["farm"](part["stage"], part["preset"], "mpw18",
+                answer = await farming["farm"](part["stage"], part["preset"], name,
                                                modes["state"]().get("highest"))
         except ports.Busy as e:
             memory = rules.not_run(memory, kind)
@@ -178,7 +193,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         finally:
             status["repairing"] = None
         if answer["result"] == "failed":
-            memory, actions = rules.stopped(memory, kind, ports.clock.wall(), random.uniform(-1.0, 1.0))
+            memory, actions = rules.stopped(memory, kind, ports.clock.wall(), random.uniform(-1.0, 1.0), name)
             # Why it stopped, with the backoff's alert (if it is one).
             notify = any(action[4] for action in actions)
             text = say("warning", "Réparation arrêtée : {repair} : {why}",
@@ -235,7 +250,8 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         if ended["state"] == "deferred":
             memory = rules.not_run(memory, "relaunch")
         elif ended["state"] in ("blocked", "failed"):
-            memory, actions = rules.stopped(memory, "relaunch", ports.clock.wall(), random.uniform(-1.0, 1.0))
+            memory, actions = rules.stopped(memory, "relaunch", ports.clock.wall(), random.uniform(-1.0, 1.0),
+                                            status["mode"])
             await notify_all(actions)
 
     async def tick():
@@ -244,17 +260,24 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         now, wall = ports.clock.monotonic(), ports.clock.wall()
         last = ports.last_input()
         if name != status["mode"]:
-            if status["mode"] is not None and name == "mpw18":
-                # A mode ended: look at once, no menu grace; another screen
-                # for a while may be the disconnect screen or the saves.
-                status.update(ended_at=now, resumed=True)
+            if status["mode"] is not None:
+                # Another mode: its own symptoms, from scratch (the backoff
+                # kept). Look at once, no menu grace; after free play,
+                # another screen for a while may be the disconnect screen
+                # or the saves.
+                memory = rules.suspended(memory)
+                status.update(resumed=True, controls=None,
+                              ended_at=now if status["mode"] == "free" else status["ended_at"])
             status["mode"] = name
-        why = rules.paused(name, last["monotonic"] if last else None, now)
+        moving = modes["state"]().get("state") == "moving"
+        why = rules.paused(name, last["monotonic"] if last else None, now, moving)
         status["paused"] = why
         if why:
-            if name != "mpw18":
+            if name not in rules.MODE_NAMES or moving:
                 memory = rules.suspended(memory)
-            show(why, {"mode": name})
+                status["resumed"] = True
+            status["symptom"] = None
+            show(why, {"mode": rules.MODE_NAMES.get(name, name)})
             return False
         if launches["running"]():
             show("Lancement du jeu en cours")
@@ -275,7 +298,8 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         context = {"input_wall": last["wall"] if last else None,
                    "lease": held["holder"] if held and held["holder"] != "watchdog" else None,
                    "act": {kind: farming["switches"]()[switch] == "real" for kind, switch in FARMING.items()}
-                   if farming else {}, "available": available, "jitter": random.uniform(-1.0, 1.0)}
+                   if farming else {}, "available": available, "jitter": random.uniform(-1.0, 1.0),
+                   "mode": name}
         memory, actions = rules.decide(memory, symptom, text, params, context, wall)
         ports.store.save()
         minutes = rules.waiting(memory, symptom, wall)
@@ -317,12 +341,30 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
     async def start(app):
         ports.spawn(watch())
 
+    def line():
+        """The watchdog's part of the mode's État row: "OK", the pause, the
+        repair under way, "{repair} dans {minutes} min" while the symptom's
+        repair backs off, else the symptom (as the status)."""
+        if status["paused"] or status["repairing"] or status["symptom"] in ("unknown", "pending"):
+            return {"template": status["template"], "params": status["params"]}
+        if status["symptom"] is None:
+            return {"template": "OK", "params": {}}
+        minutes = rules.waiting(memory, status["symptom"], ports.clock.wall())
+        kind = rules.REPAIRS.get(status["symptom"])
+        if minutes is not None:
+            return {"template": "{repair} dans {minutes} min",
+                    "params": {"repair": rules.REPAIR_NAMES[kind], "minutes": minutes}}
+        return {"template": status["template"], "params": status["params"]}
+
     def state():
         held = ports.lease.state()
-        return {"status": {"template": status["template"], "params": status["params"]},
+        wall = ports.clock.wall()
+        return {"mode": status["mode"], "status": {"template": status["template"], "params": status["params"]},
                 "text": status["template"].format(**status["params"]) if status["params"] else status["template"],
+                "line": line(),
+                "waiting": sorted(kind for kind, kept in memory["backoff"].items() if kept["next"] > wall),
                 "symptom": status["symptom"], "paused": status["paused"], "repairing": status["repairing"],
-                "counters": rules.counters(memory, ports.clock.wall()), "lease": held,
+                "counters": rules.counters(memory, wall), "lease": held,
                 "profile": profile(), "controls": {"template": UNCHECKED, "params": {}}
                 if status["unchecked"] else None}
 

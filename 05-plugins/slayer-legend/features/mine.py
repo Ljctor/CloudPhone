@@ -14,7 +14,8 @@ whose timer ended while the gateway was down gets a stop pass at the
 gateway's start. When to do what is in mine_rules.py; every tap, hold and
 swipe goes through the navigation guard (ports), each sequence of them
 under the shared lease (holder "mine"): while another holder has it, or
-for a minute after a user input, the mine waits for its next look. The mine's floor, area,
+for a minute after a user input, the mine waits for its next look. The game not in front is the
+watchdog's alert (mine_away), not the mine's. The mine's floor, area,
 timer and on/off are kept in state.json ("mine").
 """
 
@@ -134,7 +135,6 @@ def mine(ports, screens, readers, rules, timer, values):
         # by end(), or in its last alert) never takes another look.
         me = asyncio.current_task()
         memory = rules.fresh()
-        away_since = None
         place = f"étage {status['floor']}, zone {status['area']}"
 
         async def look_again():
@@ -177,12 +177,9 @@ def mine(ports, screens, readers, rules, timer, values):
                 if status["task"] is not me:
                     return
                 if not await ports.focused():
+                    # Its alert is the watchdog's (rules mine_away): one owner.
                     report("waiting", "Le jeu n’est pas au premier plan")
-                    away_since, late = rules.away(away_since, ports.clock.monotonic())
-                    if late:
-                        await alert("Le jeu n’est plus au premier plan depuis 2 minutes (plantage ?)")
                     continue
-                away_since = None
                 shot = await ports.capture(max_age=rules.SECONDS)
                 if not shot:
                     continue

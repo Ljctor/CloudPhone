@@ -37,8 +37,6 @@ MAX_FAILURES = 3
 MAX_UNTICK_FAILURES = MAX_FAILURES
 # The moves that untick "Repeat entry".
 UNTICKS = ("stop_timer", "stop_no_gold")
-# The game not in front this long (seconds): one alert.
-AWAY_ALERT = 120
 # The floor list: tries to find the floor, and the swipe (start and end
 # heights, fractions of the screen) that scrolls by about three rows
 # towards higher floors (up) or lower ones.
@@ -77,15 +75,6 @@ def request(body):
 
 def valid(floor, area):
     return bool(floor and 1 <= floor <= 9999 and area and 1 <= area <= 5)
-
-
-def away(since, now):
-    """The game is not in front: (since, alert). since is when it left
-    (-1 once the alert was sent: one alert per absence)."""
-    since = since or now
-    if now - since > AWAY_ALERT and since > 0:
-        return -1.0, True
-    return since, False
 
 
 def step(facts, memory, now, wall, until):

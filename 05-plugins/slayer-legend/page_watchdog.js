@@ -1,14 +1,12 @@
-// "Surveillance mpw18": what the gateway's mpw18 watchdog saw at its last
-// look (a French template with its parameters, translated with tr), and
-// the shared lease's holder while someone other than the plugin holds it.
-// Asked only while the panel shows the row, at most every 15 s (the
-// watchdog's own pace), as the trace's counts are.
+// The watchdog's part of the mode's État row (page_mode.js): what the
+// gateway's watchdog saw at its last look on the selected mode (a French
+// template with its parameters, translated with tr), the shared lease's
+// holder while someone other than the plugin holds it, and « Réessayer »
+// while a repair backs off. No option rows of its own. Asked only while
+// the panel shows the row, at most every 15 s (the watchdog's own pace).
 
-// The watchdog's repairs (watchdog_rules.REPAIR_NAMES).
-const REPAIRS = {
-  relaunch: 'relance du jeu', back_to_battle: 'retour au combat', stage_change: 'changement de stage',
-  select_preset: 'choix du préréglage de combat', loadout: 'rééquipement', auto_on: 'remise en marche d’AUTO',
-};
+// The plugin's own holders of the lease (not shown).
+const OWN = ['watchdog', 'stage_change', 'mine', 'launch'];
 
 export default function watchdog(api) {
   const watched = { answer: null, at: 0, busy: false };
@@ -22,45 +20,34 @@ export default function watchdog(api) {
   };
 
   return {
-    options: [
-      {
-        type: 'status', label: 'Surveillance mpw18',
-        value: () => {
-          watch();
-          const status = watched.answer?.status;
-          return status ? api.tr(status.template, status.params) : '…';
-        },
-      },
-      {
-        type: 'status', label: 'Préréglage et AUTO',
-        visible: () => Boolean(watched.answer?.controls),
-        value: () => api.tr(watched.answer.controls.template, watched.answer.controls.params),
-      },
-      {
-        // Each repair backing off: when its next attempt is allowed, and
-        // a button to try now.
-        type: 'status', label: 'Prochains essais',
-        visible: () => Object.keys(watched.answer?.counters?.next_attempt ?? {}).length > 0,
-        value: () => Object.values(watched.answer.counters.next_attempt).map(({ repair, next }) => {
-          const at = new Date(next * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-          return `${api.tr(repair)} : ${next * 1000 > Date.now() ? at : api.tr('maintenant')}`;
-        }).join(' · '),
-      },
-      // « Réessayer maintenant », one row per repair backing off.
-      ...Object.entries(REPAIRS).map(([kind, repair]) => ({
-        type: 'action', label: repair, button: 'Réessayer maintenant',
-        visible: () => Boolean(watched.answer?.counters?.next_attempt?.[kind]),
+    options: [],
+    // The text after the mode's own (" · OK"), '' when the watchdog has
+    // nothing to say for mode: free play, a mode's entry, another mode
+    // than its last look's.
+    line: (mode) => {
+      watch();
+      const answer = watched.answer;
+      if (!answer?.line || answer.mode !== mode || mode === 'free') return '';
+      if (answer.status?.template === 'En pause : entrée dans le mode {mode}') return '';
+      const parts = [api.tr(answer.line.template, answer.line.params)];
+      const held = answer.lease;
+      if (held && !OWN.includes(held.holder)) parts.push(api.tr('bail : {holder} ({reason})', held));
+      return ` · ${parts.join(' · ')}`;
+    },
+    // « Réessayer » while a repair backs off: each waiting kind starts over.
+    retry: (mode) => {
+      const answer = watched.answer;
+      if (answer?.mode !== mode || !answer.waiting?.length) return null;
+      return {
+        label: 'Réessayer',
         run: async () => {
-          const result = await api.post('/watchdog/retry', { kind }).catch(() => null);
-          if (result?.ok) Object.assign(watched, { answer: result.body, at: Date.now() });
+          for (const kind of answer.waiting) {
+            const result = await api.post('/watchdog/retry', { kind }).catch(() => null);
+            if (result?.ok) Object.assign(watched, { answer: result.body, at: Date.now() });
+          }
           api.refresh();
         },
-      })),
-      {
-        type: 'status', label: 'Bail',
-        visible: () => Boolean(watched.answer?.lease),
-        value: () => api.tr('{holder} : {reason}', watched.answer.lease),
-      },
-    ],
+      };
+    },
   };
 }

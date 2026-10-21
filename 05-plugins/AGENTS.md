@@ -11,10 +11,11 @@ Rules:
   here, never in parts 03–04.
 - A plugin never launches or restarts an app by itself: only on a user's
   press, never from a timer or a script. The one exception, asked by the
-  user: Slayer Legend's mpw18 watchdog relaunches the game (backing off
-  after each failure: 1, 2, 4, 8, 16, then 30 minutes between attempts;
-  never during free play, a timed mode or the mine, a minute after a user
-  input at the earliest, under the shared lease). No launch
+  user: Slayer Legend's watchdog relaunches the game while the selected
+  mode is mpw18 or mpw4 farming (backing off after each failure: 1, 2, 4,
+  8, 16, then 30 minutes between attempts; never in free play, the mine or
+  during a mode's entry, a minute after a user input at the earliest,
+  under the shared lease). In the mine it only alerts. No launch
   ever kills the app (`am start` without `-S`, no force-stop). On Android's
   "isn't responding" dialog the watchdog taps only "Wait", once, then
   alerts: never its "Close app", which kills the game.

@@ -5,7 +5,8 @@
 // farming" section. Overlay hook, called by page_gold.js while the
 // overlay applies: overlay(), the mode's lines on the game, top left (the
 // time left of a timed mode under its name). The mpw18 and mpw4 dialogs
-// hold that mode's loadout (page_engraving.js).
+// hold that mode's loadout (page_engraving.js). The État row ends with
+// the watchdog's look at the selected mode (page_watchdog.js).
 import loadout from './page_engraving.js';
 
 // This browser's copy of when the timed mode ends (Unix seconds), as the
@@ -40,8 +41,9 @@ const keep = (name, value) => {
   }
 };
 
-// known(): the last stage number read (page_screen.js).
-export default function modeFeature(api, { known }) {
+// known(): the last stage number read (page_screen.js); watchdog: the
+// watchdog part (page_watchdog.js: line, retry).
+export default function modeFeature(api, { known, watchdog }) {
   // chosen: when the mode was last chosen here; sending: a POST under way.
   const farm = { answer: null, timer: null, stages: null, chosen: 0, sending: 0 };
   const loadouts = loadout(api);
@@ -192,15 +194,18 @@ export default function modeFeature(api, { known }) {
       },
       {
         type: 'status', label: 'État',
+        // « Réessayer » inline while a repair backs off.
+        button: () => (farm.answer ? watchdog?.retry(farm.answer.mode) ?? null : null),
         value: () => {
           if (farm.error) return api.tr(farm.error);
           if (mode() === 'mine' && !Number(api.setting('mineFloor'))) return api.tr('Choisis l’étage et la zone');
           const answer = farm.answer;
           if (!answer) return '…';
           const warning = (gold) => (gold === false ? ` ⚠ ${api.tr('plus de parchemin doré')}` : '');
-          if (answer.mode === 'mine') return api.tr(answer.mine?.message || 'Mine') + warning(answer.mine?.gold);
+          const looked = watchdog?.line(answer.mode) ?? '';
+          if (answer.mode === 'mine') return api.tr(answer.mine?.message || 'Mine') + warning(answer.mine?.gold) + looked;
           // mpw4 farming: the gateway's gold scroll check (gold, mpw4 only).
-          return api.tr(answer.message || 'Farming mpw18') + warning(answer.gold);
+          return api.tr(answer.message || 'Farming mpw18') + warning(answer.gold) + looked;
         },
       },
     ],

@@ -389,7 +389,7 @@ fn slayer_legends_mode_radio_follows_the_gateway_when_a_timed_mode_ends() {
 }
 
 #[test]
-fn slayer_legends_next_attempts_show_and_retry_now_clears_them() {
+fn slayer_legends_backoff_wait_shows_in_the_state_row_with_retry() {
     // A real failure on the fake: the game asks to sign in and Google's
     // chooser lists two accounts, so the watchdog's relaunch stops.
     let app = json!({"package": "com.gear2.growslayer", "activity": "com.google.firebase.MessagingUnityPlayerActivity",
@@ -402,23 +402,24 @@ fn slayer_legends_next_attempts_show_and_retry_now_clears_them() {
             [0.245, 0.788, 0.755, 0.836, [235, 235, 235]], [0.28, 0.802, 0.32, 0.822, [0, 0, 0]],
             [0.37, 0.808, 0.66, 0.818, [0, 0, 0]]]});
     let cp = CloudPhone::start_with(json!({"plugins": [SLAYER_LEGEND], "options": {"app": app}}));
-    wait_for("the relaunch's failure", Duration::from_secs(150), || {
+    wait_for("the relaunch's backoff", Duration::from_secs(150), || {
         let state = cp.try_get_json("api/v1/plugins/slayer-legend/watchdog")?;
-        state["counters"]["next_attempt"].get("relaunch").map(|_| ())
+        (state["waiting"] == json!(["relaunch"])).then_some(())
     });
     let phone = cp.clone();
     browser_test(&cp, Options::without_video(), |page| async move {
         page.open_options().await;
-        page.wait_dialog_value(O, "Prochains essais", Duration::from_secs(40), |v| v.starts_with("relance du jeu : "))
-            .await;
+        // The selected mode's État row: the backoff's wait, « Réessayer » inline.
+        let state = page.wait_dialog_value(O, "État", Duration::from_secs(40),
+            |v| v.contains(" · relance du jeu dans ") && v.ends_with(" min Réessayer")).await;
+        assert!(state.starts_with("Farming mpw18 · "), "{state}");
         page.js("window.__retries = []; const f = window.fetch; window.fetch = async (url, init) => { \
                  const r = await f(url, init); \
                  if (String(url).endsWith('/watchdog/retry')) window.__retries.push({headers: init.headers, \
                    body: JSON.parse(init.body), answer: await r.clone().json()}); \
                  return r; }; return true", vec![]).await;
         page.client.find(Locator::XPath(
-            "//div[@role='dialog']//label[contains(., 'relance du jeu')]/..//button[normalize-space()='Réessayer maintenant'] \
-             | //div[@role='dialog']//*[normalize-space()='relance du jeu']/following::button[normalize-space()='Réessayer maintenant'][1]"))
+            "//div[@role='dialog']//div[span[normalize-space()='État']]//button[normalize-space()='Réessayer']"))
             .await.unwrap().click().await.unwrap();
         page.wait_js("the retry POST", Duration::from_secs(10), "return window.__retries.length === 1", vec![]).await;
         let sent = page.js("return window.__retries[0]", vec![]).await;
@@ -426,6 +427,7 @@ fn slayer_legends_next_attempts_show_and_retry_now_clears_them() {
         assert_eq!(sent["headers"]["X-CloudPhone-Token"], token, "with the page token: {sent}");
         assert_eq!(sent["body"], json!({"kind": "relaunch"}));
         assert_eq!(sent["answer"]["counters"]["next_attempt"], json!({}), "{sent}");
+        assert_eq!(sent["answer"]["waiting"], json!([]), "{sent}");
         let p = phone.clone();
         let records = blocking(move || p.get_json("api/v1/logs"));
         assert!(records["records"].as_array().unwrap().iter()

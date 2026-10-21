@@ -165,7 +165,7 @@ fn free_play_suspends_it_and_another_holder_of_the_lease_defers_the_relaunch() {
     // Free play: the game may be on another device; nothing is checked.
     std::thread::sleep(Duration::from_secs(35));
     let state = watchdog(&cp);
-    assert_eq!(state["status"], json!({"template": "En pause : mode {mode}", "params": {"mode": "free"}}), "{state}");
+    assert_eq!(state["status"]["template"], "Jeu libre : rien n’est surveillé", "{state}");
     assert_eq!(relaunches(&cp), 0);
     assert!(plugin_records(&cp).is_empty(), "no alert in free play: {:#?}", plugin_records(&cp));
 
@@ -239,15 +239,21 @@ fn a_chooser_with_two_accounts_is_for_the_user_and_never_tapped() {
 }
 
 #[test]
-fn the_page_shows_the_watchdogs_look_and_an_outside_lease() {
+fn the_page_shows_the_watchdogs_look_and_an_outside_lease_in_the_modes_state() {
     let cp = with_game("running");
     let phone = cp.clone();
     browser_test(&cp, Options::without_video(), |page| async move {
         page.open_options().await;
-        page.wait_dialog_value(fr::OPTIONS_PANEL, "Surveillance mpw18", Duration::from_secs(50), |v| v == "OK").await;
+        // No rows of its own: the end of the selected mode's État row.
+        page.wait_dialog_value(fr::OPTIONS_PANEL, "État", Duration::from_secs(50), |v| v.starts_with("Farming mpw18") && v.ends_with(" · OK")).await;
+        let text = page.dialog_text(fr::OPTIONS_PANEL).await;
+        for gone in ["Surveillance mpw18", "Bail", "Prochains essais", "Réessayer"] {
+            assert!(!text.lines().any(|l| l.trim() == gone), "no {gone:?} row: {text}");
+        }
         let lease = json!({"holder": "agent", "reason": "réglages", "seconds": 600});
         let taken = blocking(move || phone.post_json("api/v1/plugins/slayer-legend/lease", &lease).status().as_u16());
         assert_eq!(taken, 200);
-        page.wait_dialog_value(fr::OPTIONS_PANEL, "Bail", Duration::from_secs(25), |v| v == "agent : réglages").await;
+        page.wait_dialog_value(fr::OPTIONS_PANEL, "État", Duration::from_secs(25),
+            |v| v.ends_with(" · OK · bail : agent (réglages)")).await;
     });
 }

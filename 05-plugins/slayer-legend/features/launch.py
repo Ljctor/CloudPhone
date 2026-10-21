@@ -1,5 +1,5 @@
 """Starts the game and brings it to the battle screen, on the user's press
-or as the mpw18 watchdog's relaunch (api: start(holder, user)). It never
+or as the watchdog's relaunch (api: start(holder, user)). It never
 kills the game: Android brings a running one to the front.
 
 GET  /launch   {state, message} of the last launch

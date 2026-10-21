@@ -120,7 +120,7 @@ configured count.
 | `tests/input.rs` | touches and keys over HTTP reach Android at the right place |
 | `tests/lifecycle.rs` | crash, restart, discovery file replaced, gateway restarts |
 | `tests/plugins.rs` | plugin host: list, served scripts, routes, token checks, screenshot (shared, counted in the state details), analysis off the event loop and adb for plugins, a plugin's state kept across gateway restarts, Slayer Legend's timed modes (30 minutes by default, refused until configured) and its shared lease (the token for POST and DELETE, released by its holder only), a plugin for another plugin API refused, broken plugins skipped |
-| `tests/watchdog.rs` | Slayer Legend's mpw18 watchdog at its real pace on the fake's app: a crash closed and relaunched (MAIN/LAUNCHER, never `-S`) and farming again within a minute, timings printed; a game not responding gets Wait once, then an alert, never a kill; the sign-in screen gets "Sign in with Google" and the one account, a chooser with two accounts is one alert and no tap; a gateway start observes before relaunching; free play suspends it; another lease holder defers the relaunch; the page's row |
+| `tests/watchdog.rs` | Slayer Legend's watchdog at its real pace on the fake's app: a crash closed and relaunched (MAIN/LAUNCHER, never `-S`) and farming again within a minute, timings printed; a game not responding gets Wait once, then an alert, never a kill; the sign-in screen gets "Sign in with Google" and the one account, a chooser with two accounts is one alert and no tap; a gateway start observes before relaunching; free play suspends it; another lease holder defers the relaunch; the page shows its look at the end of the mode's État row |
 | `tests/contract.rs` | what the emulator says (status, JSEP shapes, data channels, codecs): on the fake by default, on a deployed instance with `--features smoke` |
 | `tests/ui_page.rs` | Firefox: video plays and fits, muted, connected only with a frame, toolbar labels, landmarks, LED, metrics block, ↻ replaces only the video session, signalling back after a gateway restart or a long outage, English browser |
 | `tests/ui_banners.rs` | every status the page shows, covering or closable, with the LED colour; priority; closing; English |
@@ -130,7 +130,7 @@ configured count.
 | `tests/ui_forms.rs` | Android settings and screen size fields, presets, Apply enabled only while they differ |
 | `tests/ui_settings.rs` | client options and language in `localStorage`, plugin options included |
 | `tests/ui_fullscreen.rs` | fullscreen, fold button, 3 s autofold, handle, docking |
-| `tests/ui_plugins.rs` | plugins in the page: options of each kind, dialog rows (no button with nothing to configure, a radio greyed out by `disabled()`), layer drawing, stored options, failures (also a plugin the gateway refused), translations |
+| `tests/ui_plugins.rs` | plugins in the page: options of each kind, dialog rows (no button with nothing to configure, a radio greyed out by `disabled()`), layer drawing, the 'grid' option's fixed cells, a status row's inline button (« Réessayer » while a repair backs off), stored options, failures (also a plugin the gateway refused), translations |
 | `tests/smoke.rs` | deployed instance only (`--features smoke`) |
 
 ## What took over from the jest tests

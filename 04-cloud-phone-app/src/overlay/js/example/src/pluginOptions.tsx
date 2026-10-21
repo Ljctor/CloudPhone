@@ -156,8 +156,18 @@ function pluginOption(context, plugin, option, index) {
   if (option.type === 'status') {
     const value = option.value?.() ?? '–';
     const href = option.href?.();
-    return infoRow(tr(option.label), href
-      ? <a href={href} target="_blank" rel="noreferrer" style={styles.link}>{value}</a> : value);
+    const shown = href ? <a href={href} target="_blank" rel="noreferrer" style={styles.link}>{value}</a> : value;
+    // An inline button after the value, while button() gives one.
+    const button = option.button?.();
+    return infoRow(tr(option.label), button ? (
+      <>
+        {shown}{' '}
+        <button style={styles.smallButton}
+          onClick={() => Promise.resolve(button.run?.()).catch((error) => console.error(error))}>
+          {tr(button.label)}
+        </button>
+      </>
+    ) : shown);
   }
   return null;
 }

@@ -1,4 +1,4 @@
-"""The mpw18 watchdog's rules (features/watchdog_rules.py), offline: the
+"""The watchdog's rules (features/watchdog_rules.py), offline: the
 looks a scripted game gives, one every rules.EVERY seconds, through
 judge() and decide(); and features/watchdog.py's Wait on Android's
 ANR dialog, on fake ports. Run: python3 -m unittest test_watchdog
@@ -43,8 +43,9 @@ class Watch:
     """The watchdog's rules on virtual time: one look every rules.EVERY
     seconds; inputs and the lease as the script says."""
 
-    def __init__(self, act=True, available=ALL, kept=None):
+    def __init__(self, act=True, available=ALL, kept=None, profile=PROFILE):
         self.memory = rules.fresh(kept)
+        self.profile = profile
         self.now = 0.0
         self.input = None
         self.lease = None
@@ -62,16 +63,16 @@ class Watch:
         self.now += E
         why = rules.paused(self.mode, self.input, self.now)
         if why:
-            if self.mode != "mpw18":
+            if self.mode not in rules.MODE_NAMES:
                 self.memory = rules.suspended(self.memory)
             self.paused.append(why)
             return None
         symptom, text, params, self.memory = rules.judge(
-            seen, PROFILE, NUMERALS.get, self.input, self.resumed, self.memory, self.now, self.after_mode)
+            seen, self.profile, NUMERALS.get, self.input, self.resumed, self.memory, self.now, self.after_mode)
         self.resumed = False
         self.symptoms.append(symptom)
         context = {"input_wall": None if self.input is None else EPOCH + self.input, "lease": self.lease,
-                   "act": self.act, "available": self.available}
+                   "act": self.act, "available": self.available, "mode": self.profile["mode"]}
         self.memory, actions = rules.decide(self.memory, symptom, text, params, context, self.wall())
         for action in actions:
             if action[0] == "record":
@@ -91,13 +92,14 @@ class Watch:
         self.input = self.now + E / 2
 
     def alerts(self):
-        return [(level, text) for _, level, text, params, notify in self.records if notify]
+        """The phone alerts, as their texts read."""
+        return [(level, text.format(**params)) for _, level, text, params, notify in self.records if notify]
 
     def kinds(self):
         return [kind for _, kind in self.repairs]
 
     def notifications(self):
-        return [text for _, level, text, params, notify in self.records if notify]
+        return [text.format(**params) for _, level, text, params, notify in self.records if notify]
 
 
 class Timing(unittest.TestCase):
@@ -202,19 +204,23 @@ class Pauses(unittest.TestCase):
 
 
 class Suspension(unittest.TestCase):
-    def test_every_other_mode_suspends_it(self):
-        for mode in ("mpw4", "free", "mine"):
-            w = Watch()
-            w.mode = mode
-            w.looks(GONE, 10)
-            self.assertEqual((w.symptoms, w.alerts(), w.repairs), ([], [], []), mode)
-            self.assertEqual(w.paused[-1], "En pause : mode {mode}")
+    def test_free_play_suspends_it(self):
+        w = Watch()
+        w.mode = "free"
+        w.looks(GONE, 10)
+        self.assertEqual((w.symptoms, w.alerts(), w.repairs), ([], [], []))
+        self.assertEqual(w.paused[-1], "Jeu libre : rien n’est surveillé")
+
+    def test_a_modes_entry_suspends_it(self):
+        self.assertEqual(rules.paused("mpw4", None, 100, moving=True), "En pause : entrée dans le mode {mode}")
+        self.assertIsNone(rules.paused("mpw4", None, 100))
+        self.assertIsNone(rules.paused("mine", None, 100))
 
     def test_a_suspension_starts_over(self):
         w = Watch(available=())
         w.looks(BATTLE, 4)
         w.look(GONE)
-        w.mode = "mine"
+        w.mode = "free"
         w.look(GONE)
         w.mode = "mpw18"
         w.look(GONE)
@@ -234,7 +240,7 @@ class Saver(unittest.TestCase):
         self.assertEqual(set(w.symptoms), {None}, "unread is not wrong")
         w.looks(OTHER_STAGE, 2)
         self.assertEqual(w.symptoms[-1], "wrong_stage")
-        self.assertEqual(w.alerts(), [("warning", "Farming mpw18 : mauvais stage : pas le stage {stage}")])
+        self.assertEqual(w.alerts(), [("warning", "Farming mpw18 : mauvais stage, pas le 920")])
         self.assertEqual(w.kinds(), ["stage_change"])
 
 
@@ -345,10 +351,12 @@ class Backoff(unittest.TestCase):
         self.gone_for(w, 3 * 3600)
         said = [(text, params.get("minutes")) for _, level, text, params, notify in w.records if notify]
         self.assertEqual(said, [
-            ("Farming mpw18 : le jeu ne tourne pas", None),
+            ("{mode} : le jeu ne tourne pas", None),
             ("Réparation sans effet : {repair}, prochain essai dans {minutes} min", 1),
-            ("Farming mpw18 : {repair} toujours en échec, prochaine tentative dans {minutes} min", 8),
-            ("Farming mpw18 : {repair} toujours en échec, prochaine tentative dans {minutes} min", 30)])
+            ("{mode} : {repair} toujours en échec, prochaine tentative dans {minutes} min", 8),
+            ("{mode} : {repair} toujours en échec, prochaine tentative dans {minutes} min", 30)])
+        self.assertEqual({params.get("mode") for _, _, text, params, notify in w.records if notify and "{mode}" in text},
+                         {"Farming mpw18"})
         self.assertFalse([r for r in w.records if "bloquée" in r[2].lower()])
 
     def test_the_status_says_when_the_next_try_is(self):
@@ -448,10 +456,11 @@ class Backoff(unittest.TestCase):
 class Profile(unittest.TestCase):
     LOADOUT = {"preset": "III", "soul_weapon": {"id": 32, "variant": "Gold"}, "weapon": "Ambition"}
 
-    def test_the_stage_and_mpw18s_loadout(self):
-        self.assertEqual(rules.profile(None, 920), {"stage": 920, "preset": None, "soul_weapon": None})
-        self.assertEqual(rules.profile(self.LOADOUT, 920),
-                         {"stage": 920, "preset": "III", "soul_weapon": {"id": 32, "variant": "Gold"}})
+    def test_the_stage_and_the_modes_loadout(self):
+        self.assertEqual(rules.profile(None, 920),
+                         {"mode": "mpw18", "stage": 920, "preset": None, "soul_weapon": None})
+        self.assertEqual(rules.profile(self.LOADOUT, 915, "mpw4"),
+                         {"mode": "mpw4", "stage": 915, "preset": "III", "soul_weapon": {"id": 32, "variant": "Gold"}})
         self.assertIsNone(rules.profile({}, None)["stage"], "no mpw18 stage chosen yet")
         for bad in ({"preset": "VI"}, {"preset": 3}, {"soul_weapon": {"id": "32"}}, {"soul_weapon": 32}, 3):
             profile = rules.profile(bad, 920)
@@ -559,7 +568,8 @@ class GoldTrigger(unittest.TestCase):
     (rules.EVERY apart), gold/s always 0 over a full window: when the
     preset and AUTO are read."""
 
-    def looks(self, count, auto, viewers=lambda look: 0, stage=920, answer=None):
+    def looks(self, count, auto, viewers=lambda look: 0, stage=920, answer=None, mode="mpw18", entering=False,
+              game=True):
         """count looks, AUTO read as auto, viewers(look) connected; (the
         looks that read the controls, the alerts, the farming calls other
         than reading); self.state: GET /watchdog's at the end."""
@@ -606,7 +616,7 @@ class GoldTrigger(unittest.TestCase):
 
             @staticmethod
             async def focus():
-                return {"game": True, "window": "game"}
+                return {"game": game, "window": "game" if game else "com.android.launcher3/.Launcher"}
 
             @staticmethod
             async def capture(max_age):
@@ -625,7 +635,7 @@ class GoldTrigger(unittest.TestCase):
             return {"preset": 1, "auto": auto}
 
         async def refused(*args):
-            other.append(args)
+            other.append(("ensure_auto", *args))
             return {"result": "plan", "text": "plan"}
 
         self.farmed = farmed = []
@@ -638,10 +648,12 @@ class GoldTrigger(unittest.TestCase):
                    "farm": farm, "switches": lambda: {"stage_change": "real", "preset": "plan", "auto": "plan"}}
         gold = {"current": lambda: {"rate": 0, "span": 300, "last": Ports.clock.wall() - 1}}
         built = feature.watchdog(
-            Ports, None, None, rules, NUMERALS.get, {"state": lambda: {"mode": "mpw18", "highest": 925}},
-            {"state": lambda: {"enabled": False}},
+            Ports, None, None, rules, NUMERALS.get,
+            {"state": lambda: {"mode": mode, "highest": 925, "state": "moving" if entering else "farming"}},
+            {"state": lambda: {"enabled": mode == "mine"}},
             {"running": lambda: False, "start": lambda *a: None, "state": lambda: {}},
-            lambda mode: {"stage": 920, "preset": 1}, farming, gold)
+            lambda name: {"mpw18": {"stage": 920, "preset": 1}, "mpw4": {"stage": 915, "preset": "II"}}[name],
+            farming, gold)
 
         async def run():
             await built["startup"][0](None)
@@ -713,6 +725,50 @@ class GoldTrigger(unittest.TestCase):
         self.assertEqual(read[:2], [1, 2])
         self.assertFalse([a for a in alerts if rules.GOLD_ALERT in a])
         self.assertEqual(other, [], "the auto switch on plan: never ensure_auto")
+
+
+class ModesOnTheFeature(GoldTrigger):
+    """features/watchdog.py checks the selected mode, one scenario each
+    (GoldTrigger's fake ports)."""
+
+    def test_mpw4_repairs_its_own_stage_and_its_line_names_it(self):
+        _, alerts, _ = self.looks(8, "on", stage=920, mode="mpw4")
+        stage, preset, mode, highest = self.farmed[0]
+        self.assertEqual((stage, preset, mode, highest), (915, "II", "mpw4", 925))
+        self.assertIn("Farming mpw4 : mauvais stage, pas le 915", alerts)
+        self.assertEqual(self.state["mode"], "mpw4")
+        self.assertEqual(self.state["profile"]["stage"], 915)
+
+    def test_mpw18_ok_is_its_line(self):
+        self.looks(4, "on")
+        self.assertEqual(self.state["line"], {"template": "OK", "params": {}})
+        self.assertEqual(self.state["waiting"], [])
+
+    def test_a_backoff_waiting_is_in_the_line_and_retry_clears_it(self):
+        self.looks(5, "on", stage=940, answer={"result": "failed", "text": "écran inattendu"})
+        self.assertEqual(self.state["waiting"], ["stage_change"])
+        self.assertEqual(self.state["line"]["template"], "{repair} dans {minutes} min")
+        self.assertEqual(self.state["line"]["params"]["repair"], "changement de stage")
+
+        async def body():
+            return {"kind": "stage_change"}
+        self.assertEqual(self.retry(body)["waiting"], [])
+
+    def test_the_mine_never_reads_the_controls_and_alerts_once_the_game_is_away(self):
+        read, alerts, other = self.looks(14, "off", mode="mine", game=False)
+        self.assertEqual((read, other, self.farmed), ([], [], []))
+        self.assertEqual(alerts, ["Mine fermée : le jeu n’est plus au premier plan (plantage ?)"])
+
+    def test_a_modes_entry_is_waited_for(self):
+        read, alerts, other = self.looks(6, "off", stage=940, entering=True)
+        self.assertEqual((read, alerts, other, self.farmed), ([], [], [], []))
+        self.assertEqual(self.state["status"]["template"], "En pause : entrée dans le mode {mode}")
+        self.assertEqual(self.state["line"]["params"], {"mode": "Farming mpw18"})
+
+    def test_free_play_looks_at_nothing(self):
+        read, alerts, other = self.looks(6, "off", stage=940, mode="free", game=False)
+        self.assertEqual((read, alerts, other, self.farmed), ([], [], [], []))
+        self.assertEqual(self.state["line"]["template"], "Jeu libre : rien n’est surveillé")
 
 
 class Focus(unittest.TestCase):
@@ -977,7 +1033,51 @@ class Flapping(unittest.TestCase):
 class Status(unittest.TestCase):
     def test_the_status_says_the_numeral_never_a_stage_number(self):
         _, text, params, _ = rules.judge(BATTLE, PROFILE, NUMERALS.get, None, False, rules.fresh(), 60)
-        self.assertEqual(rules.status(text, params), ("Farming mpw18 : OK (numéral {numeral})", {"numeral": "III"}))
+        self.assertEqual(rules.status(text, params), ("{mode} : OK (numéral {numeral})",
+                                                      {"numeral": "III", "mode": "Farming mpw18"}))
+        self.assertEqual(rules.status(text, params, "mpw4")[1]["mode"], "Farming mpw4")
+
+
+class Modes(unittest.TestCase):
+    """One scenario per mode: the watchdog checks the selected one."""
+
+    def test_mpw18_farming_a_wrong_stage_is_its_stage_change(self):
+        w = Watch()
+        w.looks(BATTLE, 3)
+        w.looks({**BATTLE, "stage": 921, "numeral": 4}, 2)
+        self.assertEqual(w.alerts(), [("warning", "Farming mpw18 : mauvais stage, pas le 920")])
+        self.assertEqual(w.kinds(), ["stage_change"])
+
+    def test_mpw4_farming_has_its_own_stage_and_names_itself(self):
+        w = Watch(profile=rules.profile({"preset": "II"}, 915, "mpw4"))
+        w.looks({**BATTLE, "stage": 915, "numeral": None}, 3)
+        self.assertEqual(w.symptoms, [None] * 3, "915 is mpw4's stage")
+        w.looks({**BATTLE, "stage": 920}, 2)
+        self.assertEqual(w.alerts(), [("warning", "Farming mpw4 : mauvais stage, pas le 915")])
+        self.assertEqual(w.kinds(), ["stage_change"])
+        w.looks({**BATTLE, "stage": 915, "battle_settings": "I"}, 2)
+        self.assertEqual(w.symptoms[-1], "wrong_battle_settings", "its own preset")
+
+    def test_the_mine_owns_no_screen_and_alerts_once_when_the_game_is_away(self):
+        w = Watch(profile=rules.profile(None, None, "mine"))
+        w.looks(OTHER, 6)
+        w.looks(MENU, 6)
+        self.assertEqual(set(w.symptoms), {None}, "the mine's screens are the mine feature's")
+        w.looks(AWAY, rules.MINE_AWAY_LOOKS)
+        self.assertEqual(w.alerts(), [], "2 minutes, as the mine's own alert was")
+        w.looks(AWAY, 20)
+        self.assertEqual(w.alerts(), [("warning", "Mine fermée : le jeu n’est plus au premier plan (plantage ?)")])
+        self.assertEqual(w.repairs, [], "no relaunch: it would not bring the mine back")
+        w.looks(GONE, 5)
+        w.looks(CRASH, 5)
+        self.assertEqual(len(w.alerts()), 1, "one absence, one alert")
+
+    def test_free_play_checks_nothing(self):
+        w = Watch()
+        w.mode = "free"
+        for seen in (GONE, CRASH, AWAY, OTHER, OTHER_STAGE):
+            w.looks(seen, 10)
+        self.assertEqual((w.symptoms, w.alerts(), w.repairs, w.plans), ([], [], [], []))
 
 
 if __name__ == "__main__":

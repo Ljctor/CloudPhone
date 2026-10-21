@@ -1,17 +1,21 @@
-"""What the mpw18 watchdog makes of each look at the game. Pure: what a
-look saw, the farming profile (the mpw18 stage and mpw18's loadout), what
-the watchdog remembers and the time go in; the symptom, the status and the actions (records and alerts, a repair
-or its plan) come out. The feature (watchdog.py beside this file) takes
-the looks and makes the repairs, every move through the navigation guard,
-under the shared lease.
+"""What the watchdog makes of each look at the game. Pure: what a look
+saw, the selected mode's profile (its stage and loadout, see profile()),
+what the watchdog remembers and the time go in; the symptom, the status
+and the actions (records and alerts, a repair or its plan) come out. The
+feature (watchdog.py beside this file) takes the looks and makes the
+repairs, every move through the navigation guard, under the shared lease.
 
-The watchdog runs only while the mode is the default one, mpw18: free
-play, the timed modes and the mine (with or without a time limit) suspend
-it. So the mine's own "jeu absent" alert and the watchdog's never overlap:
-each absence has one owner. When a mode ends, the watchdog looks at once,
-with no menu grace (still paused for a minute after a user input). During
-free play the game may well be open on another device: nothing is checked
-then. When it ends, the game here may show a "connected on another device"
+The watchdog checks that the game does what the selected mode says:
+mpw18 and mpw4 farming, each with its own stage, Battle settings preset
+and AUTO (the same symptoms and repairs); the Closed Mine, whose screens
+are the mine feature's: the watchdog only owns its "game away" alert
+(mine_away: the game gone, crashed or not in front for MINE_AWAY_LOOKS
+looks, one alert, no repair). Free play suspends it, and so does a mode's
+entry (paused(..., moving): the entry's sequence holds the lease). Every
+text names the mode (MODE_NAMES). When a mode ends, the watchdog looks at
+once, with no menu grace (still paused for a minute after a user input).
+During free play the game may well be open on another device: nothing is
+checked then. When it ends, the game here may show a "connected on another device"
 screen or a choice of saves, whose layouts are not mapped yet: for
 AFTER_MODE seconds after a mode ended, another screen is that
 (after_mode_screen), alerted after ALERT_AFTER looks, for the user to do by
@@ -44,7 +48,7 @@ Symptom → response, one look at a time (SYMPTOMS, REPAIRS):
 | mode's end (another device, saves)        | screen and the save choice): an alert |
 |                                           | after ALERT_AFTER looks               |
 
-The aim: after any disruption, mpw18 farming is back within a minute. A
+The aim: after any disruption, the mode's farming is back within a minute. A
 look every EVERY seconds; a user who plays (an input in the last
 PAUSE_AFTER_INPUT seconds) is not a disruption.
 
@@ -117,6 +121,10 @@ REPAIR_AFTER = 2
 AWAY_AFTER = 2
 # Google's windows in front are the sign-in path, not another app.
 GMS = "com.google.android.gms"
+# The modes the watchdog checks, by the name its texts give them.
+MODE_NAMES = {"mpw18": "Farming mpw18", "mpw4": "Farming mpw4", "mine": "Mine fermée"}
+# The mine: the game gone or away this many looks (2 minutes) is its alert.
+MINE_AWAY_LOOKS = 8
 # Looks seen at the gateway's start before any repair.
 OBSERVE_FIRST = 2
 # After a repair that did not take: no repair of that kind this long.
@@ -134,11 +142,12 @@ SYMPTOMS = {
     "after_mode_screen": "écran inconnu après la fin du mode (connecté sur un autre appareil ? choix de "
                          "sauvegarde ?) : à faire à la main",
     "menu": "un menu du jeu est ouvert depuis plus d’une minute sans l’utilisateur",
-    "wrong_stage": "mauvais stage : pas le stage {stage}",
+    "wrong_stage": "mauvais stage, pas le {stage}",
     "wrong_battle_settings": "mauvais préréglage de combat : pas le {preset}",
     "wrong_loadout": "mauvais équipement : {what}",
     "auto_off": "AUTO est arrêté",
     "unexpected": "écran inattendu",
+    "mine_away": "le jeu n’est plus au premier plan (plantage ?)",
 }
 # The repair of each symptom (None: alert only).
 REPAIRS = {
@@ -157,6 +166,7 @@ REPAIRS = {
     "wrong_loadout": "loadout",
     "auto_off": "auto_on",
     "unexpected": None,
+    "mine_away": None,
 }
 REPAIR_NAMES = {"relaunch": "relance du jeu", "back_to_battle": "retour au combat",
                 "stage_change": "changement de stage", "select_preset": "choix du préréglage de combat",
@@ -214,11 +224,15 @@ def suspended(memory):
     return {**fresh(persisted(memory)), "looks": memory["looks"]}
 
 
-def paused(mode, last_input, now):
-    """Why the watchdog does not look now (a template), or None. mode: the
-    mode's name; last_input: monotonic time of the last user input, or None."""
-    if mode != "mpw18":
-        return "En pause : mode {mode}"
+def paused(mode, last_input, now, moving=False):
+    """Why the watchdog does not look now (a template, its parameter
+    {mode} the mode's MODE_NAMES name), or None. mode: the mode's name;
+    last_input: monotonic time of the last user input, or None; moving:
+    the mode's entry sequence runs (it holds the lease)."""
+    if mode not in MODE_NAMES:
+        return "Jeu libre : rien n’est surveillé"
+    if moving:
+        return "En pause : entrée dans le mode {mode}"
     if last_input is not None and now - last_input < PAUSE_AFTER_INPUT:
         return "En pause : l’utilisateur joue"
     return None
@@ -271,6 +285,8 @@ def judge(seen, profile, numeral_of, last_input, resumed, memory, now, after_mod
         return "adb_missing", SYMPTOMS["adb_missing"], {}, memory
     if seen.get("anr"):
         return "anr", SYMPTOMS["anr"], {}, memory
+    if profile.get("mode") == "mine":
+        return _mine(seen, away, memory)
     if seen.get("crash"):
         return "crash", SYMPTOMS["crash"], {}, memory
     if not seen["running"]:
@@ -328,10 +344,27 @@ def judge(seen, profile, numeral_of, last_input, resumed, memory, now, after_mod
     return "unexpected", SYMPTOMS["unexpected"], {}, memory
 
 
-def status(text, params):
-    """The status row's template and parameters: "Farming mpw18 : OK
-    (numéral III)", or the symptom."""
-    return "Farming mpw18 : " + text, params
+def _mine(seen, away, memory):
+    """judge() while the mine farms: its screens are the mine feature's;
+    the game gone, crashed or away (MINE_AWAY_LOOKS looks in a row, see
+    decide) is mine_away, alert only (the relaunch would not bring the
+    mine back)."""
+    if seen.get("crash") or not seen["running"]:
+        return "mine_away", SYMPTOMS["mine_away"], {}, memory
+    if seen["focused"] is None:
+        return "unknown", "pas de vérification (fenêtre de passage au premier plan)", {}, memory
+    if not seen["focused"]:
+        memory["away"] = away + 1
+        if memory["away"] < AWAY_AFTER:
+            return "unknown", "pas de vérification (autre fenêtre au premier plan, à confirmer)", {}, memory
+        return "mine_away", SYMPTOMS["mine_away"], {}, memory
+    return None, "OK", {}, memory
+
+
+def status(text, params, mode="mpw18"):
+    """The status row's template and parameters: "{mode} : OK (numéral
+    III)" with mode's MODE_NAMES name, or the symptom."""
+    return "{mode} : " + text, {**params, "mode": MODE_NAMES.get(mode, mode)}
 
 
 def record(level, text, params=None, notify=False):
@@ -348,22 +381,24 @@ def minutes(seconds):
     return max(1, round(seconds / 60))
 
 
-def failure(memory, kind, wall, jitter=0.0):
+def failure(memory, kind, wall, jitter=0.0, mode="mpw18"):
     """(memory, actions): one real failure of kind: its next delay, and
-    its alert the first time and when the delay first reaches ESCALATE."""
+    its alert the first time and when the delay first reaches ESCALATE
+    (naming mode)."""
     state = memory["backoff"].get(kind, {"failures": 0, "said": []})
     failures = state["failures"] + 1
     base = DELAYS[min(failures, len(DELAYS) - 1)]
     wait = delay(failures, jitter)
     said = list(state["said"])
     values = {"repair": REPAIR_NAMES[kind], "minutes": minutes(wait)}
+    named = {**values, "mode": MODE_NAMES.get(mode, mode)}
     reached = next((d for d in ESCALATE if base >= d and d not in said), None)
     if failures == 1:
         action = record("warning", "Réparation sans effet : {repair}, prochain essai dans {minutes} min", values,
                         notify=True)
     elif reached is not None:
-        action = record("warning", "Farming mpw18 : {repair} toujours en échec, prochaine tentative dans "
-                                   "{minutes} min", values, notify=True)
+        action = record("warning", "{mode} : {repair} toujours en échec, prochaine tentative dans "
+                                   "{minutes} min", named, notify=True)
     else:
         action = record("normal", "Réparation sans effet : {repair}, prochain essai dans {minutes} min", values)
     if reached is not None:
@@ -373,13 +408,13 @@ def failure(memory, kind, wall, jitter=0.0):
     return memory, [action]
 
 
-def stopped(memory, kind, wall, jitter=0.0):
+def stopped(memory, kind, wall, jitter=0.0, mode="mpw18"):
     """(memory, actions): the repair under way stopped (its sequence
     answered failed): one real failure, not counted again at the next look."""
     if memory["verifying"] != kind:
         return memory, []
     memory = {**memory, "verifying": None, "watch": {**memory["watch"], kind: wall + WATCH_AFTER_FAILURE}}
-    return failure(memory, kind, wall, jitter)
+    return failure(memory, kind, wall, jitter, mode)
 
 
 def not_run(memory, kind):
@@ -416,7 +451,8 @@ def decide(memory, symptom, text, params, context, wall):
     the last user input, or None), lease (the lease's holder when it is not
     the watchdog, or None), act ({kind: True when that repair taps for
     real; else its plan; ALWAYS_REAL kinds always do}), available (the
-    repairs learned)}.
+    repairs learned), mode (the mode checked, its texts' name; mpw18 when
+    absent)}.
 
     actions: ("record", level, template, params, notify) (level normal,
     warning or error; notify: also a phone alert), ("repair", kind),
@@ -429,6 +465,8 @@ def decide(memory, symptom, text, params, context, wall):
     actions = []
     if symptom in ("unknown", "pending"):
         return memory, actions
+    mode = context.get("mode", "mpw18")
+    named = MODE_NAMES.get(mode, mode)
     memory = dict(memory)
     verifying, memory["verifying"] = memory["verifying"], None
     if symptom is None:
@@ -442,7 +480,7 @@ def decide(memory, symptom, text, params, context, wall):
         if memory["good"] >= RECOVERED_AFTER and (not memory["repaired"]
                                                   or wall - memory["good_since"] >= RECOVERY_FLOOR):
             if memory["alerted"] and memory["alert_notified"]:
-                actions.append(record("normal", "Farming mpw18 : rétabli", notify=True))
+                actions.append(record("normal", "{mode} : rétabli", {"mode": named}, notify=True))
             memory.update(alerted=False, alert_notified=False, repaired=False, watch={}, planned=None,
                           deferred=None)
         return memory, actions
@@ -454,7 +492,7 @@ def decide(memory, symptom, text, params, context, wall):
             # The repair did not take: a real failure; watch this kind
             # passively for a while.
             memory["watch"] = {**memory["watch"], verifying: wall + WATCH_AFTER_FAILURE}
-            memory, said = failure(memory, verifying, wall, context.get("jitter", 0.0))
+            memory, said = failure(memory, verifying, wall, context.get("jitter", 0.0), mode)
             actions += said
         else:
             # It took; something else is wrong now (a pop-up after a relaunch).
@@ -463,7 +501,8 @@ def decide(memory, symptom, text, params, context, wall):
     memory["streak"] = memory["streak"] + 1 if same else 1
     memory["since_repair"] = memory["since_repair"] + 1 if same else 1
     memory["symptom"] = symptom
-    if memory["streak"] >= (ALERT_AFTER_OTHER if symptom == "unexpected" else ALERT_AFTER) and not memory["alerted"]:
+    alert_after = {"unexpected": ALERT_AFTER_OTHER, "mine_away": MINE_AWAY_LOOKS}.get(symptom, ALERT_AFTER)
+    if memory["streak"] >= alert_after and not memory["alerted"]:
         memory["alerted"] = True
         memory["alerts"] += 1
         family = repair or symptom
@@ -471,8 +510,8 @@ def decide(memory, symptom, text, params, context, wall):
         memory["alert_notified"] = not quiet
         if not quiet:
             memory["notified"] = {**memory["notified"], family: wall}
-        actions.append(record("error" if symptom in ERRORS else "warning", "Farming mpw18 : " + text, params,
-                              notify=not quiet))
+        actions.append(record("error" if symptom in ERRORS else "warning", "{mode} : " + text,
+                              {**params, "mode": named}, notify=not quiet))
     if (repair is None or memory["since_repair"] < REPAIR_AFTER or memory["looks"] <= OBSERVE_FIRST
             or repair not in context.get("available", ())
             or memory["watch"].get(repair, 0) > wall
@@ -547,19 +586,20 @@ def counters(memory, wall):
                                     "next": state["next"]} for kind, state in memory["backoff"].items()}}
 
 
-def profile(loadout, stage18):
-    """The farming profile: the mpw18 stage (the mode's stage18) and
-    mpw18's loadout, as the engraving feature keeps it per mode
-    (its api loadout("mpw18"): {preset: "I"-"V", the Battle settings preset;
-    soul_weapon: {id, variant}}, or None). Phase 1 uses only the stage; the
-    preset and the soul weapon wait for phase 3 (the panels that show them
-    are not mapped yet). The engraving's placement is the engraving's."""
+def profile(loadout, stage18, mode="mpw18"):
+    """The selected mode's profile: mode (mpw18, mpw4 or mine), its stage
+    (stage18: the mode's stage, None for the mine) and its loadout, as the
+    engraving feature keeps it per mode (its api loadout(mode): {preset:
+    "I"-"V", the Battle settings preset; soul_weapon: {id, variant}}, or
+    None). The soul weapon waits for phase 3 (the panels that show it are
+    not mapped yet). The engraving's placement is the engraving's."""
     loadout = loadout if isinstance(loadout, dict) else {}
     preset = loadout.get("preset")
     weapon = loadout.get("soul_weapon")
     weapon_id = weapon.get("id") if isinstance(weapon, dict) else None
     variant = weapon.get("variant") if isinstance(weapon, dict) else None
     return {
+        "mode": mode,
         "stage": stage18 if isinstance(stage18, int) and not isinstance(stage18, bool) and stage18 > 0 else None,
         "preset": preset if preset in ("I", "II", "III", "IV", "V") else None,
         "soul_weapon": ({"id": weapon_id, "variant": variant if isinstance(variant, str) else None}

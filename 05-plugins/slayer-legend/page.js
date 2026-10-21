@@ -13,8 +13,9 @@
 // - page_trace.js: "Enregistrer mes parcours" (on by default): each tap
 //   the user makes on the game is sent to the gateway, which records the
 //   screen before and after it (never replayed).
-// - page_watchdog.js: "Surveillance mpw18", the gateway's mpw18 watchdog
-//   at its last look, and the shared lease's outside holder.
+// - page_watchdog.js: the gateway's watchdog at its last look on the
+//   selected mode, the shared lease's outside holder and « Réessayer »,
+//   at the end of the mode's État row (no rows of its own).
 // - page_counters.js: the emerald and diamond counters, on this screen
 //   only (nothing is sent to Android), cut at their comma or rewritten
 //   (counter_rewrite.js, with emerald_mask.js and emerald_font.js).
@@ -141,13 +142,16 @@ const ENGLISH = {
   'Parcours enregistrés': 'Recorded paths',
   '{nodes} écrans, {taps} appuis': '{nodes} screens, {taps} taps',
   'indisponible (gateway sans dossier de données)': 'unavailable (the gateway has no data directory)',
-  'Surveillance mpw18': 'mpw18 watch',
   'Bail': 'Lease',
-  '{holder} : {reason}': '{holder}: {reason}',
   'Démarrage': 'Starting',
   'OK (numéral {numeral})': 'OK (numeral {numeral})',
   'OK (économie d’énergie)': 'OK (Power Saving)',
-  'En pause : mode {mode}': 'Paused: mode {mode}',
+  'Jeu libre : rien n’est surveillé': 'Free play: nothing is watched',
+  'En pause : entrée dans le mode {mode}': 'Paused: entering {mode}',
+  '{repair} dans {minutes} min': '{repair} in {minutes} min',
+  'bail : {holder} ({reason})': 'lease: {holder} ({reason})',
+  'Réessayer': 'Retry',
+  'le jeu n’est plus au premier plan (plantage ?)': 'the game is no longer in front (a crash?)',
   'En pause : l’utilisateur joue': 'Paused: the user is playing',
   'Lancement du jeu en cours': 'Launching the game',
   'Réparation en cours : {repair}': 'Repair under way: {repair}',
@@ -157,7 +161,6 @@ const ENGLISH = {
   'adb ne répond pas : l’émulateur ou adb manque': 'adb does not answer: the emulator or adb is missing',
   'le jeu ne tourne pas': 'the game is not running',
   'une autre application est au premier plan : {window}': 'another app is in front: {window}',
-  'Préréglage et AUTO': 'Preset and AUTO',
   'Préréglage et AUTO non vérifiés : quelqu’un regarde l’écran': 'Preset and AUTO not checked: someone is watching the screen',
   'pas de vérification (fenêtre de passage au premier plan)': 'not checked (a passing window in front)',
   'pas de vérification (autre fenêtre au premier plan, à confirmer)': 'not checked (another window in front, to confirm)',
@@ -167,41 +170,39 @@ const ENGLISH = {
   'écran inconnu après la fin du mode (connecté sur un autre appareil ? choix de sauvegarde ?) : à faire à la main':
     'unknown screen after the mode ended (signed in on another device? a choice of saves?): do it by hand',
   'un menu du jeu est ouvert depuis plus d’une minute sans l’utilisateur': 'a game menu has been open over a minute without the user',
-  'mauvais stage : pas le stage {stage}': 'wrong stage: not stage {stage}',
+  'mauvais stage, pas le {stage}': 'wrong stage, not {stage}',
   'mauvais préréglage de combat : pas le {preset}': 'wrong battle settings preset: not {preset}',
   'mauvais équipement : {what}': 'wrong equipment: {what}',
   'écran inattendu': 'unexpected screen',
   'le jeu ne répond pas (fenêtre d’Android), « Attendre » sans effet : à faire à la main':
     'the game is not responding (Android’s window), « Wait » did not help: do it by hand',
   // The watchdog's log records.
-  'Farming mpw18 : adb ne répond pas : l’émulateur ou adb manque': 'mpw18 farming: adb does not answer: the emulator or adb is missing',
-  'Farming mpw18 : le jeu ne tourne pas': 'mpw18 farming: the game is not running',
-  'Farming mpw18 : une autre application est au premier plan : {window}':
-    'mpw18 farming: another app is in front: {window}',
-  'Farming mpw18 : le jeu a planté (fenêtre d’erreur d’Android)': 'mpw18 farming: the game crashed (Android’s error window)',
-  'Farming mpw18 : le jeu ne répond pas (fenêtre d’Android), « Attendre » sans effet : à faire à la main':
-    'mpw18 farming: the game is not responding (Android’s window), « Wait » did not help: do it by hand',
-  'Farming mpw18 : le jeu est revenu à son écran titre': 'mpw18 farming: the game is back on its title screen',
-  'Farming mpw18 : le jeu demande de se reconnecter (Sign in with Google)':
-    'mpw18 farming: the game asks to sign in again (Sign in with Google)',
-  'Farming mpw18 : écran inconnu après la fin du mode (connecté sur un autre appareil ? choix de sauvegarde ?) : à faire à la main':
-    'mpw18 farming: unknown screen after the mode ended (signed in on another device? a choice of saves?): do it by hand',
-  'Farming mpw18 : un menu du jeu est ouvert depuis plus d’une minute sans l’utilisateur':
-    'mpw18 farming: a game menu has been open over a minute without the user',
-  'Farming mpw18 : mauvais stage : pas le stage {stage}': 'mpw18 farming: wrong stage: not stage {stage}',
-  'Farming mpw18 : mauvais préréglage de combat : pas le {preset}': 'mpw18 farming: wrong battle settings preset: not {preset}',
-  'Farming mpw18 : mauvais équipement : {what}': 'mpw18 farming: wrong equipment: {what}',
-  'Farming mpw18 : écran inattendu': 'mpw18 farming: unexpected screen',
-  'Farming mpw18 : rétabli': 'mpw18 farming: back',
+  '{mode} : adb ne répond pas : l’émulateur ou adb manque': '{mode}: adb does not answer: the emulator or adb is missing',
+  '{mode} : le jeu ne tourne pas': '{mode}: the game is not running',
+  '{mode} : une autre application est au premier plan : {window}':
+    '{mode}: another app is in front: {window}',
+  '{mode} : le jeu a planté (fenêtre d’erreur d’Android)': '{mode}: the game crashed (Android’s error window)',
+  '{mode} : le jeu ne répond pas (fenêtre d’Android), « Attendre » sans effet : à faire à la main':
+    '{mode}: the game is not responding (Android’s window), « Wait » did not help: do it by hand',
+  '{mode} : le jeu est revenu à son écran titre': '{mode}: the game is back on its title screen',
+  '{mode} : le jeu demande de se reconnecter (Sign in with Google)':
+    '{mode}: the game asks to sign in again (Sign in with Google)',
+  '{mode} : écran inconnu après la fin du mode (connecté sur un autre appareil ? choix de sauvegarde ?) : à faire à la main':
+    '{mode}: unknown screen after the mode ended (signed in on another device? a choice of saves?): do it by hand',
+  '{mode} : un menu du jeu est ouvert depuis plus d’une minute sans l’utilisateur':
+    '{mode}: a game menu has been open over a minute without the user',
+  '{mode} : mauvais stage, pas le {stage}': '{mode}: wrong stage, not {stage}',
+  '{mode} : le jeu n’est plus au premier plan (plantage ?)': '{mode}: the game is no longer in front (a crash?)',
+  '{mode} : mauvais préréglage de combat : pas le {preset}': '{mode}: wrong battle settings preset: not {preset}',
+  '{mode} : mauvais équipement : {what}': '{mode}: wrong equipment: {what}',
+  '{mode} : écran inattendu': '{mode}: unexpected screen',
+  '{mode} : rétabli': '{mode}: back',
   'Réparation : {repair}': 'Repair: {repair}',
   'Réparation réussie : {repair}': 'Repair done: {repair}',
   'Réparation sans effet : {repair}, prochain essai dans {minutes} min': 'Repair without effect: {repair}, next try in {minutes} min',
-  'Farming mpw18 : {repair} toujours en échec, prochaine tentative dans {minutes} min':
-    'mpw18 farming: {repair} still failing, next attempt in {minutes} min',
+  '{mode} : {repair} toujours en échec, prochaine tentative dans {minutes} min':
+    '{mode}: {repair} still failing, next attempt in {minutes} min',
   'Réessayer maintenant : {repair}': 'Retry now: {repair}',
-  'Prochains essais': 'Next attempts',
-  'Réessayer maintenant': 'Retry now',
-  'maintenant': 'now',
   'Lancement différé : {why}': 'Launch deferred: {why}',
   'Réparation différée : bail tenu par {holder}': 'Repair deferred: lease held by {holder}',
   'Le jeu ne répond pas : « Attendre » touché': 'The game is not responding: « Wait » pressed',
@@ -219,10 +220,10 @@ export default function activate(api) {
   const counterPart = counters(api);
   const launchPart = launch(api);
   const screenPart = screen(api);
-  const modePart = mode(api, { known: screenPart.known });
+  const watchdogPart = watchdog(api);
+  const modePart = mode(api, { known: screenPart.known, watchdog: watchdogPart });
   const goldPart = gold(api, { overlay: [modePart.overlay] });
   const tracePart = trace(api);
-  const watchdogPart = watchdog(api);
   const parts = [counterPart, launchPart, screenPart, modePart, goldPart, tracePart, watchdogPart];
   // ...and shown in this one.
   const shown = [screenPart, launchPart, modePart, watchdogPart, goldPart, tracePart, counterPart];
