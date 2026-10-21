@@ -4,7 +4,8 @@ GET /gold        {text, value, rate, rate_text, span, read, box}
 GET /gold-font   the counter's pixel font, for the page to write the rate
 
 The first GET /gold starts reading the counter every 10 s while the game
-is in front; the readings stop 10 minutes after the last page asked.
+is in front; the readings stop 10 minutes after the last page asked (or
+the watchdog: api current(), which asks as a page does).
 Which readings count and the rate are in gold_rules.py. Read-only: it
 never touches the game.
 """
@@ -44,12 +45,25 @@ def gold(ports, screens, stage, counter, rules):
             await ports.clock.sleep(rules.SECONDS)
         status["task"] = None
 
-    async def handle_gold(request):
+    def asked():
+        """The rate now, (rate, samples); the readings go on IDLE more."""
         status["asked"] = ports.clock.monotonic()
         if status["task"] is None:
             status["task"] = ports.spawn(watch())
         rate, samples = rules.rate(status["window"]["samples"], ports.clock.wall())
         status["window"] = {**status["window"], "samples": samples}
+        return rate, samples
+
+    def current():
+        """For the watchdog: {rate, span (seconds the samples cover), last
+        (Unix time of the last sample counted, on the battle screen), or
+        None}."""
+        rate, samples = asked()
+        return {"rate": rate, "span": samples[-1][0] - samples[0][0] if samples else 0,
+                "last": samples[-1][0] if samples else None}
+
+    async def handle_gold(request):
+        rate, samples = asked()
         return ports.respond({
             "text": status["window"]["text"],
             "value": samples[-1][1] if samples else None,
@@ -64,4 +78,5 @@ def gold(ports, screens, stage, counter, rules):
         return ports.respond({"height": len(counter.DIGITS["0"]),
                               "glyphs": {**counter.DIGITS, **counter.LETTERS, **counter.SIGNS}})
 
-    return {"routes": [("GET", "/gold", handle_gold), ("GET", "/gold-font", handle_font)]}
+    return {"routes": [("GET", "/gold", handle_gold), ("GET", "/gold-font", handle_font)],
+            "api": {"current": current}}

@@ -425,6 +425,166 @@ class StageAndControls(unittest.TestCase):
         self.assertEqual([kind for _, kind in w.plans], ["auto_on"])
 
 
+class GoldAtZero(unittest.TestCase):
+    """gold/s at 0 over a full window, two fresh readings in a row: AUTO is
+    read at once. A trigger, never a proof: AUTO is tapped only on an OFF
+    reading; read ON, one alert."""
+
+    def zeros(self, readings):
+        """rules.gold_zero over (rate, span, age) readings, one new sample
+        each (age seconds old; rate "none": no gold reading); the triggers."""
+        kept, triggers = rules.gold_fresh(), []
+        for i, (rate, span, age) in enumerate(readings):
+            wall = EPOCH + E * i
+            gold = None if rate == "none" else {"rate": rate, "span": span, "last": wall - age}
+            kept, trigger = rules.gold_zero(kept, gold, wall)
+            triggers.append(trigger)
+        return kept, triggers
+
+    def test_two_fresh_zero_readings_over_a_full_window_trigger_once(self):
+        self.assertEqual(self.zeros([(0, 300, 5)] * 4)[1], [False, True, False, False])
+
+    def test_a_short_window_or_no_rate_or_gold_above_0_starts_over(self):
+        self.assertEqual(self.zeros([(0, 300, 5), (0, 200, 5), (0, 300, 5)])[1], [False] * 3)
+        self.assertEqual(self.zeros([(0, 300, 5), (None, 300, 5), (0, 300, 5)])[1], [False] * 3)
+        self.assertEqual(self.zeros([(0, 300, 5), (12.5, 300, 5), (0, 300, 5)])[1], [False] * 3)
+        self.assertEqual(self.zeros([(0, 300, 5), (12.5, 300, 5), (0, 300, 5), (0, 300, 5)])[1],
+                         [False, False, False, True])
+
+    def test_a_stale_sample_or_none_is_not_a_reading(self):
+        # The gold feature off the battle screen: its last sample grows old.
+        self.assertEqual(self.zeros([(0, 300, 5), (0, 300, 60), (0, 300, 60)])[1], [False] * 3)
+        self.assertEqual(self.zeros([(0, 300, 5), ("none", 0, 0), (0, 300, 5)])[1], [False, False, True])
+
+    def test_the_same_sample_twice_is_one_reading(self):
+        kept, trigger = rules.gold_zero(rules.gold_fresh(), {"rate": 0, "span": 300, "last": EPOCH}, EPOCH + 1)
+        kept, trigger = rules.gold_zero(kept, {"rate": 0, "span": 300, "last": EPOCH}, EPOCH + 16)
+        self.assertEqual((kept["zeros"], trigger), (1, False))
+
+    def test_auto_on_is_one_alert_until_gold_is_back(self):
+        kept, _ = self.zeros([(0, 300, 5)] * 2)
+        kept, alert = rules.gold_alert(kept, "on")
+        self.assertTrue(alert)
+        self.assertFalse(rules.gold_alert(kept, "on")[1], "said once")
+        self.assertFalse(rules.gold_alert(self.zeros([(0, 300, 5)] * 2)[0], "off")[1])
+        self.assertFalse(rules.gold_alert(self.zeros([(0, 300, 5)] * 2)[0], None)[1])
+        kept, _ = rules.gold_zero(kept, {"rate": 3.0, "span": 300, "last": EPOCH + 100}, EPOCH + 101)
+        self.assertFalse(kept["alerted"], "gold back: the next time is said again")
+
+    def test_gold_alone_is_never_a_symptom(self):
+        # judge sees only the AUTO reading: unread (None) is no auto_off.
+        self.assertIsNone(rules.judge({**BATTLE, "auto": None}, PROFILE, NUMERALS.get, None, False,
+                                      rules.fresh(), 60)[0])
+
+
+class GoldTrigger(unittest.TestCase):
+    """features/watchdog.py on fake ports, the battle screen at each look
+    (rules.EVERY apart), gold/s always 0 over a full window: when the
+    preset and AUTO are read."""
+
+    def looks(self, count, auto):
+        """count looks, AUTO read as auto; (the looks that read the
+        controls, the alerts, the farming calls other than reading)."""
+        spec = importlib.util.spec_from_file_location("watchdog_feature", os.path.join(HERE, "features", "watchdog.py"))
+        feature = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(feature)
+        self.every = feature.CONTROLS_EVERY
+        coroutines, looked, read, alerts, other = [], [0], [], [], []
+
+        class Ports:
+            class Busy(RuntimeError):
+                pass
+
+            store = types.SimpleNamespace(saved={}, register=lambda *a: None, save=lambda: None)
+            lease = types.SimpleNamespace(state=lambda: None)
+            respond = staticmethod(lambda body: body)
+
+            class clock:
+                now = 0.0
+                monotonic = staticmethod(lambda: Ports.clock.now)
+                wall = staticmethod(lambda: EPOCH + Ports.clock.now)
+
+                @staticmethod
+                async def sleep(seconds):
+                    if looked[0] == count:
+                        raise asyncio.CancelledError
+                    looked[0] += 1
+                    Ports.clock.now += seconds
+
+            @staticmethod
+            def spawn(coroutine):
+                coroutines.append(coroutine)
+
+            last_input = staticmethod(lambda: None)
+
+            @staticmethod
+            async def running():
+                return True
+
+            @staticmethod
+            async def dialog():
+                return None
+
+            @staticmethod
+            async def focused():
+                return True
+
+            @staticmethod
+            async def capture(max_age):
+                return "shot"
+
+            @staticmethod
+            async def analyse(facts, shot):
+                return "battle", 3, 920
+
+            @staticmethod
+            async def notify(text):
+                alerts.append(text)
+
+        async def read_controls():
+            read.append(looked[0])
+            return {"preset": 1, "auto": auto}
+
+        async def refused(*args):
+            other.append(args)
+            return {"result": "plan", "text": "plan"}
+
+        farming = {"read_controls": read_controls, "battle_stage": lambda shot: 920, "ensure_auto": refused,
+                   "farm": refused, "switches": lambda: {"stage_change": "plan", "preset": "plan", "auto": "plan"}}
+        gold = {"current": lambda: {"rate": 0, "span": 300, "last": Ports.clock.wall() - 1}}
+        built = feature.watchdog(
+            Ports, None, None, rules, NUMERALS.get, {"state": lambda: {"mode": "mpw18"}},
+            {"state": lambda: {"enabled": False}},
+            {"running": lambda: False, "start": lambda *a: None, "state": lambda: {}},
+            lambda mode: {"stage": 920, "preset": 1}, farming, gold)
+
+        async def run():
+            await built["startup"][0](None)
+            with self.assertRaises(asyncio.CancelledError):
+                await coroutines[0]
+
+        with self.assertLogs("cloudphone.slayer-legend", "INFO"):
+            asyncio.run(run())
+        return read, alerts, other
+
+    def test_the_second_zero_reads_auto_at_once_and_auto_on_is_one_alert(self):
+        read, alerts, other = self.looks(8, "on")
+        # The first look reads (nothing kept), the second zero at once (not
+        # CONTROLS_EVERY later), then once a minute again.
+        self.assertEqual(read[:2], [1, 2])
+        self.assertLess(E * (read[1] - read[0]), self.every)
+        self.assertEqual(len(read), 3)
+        self.assertEqual(len(alerts), 1)
+        self.assertIn(rules.GOLD_ALERT, alerts[0])
+        self.assertEqual(other, [], "AUTO read on: nothing tapped")
+
+    def test_auto_off_after_the_trigger_is_the_usual_repair_on_plan(self):
+        read, alerts, other = self.looks(8, "off")
+        self.assertEqual(read[:2], [1, 2])
+        self.assertFalse([a for a in alerts if rules.GOLD_ALERT in a])
+        self.assertEqual(other, [], "the auto switch on plan: never ensure_auto")
+
+
 class NotResponding(unittest.TestCase):
     def test_an_anr_is_one_alert_and_never_a_relaunch(self):
         w = Watch()

@@ -67,13 +67,14 @@ def setup(context):
     mode = feature("mode").mode(ports, feature("mode_rules"), timer, values, mine["api"], screens,
                                 module("gold_scroll"), engraving["api"], farming["api"])
     screen_rules = feature("screen_rules")
+    gold = feature("gold").gold(ports, screens, stage, module("gold"), feature("gold_rules"))
     features = [
         feature("lease").lease(ports),
         feature("counters").counters(ports, module("emerald_mask")),
         feature("screen").screen(ports, screens, stage, screen_rules, values, table),
         launch,
         feature("trace").trace(ports, screens, module("trace")),
-        feature("gold").gold(ports, screens, stage, module("gold"), feature("gold_rules")),
+        gold,
         mine,
         farming,
         mode,
@@ -81,7 +82,7 @@ def setup(context):
         feature("watchdog").watchdog(ports, screens, stage, feature("watchdog_rules"),
                                      lambda number: screen_rules.name_numeral(table, stage, number),
                                      mode["api"], mine["api"], launch["api"], engraving["api"]["loadout"],
-                                     farming["api"]),
+                                     farming["api"], gold["api"]),
     ]
     # Every feature registered its part of state.json: an old highest.json
     # becomes state.json now.

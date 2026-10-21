@@ -43,15 +43,17 @@ FARMING = {"stage_change": "stage_change", "select_preset": "preset", "auto_on":
 CONTROLS_EVERY = 60
 
 
-def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, loadout, farming=None):
+def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, loadout, farming=None, gold=None):
     """numeral_of(number): the numeral ending stage number's name; modes,
     mines, launches: the mode, mine and launch features' api; loadout(mode):
     the engraving feature's loadout of a farming mode ({stage, preset,
     soul_weapon}), read only; farming: the stage change feature's api (None:
-    the relaunch only)."""
+    the relaunch only); gold: the gold feature's api (current: gold/s), whose
+    rate at 0 reads AUTO at once (rules.gold_zero)."""
     memory = rules.fresh(ports.store.saved.get("watchdog"))
     status = {"template": "Démarrage", "params": {}, "symptom": None, "paused": None, "repairing": None,
-              "mode": None, "ended_at": None, "resumed": False, "anr_waited": False, "controls": None}
+              "mode": None, "ended_at": None, "resumed": False, "anr_waited": False, "controls": None,
+              "gold": rules.gold_fresh()}
     available = AVAILABLE + (tuple(FARMING) if farming else ())
     ports.store.register("watchdog", lambda: rules.persisted(memory))
 
@@ -103,14 +105,25 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
 
     async def read_controls(seen):
         """The preset and AUTO, read on one unfold at most every
-        CONTROLS_EVERY seconds on the battle screen (kept in between)."""
+        CONTROLS_EVERY seconds on the battle screen (kept in between), or
+        at once when gold/s reads 0 (a trigger: AUTO may be off). AUTO read
+        on while gold/s stays at 0: one alert."""
         if not farming or seen["screen"] != "battle":
             return
         now = ports.clock.monotonic()
+        triggered = False
+        if gold:
+            status["gold"], triggered = rules.gold_zero(status["gold"], gold["current"](), ports.clock.wall())
+            if triggered:
+                logging.info("Slayer Legend watchdog: gold/s at 0, AUTO read at once")
         kept = status["controls"]
-        if kept is None or now - kept[1] >= CONTROLS_EVERY:
+        if kept is None or triggered or now - kept[1] >= CONTROLS_EVERY:
             reading = await farming["read_controls"]()
             kept = status["controls"] = (reading, now) if reading else None
+            if triggered:
+                status["gold"], alert = rules.gold_alert(status["gold"], reading and reading["auto"])
+                if alert:
+                    await ports.notify(say("warning", rules.GOLD_ALERT, {}, notify=True))
         if kept:
             seen["battle_settings"], seen["auto"] = kept[0]["preset"], kept[0]["auto"]
 

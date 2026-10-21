@@ -376,6 +376,46 @@ def decide(memory, symptom, text, params, context, wall):
     return memory, actions
 
 
+# Gold per second at 0 often means AUTO is off (the slayer does nothing): a
+# trigger to read AUTO at once, never a proof (AUTO is tapped only on an
+# OFF reading). It needs a full window (gold_rules.WINDOW, less one
+# reading), a fresh sample (at most GOLD_FRESH seconds old, counted on the
+# battle screen) and GOLD_ZEROS such readings in a row.
+GOLD_FULL = 290
+GOLD_FRESH = 30
+GOLD_ZEROS = 2
+GOLD_ALERT = "gold/s à 0 mais AUTO actif"
+
+
+def gold_fresh():
+    return {"last": None, "zeros": 0, "alerted": False}
+
+
+def gold_zero(kept, gold, wall):
+    """(kept, trigger): trigger once GOLD_ZEROS fresh readings in a row,
+    each a new sample, read the rate at 0 over a full window. kept:
+    gold_fresh() then what this returned; gold: the gold feature's current()
+    ({rate, span, last}) or None. A rate above 0 clears it all (and the
+    alert said, see gold_alert)."""
+    if not gold or gold.get("last") is None or gold["last"] == kept["last"] or wall - gold["last"] > GOLD_FRESH:
+        return kept, False
+    kept = {**kept, "last": gold["last"]}
+    if gold["rate"] is not None and gold["rate"] > 0:
+        return gold_fresh() | {"last": gold["last"]}, False
+    if gold["rate"] is None or gold["span"] < GOLD_FULL:
+        return {**kept, "zeros": 0}, False
+    zeros = kept["zeros"] + 1
+    return {**kept, "zeros": zeros}, zeros == GOLD_ZEROS
+
+
+def gold_alert(kept, auto):
+    """(kept, alert): the AUTO reading after a trigger. ON while gold/s is
+    at 0: one alert (GOLD_ALERT) until the rate is above 0 again."""
+    if auto == "on" and kept["zeros"] >= GOLD_ZEROS and not kept["alerted"]:
+        return {**kept, "alerted": True}, True
+    return kept, False
+
+
 def counters(memory, wall):
     """The state details' counters, the repairs per kind."""
     return {"looks": memory["looks"], "bad_in_a_row": memory["streak"], "alerts": memory["alerts"],
