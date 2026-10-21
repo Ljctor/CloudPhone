@@ -131,5 +131,40 @@ class CrashDialog(unittest.TestCase):
         self.assertIsNone(ports.close_button("UI hierchary dumped to: /dev/tty"))
 
 
+class ScreenPanel(unittest.TestCase):
+    """GET /screen names the bottom panel open over the battle screen."""
+
+    def answer(self, name, tab):
+        import asyncio
+        import types
+        feature = load("features/screen")
+        rules = load("features/screen_rules")
+        fake_screens = types.SimpleNamespace(classify=lambda shot: name, open_tab=lambda shot: tab)
+        fake_stage = types.SimpleNamespace(read_battle=lambda shot: None, read_saver=lambda shot: (None, None))
+
+        async def focused():
+            return True
+
+        async def capture(max_age=0):
+            return (W, H, b"")
+
+        async def analyse(fn, *args):
+            return fn(*args)
+
+        fake_ports = types.SimpleNamespace(
+            focused=focused, capture=capture, analyse=analyse, respond=lambda value: value,
+            clock=types.SimpleNamespace(monotonic=lambda: 100.0),
+            store=types.SimpleNamespace(saved={}, register=lambda *a: None, save=lambda: None))
+        values = types.SimpleNamespace(number_or_none=lambda value, top: None)
+        part = feature.screen(fake_ports, fake_screens, fake_stage, rules, values, {"stages": []})
+        handler = dict((path, h) for method, path, h in part["routes"])["/screen"]
+        return asyncio.run(handler(types.SimpleNamespace(query={})))
+
+    def test_the_open_tab_is_named_on_the_battle_screen_only(self):
+        self.assertEqual(self.answer("battle", (0.24, "skill"))["panel"], "skill")
+        self.assertIsNone(self.answer("battle", None)["panel"])
+        self.assertIsNone(self.answer("menu", (0.24, "skill"))["panel"])
+
+
 if __name__ == "__main__":
     unittest.main()

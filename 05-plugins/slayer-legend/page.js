@@ -111,7 +111,7 @@ const ENGLISH = {
   'Écran détecté': 'Detected screen',
   'Écran titre': 'Title screen',
   'Choix de la sauvegarde': 'Save choice',
-  'Combat': 'Battle',
+  'Aucun panneau ouvert': 'No panel open',
   'Économie d’énergie': 'Power Saving',
   'Autre (menu, chargement…)': 'Other (menu, loading…)',
   'Pas de capture d’écran': 'No screenshot',

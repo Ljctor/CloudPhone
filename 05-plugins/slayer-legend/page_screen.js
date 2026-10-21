@@ -4,8 +4,14 @@
 // debug: the detected screen. known(): the last stage number read, for
 // the mode's stage lists.
 
+// The battle shows behind most screens: never named, but the panel open
+// over it is, by its tab's name in the game.
+const PANELS = {
+  character_enhance: 'Growth', skill: 'Skill', equipment_weapon: 'Equipment', companion: 'Companion',
+  adventure_map: 'Adventure', shop_summon: 'Shop',
+};
 const SCREENS = {
-  title: 'Écran titre', save: 'Choix de la sauvegarde', battle: 'Combat',
+  title: 'Écran titre', save: 'Choix de la sauvegarde', battle: 'Aucun panneau ouvert',
   saver: 'Économie d’énergie', other: 'Autre (menu, chargement…)',
   menu: 'Menu du jeu', away: 'Autre application',
 };
@@ -72,6 +78,8 @@ export default function screenFeature(api) {
           watchScreen();
           const name = screen.answer?.screen;
           if (!screen.at) return '…';
+          const panel = PANELS[screen.answer?.panel];
+          if (name === 'battle' && panel) return panel;
           return api.tr(name ? SCREENS[name] ?? name : 'Pas de capture d’écran');
         },
       },
