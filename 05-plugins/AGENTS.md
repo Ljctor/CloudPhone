@@ -12,10 +12,11 @@ Rules:
 - A plugin never launches or restarts an app by itself: only on a user's
   press, never from a timer or a script. The one exception, asked by the
   user: Slayer Legend's watchdog relaunches the game while the selected
-  mode is mpw18 or mpw4 farming (backing off after each failure: 1, 2, 4,
-  8, 16, then 30 minutes between attempts; never in free play, the mine or
-  during a mode's entry, a minute after a user input at the earliest,
-  under the shared lease). In the mine it only alerts. No launch
+  mode is mpw18 or mpw4 farming or the Closed Mine (backing off after each
+  failure: 1, 2, 4, 8, 16, then 30 minutes between attempts; never in free
+  play or during a mode's entry, a minute after a user input at the
+  earliest, under the shared lease). In the mine the relaunch is followed
+  by the mine's own way back in (below). No launch
   ever kills the app (`am start` without `-S`, no force-stop). On Android's
   "isn't responding" dialog the watchdog taps only "Wait", once, then
   alerts: never its "Close app", which kills the game.
@@ -87,7 +88,13 @@ Rules:
       opened until its readers are calibrated on a capture.
   - Closed mine (mode "mine"): its floor row, the Area, 3 feathers,
     scrolling its floor list, and unticking "Repeat entry" (at most 3
-    tries, then one alert).
+    tries, then one alert). After the watchdog's relaunch, the way back
+    in: Adventure in the bottom menu (on the battle screen read plain),
+    its Dungeon tab (on Adventure read open), Closed Mine (on Dungeon read
+    open), then the floor, Area and feathers; not one tap while Adventure
+    and Dungeon have no reader calibrated on a capture (the mine ends,
+    back to the default mode, one alert). The feathers are not tapped when
+    the pop-up reads no feather left (once calibrated): the mine ends.
   - Never tapped, on any screen: the game's "Better Soul Weapon / Equip"
     toast (right edge, y 0.32-0.37; forbidden in `navigation.json`): it
     equips the game's pick, while the soul weapon is the mode's loadout.

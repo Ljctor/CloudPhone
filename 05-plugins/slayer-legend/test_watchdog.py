@@ -569,7 +569,7 @@ class GoldTrigger(unittest.TestCase):
     preset and AUTO are read."""
 
     def looks(self, count, auto, viewers=lambda look: 0, stage=920, answer=None, mode="mpw18", entering=False,
-              game=True):
+              game=True, launched=False):
         """count looks, AUTO read as auto, viewers(look) connected; (the
         looks that read the controls, the alerts, the farming calls other
         than reading); self.state: GET /watchdog's at the end."""
@@ -641,6 +641,18 @@ class GoldTrigger(unittest.TestCase):
 
         self.farmed = farmed = []
         self.confirmed = confirmed = []
+        self.launches = launches_made = []
+        self.reentered = reentered = []
+
+        async def launch():
+            launches_made.append(looked[0])
+
+        def start(*args):
+            return launch() if launched else None
+
+        async def reenter():
+            reentered.append(looked[0])
+            return {"result": "done", "text": ""}
 
         async def farm(*args):
             farmed.append(args)
@@ -653,8 +665,8 @@ class GoldTrigger(unittest.TestCase):
             Ports, None, None, rules, NUMERALS.get,
             {"state": lambda: {"mode": mode, "highest": 925, "state": "moving" if entering else "farming"},
              "confirm": confirmed.append},
-            {"state": lambda: {"enabled": mode == "mine"}},
-            {"running": lambda: False, "start": lambda *a: None, "state": lambda: {}},
+            {"state": lambda: {"enabled": mode == "mine"}, "reenter": reenter},
+            {"running": lambda: False, "start": start, "state": lambda: {"state": "done", "message": ""}},
             lambda name: {"mpw18": {"stage": 920, "preset": 1}, "mpw4": {"stage": 915, "preset": "II"}}[name],
             farming, gold)
 
@@ -771,6 +783,12 @@ class ModesOnTheFeature(GoldTrigger):
         read, alerts, other = self.looks(14, "off", mode="mine", game=False)
         self.assertEqual((read, other, self.farmed), ([], [], []))
         self.assertEqual(alerts, ["Mine fermée : le jeu n’est plus au premier plan (plantage ?)"])
+
+    def test_the_mine_relaunches_the_game_then_goes_back_in(self):
+        self.looks(14, "off", mode="mine", game=False, launched=True)
+        self.assertTrue(self.launches)
+        self.assertEqual(self.reentered, self.launches, "each relaunch, then the mine's way back in")
+        self.assertEqual(self.farmed, [])
 
     def test_a_modes_entry_is_waited_for(self):
         read, alerts, other = self.looks(6, "off", stage=940, entering=True)
@@ -1073,18 +1091,31 @@ class Modes(unittest.TestCase):
         self.assertEqual(w.symptoms[-1], "wrong_battle_settings", "its own preset")
 
     def test_the_mine_owns_no_screen_and_alerts_once_when_the_game_is_away(self):
-        w = Watch(profile=rules.profile(None, None, "mine"))
+        w = Watch(profile=rules.profile(None, None, "mine"), available=ALL + ("mine_relaunch",))
         w.looks(OTHER, 6)
         w.looks(MENU, 6)
         self.assertEqual(set(w.symptoms), {None}, "the mine's screens are the mine feature's")
+        self.assertEqual(w.repairs, [])
         w.looks(AWAY, rules.MINE_AWAY_LOOKS)
-        self.assertEqual(w.alerts(), [], "2 minutes, as the mine's own alert was")
+        self.assertEqual(w.kinds()[:1], ["mine_relaunch"], "relaunched, then the mine's way back in")
+        self.assertLessEqual(w.repairs[0][0], w.now - (rules.MINE_AWAY_LOOKS - rules.REPAIR_AFTER - 1) * E,
+                             "before the alert's 2 minutes")
         w.looks(AWAY, 20)
-        self.assertEqual(w.alerts(), [("warning", "Mine fermée : le jeu n’est plus au premier plan (plantage ?)")])
-        self.assertEqual(w.repairs, [], "no relaunch: it would not bring the mine back")
+        self.assertIn(("warning", "Mine fermée : le jeu n’est plus au premier plan (plantage ?)"), w.alerts())
+        # Each attempt after its backoff, never two in a row.
+        times = [t for t, kind in w.repairs if kind == "mine_relaunch"]
+        self.assertGreater(len(times), 1)
+        self.assertGreaterEqual(times[1] - times[0], rules.DELAYS[1] * (1 - rules.JITTER))
         w.looks(GONE, 5)
         w.looks(CRASH, 5)
-        self.assertEqual(len(w.alerts()), 1, "one absence, one alert")
+        self.assertEqual(len([a for a in w.alerts() if "premier plan" in a[1]]), 1, "one absence, one alert")
+
+    def test_the_mine_relaunches_a_game_back_on_its_title_screen(self):
+        w = Watch(profile=rules.profile(None, None, "mine"), available=ALL + ("mine_relaunch",))
+        w.looks(OTHER, rules.OBSERVE_FIRST)
+        w.looks(TITLE, rules.REPAIR_AFTER)
+        self.assertEqual(w.symptoms[-rules.REPAIR_AFTER:], ["mine_away"] * rules.REPAIR_AFTER)
+        self.assertEqual(w.kinds(), ["mine_relaunch"])
 
     def test_free_play_checks_nothing(self):
         w = Watch()

@@ -172,7 +172,8 @@ def due(mode, until, mine, now):
     if mode == "mine":
         if mine["enabled"]:
             return None
-        return "mine done" if mine["state"] == "stopped" else "mine stopped"
+        return {"stopped": "mine done", "no_feather": "mine no feather",
+                "entry_failed": "mine entry"}.get(mine["state"], "mine stopped")
     if until is not None and now >= until:
         return "timer"
     return None
@@ -214,3 +215,17 @@ def ready_text(name, seconds, applied=False, alert=None):
     text = (f"Configuration {name} appliquée en {round(seconds)} s" if applied
             else f"Farming {name} prêt en {round(seconds)} s")
     return f"{text} ; {alert}" if alert else text
+
+
+REASONS = {"mine done": "Mine terminée", "mine stopped": "Mine arrêtée", "timer": "Minuteur écoulé",
+           "mine no feather": "Mine fermée arrêtée : plus de plume",
+           "mine entry": "Mine fermée arrêtée : {detail}"}
+
+
+def back_text(why, default, stage=None, detail=""):
+    """The one alert once a timed mode ends: why (due's), back to the
+    default mode (its stage, if a farming one). The mine's own ends say
+    « Mine fermée arrêtée : plus de plume, retour au farming mpw18 »."""
+    reason = REASONS[why].format(detail=detail)
+    back = BACK_TO[default] + (f" (stage {stage})" if stage else "")
+    return f"{reason}, {back}" if why in ("mine no feather", "mine entry") else f"{reason} : {back}"

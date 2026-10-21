@@ -197,3 +197,17 @@ def restored(mined, now):
     if from_saved == "stopping":
         values["state"] = "stopping"
     return values, False
+
+
+# The way back in after a relaunch: each screen awaited this long
+# (seconds), the whole tried again after 2, 4, 8 then 16 s while within
+# ENTRY_BUDGET seconds of its start.
+ENTRY_SETTLE = 8
+ENTRY_BUDGET = 60
+
+
+def entry_retry(failures, elapsed):
+    """Seconds before the next try of the way back in, or None: no time
+    left in ENTRY_BUDGET."""
+    delay = min(2 * 2 ** (failures - 1), 16)
+    return delay if elapsed + delay < ENTRY_BUDGET else None

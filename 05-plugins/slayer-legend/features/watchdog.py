@@ -2,8 +2,8 @@
 says, looking at it every rules.EVERY seconds, and when it does not,
 alerts and repairs: mpw18 and mpw4 farming each with its own loadout
 (stage, Battle settings preset, AUTO); the Closed Mine, whose screens are
-the mine feature's, for its one "game away" alert (rules.mine_away); free
-play, nothing.
+the mine feature's: the game away (rules.mine_away) is relaunched, then
+the mine re-entered by the mine feature (reenter); free play, nothing.
 
 GET /watchdog   {mode, status: {template, params}, text, line: {template,
                  params}, symptom, paused, counters, waiting, lease,
@@ -49,7 +49,7 @@ import logging
 import random
 
 LEVELS = {"normal": logging.INFO, "warning": logging.WARNING, "error": logging.ERROR}
-AVAILABLE = ("relaunch",)
+AVAILABLE = ("relaunch", "mine_relaunch")
 # Repairs by the stage change feature, and the switch that makes each real.
 FARMING = {"stage_change": "stage_change", "select_preset": "preset", "auto_on": "auto"}
 # Seconds between two readings of the preset and AUTO (each an unfold).
@@ -219,18 +219,18 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         say("normal", "Le jeu ne répond pas : « Attendre » touché" if pressed
             else "Le jeu ne répond pas : bouton « Attendre » introuvable", {})
 
-    async def relaunch():
+    async def relaunch(kind="relaunch"):
         """The launch, holder "watchdog". Deferred (the lease, a user
         input) or the user's own launch: not a failure; stopped (blocked,
-        failed): one."""
+        failed): one. kind mine_relaunch: then the mine's way back in."""
         nonlocal memory
         task = launches["start"]("watchdog", False)
         if task is None:
             # The user's own launch runs: it is the repair.
-            memory = rules.not_run(memory, "relaunch")
+            memory = rules.not_run(memory, kind)
             return
-        status["repairing"] = "relaunch"
-        show("Réparation en cours : {repair}", {"repair": rules.REPAIR_NAMES["relaunch"]})
+        status["repairing"] = kind
+        show("Réparation en cours : {repair}", {"repair": rules.REPAIR_NAMES[kind]})
         try:
             await task
         finally:
@@ -242,11 +242,21 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             # The game is back: its soul weapon read again (features/soul_weapon.py).
             farming["relaunched"](mode_now())
         if ended["state"] == "deferred":
-            memory = rules.not_run(memory, "relaunch")
+            memory = rules.not_run(memory, kind)
         elif ended["state"] in ("blocked", "failed"):
-            memory, actions = rules.stopped(memory, "relaunch", ports.clock.wall(), random.uniform(-1.0, 1.0),
+            memory, actions = rules.stopped(memory, kind, ports.clock.wall(), random.uniform(-1.0, 1.0),
                                             status["mode"])
             await notify_all(actions)
+        elif kind == "mine_relaunch" and "reenter" in mines:
+            # Back in the mine by its own way; out of feathers or no way in,
+            # the mine ends and the mode goes back to the default (its alert).
+            status["repairing"] = kind
+            try:
+                answer = await mines["reenter"]()
+            finally:
+                status["repairing"] = None
+            say("normal", "Retour dans la mine : {result} {text}", {"result": answer["result"],
+                                                                    "text": answer["text"]})
 
     async def tick():
         nonlocal memory
@@ -315,9 +325,9 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                 said = say(level, template, values, notify)
                 if notify:
                     await ports.notify(said)
-            elif action[0] == "repair" and action[1] == "relaunch":
+            elif action[0] == "repair" and action[1] in ("relaunch", "mine_relaunch"):
                 ports.store.save()
-                await relaunch()
+                await relaunch(action[1])
                 repaired = True
             elif action[0] == "repair" and action[1] in FARMING:
                 ports.store.save()

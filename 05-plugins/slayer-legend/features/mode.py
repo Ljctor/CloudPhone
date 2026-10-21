@@ -43,7 +43,6 @@ stage4 here are read from them and written to them.
 import asyncio
 import logging
 
-REASONS = {"mine done": "Mine terminée", "mine stopped": "Mine arrêtée", "timer": "Minuteur écoulé"}
 
 
 def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming):
@@ -201,13 +200,14 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         return ("Jeu libre : rien n’est touché jusqu’à la fin du minuteur" if status["until"]
                 else "Jeu libre : rien n’est touché")
 
-    async def back_to_default(reason):
-        """A timed mode ended: back to the default mode (« Mode par
-        défaut »), by the same switch."""
+    async def back_to_default(why):
+        """A timed mode ended (why: rules.due's): back to the default mode
+        (« Mode par défaut »), by the same switch; one alert says why."""
         before, default = status["mode"], status["default"]
         status.update(mode=default, until=None)
         stage = loadouts["stage"](default) if default in ("mpw18", "mpw4") else None
-        await ports.notify(f"{reason} : {rules.BACK_TO[default]}" + (f" (stage {stage})" if stage else ""))
+        detail = mines["state"]().get("message", "")
+        await ports.notify(rules.back_text(why, default, stage, detail))
         await enter(default, before)
 
     def gold_facts(shot):
@@ -235,7 +235,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
                 await ports.clock.sleep(rules.next_look(status["until"], ports.clock.wall()))
                 why = rules.due(status["mode"], status["until"], mines["state"](), ports.clock.wall())
                 if why:
-                    await back_to_default(REASONS[why])
+                    await back_to_default(why)
                 elif rules.warn_due(status["mode"], status["until"], status["warned"], ports.clock.wall()):
                     status["warned"] = status["until"]
                     logging.info("Slayer Legend mode free: 2 minutes left, user warned")

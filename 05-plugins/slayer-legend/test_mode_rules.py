@@ -85,6 +85,25 @@ class DefaultMode(unittest.TestCase):
         self.assertTrue(rules.watched("mpw18", "free"))
 
 
+class MineEnds(unittest.TestCase):
+    def test_why_the_mine_ended(self):
+        for state, why in (("stopped", "mine done"), ("no_feather", "mine no feather"),
+                           ("entry_failed", "mine entry"), ("blocked", "mine stopped")):
+            self.assertEqual(rules.due("mine", None, {"enabled": False, "state": state}, 0), why, state)
+        self.assertIsNone(rules.due("mine", None, {"enabled": True, "state": "farming"}, 0))
+
+    def test_one_alert_naming_the_default(self):
+        self.assertEqual(rules.back_text("mine no feather", "mpw18", 920),
+                         "Mine fermée arrêtée : plus de plume, retour au farming mpw18 (stage 920)")
+        self.assertEqual(rules.back_text("mine no feather", "free"),
+                         "Mine fermée arrêtée : plus de plume, retour au jeu libre")
+        self.assertEqual(rules.back_text("mine entry", "mpw4", 925,
+                                         "retour dans la mine impossible (écran Dungeon pas vu)"),
+                         "Mine fermée arrêtée : retour dans la mine impossible (écran Dungeon pas vu), "
+                         "retour au farming mpw4 (stage 925)")
+        self.assertEqual(rules.back_text("timer", "mpw18", 920), "Minuteur écoulé : retour au farming mpw18 (stage 920)")
+
+
 class Timer(unittest.TestCase):
     NOW = 1_800_000_000.0
 

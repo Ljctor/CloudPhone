@@ -15,7 +15,13 @@ gateway's start. When to do what is in mine_rules.py; every tap, hold and
 swipe goes through the navigation guard (ports), each sequence of them
 under the shared lease (holder "mine"): while another holder has it, or
 for a minute after a user input, the mine waits for its next look. The game not in front is the
-watchdog's alert (mine_away), not the mine's. The mine's floor, area,
+watchdog's (mine_away): it relaunches the game, then calls reenter(),
+the way back in from the battle screen (Adventure, Dungeon, Closed Mine,
+then the floor, Area and feathers), tried again after 2, 4, 8 then 16 s
+within rules.ENTRY_BUDGET; it stops before its first tap while those
+screens are not calibrated (mine.py). Out of feathers (read on the
+feathers pop-up, once calibrated), or no way back in, the mine ends with
+no alert of its own: the mode goes back to the default one, with one. The mine's floor, area,
 timer and on/off are kept in state.json ("mine").
 """
 
@@ -26,7 +32,8 @@ import logging
 def mine(ports, screens, readers, rules, timer, values):
     """readers: mine.py (the mine's screens off a screenshot)."""
     status = {"enabled": False, "floor": None, "area": None, "until": None, "gold": None,
-              "state": "off", "message": "", "task": None, "stopper": None}
+              "state": "off", "message": "", "task": None, "stopper": None, "entering": False,
+              "no_feather": False}
     ports.store.register("mine", lambda: {key: status[key] for key in ("enabled", "floor", "area", "until",
                                                                         "state")})
 
@@ -90,6 +97,9 @@ def mine(ports, screens, readers, rules, timer, values):
         shot = await step(shot, "mine_area", "area", readers.AREA_TAPS[status["area"] - 1])
         if not shot or not await ports.analyse(readers.feather_popup, shot):
             return False
+        if readers.feathers_left is not None and await ports.analyse(readers.feathers_left, shot) == 0:
+            status["no_feather"] = True
+            return False
         shot = await step(shot, "mine_feathers", "feathers", readers.FEATHER_TAPS[rules.FEATHERS - 1], 6)
         return bool(shot) and await ports.analyse(readers.in_fight, shot)
 
@@ -101,6 +111,81 @@ def mine(ports, screens, readers, rules, timer, values):
             if not shot or await ports.analyse(readers.repeat_ticked, shot):
                 return False
         return True
+
+    def ended(state, message):
+        """The mine ends with no alert of its own (out of feathers, no way
+        back in): the mode's back to default says it, once."""
+        status["enabled"] = False
+        report(state, message)
+
+    async def poll(read, timeout):
+        """A fresh screenshot every second until read(shot) is true, at most
+        timeout seconds: the last one, or None."""
+        deadline = ports.clock.monotonic() + timeout
+        while True:
+            shot = await ports.capture(max_age=0)
+            if shot and await ports.analyse(read, shot):
+                return shot
+            if ports.clock.monotonic() >= deadline:
+                return None
+            await ports.clock.sleep(1)
+
+    async def way_in():
+        """From the battle screen to the mine's fight: "done", "no_feather",
+        or the step that did not show (French)."""
+        shot = await poll(screens.plain_battle, rules.ENTRY_SETTLE)
+        if not shot:
+            return "écran de combat pas vu"
+        for screen, move, point, read, name in (
+                ("battle", "menu_adventure", readers.ADVENTURE_TAP, readers.adventure_open, "Adventure"),
+                ("adventure_map", "dungeon", readers.DUNGEON_TAP, readers.dungeon_open, "Dungeon"),
+                ("dungeon_map", "closed_mine", readers.CLOSED_MINE_TAP, readers.floor_list, "liste des étages")):
+            if not await ports.focused():
+                return "le jeu n’est plus au premier plan"
+            await ports.tap(shot, screen, move, point)
+            shot = await poll(read, rules.ENTRY_SETTLE)
+            if not shot:
+                return f"écran {name} pas vu"
+        if await relaunch(shot):
+            return "done"
+        return "no_feather" if status["no_feather"] else "étage, zone ou plumes"
+
+    async def reenter():
+        """After the watchdog's relaunch: the way back in, tried again within
+        rules.ENTRY_BUDGET; then (or out of feathers, or not calibrated) the
+        mine ends. {result: "done", "no_feather", "failed" or
+        "uncalibrated", text}."""
+        if not status["enabled"]:
+            return {"result": "failed", "text": "la mine ne farme plus"}
+        if readers.adventure_open is None or readers.dungeon_open is None:
+            text = "écrans Adventure et Dungeon pas encore reconnus"
+            ended("entry_failed", f"retour dans la mine impossible ({text})")
+            return {"result": "uncalibrated", "text": text}
+        status.update(entering=True, no_feather=False)
+        report("relaunching", f"Retour dans la mine : étage {status['floor']}, zone {status['area']}")
+        began, failures, first = ports.clock.monotonic(), 0, None
+        try:
+            while True:
+                why = await leased("Retour dans la mine", way_in)
+                if why == "done":
+                    report("farming", "Mine relancée après un redémarrage du jeu")
+                    return {"result": "done", "text": ""}
+                if why == "no_feather":
+                    ended("no_feather", "plus de plume")
+                    return {"result": "no_feather", "text": "plus de plume"}
+                failures += 1
+                # The first try's step names the cause: a later one may
+                # start where it stopped (not the battle screen).
+                first = first or why
+                delay = rules.entry_retry(failures, ports.clock.monotonic() - began)
+                if delay is None:
+                    text = first or "bail toujours pris"
+                    ended("entry_failed", f"retour dans la mine impossible ({text})")
+                    return {"result": "failed", "text": text}
+                logging.info(f"Slayer Legend mine: way back in stopped ({why}), again in {delay} s")
+                await ports.clock.sleep(delay)
+        finally:
+            status["entering"] = False
 
     def stopped(reason):
         status["enabled"] = False
@@ -179,8 +264,11 @@ def mine(ports, screens, readers, rules, timer, values):
                 if not ports.enabled():
                     report("waiting", "Plugin désactivé")
                     continue
+                if status["entering"]:
+                    # The way back in runs (reenter, under the lease).
+                    continue
                 if not await ports.focused():
-                    # Its alert is the watchdog's (rules mine_away): one owner.
+                    # The watchdog's (rules mine_away): its relaunch, then reenter().
                     report("waiting", "Le jeu n’est pas au premier plan")
                     continue
                 shot = await ports.capture(max_age=rules.SECONDS)
@@ -235,6 +323,9 @@ def mine(ports, screens, readers, rules, timer, values):
                     ok = await leased("Relance de la mine", lambda: relaunch(shot))
                     if ok is None:
                         continue
+                    if not ok and status["no_feather"]:
+                        ended("no_feather", "plus de plume")
+                        return
                     if not ok and status["state"] == "blocked":
                         await finish("blocked", status["message"])
                         return
@@ -415,7 +506,7 @@ def mine(ports, screens, readers, rules, timer, values):
             status["task"] = ports.spawn(farm())
 
     saved = ports.store.saved.get("mine") or {}
-    restored, ended = rules.restored({
+    restored, was_ended = rules.restored({
         "enabled": saved.get("enabled"), "state": saved.get("state"),
         "floor": values.number_or_none(saved.get("floor"), 9999), "area": values.number_or_none(saved.get("area"), 5),
         "until": values.time_or_none(saved.get("until"))}, ports.clock.wall())
@@ -428,5 +519,6 @@ def mine(ports, screens, readers, rules, timer, values):
         "startup": [resume],
         # For the mode: the mine it starts and stops, and whether its timer
         # ended while the gateway was down.
-        "api": {"start": start, "stop": stop, "state": state, "set_until": set_until, "ended": ended},
+        "api": {"start": start, "stop": stop, "state": state, "set_until": set_until, "ended": was_ended,
+                "reenter": reenter},
     }

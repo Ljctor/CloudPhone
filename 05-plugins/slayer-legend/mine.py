@@ -34,6 +34,19 @@ AREA_ROW = (0.13, 0.870, 0.87, 0.890)
 AREA_TAPS = [(x / 480, 914 / 1040) for x in (96, 167, 238, 309, 380)]
 FEATHER_ROW = (0.10, 0.740, 0.90, 0.790)
 FEATHER_TAPS = [(x / 480, 795 / 1040) for x in (98, 240, 370)]
+# The way in from the battle screen (navigation.json): Adventure in the
+# bottom menu, its Dungeon tab, then Closed Mine. Their screens are not read
+# yet (no capture of them): None until calibrated on one, and the way in
+# stops before its first tap (adventure_open(shot), dungeon_open(shot):
+# True once that screen shows).
+ADVENTURE_TAP = (0.755, 0.966)
+DUNGEON_TAP = (0.40, 0.249)
+CLOSED_MINE_TAP = (0.31, 0.632)
+adventure_open = None
+dungeon_open = None
+# The feathers left, read on the feathers pop-up (feathers_left(shot): a
+# count, or None unread): None until calibrated; 0 ends the mine.
+feathers_left = None
 
 
 def _share(shot, area, test, step=1):

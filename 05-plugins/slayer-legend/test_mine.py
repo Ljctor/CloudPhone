@@ -10,6 +10,7 @@ readers (mine.py) answer from the scene too. Nothing touches Android.
 """
 
 import asyncio
+import contextlib
 import heapq
 import importlib.util
 import os
@@ -101,6 +102,7 @@ class Game:
                           ("floor_list", "floor_list")]:
             setattr(real, name, lambda shot, key=key: self.facts(shot).get(key, False))
         real.floors = lambda shot: list(self.facts(shot).get("floors", []))
+        real.feathers_left = lambda shot: self.facts(shot).get("feathers_left")
         return real
 
     # -- the context
@@ -381,6 +383,137 @@ class Lease(MineTest):
         self.assertEqual(state[100]["lease"]["until"], EPOCH + 110)
         self.assertIsNone(state[120]["lease"])
         self.assertIn("lease of agent expired (réglages)", "\n".join(logs.output))
+
+
+class OutOfFeathers(MineTest):
+    def test_the_mine_ends_and_the_mode_goes_back_to_the_default_with_one_alert(self):
+        scenes = {
+            "fight": {**FIGHT_GOLD, "after": (45, "list")},
+            "list": {"floor_list": True, "floors": FLOORS, "on": {"tap": "area"}},
+            "area": {"floor_list": True, "area_popup": True, "on": {"tap": "feathers"}},
+            "feathers": {"floor_list": True, "feather_popup": True, "feathers_left": 0},
+        }
+        to_mine = ("POST", "/mode", {"mode": "mine", "floor": 5, "area": 2, "stage18": 920})
+        game, answers = self.play(scenes, "fight", [(0, [to_mine]), (150, [GET_MINE, ("GET", "/mode", None)])], 160)
+        self.assertEqual(len(game.taps), 2, "the floor and the Area, never the feathers")
+        state = self.last(answers, "/mine")
+        self.assertEqual((state["enabled"], state["state"]), (False, "no_feather"))
+        self.assertEqual(self.last(answers, "/mode")["mode"], "mpw18")
+        texts = [text for _, text in game.alerts if "plume" in text or "Mine" in text]
+        self.assertEqual(texts, ["Mine fermée arrêtée : plus de plume, retour au farming mpw18 (stage 920)"])
+
+
+class WayBackIn(unittest.TestCase):
+    """reenter(), the watchdog's call once its relaunch brought the game
+    back on the battle screen: Adventure, Dungeon, Closed Mine, then the
+    floor, Area and feathers, each tap through the real navigation guard on
+    a capture that shows its screen."""
+    # Where each tap leads (screen, move) -> next screen.
+    LEADS = {("battle", "menu_adventure"): "adventure", ("adventure_map", "dungeon"): "dungeon",
+             ("dungeon_map", "closed_mine"): "list", ("mine_list", "floor"): "area",
+             ("mine_area", "area"): "feathers", ("mine_feathers", "feathers"): "fight"}
+
+    def run_reenter(self, calibrated=True, feathers=3, dead_end=None, first="battle"):
+        """(answer, game state, taps, alerts); dead_end: the screen whose tap
+        does nothing."""
+        nav = load_feature("../nav")
+        game = {"screen": first, "now": 0.0, "taps": [], "alerts": []}
+        feature_rules = load_feature("mine_rules")
+        feature = load_feature("mine")
+        real = importlib.util.module_from_spec(importlib.util.spec_from_file_location(
+            "slayer_legend_test_mine_readers", os.path.join(HERE, "mine.py")))
+        real.__spec__.loader.exec_module(real)
+
+        def on(*screens):
+            return lambda shot: shot[2] in screens
+        readers = SimpleNamespace(
+            ADVENTURE_TAP=real.ADVENTURE_TAP, DUNGEON_TAP=real.DUNGEON_TAP, CLOSED_MINE_TAP=real.CLOSED_MINE_TAP,
+            AREA_TAPS=real.AREA_TAPS, FEATHER_TAPS=real.FEATHER_TAPS,
+            adventure_open=on("adventure") if calibrated else None,
+            dungeon_open=on("dungeon") if calibrated else None,
+            feathers_left=(lambda shot: feathers if shot[2] == "feathers" else None),
+            floor_list=on("list"), floors=lambda shot: FLOORS if shot[2] == "list" else [],
+            area_popup=on("area"), feather_popup=on("feathers"), in_fight=on("fight"))
+        screens = SimpleNamespace(plain_battle=on("battle"), classify=lambda shot: shot[2])
+
+        class Busy(Exception):
+            pass
+
+        @contextlib.asynccontextmanager
+        async def leased(holder, reason, seconds):
+            yield
+
+        async def capture(max_age=0):
+            return (W, H, game["screen"])
+
+        async def analyse(fn, *args):
+            return fn(*args)
+
+        async def tap(shot, screen, move, point, verified=False):
+            refusal = nav.guard(screen, move, point[0], point[1], "tap", verified)
+            if refusal:
+                raise RuntimeError(refusal)
+            game["taps"].append((screen, move))
+            if screen != dead_end:
+                game["screen"] = self.LEADS[(screen, move)]
+
+        async def sleep(seconds):
+            game["now"] += seconds
+
+        async def notify(text):
+            game["alerts"].append(text)
+
+        async def focused():
+            return True
+
+        ports = SimpleNamespace(
+            capture=capture, analyse=analyse, tap=tap, focused=focused, leased=leased, Busy=Busy, notify=notify,
+            clock=SimpleNamespace(sleep=sleep, monotonic=lambda: game["now"], wall=lambda: EPOCH + game["now"]),
+            store=SimpleNamespace(saved={}, register=lambda *a: None, save=lambda: None),
+            spawn=lambda coroutine: coroutine.close())
+        values = SimpleNamespace(time_or_none=lambda v: v, number_or_none=lambda v, top: v)
+        part = feature.mine(ports, screens, readers, feature_rules, None, values)
+        part["api"]["start"](5, 2, None)
+        answer = asyncio.run(part["api"]["reenter"]())
+        return answer, part["api"]["state"](), game
+
+    def test_back_in_the_mine(self):
+        answer, state, game = self.run_reenter()
+        self.assertEqual(answer, {"result": "done", "text": ""})
+        self.assertEqual([move for _, move in game["taps"]],
+                         ["menu_adventure", "dungeon", "closed_mine", "floor", "area", "feathers"])
+        self.assertEqual((state["enabled"], game["screen"]), (True, "fight"))
+        self.assertEqual(game["alerts"], [], "no alert of its own")
+
+    def test_not_calibrated_taps_nothing_and_ends_the_mine(self):
+        answer, state, game = self.run_reenter(calibrated=False)
+        self.assertEqual(answer["result"], "uncalibrated")
+        self.assertEqual(game["taps"], [])
+        self.assertEqual((state["enabled"], state["state"]), (False, "entry_failed"))
+        self.assertIn("pas encore reconnus", state["message"])
+        self.assertEqual(game["alerts"], [], "the mode's back to default alerts, once")
+
+    def test_no_feather_ends_the_mine_before_the_feathers_tap(self):
+        answer, state, game = self.run_reenter(feathers=0)
+        self.assertEqual(answer["result"], "no_feather")
+        self.assertNotIn(("mine_feathers", "feathers"), game["taps"])
+        self.assertEqual((state["enabled"], state["state"], state["message"]), (False, "no_feather", "plus de plume"))
+        self.assertEqual(game["alerts"], [])
+
+    def test_a_screen_that_does_not_show_is_tried_again_then_the_mine_ends(self):
+        answer, state, game = self.run_reenter(dead_end="adventure_map")
+        self.assertEqual(answer, {"result": "failed", "text": "écran Dungeon pas vu"})
+        # Tried again within the minute, but the game is left on Adventure:
+        # no other tap anywhere (each try needs the battle screen first).
+        self.assertEqual(game["taps"], [("battle", "menu_adventure"), ("adventure_map", "dungeon")])
+        self.assertGreater(game["now"], 30)
+        self.assertLessEqual(game["now"], 60 + 3 * 8)
+        self.assertEqual((state["enabled"], state["state"]), (False, "entry_failed"))
+
+    def test_not_on_the_battle_screen_taps_nothing(self):
+        answer, state, game = self.run_reenter(first="other")
+        self.assertEqual(answer["result"], "failed")
+        self.assertEqual(game["taps"], [])
 
 
 class FreePlayWarning(MineTest):

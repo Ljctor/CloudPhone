@@ -166,9 +166,11 @@ REPAIRS = {
     "wrong_loadout": "loadout",
     "auto_off": "auto_on",
     "unexpected": None,
-    "mine_away": None,
+    # The relaunch, then the mine's own way back in (features/mine.py reenter).
+    "mine_away": "mine_relaunch",
 }
-REPAIR_NAMES = {"relaunch": "relance du jeu", "back_to_battle": "retour au combat",
+REPAIR_NAMES = {"relaunch": "relance du jeu", "mine_relaunch": "relance du jeu et retour dans la mine",
+                "back_to_battle": "retour au combat",
                 "stage_change": "changement de stage", "select_preset": "choix du préréglage de combat",
                 "loadout": "rééquipement", "auto_on": "remise en marche d’AUTO"}
 # Seconds without attempt of a kind after its nth failure (DELAYS[n],
@@ -184,7 +186,7 @@ ESCALATE = (480, 1800)
 KINDS = tuple(REPAIR_NAMES)
 ERRORS = ("adb_missing",)
 # Repairs that are never plan-only.
-ALWAYS_REAL = ("relaunch", "back_to_battle")
+ALWAYS_REAL = ("relaunch", "mine_relaunch", "back_to_battle")
 
 
 def kept_backoff(saved):
@@ -346,10 +348,13 @@ def judge(seen, profile, numeral_of, last_input, resumed, memory, now, after_mod
 
 def _mine(seen, away, memory):
     """judge() while the mine farms: its screens are the mine feature's;
-    the game gone, crashed or away (MINE_AWAY_LOOKS looks in a row, see
-    decide) is mine_away, alert only (the relaunch would not bring the
-    mine back)."""
+    the game gone, crashed, away or back on its title, save or sign-in
+    screen is mine_away: its repair relaunches the game and goes back into
+    the mine (mine_relaunch); its alert after MINE_AWAY_LOOKS looks in a
+    row (see decide)."""
     if seen.get("crash") or not seen["running"]:
+        return "mine_away", SYMPTOMS["mine_away"], {}, memory
+    if seen.get("focused") and seen.get("screen") in ("title", "save", "sign_in"):
         return "mine_away", SYMPTOMS["mine_away"], {}, memory
     if seen["focused"] is None:
         return "unknown", "pas de vérification (fenêtre de passage au premier plan)", {}, memory
