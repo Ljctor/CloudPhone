@@ -48,6 +48,8 @@ BATTLE_NAME = (0.315, 0.066, 0.655, 0.088)
 BATTLE_CAP = (0.009, 0.014)
 WHITE_TEXT = 200
 PER_REGION = 20
+# Edits by which the best region name must beat the second best.
+REGION_MARGIN = 3
 
 
 def regions(table):
@@ -74,9 +76,11 @@ def stage_of(region, numeral):
 
 
 def which(text, names):
-    """The index of the region text reads as, or None."""
+    """The index of the region text reads as, against the closed list of
+    regions with a margin of REGION_MARGIN edits over the second best; None
+    (unknown: nothing is tapped on it) otherwise."""
     known = [name for name in names if name]
-    name = font.close(text, known)
+    name = font.close(text, known, margin=REGION_MARGIN)
     return names.index(name) if name else None
 
 

@@ -208,8 +208,17 @@ class Controls(unittest.TestCase):
         self.assertEqual(controls.badge(battle(0.0, badge="III")), "III")
         self.assertEqual(controls.badge(battle(0.0, badge="IV")), "IV")
         self.assertIsNone(controls.badge(battle(0.0)))
-        self.assertTrue(controls.folded(battle(0.0, label=False)))
         self.assertFalse(controls.folded(battle(0.0, badge="II")))
+
+    def test_folded_must_read_so(self):
+        canvas = Canvas((60, 90, 80))
+        canvas.rect((0.955, 0.425, 0.995, 0.465), (90, 90, 90))  # the small dark tile
+        for i in range(10):  # the grey arrow
+            canvas.rect((0.985 - 0.002 * i, 0.444 - 0.001 * i, 0.987, 0.445 + 0.001 * i), (128, 128, 128))
+        self.assertEqual(controls.controls(canvas.shot()), "folded")
+        self.assertEqual(controls.controls(battle(0.0, badge="III")), "unfolded")
+        # Neither the arrow nor the tile: cannot tell, nothing is tapped.
+        self.assertIsNone(controls.controls(Canvas((60, 90, 80)).shot()))
 
     def settings(self, chosen):
         canvas = Canvas()

@@ -26,6 +26,9 @@ NUMERALS = ("I", "II", "III", "IV", "V")
 # The folded controls' arrow, and once unfolded the badge and the gear.
 ARROW_TAP = (0.975, 0.444)
 BADGE_TAP = (0.965, 0.405)
+# The folded arrow: a grey triangle on a small dark tile.
+ARROW = (0.955, 0.425, 0.995, 0.465)
+ARROW_SHARE = (0.05, 0.45)
 AUTO_TAP = (0.93, 0.447)
 # Only the numeral's rows: what drops in the fight passes under the badge.
 BADGE = (0.94, 0.399, 0.99, 0.4095)
@@ -94,10 +97,37 @@ def auto_label(shot):
                font.read(shot, AUTO_LABEL, level=WHITE, channel=min))
 
 
+def _arrow_grey(r, g, b):
+    return max(r, g, b) - min(r, g, b) < 20 and 112 < max(r, g, b) < 150
+
+
+def unfolded_now(shot):
+    """The controls read unfolded: the AUTO label or the badge reads."""
+    return auto_label(shot) or badge(shot) is not None
+
+
+def controls(shot):
+    """"folded", "unfolded", or None (cannot tell). Folded must read so:
+    no AUTO label, no badge, and the grey arrow (128 on a darker tile, as
+    the unfolded controls' fold arrow is drawn; the folded one's own shot
+    is still to be taken) at the arrow's spot, where the unfolded AUTO
+    tile is grey all over."""
+    if unfolded_now(shot):
+        return "unfolded"
+    width, height, pixels = shot
+    left, top, right, bottom = (int(ARROW[0] * width), int(ARROW[1] * height),
+                                int(ARROW[2] * width), int(ARROW[3] * height))
+    total = hits = 0
+    for y in range(top, bottom):
+        for x in range(left, right):
+            i = (y * width + x) * 3
+            total += 1
+            hits += _arrow_grey(pixels[i], pixels[i + 1], pixels[i + 2])
+    return "folded" if total and ARROW_SHARE[0] <= hits / total <= ARROW_SHARE[1] else None
+
+
 def folded(shot):
-    """The controls are folded: no badge, no AUTO tile. Then the arrow's
-    spot is not the gear."""
-    return badge(shot) is None and not auto_label(shot)
+    return controls(shot) == "folded"
 
 
 def grey_icons(shot):

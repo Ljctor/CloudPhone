@@ -287,16 +287,17 @@ def distance(a, b):
     return previous[-1]
 
 
-def close(read_text, names, most=0.25):
-    """The name read_text reads as: the closest of names, when it is within
-    most edits per character and no other is as close. None otherwise."""
+def close(read_text, names, most=0.25, margin=1):
+    """The name read_text reads as: the closest of a closed list of names,
+    when it is within most edits per character and every other is at
+    least margin edits further. None otherwise (unknown)."""
     if not read_text:
         return None
     key = read_text.replace(" ", "").lower()
     scored = sorted((distance(key, name.replace(" ", "").lower()), name) for name in names)
     if not scored or scored[0][0] > most * max(len(key), 1):
         return None
-    if len(scored) > 1 and scored[1][0] == scored[0][0]:
+    if len(scored) > 1 and scored[1][0] - scored[0][0] < max(1, margin):
         return None
     return scored[0][1]
 
