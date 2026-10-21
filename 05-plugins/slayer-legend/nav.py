@@ -81,7 +81,9 @@ def guard(screen, move_id, x=None, y=None, kind="tap", verified=False, seen=None
         return f"{screen}: no move {move_id!r}"
     if move.get("forbidden"):
         return f"{screen}/{move_id} is forbidden: {move.get('reason')}"
-    expected = "key" if "key" in move else "swipe" if "swipe" in move else "hold" if "hold" in move else "tap"
+    # A move over an area is a tap unless it says (kind: a drag from it).
+    expected = move.get("kind") or (
+        "key" if "key" in move else "swipe" if "swipe" in move else "hold" if "hold" in move else "tap")
     if kind != expected:
         return f"{screen}/{move_id} is a {expected}, not a {kind}"
     if move.get("precondition") and not verified:

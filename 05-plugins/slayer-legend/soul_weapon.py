@@ -27,10 +27,8 @@ picked in the list):
   on the equipped weapon and grey on one not owned; whether an owned
   weapon not equipped shows it grey is not known yet: see BADGE_TELLS.
 
-The engraving screen (from the card's big icon): engraving_title() reads
-"Soul Weapon Engraving" and the weapon's name above it; engraving_cells()
-which cells of the 5x5 grid hold a piece. Neither is calibrated on a
-capture (ENGRAVING_CALIBRATED).
+The engraving screen (from the card's big icon) is read by
+engraving_screen.py.
 """
 
 import importlib.util
@@ -310,42 +308,3 @@ def view(shot, names):
     return {"open": title(shot), "selected": name(shot, names), "owned": owned(shot), "tag": text,
             "tag_box": box, "tags": tags(shot), "rows": rows(shot),
             "badge": equipped_badge(shot) if BADGE_TELLS else None}
-
-
-# -- The engraving screen (not calibrated on a capture yet).
-ENGRAVING_CALIBRATED = False
-ENGRAVING_TITLE_AREA = (0.1, 0.1, 0.9, 0.2)
-ENGRAVING_TITLE = "Soul Weapon Engraving"
-# The 5x5 grid (x 0.22-0.78, y 0.24-0.50, the catalogue's); a 4x4 one is
-# centred in it.
-GRID_AREA = (0.22, 0.24, 0.78, 0.50)
-
-
-def engraving_title(shot, names):
-    """(title read as "Soul Weapon Engraving", the weapon's name above it
-    or None)."""
-    lines = font.read(shot, ENGRAVING_TITLE_AREA, font=CARD_FONT)
-    is_title = any(font.distance(text, ENGRAVING_TITLE) <= 3 for text, _, _ in lines)
-    named = [font.close(text, names, most=NAME_MOST, margin=NAME_MARGIN) for text, _, _ in lines]
-    named = [n for n in named if n]
-    return is_title, named[0] if len(named) == 1 else None
-
-
-def engraving_cells(shot, size):
-    """The cells of the size x size grid that hold a piece, as a set of
-    (row, col), row 0 at the top; None until ENGRAVING_CALIBRATED. A piece
-    is coloured (green, blue, red), an empty cell dark or outlined."""
-    if not ENGRAVING_CALIBRATED or size not in (4, 5):
-        return None
-    left, top, right, bottom = _box(shot, GRID_AREA)
-    cell_w, cell_h = (right - left) / 5, (bottom - top) / 5
-    offset = (5 - size) / 2
-    filled = set()
-    for row in range(size):
-        for col in range(size):
-            cx = int(left + (col + offset + 0.5) * cell_w)
-            cy = int(top + (row + offset + 0.5) * cell_h)
-            samples = [_pixel(shot, cx + dx, cy + dy) for dx in (-3, 0, 3) for dy in (-3, 0, 3)]
-            if sum(1 for r, g, b in samples if max(r, g, b) - min(r, g, b) > 60 and max(r, g, b) > 100) >= 6:
-                filled.add((row, col))
-    return filled

@@ -25,11 +25,13 @@ read the target equipped and neither a relaunch nor a user input came
 since (the cache, in memory: a gateway restart reads again). Its duration
 is logged.
 
-The engraving (read only, phase 3b places it): once the target is
-equipped, its engraving screen (the card's big icon) is read for whether
-the grid's filled cells are the chosen variant's; one alert when not.
-Only once the screen's readers are calibrated on a capture
-(soul_weapon.ENGRAVING_CALIBRATED): until then not opened.
+The engraving (features/engraving_setup.py), once the target is equipped:
+its engraving screen (the card's big icon) is set up as the loadout's
+variant: every card locked first, the highest-level cards placed, all 8
+read locked at the end. Only then is the step done ("prête"); otherwise it
+stops with one alert naming what is left. It may take longer than the
+60 s budget: then said in the log and in the ready notice. The cache is
+set only once the engraving read ready.
 """
 
 import logging
@@ -38,19 +40,21 @@ EQUIPMENT_TAP = (0.41, 0.966)
 WEAPON_TAB_TAP = (0.12, 0.414)
 SOUL_WEAPON_TAP = (0.92, 0.445)
 CLOSE_TAP = (0.5, 0.955)
-ENGRAVING_TAP = (0.33, 0.636)
-ENGRAVING_CLOSE_TAP = (0.11, 0.955)
+# A mode switch's budget, seconds (the engraving may take longer: said).
+BUDGET = 60
 # A list scroll: a slow drag (no fling).
 SWIPE_MS = 700
 # After a scroll the list may still glide: one more look this long after.
 SETTLE = 0.4
 
 
-def soul_weapon(ports, screens, reader, rules, table, helpers, expected_cells=None):
+def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
     """reader: soul_weapon.py; rules: soul_weapon_rules.py; table:
     engravings.json; helpers: the stage change's look, tap (front first),
-    front, to_battle and Stop; expected_cells(id, variant): the cells the
-    variant fills (the engraving feature's), for the engraving check."""
+    front, to_battle and Stop; engraving: {setup (engraving_setup.py's
+    engraving_setup), screen (engraving_screen.py), rules
+    (engraving_setup_rules.py), variant(id, name): the variant's {pieces}
+    (the engraving feature's)}; None: the engraving is not set up."""
     names = reader.names_of(table)
     order = rules.order_names(table)
     by_id = {entry["id"]: entry for entry in table["weapons"]}
@@ -139,35 +143,28 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, expected_cells=No
         else:
             await helpers.tap(shot, "soul_weapon", "equip", rules.tag_point(view), verified=True, seen=seen)
 
-    async def check_engraving(shot, entry, variant):
-        """On the Soul Weapon screen with the target selected: its
-        engraving read against the variant's cells; the alert's text when
-        they differ, else None. Back on the Soul Weapon screen."""
-        if not (reader.ENGRAVING_CALIBRATED and expected_cells and variant and entry.get("grid")):
-            return shot, None
-        want = expected_cells(entry["id"], variant)
-        if want is None:
-            return shot, None
-        await helpers.tap(shot, "soul_weapon", "engraving", ENGRAVING_TAP)
-        shot, opened = await wait_for(lambda s: reader.engraving_title(s, names)[0])
-        if not opened:
-            raise Stop("ouverture de la gravure")
-        named = (await ports.analyse(reader.engraving_title, shot, names))[1]
-        cells = await ports.analyse(reader.engraving_cells, shot, entry["grid"])
-        await helpers.tap(shot, "soul_weapon_engraving", "close", ENGRAVING_CLOSE_TAP)
-        shot, back = await wait_for(reader.title)
-        if not back:
-            raise Stop("retour de la gravure à l’écran Soul Weapon")
-        if named not in (None, entry["name"]):
-            return shot, f"Gravure : l’écran montre {named}, pas {entry['name']}"
-        if cells is not None and cells != set(map(tuple, want)):
-            return shot, f"Gravure de {entry['name']} : la grille ne correspond pas à la variante {variant}"
-        return shot, None
+    setup = None
+    if engraving:
+        setup = engraving["setup"](ports, engraving["screen"], engraving["rules"], helpers, wait_for, reader.title)
+
+    async def engrave(shot, entry, variant):
+        """On the Soul Weapon screen with the target equipped: its engraving
+        set up as the variant. (shot back on Soul Weapon, the alert's text
+        or None when ready or not asked, the setup's answer or None)."""
+        if not (setup and variant and entry.get("grid")):
+            return shot, None, None
+        pieces = engraving["variant"](entry["id"], variant)
+        if pieces is None:
+            return shot, f"Gravure de {entry['name']} : variante {variant} inconnue", None
+        shot, done = await setup(shot, entry, variant, pieces, names, reader.CARD_FONT, table["shapes"])
+        if not done["ok"]:
+            return shot, engraving["rules"].alert(entry["name"], variant, done["problems"]), done
+        return shot, None, done
 
     async def ensure(target_id, variant=None):
-        """The weapon target_id equipped: "cached", "equipped" (it already
-        was) or "done" (Equip tapped); else Stop with the step, in French.
-        The engraving's mismatch, if read, in status["engraving"]."""
+        """The weapon target_id equipped and its engraving set up as variant:
+        "cached", "equipped" (it already was) or "done" (Equip tapped); else
+        Stop with the step, in French (an engraving not ready: its alert)."""
         since = ports.clock.monotonic()
         entry = by_id.get(target_id)
         if entry is None:
@@ -213,12 +210,22 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, expected_cells=No
         if memory["direction"] in (1, -1) and memory["direction"] != status["direction"]:
             status["direction"] = memory["direction"]
             ports.store.save()
-        status["cache"] = {"id": target_id, "at": ports.clock.wall()}
-        shot, mismatch = await check_engraving(shot, entry, variant)
+        shot, mismatch, done = await engrave(shot, entry, variant)
         await close_screen(shot)
         seconds = round(ports.clock.monotonic() - since, 1)
-        logging.info(f"Slayer Legend soul weapon: {target} {result} in {seconds} s, {moves} moves")
+        over = seconds > BUDGET
+        logging.log(logging.WARNING if over else logging.INFO,
+                    f"Slayer Legend soul weapon: {target} {result} in {seconds} s, {moves} moves"
+                    + (f", engraving {'not ready' if mismatch else 'ready'} in {done['seconds']} s" if done else "")
+                    + (f" (over the {BUDGET} s budget)" if over else ""))
         status["last"] = {"result": result, "weapon": target, "seconds": seconds, "engraving": mismatch}
+        if mismatch:
+            raise Stop(mismatch)
+        status["cache"] = {"id": target_id, "at": ports.clock.wall()}
+        if done and (done["locked"] or done["dragged"]):
+            await ports.notify(f"Soul Weapon {target} ({variant}) prête : {len(done['dragged'])} pièce(s) posée(s), "
+                               f"{len(done['locked'])} verrouillée(s), en {seconds} s"
+                               + (f" (plus que les {BUDGET} s prévues)" if over else ""))
         return result
 
     def relaunched():

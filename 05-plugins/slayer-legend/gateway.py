@@ -66,7 +66,9 @@ def setup(context):
     launch = feature("launch").launch(ports, screens, feature("launch_rules"))
     soul = {"feature": feature("soul_weapon").soul_weapon, "reader": module("soul_weapon"),
             "rules": feature("soul_weapon_rules"), "table": engraving["api"]["table"],
-            "loadout": engraving["api"]["loadout"], "expected_cells": engraving["api"]["expected_cells"]}
+            "loadout": engraving["api"]["loadout"],
+            "engraving": {"setup": feature("engraving_setup").engraving_setup, "screen": module("engraving_screen"),
+                          "rules": feature("engraving_setup_rules"), "variant": engraving["api"]["variant"]}}
     farming = feature("stage_change").stage_change(ports, screens, module("stage_select"), module("battle_controls"),
                                                    feature("stage_change_rules"), table, soul)
     mode = feature("mode").mode(ports, feature("mode_rules"), timer, values, mine["api"], screens,

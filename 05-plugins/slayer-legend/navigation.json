@@ -1249,8 +1249,8 @@
   },
   "soul_weapon_engraving": {
    "name": "Soul Weapon Engraving",
-   "recognise": "black screen, 'Soul Weapon Engraving', 5x5 grid, 8 pieces, Change x 8",
-   "source": "seen 2026-10-18",
+   "recognise": "black screen, 'Soul Weapon Engraving' (engraving_screen.title), the weapon's name, 5x5 grid, 8 pieces (cards) with a padlock each, Change x 8",
+   "source": "seen 2026-10-18, captured 2026-10-21",
    "moves": [
     {
      "id": "close",
@@ -1266,22 +1266,25 @@
      "to": "soul_weapon_engraving",
      "area": [
       0.15,
-      0.58,
-      0.9,
-      0.76
+      0.6,
+      0.87,
+      0.77
      ],
-     "label": "padlock top right of each piece (first thing to do)"
+     "label": "the padlock at the top right of a piece (engraving_screen.lock_point): before any drag",
+     "precondition": "the fresh capture read that piece's padlock open (locked False); one read closed or not read is never tapped (a tap unlocks a locked piece)"
     },
     {
      "id": "drag_piece",
      "to": "soul_weapon_engraving",
      "area": [
-      0.1,
-      0.2,
-      0.9,
-      0.76
+      0.15,
+      0.6,
+      0.87,
+      0.77
      ],
-     "label": "drag a piece into the grid"
+     "kind": "swipe",
+     "label": "drag a piece (from its card, engraving_screen.drag_point) onto empty cells of the grid, slowly",
+     "precondition": "the fresh capture read every piece locked, that piece's card not placed (no E) and the target cells empty"
     },
     {
      "id": "settings",
@@ -1290,7 +1293,20 @@
       0.87,
       0.955
      ],
-     "label": "gear"
+     "label": "gear",
+     "forbidden": true,
+     "reason": "the engraving's settings: not needed, never touched"
+    },
+    {
+     "id": "percent",
+     "to": "unknown",
+     "tap": [
+      0.83,
+      0.807
+     ],
+     "label": "%",
+     "forbidden": true,
+     "reason": "the engraving's stats: not needed, never touched"
     },
     {
      "id": "change",

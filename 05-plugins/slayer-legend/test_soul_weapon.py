@@ -8,6 +8,7 @@ Run: python3 -m unittest test_soul_weapon"""
 
 import asyncio
 import contextlib
+import copy
 import importlib.util
 import json
 import os
@@ -32,6 +33,9 @@ feature = load("features/soul_weapon")
 stage_change = load("features/stage_change")
 stage_rules = load("features/stage_change_rules")
 nav = load("nav")
+es = load("engraving_screen")
+engraving_setup = load("features/engraving_setup")
+setup_rules = load("features/engraving_setup_rules")
 screens = load("screens")
 fixtures = load("test_fixtures")
 with open(os.path.join(HERE, "engravings.json"), encoding="utf-8") as f:
@@ -351,7 +355,7 @@ def fake_reader(game):
                 "rows": [{k: c[k] for k in ("top", "bottom", "selected")} for c in s["cells"]], "badge": None}
 
     return SimpleNamespace(
-        names_of=reader.names_of, select_point=reader.select_point, view=view, ENGRAVING_CALIBRATED=False,
+        names_of=reader.names_of, select_point=reader.select_point, view=view, CARD_FONT=reader.CARD_FONT,
         title=lambda shot: shot[2]["screen"] == "soul",
         weapon_detail=lambda shot: shot[2]["screen"] == "detail",
         tab=lambda shot: shot[2]["tab"] if shot[2]["screen"] == "equipment" else None)
@@ -369,12 +373,12 @@ def fake_screens():
                            classify=lambda shot: shot[2]["screen"])
 
 
-def build(game, loadout=None):
+def build(game, loadout=None, engraving=None):
     ports = game.ports()
     loadouts = loadout or {"mpw18": {"stage": 920, "preset": None, "soul_weapon": {"id": AMBITION, "variant": "Atk"}},
                            "mpw4": {"stage": 915, "preset": None, "soul_weapon": {"id": GRAND - 1, "variant": "Atk"}}}
     soul = {"feature": feature.soul_weapon, "reader": fake_reader(game), "rules": rules, "table": TABLE,
-            "loadout": lambda mode: loadouts[mode]}
+            "loadout": lambda mode: loadouts[mode], "engraving": engraving}
     part = stage_change.stage_change(ports, fake_screens(), SimpleNamespace(regions=lambda table: []),
                                      SimpleNamespace(), stage_rules, STAGES, soul)
     return ports, part["api"]
@@ -523,6 +527,168 @@ class Sequence(unittest.TestCase):
         self.assertEqual(len(game.alerts), 1)
         self.assertIn("Après la relance", game.alerts[0])
         self.assertIsNone(api["relaunched"]("mine"))
+
+
+# The engraving: Ambition's pattern, a variant of one vertical bar (no turn)
+# on column 1, the rest of the pattern left empty.
+BAR = [(0, 1), (1, 1), (2, 1), (3, 1)]
+ONE_BAR = {"name": "Bar", "pieces": [{"shape": "I", "rotation": 0, "cells": [list(c) for c in BAR]}]}
+TURNED_BAR = {"name": "Turned", "pieces": [{"shape": "I", "rotation": 1, "cells": [[1, 1], [1, 2], [1, 3], [1, 4]]}]}
+AMBITION_CELLS = {tuple(c) for c in next(e for e in TABLE["weapons"] if e["id"] == AMBITION)["cells"]}
+
+
+def card(index, shape, level, locked=True, placed=False):
+    return {"index": index, "shape": shape, "rotation": 0, "cells": [], "level": level, "locked": locked,
+            "placed": placed, "kind": {"I": "gold", "L": "atk"}[shape]}
+
+
+class EngravingGame(Game):
+    """The scripted game with the engraving screen: the grid's cells and
+    pieces, the 8 cards; a padlock tap toggles it, a drag places the card's
+    piece (base orientation) centred where it is dropped."""
+
+    def __init__(self, cards, pieces=(), **state):
+        super().__init__(**state)
+        cells = {(r, c): ("empty" if (r, c) in AMBITION_CELLS else "none") for r in range(5) for c in range(5)}
+        for piece in pieces:
+            for cell in piece:
+                cells[cell] = "piece"
+        self.state["engraving"] = {"cells": cells, "pieces": [sorted(p) for p in pieces], "cards": cards}
+        self.state["drag_misses"] = False
+
+    def snapshot(self):
+        width, height, state = super().snapshot()
+        return width, height, copy.deepcopy(state)
+
+    def apply(self, screen, move, point, end=None):
+        s, eng = self.state, self.state["engraving"]
+        if screen == "soul_weapon" and move == "engraving":
+            s["screen"] = "engraving"
+        elif screen == "soul_weapon_engraving" and move == "close":
+            s["screen"] = "soul"
+        elif move == "lock":
+            index = next(i for i in range(8) if es.lock_point(i) == point)
+            eng["cards"][index]["locked"] = not eng["cards"][index]["locked"]
+        elif move == "drag_piece":
+            index = next(i for i in range(8) if es.drag_point(i) == point)
+            shape = TABLE["shapes"][eng["cards"][index]["shape"]]["cells"]
+            height, width = max(r for r, _ in shape) + 1, max(c for _, c in shape) + 1
+            row = (end[1] - es.GRID_TOP) / es.CELL_H - 0.5 - (height - 1) / 2 + (1 if s["drag_misses"] else 0)
+            col = (end[0] - es.GRID_LEFT) / es.CELL_W - 0.5 - (width - 1) / 2
+            cells = sorted((round(row) + r, round(col) + c) for r, c in shape)
+            if all(eng["cells"].get(cell) == "empty" for cell in cells):
+                for cell in cells:
+                    eng["cells"][cell] = "piece"
+                eng["pieces"].append(cells)
+                eng["cards"][index]["placed"] = True
+        else:
+            super().apply(screen, move, point)
+
+    def ports(self):
+        ports = super().ports()
+        game = self
+
+        async def swipe(shot, screen, move, start, end, milliseconds, verified=False, seen=None):
+            refusal = nav.guard(screen, move, start[0], start[1], "swipe", verified, seen)
+            if refusal:
+                raise RuntimeError(refusal)
+            game.moves.append((screen, move))
+            game.apply(screen, move, start, end)
+
+        ports.swipe = swipe
+        return ports
+
+
+def fake_engraving_screen():
+    def on(shot):
+        return shot[2]["screen"] == "engraving"
+
+    return SimpleNamespace(
+        title=on, weapon=lambda shot, names, font: "Ambition" if on(shot) else None,
+        grid=lambda shot, size: ({"cells": shot[2]["engraving"]["cells"], "pieces": shot[2]["engraving"]["pieces"]}
+                                 if on(shot) else None),
+        cards=lambda shot, shapes: shot[2]["engraving"]["cards"] if on(shot) else [],
+        locked=lambda shot, index: shot[2]["engraving"]["cards"][index]["locked"] if on(shot) else None,
+        lock_point=es.lock_point, drag_point=es.drag_point, cell_centre=es.cell_centre)
+
+
+def engraving_part(variant):
+    return {"setup": engraving_setup.engraving_setup, "screen": fake_engraving_screen(), "rules": setup_rules,
+            "variant": lambda weapon_id, name: variant if name == variant["name"] else None}
+
+
+def engrave(game, variant):
+    loadout = {"mpw18": {"stage": 920, "preset": None, "soul_weapon": {"id": AMBITION, "variant": variant["name"]}},
+               "mpw4": {"stage": 915, "preset": None, "soul_weapon": None}}
+    ports, api = build(game, loadout, engraving_part(variant))
+    return outcome(asyncio.run(api["soul_weapon"]("mpw18"))), api
+
+
+CARDS_FREE = [card(0, "I", 39), card(1, "L", 39), card(2, "I", 35), card(3, "I", 40),
+              card(4, "L", 38), card(5, "L", 37), card(6, "I", 36), card(7, "L", 30)]
+
+
+class Engraving(unittest.TestCase):
+    def test_ready_as_it_is_nothing_touched(self):
+        cards = copy.deepcopy(CARDS_FREE)
+        cards[3]["placed"] = True
+        game = EngravingGame(cards, [BAR])
+        answer, api = engrave(game, ONE_BAR)
+        self.assertEqual(answer, ("done", ""))
+        self.assertIn(("soul_weapon", "engraving"), game.moves)
+        self.assertIn(("soul_weapon_engraving", "close"), game.moves)
+        self.assertFalse([m for m in game.moves if m[1] in ("lock", "drag_piece")])
+        self.assertEqual(game.alerts, [])
+        self.assertEqual(game.state["screen"], "battle")
+        # Ready: cached, the next time nothing is read.
+        captures = game.captures
+        self.assertEqual(outcome(asyncio.run(api["soul_weapon"]("mpw18"))), ("done", ""))
+        self.assertEqual(game.captures, captures)
+
+    def test_locks_first_then_the_highest_level_bar_dragged(self):
+        cards = copy.deepcopy(CARDS_FREE)
+        cards[5]["locked"] = False
+        game = EngravingGame(cards)
+        answer, api = engrave(game, ONE_BAR)
+        self.assertEqual(answer, ("done", ""))
+        engraving_moves = [m[1] for m in game.moves if m[0] == "soul_weapon_engraving"]
+        self.assertEqual(engraving_moves, ["lock", "drag_piece", "close"])
+        eng = game.state["engraving"]
+        self.assertEqual(eng["pieces"], [BAR])
+        self.assertTrue(eng["cards"][3]["placed"])  # I Lv40, not the Lv39
+        self.assertTrue(all(c["locked"] for c in eng["cards"]))
+        self.assertEqual(len(game.alerts), 1)
+        self.assertIn("Soul Weapon Ambition (Bar) prête : 1 pièce(s) posée(s), 1 verrouillée(s)", game.alerts[0])
+
+    def test_a_padlock_not_read_stops_before_any_drag(self):
+        cards = copy.deepcopy(CARDS_FREE)
+        cards[2]["locked"] = None
+        game = EngravingGame(cards)
+        answer, api = engrave(game, ONE_BAR)
+        self.assertEqual(answer[0], "failed")
+        self.assertIn("cadenas pas lu fermé : n°3", answer[1])
+        self.assertFalse([m for m in game.moves if m[1] in ("lock", "drag_piece")])
+        # Not ready: not cached, read again the next time.
+        captures = game.captures
+        asyncio.run(api["soul_weapon"]("mpw18"))
+        self.assertGreater(game.captures, captures)
+
+    def test_a_turned_piece_is_alerted_not_guessed(self):
+        game = EngravingGame(copy.deepcopy(CARDS_FREE))
+        answer, _ = engrave(game, TURNED_BAR)
+        self.assertEqual(answer[0], "failed")
+        self.assertIn("Gravure de Ambition (Turned) pas prête", answer[1])
+        self.assertIn("rotation pas apprise", answer[1])
+        self.assertNotIn(("soul_weapon_engraving", "drag_piece"), game.moves)
+
+    def test_a_drag_landing_elsewhere_stops(self):
+        game = EngravingGame(copy.deepcopy(CARDS_FREE))
+        game.state["drag_misses"] = True
+        answer, _ = engrave(game, ONE_BAR)
+        self.assertEqual(answer[0], "failed")
+        self.assertIn("n’a pas donné les cases attendues", answer[1])
+        self.assertEqual(game.moves.count(("soul_weapon_engraving", "drag_piece")), 1)
+        self.assertEqual(game.state["screen"], "battle")
 
 
 if __name__ == "__main__":

@@ -83,9 +83,22 @@ Rules:
       that changes nothing stops it, with one alert naming the step.
     - Never the « Better Soul Weapon / Equip » toast (below).
     - Never Unequip (any tap on a tag read Unequip is refused by the
-      guard), Craft, Harvest or Breakdown; never Change on the engraving
-      screen. The engraving screen (the card's big icon, read only) is not
-      opened until its readers are calibrated on a capture.
+      guard), Craft, Harvest or Breakdown.
+  - Soul weapon engraving (right after the equip, the card's big icon;
+    the step is done, the weapon « prête », only once the grid is the
+    loadout's variant with the highest-level cards and all 8 cards read
+    locked; otherwise one alert naming what is left):
+    - Its title, then the weapon's name must read the target's; closed
+      with its red X (bottom left).
+    - A padlock: only on a card whose fresh capture reads it open, before
+      any drag, once; a padlock read closed or not read is never tapped
+      (a tap would unlock it). Never an unlock.
+    - A drag: only once all 8 cards read locked, from a card read
+      unplaced (no E) onto cells read empty, in the card's own
+      orientation; afterwards those cells must form that piece, the card
+      read E and nothing else change, else it stops. Turning a piece or
+      taking one out of the grid is not learnt: alerted, never guessed.
+    - Never Change, the gear or %.
   - Closed mine (mode "mine"): its floor row, the Area, 3 feathers,
     scrolling its floor list, and unticking "Repeat entry" (at most 3
     tries, then one alert). After the watchdog's relaunch, the way back

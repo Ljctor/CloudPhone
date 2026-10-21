@@ -110,7 +110,7 @@ def kept_switches(saved):
 def stage_change(ports, screens, select, controls, rules, table, soul=None):
     """select: stage_select.py; controls: battle_controls.py; table:
     stages.json; soul: {feature (features/soul_weapon.py's soul_weapon),
-    reader, rules, table, loadout, expected_cells} for the soul weapon step
+    reader, rules, table, loadout, engraving} for the soul weapon step
     (None: no such step)."""
     names = select.regions(table)
     switches = kept_switches((ports.store.saved.get("farming") or {}).get("switches"))
@@ -341,7 +341,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
     if soul:
         souls = soul["feature"](ports, screens, soul["reader"], soul["rules"], soul["table"],
                                 SimpleNamespace(look=look, tap=tap, front=front, to_battle=to_battle, Stop=Stop),
-                                soul.get("expected_cells"))
+                                soul.get("engraving"))
 
     async def equip_soul_weapon(mode, loadout=None):
         """The mode's loadout's soul weapon equipped (loadout: that one
@@ -375,11 +375,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
             steps.append(("preset", lambda: set_preset(preset)))
         steps.append(("auto", ensure_auto))
         steps.append(("soul_weapon", lambda: equip_soul_weapon(mode)))
-        answer = await run(mode, steps)
-        engraving = ((souls["state"]()["last"] or {}).get("engraving") if souls else None)
-        if answer["result"] != "failed" and engraving:
-            await ports.notify(engraving)
-        return answer
+        return await run(mode, steps)
 
     async def after_relaunch(mode):
         """The soul weapon read again once the game is back: the lease

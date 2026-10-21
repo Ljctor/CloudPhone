@@ -31,6 +31,8 @@ class Graph(unittest.TestCase):
         for screen, move, point in [
             ("soul_weapon", "breakdown", (0.81, 0.841)),
             ("soul_weapon_engraving", "change", (0.50, 0.955)),
+            ("soul_weapon_engraving", "settings", (0.87, 0.955)),
+            ("soul_weapon_engraving", "percent", (0.83, 0.807)),
             ("raid_camp", "raid", (0.54, 0.96)),
             ("raid_camp", "cooking", (0.66, 0.96)),
             ("shop_summon", "summon", (0.70, 0.60)),
@@ -45,6 +47,17 @@ class Graph(unittest.TestCase):
             ("black_orb_accessory", "awaken", (0.50, 0.80)),
         ]:
             self.assertIn("forbidden", nav.guard(screen, move, *point))
+
+    def test_engraving_locks_and_drags(self):
+        # A padlock and a drag need their check first; a drag is a swipe
+        # from a card, never a tap; Change, the gear and % stay out of reach.
+        self.assertIn("check first", nav.guard("soul_weapon_engraving", "lock", 0.28, 0.616))
+        self.assertIsNone(nav.guard("soul_weapon_engraving", "lock", 0.28, 0.616, verified=True))
+        self.assertIn("check first", nav.guard("soul_weapon_engraving", "drag_piece", 0.22, 0.639, "swipe"))
+        self.assertIsNone(nav.guard("soul_weapon_engraving", "drag_piece", 0.22, 0.639, "swipe", True))
+        self.assertIn("is a swipe", nav.guard("soul_weapon_engraving", "drag_piece", 0.22, 0.639, verified=True))
+        self.assertIsNotNone(nav.guard("soul_weapon_engraving", "drag_piece", 0.5, 0.955, "swipe", True))
+        self.assertIsNotNone(nav.guard("soul_weapon_engraving", "lock", 0.83, 0.807, verified=True))
 
     def test_allowed_move_on_a_forbidden_spot(self):
         # A tap meant for the weapon list but landing on Breakdown is
