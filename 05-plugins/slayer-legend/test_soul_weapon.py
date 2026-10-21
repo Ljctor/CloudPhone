@@ -28,6 +28,8 @@ def load(name):
 
 
 reader = load("soul_weapon")
+LOG = load("features/ports").python_log("slayer-legend")
+EXCEPTION = load("features/ports").exception_log(LOG)
 rules = load("features/soul_weapon_rules")
 feature = load("features/soul_weapon")
 stage_change = load("features/stage_change")
@@ -346,7 +348,8 @@ class Game:
                                notify=notify, clock=SimpleNamespace(sleep=sleep, wall=lambda: 1e9 + game.now,
                                                                      monotonic=lambda: game.now),
                                leased=leased, Busy=Busy, store=store, last_input=lambda: None, spawn=spawn,
-                               tasks=tasks, respond=lambda value, status=200: (status, value))
+                               tasks=tasks, respond=lambda value, status=200: (status, value), log=LOG,
+                               exception=EXCEPTION)
 
 
 def fake_reader(game):

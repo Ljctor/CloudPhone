@@ -4,7 +4,8 @@ Every record is {time (Unix seconds), level, source, text[, notify]}:
 
 - level: "normal", "warning" or "error" (Python's DEBUG is never shown,
   INFO is normal, WARNING warning, ERROR and CRITICAL error);
-- source: "gateway", "emulator", "adb" (or "page" on the page's side);
+- source: "gateway", "emulator", "adb", a plugin's id (its context.log,
+  plugins.py), or "page" on the page's side;
 - notify: the page also shows the record as a toast.
 
 Records go to journald with PRIORITY 6, 4 or 3 and SYSLOG_IDENTIFIER

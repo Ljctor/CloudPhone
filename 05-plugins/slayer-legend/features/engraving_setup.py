@@ -34,7 +34,6 @@ Never touched: Change, the gear, %. A bright (unlocked) card's drawing is
 not read: each slot keeps the shape and level read while it was locked.
 """
 
-import logging
 
 ENGRAVING_TAP = (0.33, 0.636)
 ENGRAVING_CLOSE_TAP = (0.11, 0.955)
@@ -90,7 +89,7 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on):
     async def error(text):
         """An error alert for the developer (something did not work as
         calibrated), the setup going on."""
-        logging.error(f"Slayer Legend engraving: {text}")
+        ports.log("error", f"Engraving: {text}")
         await ports.notify(f"Engraving: {text}"[:200])
 
     async def setup(shot, entry, variant_name, variant, names, card_font, shapes):
@@ -291,9 +290,9 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on):
         if not back:
             raise Stop("back from the engraving to Soul Weapon")
         seconds = round(ports.clock.monotonic() - since, 1)
-        logging.info(f"Slayer Legend engraving: {entry['name']} {variant_name} "
-                     f"{'ready' if not problems else 'not ready'} in {seconds} s, {len(done['locked'])} locked, "
-                     f"{len(done['removed'])} removed, {len(done['placed'])} placed")
+        ports.log("normal", f"Engraving: {entry['name']} {variant_name} "
+                  f"{'ready' if not problems else 'not ready'} in {seconds} s, {len(done['locked'])} locked, "
+                  f"{len(done['removed'])} removed, {len(done['placed'])} placed")
         return shot, {"ok": not problems, "problems": problems, "locked": done["locked"],
                       "removed": done["removed"], "placed": done["placed"], "dragged": done["placed"],
                       "seconds": seconds, "gestures": gestures[0]}

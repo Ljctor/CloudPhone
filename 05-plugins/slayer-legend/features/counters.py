@@ -9,7 +9,6 @@ Read-only: it never touches the game. The finder is emerald_mask.py.
 
 import asyncio
 import base64
-import logging
 
 # A mask this young is given again instead of a new screenshot.
 SECONDS = 0.4
@@ -65,7 +64,7 @@ def counters(ports, emerald):
                 try:
                     cache["value"] = await read_mask(emerald.DIAMOND_AREA if diamond else emerald.AREA)
                 except Exception as e:
-                    logging.warning(f"Counter mask: no screenshot: {e!r}")
+                    ports.log("warning", f"Counter mask: no screenshot: {e!r}")
                     cache["value"] = {"mask": None, "reason": "screenshot"}
                 cache["time"] = ports.clock.monotonic()
         return ports.respond(cache["value"])

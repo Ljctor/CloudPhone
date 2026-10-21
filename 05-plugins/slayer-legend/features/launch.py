@@ -17,7 +17,6 @@ its Confirm; anything else there is one alert, for the user.
 """
 
 import asyncio
-import logging
 
 
 def launch(ports, screens, rules):
@@ -26,8 +25,8 @@ def launch(ports, screens, rules):
     def report(state, message=""):
         status["state"], status["message"] = state, message
         # The watchdog's relaunch is one record of the watchdog's own.
-        logging.log(logging.DEBUG if status["quiet"] else logging.INFO,
-                    f"Slayer Legend launch: {state} {message}".rstrip())
+        if not status["quiet"]:
+            ports.log("normal", f"Launch: {state} {message}".rstrip())
 
     async def steps():
         report("starting", "Ouverture du jeu")
@@ -94,7 +93,7 @@ def launch(ports, screens, rules):
                 text = ("reconnexion Google impossible : à faire à la main" if move == "blocked_sign_in" else
                         f"reconnexion Google : {chooser['count']} comptes proposés au lieu d’un, à faire à la main")
                 report("blocked", text)
-                await ports.notify(f"Slayer Legend : {text}")
+                await ports.notify(text)
                 return
             elif move == "blocked_other":
                 report("blocked", "Écran inattendu : termine le lancement à la main")
@@ -115,7 +114,7 @@ def launch(ports, screens, rules):
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            logging.exception("Slayer Legend launch failed")
+            ports.exception("Launch failed")
             report("failed", f"Erreur : {e!r}"[:200])
 
     async def handle_state(request):
@@ -135,7 +134,7 @@ def launch(ports, screens, rules):
     async def handle_launch(request):
         if not start():
             return ports.respond({"error": "A launch is already running"}, status=409)
-        logging.info(f"Slayer Legend launch requested by {request.remote}")
+        ports.log("normal", f"Launch requested by {request.remote}")
         return ports.respond({"state": "starting"}, status=202)
 
     return {"routes": [("GET", "/launch", handle_state), ("POST", "/launch", handle_launch)],

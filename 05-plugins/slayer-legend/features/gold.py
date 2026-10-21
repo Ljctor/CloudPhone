@@ -10,7 +10,6 @@ Which readings count and the rate are in gold_rules.py. Read-only: it
 never touches the game.
 """
 
-import logging
 
 
 def gold(ports, screens, stage, counter, rules):
@@ -41,7 +40,7 @@ def gold(ports, screens, stage, counter, rules):
                         window = rules.counted(window, reading, ports.clock.wall())
                     status["window"] = window
             except Exception as e:
-                logging.warning(f"Gold reading failed: {e!r}")
+                ports.log("warning", f"Gold reading failed: {e!r}")
             await ports.clock.sleep(rules.SECONDS)
         status["task"] = None
 

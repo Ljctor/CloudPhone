@@ -1,6 +1,6 @@
 """Test plugin for the e2e suite, gateway side: one route per thing the
 plugin host offers (GET, POST behind the token, screenshot, adb, analysis,
-the user's activity)."""
+the user's activity, the log)."""
 
 import time
 
@@ -41,7 +41,14 @@ def setup(context):
         # The user's activity as the plugin API gives it.
         return context.json({"last_input": context.last_input(), "viewers": context.viewers()})
 
+    async def handle_log(request):
+        # One record of the gateway's log, through the plugin API.
+        body = await request.json()
+        context.log(body.get("level", "normal"), body["text"], bool(body.get("notify")), **body.get("params", {}))
+        return context.json({"logged": True})
+
     context.add_get("/hello", handle_hello)
+    context.add_post("/log", handle_log)
     context.add_get("/activity", handle_activity)
     context.add_get("/count", handle_count)
     context.add_post("/count", handle_increment)

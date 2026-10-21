@@ -70,6 +70,18 @@ fn a_plugins_get_route_answers_under_its_prefix() {
 }
 
 #[test]
+fn a_plugins_log_records_carry_its_id_as_their_source() {
+    let cp = with(json!([PROBE]));
+    let body = json!({"level": "warning", "text": "Probe saw {what}", "notify": true, "params": {"what": "a screen"}});
+    assert_eq!(cp.post_json("api/v1/plugins/e2e-probe/log", &body).status(), 200);
+    let records = cp.get_json("api/v1/logs")["records"].as_array().cloned().unwrap();
+    let record = records.iter().find(|r| r["text"] == "Probe saw a screen").unwrap_or_else(|| panic!("{records:?}"));
+    assert_eq!(record["source"], "e2e-probe", "{record}");
+    assert_eq!(record["level"], "warning", "{record}");
+    assert_eq!(record["notify"], true, "{record}");
+}
+
+#[test]
 fn a_plugins_post_route_needs_the_page_token_and_the_pages_origin() {
     let cp = with(json!([PROBE]));
     assert_eq!(post_without_token(&cp, "api/v1/plugins/e2e-probe/count", None), 403, "no token");

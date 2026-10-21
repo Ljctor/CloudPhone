@@ -26,7 +26,6 @@ timer and on/off are kept in state.json ("mine").
 """
 
 import asyncio
-import logging
 
 
 def mine(ports, screens, readers, rules, timer, values):
@@ -39,7 +38,7 @@ def mine(ports, screens, readers, rules, timer, values):
 
     def report(state, message):
         if (status["state"], status["message"]) != (state, message):
-            logging.info(f"Slayer Legend mine: {state} {message}")
+            ports.log("normal", f"Mine: {state} {message}")
         status["state"], status["message"] = state, message
         ports.store.save()
 
@@ -182,7 +181,7 @@ def mine(ports, screens, readers, rules, timer, values):
                     text = first or "bail toujours pris"
                     ended("entry_failed", f"retour dans la mine impossible ({text})")
                     return {"result": "failed", "text": text}
-                logging.info(f"Slayer Legend mine: way back in stopped ({why}), again in {delay} s")
+                ports.log("normal", f"Mine: way back in stopped ({why}), again in {delay} s")
                 await ports.clock.sleep(delay)
         finally:
             status["entering"] = False
@@ -335,7 +334,7 @@ def mine(ports, screens, readers, rules, timer, values):
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            logging.exception("Slayer Legend mine failed")
+            ports.exception("Mine failed")
             await finish("failed", f"Erreur : {e!r}"[:200])
 
     def stop_facts(shot):
@@ -366,7 +365,7 @@ def mine(ports, screens, readers, rules, timer, values):
                 why = rules.stop_pass_ended(gone, False if gone else await ports.focused())
                 if why:
                     report("stopped", f"{reason} : le jeu n’est plus en combat, rien à décocher")
-                    logging.info(f"Slayer Legend mine: timer ended during a restart, game {why}: nothing to untick")
+                    ports.log("normal", f"Mine: timer ended during a restart, game {why}: nothing to untick")
                     return
                 shot = await ports.capture(max_age=0)
                 if not shot:
@@ -375,8 +374,8 @@ def mine(ports, screens, readers, rules, timer, values):
                 move = rules.stop_look(screen, facts, last_hold, ports.clock.monotonic())
                 if move == "restarted":
                     report("stopped", f"{reason} : le jeu a redémarré, rien à décocher")
-                    logging.info(f"Slayer Legend mine: timer ended during a restart, game on its {screen} "
-                                 "screen: nothing to untick")
+                    ports.log("normal", f"Mine: timer ended during a restart, game on its {screen} "
+                              "screen: nothing to untick")
                     return
                 if move == "leave_saver":
                     if await leased("Sortie du mode économie d’énergie", lambda: hold_saver(shot)):
@@ -386,18 +385,18 @@ def mine(ports, screens, readers, rules, timer, values):
                     if done is None:
                         continue
                     if done:
-                        logging.info("Slayer Legend mine: timer ended during a restart, Repeat entry unticked")
+                        ports.log("normal", "Mine: timer ended during a restart, Repeat entry unticked")
                     return
             report("blocked", "Durée écoulée pendant un redémarrage, combat de la mine pas vu en "
                    f"{rules.STOP_SECONDS // 60} minutes : « Repeat entry » est peut-être encore coché")
-            logging.warning("Slayer Legend mine: timer ended during a restart, fight not seen: "
-                            "Repeat entry may still be ticked")
+            ports.log("warning", "Mine: timer ended during a restart, fight not seen: "
+                      "Repeat entry may still be ticked")
             await alert(status["message"])
             await watch_after_blocked(reason)
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            logging.exception("Slayer Legend mine stop failed")
+            ports.exception("Mine stop failed")
             report("failed", f"Erreur : {e!r}"[:200])
 
     async def watch_after_blocked(reason):
@@ -420,9 +419,9 @@ def mine(ports, screens, readers, rules, timer, values):
                 if done is None:
                     continue
                 if done:
-                    logging.info("Slayer Legend mine: fight seen after giving up, Repeat entry unticked")
+                    ports.log("normal", "Mine: fight seen after giving up, Repeat entry unticked")
                 return
-        logging.warning(f"Slayer Legend mine: fight still not seen after {rules.WATCH_SECONDS // 60} more minutes")
+        ports.log("warning", f"Mine: fight still not seen after {rules.WATCH_SECONDS // 60} more minutes")
         await alert(f"Mine : combat toujours pas vu après {(rules.STOP_SECONDS + rules.WATCH_SECONDS) // 60} "
                     "minutes, « Repeat entry » est peut-être encore coché : vérifie à la main")
 

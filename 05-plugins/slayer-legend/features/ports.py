@@ -63,6 +63,11 @@ of the gateway, so what it may do to the game is all here.
 - store: the state kept across gateway restarts (state.json, see State).
 - data_path(name): a file in the plugin's data directory, or None.
 - respond(value, status=200): a JSON answer.
+- log(level, text, notify=False, **params): one record of the gateway's
+  log, its source the plugin's id (context.log; Python logging tagged so
+  on an older gateway): level "normal", "warning" or "error", notify also a
+  toast on the page. exception(text): an error record with the traceback
+  of the exception being handled.
 """
 
 import asyncio
@@ -73,6 +78,7 @@ import logging
 import os
 import re
 import time
+import traceback
 from types import SimpleNamespace
 
 PACKAGE = "com.gear2.growslayer"
@@ -86,6 +92,24 @@ NODE = re.compile(r"<node\b[^>]*>")
 TEXT = re.compile(r'\btext="([^"]*)"')
 EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 BOUNDS = re.compile(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"')
+LEVELS = {"normal": logging.INFO, "warning": logging.WARNING, "error": logging.ERROR}
+
+
+def python_log(source):
+    """log(level, text, notify=False, **params) for a gateway without
+    context.log: Python logging, tagged with source and notify as the
+    gateway's log handler reads them."""
+    def log(level, text, notify=False, **params):
+        logging.getLogger(f"cloudphone.{source}").log(
+            LEVELS[level], text.format(**params) if params else text, extra={"source": source, "notify": notify})
+    return log
+
+
+def exception_log(log):
+    """exception(text): an error record with the traceback being handled."""
+    def exception(text):
+        log("error", f"{text}\n{traceback.format_exc()}")
+    return exception
 
 
 def crash_window(dumpsys):
@@ -170,7 +194,8 @@ class State:
     saved: what the file held when the gateway started ({} when there is
     none or it cannot be read)."""
 
-    def __init__(self, data_dir):
+    def __init__(self, data_dir, log=None):
+        self.log = log or python_log("slayer-legend")
         self.path = os.path.join(data_dir, "state.json") if data_dir else None
         self.data_dir = data_dir
         self.sections = {}
@@ -197,7 +222,7 @@ class State:
             self.old = old
             return
         except (OSError, ValueError) as e:
-            logging.warning(f"Slayer Legend: state not read: {e!r}")
+            self.log("warning", f"State not read: {e!r}")
             return
         if isinstance(saved, dict):
             self.saved = saved
@@ -217,7 +242,7 @@ class State:
             os.replace(f"{self.path}.tmp", self.path)
             self.text = text
         except OSError as e:
-            logging.warning(f"Slayer Legend: state not kept: {e}")
+            self.log("warning", f"State not kept: {e}")
 
     def flush(self):
         """Once every feature registered: highest.json read instead of
@@ -266,7 +291,8 @@ class Lease:
     within that minute (the user asked for it elsewhere), an input after
     it still stopping the sequence."""
 
-    def __init__(self, clock, last_input, enabled=lambda: True):
+    def __init__(self, clock, last_input, enabled=lambda: True, log=None):
+        self.log = log or python_log("slayer-legend")
         self.clock = clock
         self.last_input = last_input
         self.enabled = enabled
@@ -281,7 +307,7 @@ class Lease:
         """{holder, reason, since, until (Unix), user, mark}, or None."""
         held = self.held
         if held and self.clock.wall() >= held["until"]:
-            logging.warning(f"Slayer Legend: lease of {held['holder']} expired ({held['reason']})")
+            self.log("warning", f"Lease of {held['holder']} expired ({held['reason']})")
             self.held = held = None
         return held
 
@@ -320,8 +346,7 @@ class Lease:
         now = self.clock.wall()
         self.held = {"holder": holder, "reason": reason, "since": held["since"] if held else now,
                      "until": now + seconds, "user": user, "mark": self.clock.monotonic()}
-        logging.info(f"Slayer Legend: lease {'renewed' if held else 'taken'} by {holder} for {seconds:.0f} s: "
-                     f"{reason}")
+        self.log("normal", f"Lease {'renewed' if held else 'taken'} by {holder} for {seconds:.0f} s: {reason}")
         return None
 
     def release(self, holder):
@@ -330,7 +355,7 @@ class Lease:
         if not held or held["holder"] != holder:
             return False
         self.held = None
-        logging.info(f"Slayer Legend: lease released by {holder}")
+        self.log("normal", f"Lease released by {holder}")
         return True
 
     def check(self, holder):
@@ -350,6 +375,9 @@ class Lease:
 
 
 def build(context, nav):
+    # An addition to the plugin API: an older gateway has no context.log.
+    log = getattr(context, "log", None) or python_log(context.id)
+
     async def adb(*args, timeout=10):
         return await context.adb(*args, timeout=timeout)
 
@@ -359,14 +387,14 @@ def build(context, nav):
         what the fresh capture showed, for the moves that need it)."""
         refusal = nav.guard(screen, move, point[0], point[1], kind, verified, seen)
         if refusal:
-            logging.error(f"Slayer Legend: action refused: {refusal}")
+            log("error", f"Action refused: {refusal}")
             raise RuntimeError(f"Action refusée par le garde-fou : {refusal}")
 
     clock = SimpleNamespace(wall=time.time, monotonic=time.monotonic, sleep=asyncio.sleep)
     # Older gateways do not say when the user plays.
     last_input = getattr(context, "last_input", None) or (lambda: None)
     power = {"on": True}
-    lease = Lease(clock, last_input, lambda: power["on"])
+    lease = Lease(clock, last_input, lambda: power["on"], log)
     viewers = getattr(context, "viewers", None) or (lambda: None)
 
     @contextlib.asynccontextmanager
@@ -468,7 +496,7 @@ def build(context, nav):
         width, height, _ = shot
         refusal = nav.guard(screen, move, point[0] / width, point[1] / height, verified=True)
         if refusal:
-            logging.error(f"Slayer Legend: action refused: {refusal}")
+            log("error", f"Action refused: {refusal}")
             raise RuntimeError(f"Action refusée par le garde-fou : {refusal}")
         await adb("shell", "input", "tap", str(point[0]), str(point[1]))
         return True
@@ -518,7 +546,7 @@ def build(context, nav):
     def data_path(name):
         return os.path.join(data_dir, name) if data_dir else None
 
-    store = State(data_dir)
+    store = State(data_dir, log)
     power["on"] = store.saved.get("enabled") is not False
     store.register("enabled", lambda: power["on"])
 
@@ -530,7 +558,7 @@ def build(context, nav):
             return
         power["on"] = bool(on)
         store.save()
-        logging.info(f"Slayer Legend: plugin turned {'on' if on else 'off'}")
+        log("normal", f"Plugin turned {'on' if on else 'off'}")
 
     return SimpleNamespace(
         capture=context.screenshot, analyse=context.analyse,
@@ -542,4 +570,5 @@ def build(context, nav):
         notify=notify, action_token=action_token, revoke_action=revoke_action, enabled=enabled, set_enabled=set_enabled,
         clock=clock,
         spawn=spawn, store=store, data_path=data_path, respond=context.json,
+        log=log, exception=exception_log(log),
     )

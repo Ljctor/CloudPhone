@@ -45,10 +45,8 @@ looks; the repairs' hourly counts are kept in state.json ("watchdog").
 """
 
 import asyncio
-import logging
 import random
 
-LEVELS = {"normal": logging.INFO, "warning": logging.WARNING, "error": logging.ERROR}
 AVAILABLE = ("relaunch", "mine_relaunch")
 # Repairs by the stage change feature, and the switch that makes each real.
 FARMING = {"stage_change": "stage_change", "select_preset": "preset", "auto_on": "auto"}
@@ -77,9 +75,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         """One record for the gateway's log (and the page), in French with
         its template for translation; notify: also a phone alert."""
         text = template.format(**params) if params else template
-        logging.getLogger("cloudphone.slayer-legend").log(
-            LEVELS[level], text, extra={"source": "slayer-legend", "notify": notify,
-                                        "fields": {"template": template, "params": params} if params else None})
+        ports.log(level, text, notify)
         return text
 
     def show(template, params=None):
@@ -120,7 +116,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             if not focus["game"]:
                 # Which window, for the diagnosis (a launcher, a system
                 # dialog, Google's; never the account's).
-                logging.info(f"Slayer Legend watchdog: the game is not in front: {focus['window']}")
+                ports.log("normal", f"Watchdog: the game is not in front: {focus['window']}")
         if seen["focused"]:
             shot = await ports.capture(max_age=rules.MAX_AGE)
             if shot:
@@ -138,7 +134,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         if gold:
             status["gold"], trigger = rules.gold_zero(status["gold"], gold["current"](), ports.clock.wall())
             if trigger:
-                logging.info("Slayer Legend watchdog: gold/s at 0, AUTO read at once")
+                ports.log("normal", "Watchdog: gold/s at 0, AUTO read at once")
                 status["gold_due"] = True
         triggered, status["gold_due"] = status["gold_due"], False
         kept = status["controls"]
@@ -213,7 +209,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             async with ports.leased("watchdog", "« Attendre » sur « ne répond pas »", 60):
                 pressed = await ports.wait_anr(shot)
         except ports.Busy as e:
-            logging.info(f"Slayer Legend watchdog: Wait on the ANR dialog deferred: {e}")
+            ports.log("normal", f"Watchdog: Wait on the ANR dialog deferred: {e}")
             status["anr_waited"] = False
             return
         say("normal", "Le jeu ne répond pas : « Attendre » touché" if pressed
@@ -236,8 +232,6 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         finally:
             status["repairing"] = None
         ended = launches["state"]()
-        # Said by the next look (repair done or without effect).
-        logging.debug(f"Slayer Legend watchdog: relaunch ended: {ended['state']} {ended['message']}".rstrip())
         if ended["state"] == "done" and farming and "relaunched" in farming:
             # The game is back: its soul weapon read again (features/soul_weapon.py).
             farming["relaunched"](mode_now())
@@ -346,7 +340,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             except asyncio.CancelledError:
                 raise
             except Exception as e:
-                logging.exception("Slayer Legend watchdog failed")
+                ports.exception("Watchdog failed")
                 show("Erreur : {error}", {"error": f"{e!r}"[:200]})
 
     async def start(app):

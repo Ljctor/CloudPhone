@@ -34,6 +34,10 @@ def load_feature(name):
     return module
 
 
+LOG = load_feature("ports").python_log("slayer-legend")
+EXCEPTION = load_feature("ports").exception_log(LOG)
+
+
 class Request:
     def __init__(self, body=None):
         self.query = {}
@@ -426,7 +430,7 @@ class Lease(MineTest):
         self.assertEqual(state[100]["lease"]["since"], EPOCH, "renewed: since kept")
         self.assertEqual(state[100]["lease"]["until"], EPOCH + 110)
         self.assertIsNone(state[120]["lease"])
-        self.assertIn("lease of agent expired (réglages)", "\n".join(logs.output))
+        self.assertIn("Lease of agent expired (réglages)", "\n".join(logs.output))
 
 
 class OutOfFeathers(MineTest):
@@ -514,7 +518,7 @@ class WayBackIn(unittest.TestCase):
             capture=capture, analyse=analyse, tap=tap, focused=focused, leased=leased, Busy=Busy, notify=notify,
             clock=SimpleNamespace(sleep=sleep, monotonic=lambda: game["now"], wall=lambda: EPOCH + game["now"]),
             store=SimpleNamespace(saved={}, register=lambda *a: None, save=lambda: None),
-            spawn=lambda coroutine: coroutine.close())
+            spawn=lambda coroutine: coroutine.close(), log=LOG, exception=EXCEPTION)
         values = SimpleNamespace(time_or_none=lambda v: v, number_or_none=lambda v, top: v)
         part = feature.mine(ports, screens, readers, feature_rules, None, values)
         part["api"]["start"](5, 2, None)

@@ -16,6 +16,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 spec = importlib.util.spec_from_file_location("watchdog_rules", os.path.join(HERE, "features", "watchdog_rules.py"))
 rules = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(rules)
+spec = importlib.util.spec_from_file_location("watchdog_ports", os.path.join(HERE, "features", "ports.py"))
+ports_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(ports_module)
+LOG = ports_module.python_log("slayer-legend")
+EXCEPTION = ports_module.exception_log(LOG)
 
 EPOCH = 1_800_000_000.0
 # Stage 920's name ends with III in this table; 921 with IV.
@@ -586,6 +591,8 @@ class GoldTrigger(unittest.TestCase):
             store = types.SimpleNamespace(saved={}, register=lambda *a: None, save=lambda: None)
             lease = types.SimpleNamespace(state=lambda: None)
             enabled = staticmethod(lambda: True)
+            log = staticmethod(LOG)
+            exception = staticmethod(EXCEPTION)
             respond = staticmethod(lambda body, status=200: body if status == 200 else (status, body))
 
             class clock:
@@ -888,6 +895,8 @@ class WaitOnTheDialog(unittest.TestCase):
             store = types.SimpleNamespace(saved={}, register=lambda *a: None, save=lambda: None)
             lease = types.SimpleNamespace(state=lambda: None)
             enabled = staticmethod(lambda: True)
+            log = staticmethod(LOG)
+            exception = staticmethod(EXCEPTION)
             respond = staticmethod(lambda body: body)
 
             class clock:

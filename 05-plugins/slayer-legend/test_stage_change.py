@@ -24,6 +24,8 @@ def load(name):
 
 
 rules = load("features/stage_change_rules")
+LOG = load("features/ports").python_log("slayer-legend")
+EXCEPTION = load("features/ports").exception_log(LOG)
 feature = load("features/stage_change")
 mode_feature = load("features/mode")
 mode_rules = load("features/mode_rules")
@@ -203,7 +205,8 @@ class Game:
                                notify=notify, clock=SimpleNamespace(sleep=sleep, wall=lambda: 1e9 + game.now,
                                                                      monotonic=lambda: game.now),
                                leased=leased, Busy=Busy, pause_left=lambda: game.state.get("pause_left", 60),
-                               store=store, enabled=lambda: True, respond=lambda value, status=200: (status, value))
+                               store=store, enabled=lambda: True, respond=lambda value, status=200: (status, value),
+                               log=LOG, exception=EXCEPTION)
 
 
 def readers(game):

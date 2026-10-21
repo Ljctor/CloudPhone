@@ -138,7 +138,7 @@ export default function activate(api) {
   const debug = [
     { type: 'section', key: 'debug', label: 'Debug & développement', folded: true },
     ...[screenPart, counterPart, watchdogPart, tracePart].flatMap((part) => part.debug ?? []),
-    { type: 'log', match: (record) => record.source === api.id || record.text.startsWith('Slayer Legend') },
+    { type: 'log', match: (record) => record.source === api.id },
   ];
   return {
     icon: SWORD,

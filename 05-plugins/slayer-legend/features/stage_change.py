@@ -60,7 +60,6 @@ or "failed", text}. read_controls() for the watchdog: {preset, auto} read
 on one unfold, or None. relaunched(mode) for the watchdog's relaunch.
 """
 
-import logging
 from types import SimpleNamespace
 
 # After a move: a fresh capture every POLL seconds until the screen
@@ -324,7 +323,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
                         await step()
                     except Plan as e:
                         plans.append(str(e))
-                        logging.info(f"Slayer Legend stage change, plan only: {e}")
+                        ports.log("normal", f"Stage change, plan only: {e}")
                     finally:
                         timings[name] = round(ports.clock.monotonic() - began, 1)
             except Stop as e:
@@ -332,7 +331,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
             except ports.Busy:
                 raise
             except RuntimeError as e:  # a move the navigation guard refused
-                logging.error(f"Slayer Legend stage change: {e}")
+                ports.log("error", f"Stage change: {e}")
                 answer = {"result": "failed", "text": str(e)}
             else:
                 answer = {"result": "plan" if plans else "done", "text": " ; ".join(plans)}
@@ -357,7 +356,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         try:
             await souls["ensure"](chosen["id"], chosen.get("variant"))
         except Stop as e:
-            logging.error(f"Slayer Legend soul weapon: {e}")
+            ports.log("error", f"Soul weapon: {e}")
             raise Stop(f"Soul Weapon: {e}") from None
 
     async def ensure_soul_weapon(mode, loadout=None, force=False):
@@ -376,7 +375,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         cannot read is refused (change_stage), and a stage the game does
         not open fails at the check after Move. force: see run."""
         if highest and stage > highest:
-            logging.info(f"Slayer Legend stage change: stage {stage} past the highest seen farmed ({highest}), tried")
+            ports.log("normal", f"Stage change: stage {stage} past the highest seen farmed ({highest}), tried")
         steps = [("stage", lambda: change_stage(stage))]
         if preset:
             steps.append(("preset", lambda: set_preset(preset)))
@@ -395,7 +394,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
                 break
             except ports.Busy:
                 if ports.clock.monotonic() - since >= RELAUNCH_WAIT:
-                    logging.info("Slayer Legend soul weapon after a relaunch: lease still taken, dropped")
+                    ports.log("normal", "Soul weapon after a relaunch: lease still taken, dropped")
                     return
                 await ports.clock.sleep(RELAUNCH_RETRY)
         if answer["result"] == "failed":
@@ -442,7 +441,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         for name in SWITCHES:
             if body.get(name):
                 if switches[name] != body[name]:
-                    logging.info(f"Slayer Legend stage change: {name} switched to {body[name]}")
+                    ports.log("normal", f"Stage change: {name} switched to {body[name]}")
                 switches[name] = body[name]
         if body.get("soul_weapon") and souls:
             souls["set_switch"](body["soul_weapon"])

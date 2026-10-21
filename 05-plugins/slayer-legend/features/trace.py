@@ -11,7 +11,6 @@ recorded. Read-only for the game: it only takes screenshots.
 """
 
 import asyncio
-import logging
 
 # A tap's "after" screen: this long after it, or just before the next tap.
 AFTER_SECONDS = 2.0
@@ -47,7 +46,7 @@ def trace(ports, screens, graphs):
             try:
                 graphs.save(recorded["graph"], path)
             except OSError as e:
-                logging.warning(f"Slayer Legend trace not saved: {e!r}")
+                ports.log("warning", f"Trace not saved: {e!r}")
 
     async def after(pending):
         await ports.clock.sleep(AFTER_SECONDS)
@@ -58,7 +57,7 @@ def trace(ports, screens, graphs):
                     finish(pending, await screen_now())
                 except Exception as e:
                     recorded["pending"] = None
-                    logging.warning(f"Slayer Legend trace failed: {e!r}")
+                    ports.log("warning", f"Trace failed: {e!r}")
 
     async def tap_made(tap):
         """Takes the screen at once. It is this tap's "before" and also the
@@ -78,7 +77,7 @@ def trace(ports, screens, graphs):
                 recorded["pending"] = pending
                 pending["task"] = ports.spawn(after(pending))
             except Exception as e:
-                logging.warning(f"Slayer Legend trace failed: {e!r}")
+                ports.log("warning", f"Trace failed: {e!r}")
 
     async def handle_tap(request):
         if recorded["graph"] is None:

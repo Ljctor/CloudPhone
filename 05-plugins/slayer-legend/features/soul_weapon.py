@@ -34,7 +34,6 @@ stops with one alert naming what is left. It may take longer than the
 set only once the engraving read ready.
 """
 
-import logging
 
 EQUIPMENT_TAP = (0.41, 0.966)
 WEAPON_TAB_TAP = (0.12, 0.414)
@@ -176,7 +175,7 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
         last_input = (ports.last_input() or {}).get("wall") if hasattr(ports, "last_input") else None
         if cache and cache["id"] == target_id and cache.get("variant") == variant \
                 and rules.fresh_cache(cache, ports.clock.wall(), last_input, status["relaunched"]):
-            logging.info(f"Slayer Legend soul weapon: {target} equipped (last read), skipped in 0.0 s")
+            ports.log("normal", f"Soul weapon: {target} equipped (last read), skipped in 0.0 s")
             status["last"] = {"result": "cached", "weapon": target, "seconds": 0.0}
             return "cached"
         status["cache"] = None
@@ -218,10 +217,10 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
         await close_screen(shot)
         seconds = round(ports.clock.monotonic() - since, 1)
         over = seconds > BUDGET
-        logging.log(logging.WARNING if over else logging.INFO,
-                    f"Slayer Legend soul weapon: {target} {result} in {seconds} s, {moves} moves"
-                    + (f", engraving {'not ready' if mismatch else 'ready'} in {done['seconds']} s" if done else "")
-                    + (f" (over the {BUDGET} s budget)" if over else ""))
+        ports.log("warning" if over else "normal",
+                  f"Soul weapon: {target} {result} in {seconds} s, {moves} moves"
+                  + (f", engraving {'not ready' if mismatch else 'ready'} in {done['seconds']} s" if done else "")
+                  + (f" (over the {BUDGET} s budget)" if over else ""))
         status["last"] = {"result": result, "weapon": target, "seconds": seconds, "engraving": mismatch}
         if mismatch:
             raise Stop(mismatch)
@@ -245,7 +244,7 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
         """"real" (the default: the user's choice, no plan mode) or "off"
         (the emergency stop: nothing is read or tapped for the soul weapon)."""
         if value != status["switch"]:
-            logging.info(f"Slayer Legend soul weapon: switched to {value}")
+            ports.log("normal", f"Soul weapon: switched to {value}")
             status["switch"] = value
             ports.store.save()
 

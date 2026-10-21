@@ -56,7 +56,6 @@ stage4 here are read from them and written to them.
 """
 
 import asyncio
-import logging
 import secrets
 
 
@@ -82,7 +81,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
 
     def report(state, message):
         if (status["state"], status["message"]) != (state, message):
-            logging.info(f"Slayer Legend mode {status['mode']}: {state} {message}")
+            ports.log("normal", f"Mode {status['mode']}: {state} {message}")
         status["state"], status["message"] = state, message
         ports.store.save()
 
@@ -105,9 +104,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         before, after = status["switch"] or ("?", status["mode"])
         line, alert = rules.switch_report(before, after, ports.clock.monotonic() - since - waited,
                                           answer.get("timings") or {}, waited, applied)
-        logging.getLogger("cloudphone.slayer-legend").log(
-            logging.WARNING if alert else logging.INFO, f"{line}, {answer['result']}",
-            extra={"source": "slayer-legend", "notify": bool(alert)})
+        ports.log("warning" if alert else "normal", f"{line}, {answer['result']}", notify=bool(alert))
         return alert
 
     def end_hold(action):
@@ -122,7 +119,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         revoke = getattr(ports, "revoke_action", None)
         if revoke and hold.get("token"):
             revoke(hold["token"])
-        logging.info(f"Slayer Legend mode {hold['mode']}: hold {hold['id']} over ({action})")
+        ports.log("normal", f"Mode {hold['mode']}: hold {hold['id']} over ({action})")
 
     async def pause(seconds):
         """Sleeps seconds, or less when POST /mode/hold wakes it."""
@@ -147,8 +144,8 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         if hold is None or hold["owner"] is not owner:
             hold = status["hold"] = {"id": secrets.token_hex(4), "mode": name, "owner": owner, "action": None,
                                      "applied": applied}
-            logging.info(f"Slayer Legend mode {name}: switch on hold {hold['id']}, the user plays "
-                         f"({round(left)} s left)")
+            ports.log("normal", f"Mode {name}: switch on hold {hold['id']}, the user plays "
+                      f"({round(left)} s left)")
         hold["until"] = ports.clock.monotonic() + left
         report("waiting", rules.hold_message(name, left, applied))
         if not alerted:
@@ -219,8 +216,8 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
                 delay = rules.retry_after(failures, ports.clock.monotonic() - since - waited)
                 if delay is None:
                     break
-                logging.info(f"Slayer Legend mode {name}: switch stopped ({answer['text']}), "
-                             f"attempt {failures + 1} in {delay} s")
+                ports.log("normal", f"Mode {name}: switch stopped ({answer['text']}), "
+                          f"attempt {failures + 1} in {delay} s")
                 report("moving", f"Passage au stage {number} ({name}) : nouvel essai dans {delay} s ({answer['text']})"[:200])
                 await ports.clock.sleep(delay)
         finally:
@@ -247,7 +244,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         """The watchdog saw mode name farm as its loadout says (a look, or
         its repair done): a switch left failed is over."""
         if status["mode"] == name and status["state"] == "failed":
-            logging.info(f"Slayer Legend mode {name}: farming, as the watchdog sees it")
+            ports.log("normal", f"Mode {name}: farming, as the watchdog sees it")
             report("farming", farming_text(name, loadouts["stage"](name), loadouts["loadout"](name).get("preset")))
 
     async def enter(name, before=None):
@@ -279,7 +276,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         fields = rules.loadout_changes(before, after)
         if not status["configured"] or name != status["mode"] or name not in ("mpw18", "mpw4") or not fields:
             return
-        logging.info(f"Slayer Legend mode {name}: loadout changed ({', '.join(sorted(fields))}), applied now")
+        ports.log("normal", f"Mode {name}: loadout changed ({', '.join(sorted(fields))}), applied now")
         status.update(switch=(name, name), switch_at=ports.clock.monotonic())
         change = status["change"]
         if change is not None and not change.done():
@@ -318,7 +315,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
             return
         status["scroll"], news = scroll.look(status["scroll"], await ports.analyse(gold_facts, shot))
         if news:
-            logging.info(f"Slayer Legend mode mpw4: gold scroll {news}")
+            ports.log("normal", f"Mode mpw4: gold scroll {news}")
             await ports.notify("Farming mpw4 : " + ("plus de parchemin doré" if news == "gone"
                                                     else "parchemin doré rétabli"))
 
@@ -335,7 +332,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
                     await back_to_default(why)
                 elif rules.warn_due(status["mode"], status["until"], status["warned"], ports.clock.wall()):
                     status["warned"] = status["until"]
-                    logging.info("Slayer Legend mode free: 2 minutes left, user warned")
+                    ports.log("normal", "Mode free: 2 minutes left, user warned")
                     await ports.notify(rules.WARNING)
                 elif status["mode"] == "mpw4" and rules.gold_due(status["gold_look"], ports.clock.monotonic()):
                     status["gold_look"] = ports.clock.monotonic()
@@ -343,7 +340,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            logging.exception("Slayer Legend mode failed")
+            ports.exception("Mode failed")
             report("failed", f"Erreur : {e!r}"[:200])
 
     def watch_if_timed():
@@ -371,7 +368,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         before = status["mode"]
         changed = name != before
         if default != status["default"]:
-            logging.info(f"Slayer Legend mode: default mode {status['default']} → {default}")
+            ports.log("normal", f"Mode: default mode {status['default']} → {default}")
         until = rules.timer_for(name, until, given, status["mode"], status["until"], ports.clock.wall(), default)
         status.update(mode=name, default=default, until=until, configured=True, highest=numbers["highest"])
         loadouts["set_stage"]("mpw18", numbers["stage18"])
@@ -424,13 +421,13 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
             return ports.respond({"error": error[1]}, status=error[0])
         if action == "free":
             hold = status["hold"]
-            logging.info(f"Slayer Legend mode {hold['mode']}: on hold, free play asked")
+            ports.log("normal", f"Mode {hold['mode']}: on hold, free play asked")
             end_hold("free")
             await go_free()
         elif action == "resume":
             hold = status["hold"]
             hold["action"] = "resume"
-            logging.info(f"Slayer Legend mode {hold['mode']}: on hold, resumed now")
+            ports.log("normal", f"Mode {hold['mode']}: on hold, resumed now")
             if status["wake"] is not None:
                 status["wake"].set()
         return ports.respond(state())
@@ -458,9 +455,9 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
     if mines["ended"]:
         stopped.append("mine")
     if stopped:
-        logging.info(f"Slayer Legend: timer ended while the gateway was stopped ({', '.join(stopped)}): "
-                     f"back to the default mode {status['default']}, mine off"
-                     + (" once Repeat entry is unticked" if mines["state"]()["state"] == "stopping" else ""))
+        ports.log("normal", f"Timer ended while the gateway was stopped ({', '.join(stopped)}): "
+                  f"back to the default mode {status['default']}, mine off"
+                  + (" once Repeat entry is unticked" if mines["state"]()["state"] == "stopping" else ""))
 
     # After the stages of an older state.json moved: not a change to apply.
     if "on_change" in loadouts:

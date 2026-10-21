@@ -36,6 +36,9 @@ lived, spent once, never the page token, which must not reach ntfy.sh),
 context.revoke_action(token) withdraws it, and context.notify(text,
 actions=[{label, path, body, token}]) puts the buttons in the alert, each
 posting body to the gateway's address as the phone reaches it.
+context.log(level, text, notify=False, **params) is one record of the
+gateway's log tagged with the plugin's id as its source (logs.log), so that
+the page shows a plugin's records apart: an addition to API 1 too.
 
 A plugin may keep files in its own data directory, DATA_DIR/<id>
 (--plugin_data, /var/lib/cloudphone/plugins on a server), created by the
@@ -59,6 +62,7 @@ import time
 
 from aiohttp import web
 
+from . import logs
 from .core import actions as action_tokens
 
 # The plugin API's major version (see "api" above).
@@ -199,6 +203,13 @@ class PluginContext:
     def viewers(self):
         """The viewers connected now."""
         return self._activity.viewers() if self._activity else 0
+
+    def log(self, level, text, notify=False, **params):
+        """One record of the gateway's log whose source is the plugin's id:
+        level "normal", "warning" or "error"; notify: also a toast on the
+        page. With params, text is a template filled with them. An addition
+        to API 1."""
+        logs.log(level, self.id, text, notify, **params)
 
     def json(self, value, status=200):
         return web.json_response(value, status=status, headers={"Cache-Control": "no-store"})

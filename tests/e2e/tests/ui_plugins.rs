@@ -529,7 +529,7 @@ fn slayer_legends_debug_section_is_last_folded_and_holds_the_developer_rows_and_
         let log = page.wait_js("the plugin's record in its log", Duration::from_secs(20),
             "const p = [...document.querySelectorAll('[role=dialog] details')].find(d => d.querySelector(':scope > summary').innerText.trim() === 'Debug & développement'); \
              const r = p ? [...p.querySelectorAll('[data-level]')].map(e => e.innerText) : []; \
-             return r.some(t => t.includes('lease taken by agent')) ? r : null", vec![]).await;
+             return r.some(t => t.includes('Lease taken by agent')) ? r : null", vec![]).await;
         assert!(!log.as_array().unwrap().iter().any(|t| t.as_str().unwrap().contains("Le gateway a démarré")),
             "only the plugin's records: {log}");
     });

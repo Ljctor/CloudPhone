@@ -12,7 +12,6 @@ kept in state.json ("highest"). What the answers say is in screen_rules.py.
 """
 
 import asyncio
-import logging
 
 # An answer this young is given again instead of a new screenshot.
 SECONDS = 2.0
@@ -68,7 +67,7 @@ def screen(ports, screens, stage, rules, values, table):
                 try:
                     cache["value"] = await read_screen(remembered)
                 except Exception as e:
-                    logging.warning(f"Slayer Legend screen: no screenshot: {e!r}")
+                    ports.log("warning", f"Screen: no screenshot: {e!r}")
                     cache["value"] = {"screen": None}
                 cache["time"] = ports.clock.monotonic()
         return ports.respond(cache["value"])
