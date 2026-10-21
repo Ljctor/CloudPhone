@@ -123,11 +123,10 @@ export default function modeFeature(api, { known, watchdog, stage }) {
     if (result?.ok) remember(result.body);
     api.refresh();
   };
-  // The mpw18 and mpw4 stages up to the highest one the gateway saw
-  // farmed (all of them when it knows none).
+  // Every mpw18 and mpw4 stage: the player may choose one beyond the
+  // stage last seen on the screen.
   const loadStages = async () => {
-    const remembered = known();
-    farm.stages = await api.get(remembered ? `/stages?known=${remembered}` : '/stages').catch(() => null);
+    farm.stages = await api.get('/stages').catch(() => null);
     api.refresh();
   };
   const stageChoices = (mpw) => [
