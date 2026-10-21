@@ -3,7 +3,7 @@
 // feedback while a manual reconnect waits for its first frame, and how long
 // it has been connecting. When to reconnect is in streamRules.ts.
 import { useEffect, useRef, useState } from 'react';
-import { tr } from './i18n';
+import { english } from './i18n';
 import { pageLog } from './logs';
 import {
   AUTO_RECONNECT_DELAY_MS, RECONNECT_FEEDBACK_MS, REMOUNT_DELAY_MS, STUCK_AFTER_S,
@@ -62,7 +62,7 @@ export function useStream({ server, input }) {
     if (nextState !== loggedState.current) {
       loggedState.current = nextState;
       const [text, values] = streamStateLine(nextState);
-      pageLog('normal', tr(text, values));
+      pageLog('normal', english(text, values));
     }
     setState(nextState);
     if (nextState === 'connected' && reconnectTimer.current === null) stopFeedback();

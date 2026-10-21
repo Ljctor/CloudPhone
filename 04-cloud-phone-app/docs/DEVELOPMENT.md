@@ -45,7 +45,7 @@ the browser and the gateway; `App.tsx` only assembles them.
 | `js/example/src/pluginOptions.tsx` | each plugin's options in the options panel, the seven option kinds, the dialog an option opens |
 | `js/example/src/plugins.ts` | loads the installed plugins' `page.js` and their API |
 | `js/example/src/api.ts` | this page load's viewer id, POSTs with the page token |
-| `js/example/src/i18n.ts` | French (source text) and English; `tr()` falls back to French |
+| `js/example/src/i18n.ts` | French (source text) and English; `tr()` falls back to French; `english()` for log records, always in English (the server's are shown as they come) |
 | `js/example/src/styles.ts` | the inline styles, the toolbar's width, the level colours, the page's CSS (pure) |
 | `js/example/src/icons.tsx` | the toolbar's and panels' inline SVG icons |
 | `js/src/components/emulator/net/ws_jsep_protocol_driver.ts` | signaling, viewer id, input on the emulator's data channels; waits for the emulator's SDP offer (Firefox) |

@@ -7,7 +7,7 @@ import { language, tr } from './i18n';
 import { VIEWER_ID } from './api';
 import { styles } from './styles';
 import {
-  LOG_COLORS, LOG_FILTERS, TOAST_MS, keepRecord, recordText, shownRecords, toastKey, withToast,
+  LOG_COLORS, LOG_FILTERS, TOAST_MS, keepRecord, shownRecords, toastKey, withToast,
 } from './logRecords';
 
 const PAGE_LOG = [];
@@ -99,7 +99,7 @@ export function LogList({ entries, filter, rowStyle, labelStyle }) {
         {entry.source !== 'page' && <><br /><span style={{ fontSize: '0.85em' }}>{entry.source}</span></>}
       </span>
       <span style={{ textAlign: 'right', overflowWrap: 'anywhere', color: LOG_COLORS[entry.level] ?? LOG_COLORS.normal }}>
-        {recordText(entry)}
+        {entry.text}
       </span>
     </div>
   ));
@@ -131,7 +131,7 @@ export function useToasts() {
   };
   useEffect(() => {
     const show = (record) => {
-      const text = recordText(record);
+      const text = record.text;
       const key = toastKey(record, text);
       setToasts((list) => withToast(list, record, text));
       window.clearTimeout(timers.current.get(key));

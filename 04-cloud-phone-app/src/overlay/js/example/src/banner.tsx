@@ -4,7 +4,7 @@
 // log.
 import { useEffect, useState } from 'react';
 import { tr } from './i18n';
-import { bannerShown, problemLogEntry } from './diagnose';
+import { bannerShown, problemKey, problemLogEntry } from './diagnose';
 import { pageLog } from './logs';
 import { LEVEL_COLORS, styles } from './styles';
 
@@ -13,9 +13,9 @@ import { LEVEL_COLORS, styles } from './styles';
 export function useDismissed(problem) {
   const [dismissed, setDismissed] = useState(null);
   useEffect(() => {
-    if (dismissed !== null && problem?.text !== dismissed) setDismissed(null);
+    if (dismissed !== null && problemKey(problem) !== dismissed) setDismissed(null);
     if (problem) pageLog(...problemLogEntry(problem));
-  }, [problem?.text]);
+  }, [problemKey(problem)]);
   return [dismissed, setDismissed];
 }
 
@@ -28,7 +28,7 @@ export function StatusCover({ problem, stream, reconnecting }) {
         ? <span style={{ ...styles.problemMark, color: LEVEL_COLORS.error }} aria-hidden="true">!</span>
         : <span style={styles.spinner} aria-hidden="true" />}
       <span style={styles.loadingText}>
-        {problem?.blocking ? tr(problem.text) : reconnecting ? tr('Reconnexion…') : tr('Connexion au flux…')}
+        {problem?.blocking ? tr(problem.text, problem.params) : reconnecting ? tr('Reconnexion…') : tr('Connexion au flux…')}
       </span>
       {problem?.blocking && problem.detail && <span style={styles.loadingDetail}>{tr(problem.detail)}</span>}
     </div>
@@ -40,8 +40,8 @@ export function Banner({ problem, dismissed, dismiss }) {
   return (
     <div style={{ ...styles.banner, ...styles.bannerWithClose, borderColor: LEVEL_COLORS[problem.level] }}
       role="status">
-      <span>{tr(problem.text)}{problem.detail && <><br /><small>{tr(problem.detail)}</small></>}</span>
-      <button style={styles.bannerClose} onClick={() => dismiss(problem.text)}
+      <span>{tr(problem.text, problem.params)}{problem.detail && <><br /><small>{tr(problem.detail)}</small></>}</span>
+      <button style={styles.bannerClose} onClick={() => dismiss(problemKey(problem))}
         aria-label={tr('Fermer')}>✕</button>
     </div>
   );

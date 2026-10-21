@@ -47,8 +47,10 @@
 //                         is now (a timed mode that ended): onSetting is not
 //                         called for it, so the plugin does not send it back
 //   refresh()             re-render the options panel (after a status change)
-//   toast(text)           a warning toast and log record on this page (text
-//                         already translated), e.g. a setting the gateway refused
+//   toast(text, params?)  a warning toast and log record on this page, in
+//                         English like every log record: text is a French
+//                         text with its English entry, an English text, or
+//                         {template, params}; e.g. a setting the gateway refused
 //   onTap(listener)       calls listener({ x, y, kind[, end] }) after each touch
 //                         the user makes on the Android screen, once the finger
 //                         lifts (it has already reached Android; this only
@@ -59,7 +61,7 @@
 //                         stops it; stopped anyway when the plugin is unloaded.
 //   tr, addTranslations
 import { useEffect, useRef, useState } from 'react';
-import { addTranslations, tr } from './i18n';
+import { addTranslations, english, tr } from './i18n';
 import { pageLog } from './logs';
 import { pluginOptionChange } from './pluginSettings';
 
@@ -152,7 +154,7 @@ export function usePlugins({
             updateRef.current?.(pluginOptionChange(settingsRef.current, plugin.id, key, value));
           },
           refresh,
-          toast: (text) => pageLog('warning', `${plugin.title ?? plugin.id} : ${text}`, { notify: true }),
+          toast: (text, params) => pageLog('warning', `${plugin.title ?? plugin.id}: ${english(text, params)}`, { notify: true }),
           onTap: (listener) => {
             taps.add(listener);
             tapListeners.add(listener);

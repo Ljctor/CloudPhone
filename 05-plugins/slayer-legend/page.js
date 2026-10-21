@@ -172,42 +172,6 @@ const ENGLISH = {
   'écran inattendu': 'unexpected screen',
   'le jeu ne répond pas (fenêtre d’Android), « Attendre » sans effet : à faire à la main':
     'the game is not responding (Android’s window), « Wait » did not help: do it by hand',
-  // The watchdog's log records.
-  '{mode} : adb ne répond pas : l’émulateur ou adb manque': '{mode}: adb does not answer: the emulator or adb is missing',
-  '{mode} : le jeu ne tourne pas': '{mode}: the game is not running',
-  '{mode} : une autre application est au premier plan : {window}':
-    '{mode}: another app is in front: {window}',
-  '{mode} : le jeu a planté (fenêtre d’erreur d’Android)': '{mode}: the game crashed (Android’s error window)',
-  '{mode} : le jeu ne répond pas (fenêtre d’Android), « Attendre » sans effet : à faire à la main':
-    '{mode}: the game is not responding (Android’s window), « Wait » did not help: do it by hand',
-  '{mode} : le jeu est revenu à son écran titre': '{mode}: the game is back on its title screen',
-  '{mode} : le jeu demande de se reconnecter (Sign in with Google)':
-    '{mode}: the game asks to sign in again (Sign in with Google)',
-  '{mode} : écran inconnu après la fin du mode (connecté sur un autre appareil, ou choix de sauvegarde) : à faire à la main':
-    '{mode}: unknown screen after the mode ended (signed in on another device, or a choice of saves): do it by hand',
-  '{mode} : un menu du jeu est ouvert depuis plus d’une minute sans l’utilisateur':
-    '{mode}: a game menu has been open over a minute without the user',
-  '{mode} : mauvais stage, pas le {stage}': '{mode}: wrong stage, not {stage}',
-  '{mode} : le jeu n’est plus au premier plan': '{mode}: the game is no longer in front',
-  '{mode} : mauvais préréglage de combat : pas le {preset}': '{mode}: wrong battle settings preset: not {preset}',
-  '{mode} : mauvais équipement : {what}': '{mode}: wrong equipment: {what}',
-  '{mode} : écran inattendu': '{mode}: unexpected screen',
-  '{mode} : rétabli': '{mode}: back',
-  'Réparation : {repair}': 'Repair: {repair}',
-  'Réparation réussie : {repair}': 'Repair done: {repair}',
-  'Réparation sans effet : {repair}, prochain essai dans {minutes} min': 'Repair without effect: {repair}, next try in {minutes} min',
-  '{mode} : {repair} toujours en échec, prochaine tentative dans {minutes} min':
-    '{mode}: {repair} still failing, next attempt in {minutes} min',
-  'Réessayer maintenant : {repair}': 'Retry now: {repair}',
-  'Lancement différé : {why}': 'Launch deferred: {why}',
-  'Réparation différée : bail tenu par {holder}': 'Repair deferred: lease held by {holder}',
-  'Le jeu ne répond pas : « Attendre » touché': 'The game is not responding: « Wait » pressed',
-  'Le jeu ne répond pas : bouton « Attendre » introuvable': 'The game is not responding: « Wait » not found',
-  'relance du jeu': 'game relaunch',
-  'retour au combat': 'back to battle',
-  'Fenêtre « l’application s’arrête » fermée, réouverture du jeu': 'The "app keeps stopping" window was closed, opening the game again',
-  'Fenêtre « l’application s’arrête » : bouton introuvable, ferme-la à la main': 'The "app keeps stopping" window: its button was not found, close it by hand',
-  'Le jeu plante encore : relance-le à la main': 'The game keeps crashing: relaunch it by hand',
 };
 
 export default function activate(api) {

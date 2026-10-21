@@ -1,8 +1,8 @@
 // What the page tells the user about the server and the stream: the input
 // state in, the status to show out. No React, no DOM. Texts are French
-// source text for tr(), except the counted viewers line, already
-// translated.
-import { tr } from './i18n';
+// source text for tr(), with their params when they have some. The page's
+// log gets them in English (problemLogEntry).
+import { english } from './i18n';
 
 // The single most important thing to tell the user, or null.
 // level: 'error' (needs action or will not fix itself), 'wait' (being
@@ -76,8 +76,8 @@ export function diagnose({ server, stream, connectingFor, touchFailures }) {
     const others = value.viewers - 1;
     return {
       level: 'info', blocking: false,
-      text: others === 1 ? tr('Un autre appareil regarde ce téléphone')
-        : tr('{n} autres appareils regardent ce téléphone', { n: others }),
+      text: others === 1 ? 'Un autre appareil regarde ce téléphone' : '{n} autres appareils regardent ce téléphone',
+      params: { n: others },
       detail: 'L’image peut être plus lente.',
     };
   }
@@ -91,12 +91,18 @@ export function diagnose({ server, stream, connectingFor, touchFailures }) {
 // do when the status does not say.
 export function problemLogEntry(problem) {
   const level = { error: 'error', wait: 'warning', info: 'normal' }[problem.level];
-  const detail = problem.detail ? tr(problem.detail) : level === 'error' ? tr('Touchez ↻ pour réessayer.') : '';
-  return [level, detail ? `${tr(problem.text)} : ${detail}` : tr(problem.text)];
+  const detail = problem.detail ? english(problem.detail) : level === 'error' ? english('Touchez ↻ pour réessayer.') : '';
+  const text = english(problem.text, problem.params);
+  return [level, detail ? `${text}: ${detail}` : text];
+}
+
+// Which status this is, params included: a closed banner stays closed for it.
+export function problemKey(problem) {
+  return problem ? english(problem.text, problem.params) : null;
 }
 
 // Whether the status shows as a closable banner: it does not cover the
 // screen and the user has not closed this text.
 export function bannerShown(problem, dismissed) {
-  return Boolean(problem && !problem.blocking && dismissed !== problem.text);
+  return Boolean(problem && !problem.blocking && dismissed !== problemKey(problem));
 }

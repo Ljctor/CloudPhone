@@ -4,7 +4,7 @@
 import { useRef, useState } from 'react';
 import { sendInputEvent } from '../../src/components/emulator/net/ws_jsep_protocol_driver';
 import Proto from '../../src/proto/emulator_controller_pb';
-import { tr } from './i18n';
+import { english } from './i18n';
 import { emitTap } from './plugins';
 import { postFetch, postHeaders } from './api';
 import { pageLog } from './logs';
@@ -103,13 +103,13 @@ export function useInput({ gatewayUrl, display, showMarker: markerShown }) {
     const sender = touchSender.current;
     // Use the channel only when no HTTP touch is pending, to keep the order.
     if (USE_DATA_CHANNEL && queueIdle(sender) && sendOverChannel(coordinates, pressed)) {
-      if (inputPath.current === 'HTTP') pageLog('normal', tr('Les touches passent de nouveau par le canal de données'));
+      if (inputPath.current === 'HTTP') pageLog('normal', english('Les touches passent de nouveau par le canal de données'));
       inputPath.current = 'data channel';
       return;
     }
     // The session fell back to the server path: slower, worth a toast.
     if (inputPath.current !== 'HTTP') {
-      pageLog('warning', tr('Les touches passent par le serveur (canal de données fermé) : elles peuvent être plus lentes'),
+      pageLog('warning', english('Les touches passent par le serveur (canal de données fermé) : elles peuvent être plus lentes'),
         { notify: true });
     }
     inputPath.current = 'HTTP';

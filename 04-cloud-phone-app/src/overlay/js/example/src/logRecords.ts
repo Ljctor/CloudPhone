@@ -5,8 +5,7 @@
 // Records are {time, level, source, text, notify?}: level 'normal',
 // 'warning' or 'error'; source 'page' for this page's own (Client tab),
 // 'gateway', 'emulator' or 'adb' for the server's (GET /api/v1/logs, Server
-// tab).
-import { tr } from './i18n';
+// tab). Their text is English, shown as it is in either language.
 
 export const LOG_KEPT = 200;
 // Colours, at display time only: the theme's foreground, orange, red.
@@ -22,12 +21,6 @@ export const LOG_FILTERS = [
 export function keepRecord(list, record) {
   list.unshift(record);
   list.length = Math.min(list.length, LOG_KEPT);
-}
-
-// The text of a record in the page's language: the server sends French,
-// with a template and its params when it has some.
-export function recordText(record) {
-  return record.template ? tr(record.template, record.params) : tr(record.text);
 }
 
 // The records a list shows for a filter id, newest first by time: the
