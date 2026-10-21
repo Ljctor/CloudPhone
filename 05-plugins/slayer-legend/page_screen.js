@@ -63,9 +63,8 @@ export default function screenFeature(api) {
         visible: () => Boolean(screen.at),
         value: () => {
           const stage = screen.answer?.stage;
-          if (!stage?.number) return api.tr('inconnu : passe en mode économie d’énergie pour le lire');
-          const text = `${stage.number}${stage.name ? ` · ${stage.name}` : ''}`;
-          return stage.checked ? text : `${text} (${api.tr('vu en mode économie d’énergie, à confirmer')})`;
+          if (!stage?.number) return api.tr('inconnu');
+          return `${stage.number}${stage.name ? ` · ${stage.name}` : ''}`;
         },
       },
       stageRow('Monstres par vague', () => String(screen.answer.stage.monsters_per_wave ?? '–')),

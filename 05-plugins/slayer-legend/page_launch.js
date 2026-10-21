@@ -1,6 +1,12 @@
 // "Lancer le jeu": the gateway starts the game and brings it to the battle
 // screen (TAP TO START, then Confirm on the latest save). Its state is
-// followed every 2 s while a launch runs.
+// followed every 2 s while a launch runs. The row always shows a sentence:
+// the gateway's message, else the one of its state (never the state's key).
+
+const SENTENCES = {
+  starting: 'Ouverture du jeu', loading: 'Chargement du jeu', done: 'Le jeu est sur l’écran de combat',
+  blocked: 'Lancement arrêté : termine-le à la main', deferred: 'Lancement différé', failed: 'Le lancement a échoué',
+};
 
 export default function launch(api) {
   const status = { state: 'idle', message: '' };
@@ -36,7 +42,7 @@ export default function launch(api) {
       {
         type: 'status', label: 'Lancement',
         visible: () => status.state !== 'idle',
-        value: () => api.tr(status.message || status.state),
+        value: () => api.tr(status.message || SENTENCES[status.state] || 'Lancement en cours'),
       },
     ],
     dispose: () => {

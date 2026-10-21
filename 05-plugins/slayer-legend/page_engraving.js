@@ -24,7 +24,7 @@ const ENGLISH = {
   'Gravure': 'Engraving',
   'Grille': 'Grid',
   'Attention': 'Warning',
-  'grille à vérifier en jeu d’abord': 'grid to check in game first',
+  'Grille à vérifier en jeu avant la pose': 'Grid to check in game before placing',
   'équipement de {mode} non enregistré : {why}': '{mode} loadout not saved: {why}',
   'gateway injoignable': 'gateway unreachable',
 };
@@ -93,7 +93,7 @@ export default function loadoutFeature(api) {
   const variantChoices = (mode) => firstSaved(mode, 'Variant', [
     { value: '', label: api.tr('— choisir —') },
     ...(weapon(mode)?.variants ?? []).map((v) => ({
-      value: v.name, label: v.placeable ? v.name : `${v.name} ⚠`,
+      value: v.name, label: v.name,
     })),
   ]);
   // The grid's rows: the pieces' colours, 'empty' for an empty cell,
@@ -112,13 +112,10 @@ export default function loadoutFeature(api) {
       return colour[key] ?? (active.has(key) ? 'empty' : null);
     }));
   };
-  // Only what must be done before placing: the confidence of the data
+  // Only what must be done before placing (Content and Echo, whose
+  // grids the wiki's players disagree on): the confidence of the data
   // stays in engravings.json and the README.
-  const warnings = (mode) => {
-    const entry = weapon(mode);
-    if (!entry || !variant(mode)) return [];
-    return entry.wiki_check === 'community-differs' ? [api.tr('grille à vérifier en jeu d’abord')] : [];
-  };
+  const warned = (mode) => Boolean(variant(mode)) && weapon(mode)?.wiki_check === 'community-differs';
   const save = async (mode) => {
     // Only what was chosen in this browser: a field left out keeps the
     // server's value (POST /loadout). An empty choice clears it; a weapon
@@ -161,8 +158,8 @@ export default function loadoutFeature(api) {
       },
       { type: 'grid', label: 'Grille', visible: () => Boolean(variant(mode)), rows: () => gridRows(mode) },
       {
-        type: 'status', label: 'Attention', visible: () => warnings(mode).length > 0,
-        value: () => `⚠ ${warnings(mode).join(' ; ')}`,
+        type: 'status', label: 'Attention', visible: () => warned(mode),
+        value: () => api.tr('Grille à vérifier en jeu avant la pose'),
       },
     ],
     onSetting: changed,

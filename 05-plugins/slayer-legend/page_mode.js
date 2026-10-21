@@ -141,7 +141,7 @@ export default function modeFeature(api, { known, watchdog }) {
       // One row per mode: a radio button chooses it, Configurer opens its
       // settings.
       {
-        type: 'dialog', label: 'Farming mpw18 (par défaut)', title: 'Configuration : farming mpw18',
+        type: 'dialog', label: 'Farming mpw18',
         select: { key: 'mode', value: 'mpw18', default: 'mpw18' },
         options: [
           { type: 'choice', key: 'stage18', label: 'Stage mpw18', choices: () => stageChoices(18) },
@@ -149,7 +149,7 @@ export default function modeFeature(api, { known, watchdog }) {
         ],
       },
       {
-        type: 'dialog', label: 'Farming mpw4', title: 'Configuration : farming mpw4',
+        type: 'dialog', label: 'Farming mpw4',
         // Only once configured: its stage chosen.
         select: { key: 'mode', value: 'mpw4', default: 'mpw18', disabled: () => !Number(api.setting('stage4')) },
         options: [
@@ -164,7 +164,7 @@ export default function modeFeature(api, { known, watchdog }) {
         options: [],
       },
       {
-        type: 'dialog', label: 'Mine fermée', title: 'Configuration : mine fermée',
+        type: 'dialog', label: 'Mine fermée',
         // Only once configured: its floor and area chosen.
         select: {
           key: 'mode', value: 'mine', default: 'mpw18',
@@ -177,11 +177,10 @@ export default function modeFeature(api, { known, watchdog }) {
             choices: [{ value: '', label: api.tr('— choisir —') },
               ...[1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: String(n) }))],
           },
-          { type: 'status', label: 'Plumes', value: () => '3' },
         ],
       },
       {
-        type: 'status', label: 'Minuteur',
+        type: 'status', label: 'Temps restant',
         visible: () => mode() !== 'mpw18',
         value: left,
       },

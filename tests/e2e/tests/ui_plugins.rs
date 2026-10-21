@@ -260,12 +260,12 @@ fn slayer_legends_mpw18_loadout_is_chosen_in_its_dialog_and_saved_on_change() {
     browser_test(&cp, Options::without_video(), |page| async move {
         page.open_options().await;
         page.wait_js("the plugin's options", Duration::from_secs(15),
-            "const d = document.querySelector('[role=dialog]'); return !!d && d.innerText.includes('Farming mpw18 (par défaut)')",
+            "const d = document.querySelector('[role=dialog]'); return !!d && d.innerText.includes('Farming mpw18')",
             vec![]).await;
         page.client.find(Locator::XPath(
-            "//div[@role='dialog']//label[contains(., 'Farming mpw18 (par défaut)')]/following-sibling::button")).await.unwrap()
+            "//div[@role='dialog']//label[contains(., 'Farming mpw18')]/following-sibling::button")).await.unwrap()
             .click().await.unwrap();
-        let settings = "Configuration : farming mpw18";
+        let settings = "Farming mpw18";
         page.wait_dialog(settings).await;
         page.control(settings, "Préréglage de combat").await.select_by_value("III").await.unwrap();
         // The weapons and their variants come from the gateway (engravings.json).
@@ -330,12 +330,12 @@ fn slayer_legends_saved_loadout_survives_a_change_from_a_fresh_browser() {
     browser_test(&cp, Options::without_video(), |page| async move {
         page.open_options().await;
         page.wait_js("the plugin's options", Duration::from_secs(15),
-            "const d = document.querySelector('[role=dialog]'); return !!d && d.innerText.includes('Farming mpw18 (par défaut)')",
+            "const d = document.querySelector('[role=dialog]'); return !!d && d.innerText.includes('Farming mpw18')",
             vec![]).await;
         page.client.find(Locator::XPath(
-            "//div[@role='dialog']//label[contains(., 'Farming mpw18 (par défaut)')]/following-sibling::button")).await.unwrap()
+            "//div[@role='dialog']//label[contains(., 'Farming mpw18')]/following-sibling::button")).await.unwrap()
             .click().await.unwrap();
-        let settings = "Configuration : farming mpw18";
+        let settings = "Farming mpw18";
         page.wait_dialog(settings).await;
         wait_option(&page, settings, "Gravure", "Gold-maxed").await;
         for (label, value) in [("Préréglage de combat", "III"), ("Soul Weapon", "32"), ("Gravure", "Gold-maxed")] {
@@ -386,7 +386,7 @@ fn slayer_legends_mode_radio_follows_the_gateway_when_a_timed_mode_ends() {
         // Its timer ends: the gateway is back on mpw18, and so is the radio.
         page.wait_js("the radio back on mpw18", Duration::from_secs(45),
             "const l = [...document.querySelectorAll('[role=dialog] label')]\
-             .find(l => l.innerText.includes('Farming mpw18 (par défaut)')); return !!l && l.control.checked", vec![]).await;
+             .find(l => l.innerText.includes('Farming mpw18')); return !!l && l.control.checked", vec![]).await;
         assert_eq!(page.stored_settings().await["plugins"]["slayer-legend"]["mode"], "mpw18");
         let p = phone.clone();
         assert_eq!(blocking(move || p.get_json("api/v1/plugins/slayer-legend/mode"))["mode"], "mpw18");

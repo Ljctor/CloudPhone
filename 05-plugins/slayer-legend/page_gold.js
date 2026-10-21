@@ -73,7 +73,7 @@ export default function goldFeature(api, { overlay }) {
     const answer = gold.answer;
     if (!answer) return '…';
     if (answer.rate_text) return `${answer.span < 285 ? '~' : ''}${answer.rate_text}/s`;
-    return answer.read ? api.tr('pas encore mesuré') : api.tr('non visible (économie d’énergie ?)');
+    return answer.read ? api.tr('pas encore mesuré') : api.tr('non visible');
   };
   const showGold = () => {
     const answer = gold.answer;
