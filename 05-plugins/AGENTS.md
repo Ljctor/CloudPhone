@@ -43,7 +43,8 @@ Rules:
     - Closing a bottom panel with its own tab: only when that tab reads lit.
     - Opening Select Region (the stage map button on the battle screen).
     - Select Region's region arrows: only while its banner reads one region.
-    - Scrolling Select Region's list: at most 10 moves.
+    - Select Region's arrows and list scrolls: at most 10 moves for the whole
+      sequence, arrows and scrolls together (`MOST_MOVES`).
     - Move: only on the row whose name reads as the target stage.
     - The preset badge: with the arrow that unfolds it, in one adb call,
       only when the fresh capture reads the controls folded and the badge

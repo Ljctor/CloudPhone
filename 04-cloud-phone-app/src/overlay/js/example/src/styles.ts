@@ -56,6 +56,9 @@ export const styles = {
     fontFamily: 'system-ui, sans-serif', fontSize: '13px', display: 'flex', flexDirection: 'column', gap: '4px',
   },
   pluginSection: { marginLeft: '10px' },
+  pluginGrid: { display: 'grid', gap: '2px' },
+  pluginGridCell: { width: '14px', height: '14px', boxSizing: 'border-box', borderRadius: '2px' },
+  pluginGridEmpty: { border: '1px solid #8a919c' },
   pluginSectionTitle: { marginTop: '4px', color: '#c4cad3', fontWeight: 600, cursor: 'pointer' },
   pluginTitle: { marginTop: '6px', fontWeight: 600, cursor: 'pointer' },
   numberInput: {

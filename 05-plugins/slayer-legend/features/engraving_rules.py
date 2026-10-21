@@ -8,7 +8,8 @@ A cell is [row, col], row 0 at the top and col 0 on the left. A shape is a
 list of cells (engravings.json "shapes": L, J, T, O, I, S, Z, all of 4
 cells). A rotation r turns a shape r quarter turns clockwise (r is 0 to 3);
 a piece is never mirrored (L and J are two shapes). Whether the game turns
-pieces is not confirmed (engravings.json "rotation": null). A placed piece
+pieces is engravings.json's "rotation" ("per-piece": each piece keeps
+the orientation it dropped with, see per_piece()). A placed piece
 is (shape, rotation, anchor): the rotated shape moved so that its bounding
 box's top-left cell is on anchor.
 

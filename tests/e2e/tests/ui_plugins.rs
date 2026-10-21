@@ -212,6 +212,26 @@ fn a_disabled_dialog_radio_cannot_be_chosen_until_it_is_enabled() {
     });
 }
 
+/// The grid drawn in the dialog `dialog` (a plugin's 'grid' option), once
+/// it has `cells` visible cells: {slots, cells, filled, empty, columns,
+/// rows, sizes}, sizes the distinct sizes of the visible cells.
+async fn grid_shape(page: &Page, dialog: &str, cells: usize) -> serde_json::Value {
+    page.wait_js("the engraving grid", Duration::from_secs(10),
+        "const d = [...document.querySelectorAll('[role=dialog]')].find(d => d.getAttribute('aria-label') === arguments[0]); \
+         const g = d && d.querySelector('[data-plugin-grid]'); if (!g) return null; \
+         const shown = [...g.querySelectorAll('[data-cell]')]; if (shown.length !== arguments[1]) return null; \
+         const box = g.getBoundingClientRect(); \
+         const at = shown.map(c => c.getBoundingClientRect()); \
+         const xs = new Set(at.map(r => Math.round(r.left - box.left))), ys = new Set(at.map(r => Math.round(r.top - box.top))); \
+         return {slots: g.children.length, cells: shown.length, \
+                 filled: shown.filter(c => c.dataset.cell === 'filled').length, \
+                 empty: shown.filter(c => c.dataset.cell === 'empty').length, \
+                 columns: xs.size, rows: ys.size, \
+                 sizes: [...new Set(at.map(r => `${Math.round(r.width)}x${Math.round(r.height)}`))], \
+                 text: g.innerText.trim()}",
+        vec![json!(dialog), json!(cells)]).await
+}
+
 /// The `<option>` values of the select labelled `label` in the panel `dialog`.
 async fn option_values(page: &Page, dialog: &str, label: &str) -> Vec<String> {
     let state = page.control_state(&page.control(dialog, label).await).await;
@@ -254,15 +274,34 @@ fn slayer_legends_mpw18_loadout_is_chosen_in_its_dialog_and_saved() {
         let variants = wait_option(&page, settings, "Gravure", "Gold-maxed").await;
         assert_eq!(variants, ["", "Balanced", "Crit", "Gold-maxed", "Gold-balanced"]);
         page.control(settings, "Gravure").await.select_by_value("Gold-maxed").await.unwrap();
-        // Read-only: Ambition's grid, filled by four vertical bars, and the
-        // pieces it needs.
-        page.wait_dialog_value(settings, "Grille", Duration::from_secs(5), |v| v.chars().count() == 5).await;
+        // Read-only: Ambition's grid, its 16 cells filled by four vertical
+        // bars, and the pieces it needs.
+        let grid = grid_shape(&page, settings, 16).await;
+        assert_eq!((grid["slots"].as_u64(), grid["filled"].as_u64(), grid["empty"].as_u64()),
+                   (Some(25), Some(16), Some(0)), "{grid}");
         assert_eq!(page.dialog_value(settings, "Pièces nécessaires").await.as_deref(), Some("4 × Line (I)"));
         page.wait_dialog_value(settings, "Enregistré", Duration::from_secs(5), |v| v == "pas encore").await;
         page.client.find(Locator::XPath(&format!(
             "//div[@role='dialog'][@aria-label='{settings}']//button[normalize-space()='Enregistrer']"))).await.unwrap()
             .click().await.unwrap();
         page.wait_dialog_value(settings, "Enregistré", Duration::from_secs(10), |v| v == "III · Ambition (Gold-maxed)").await;
+        // Vision: pieces keep their dropped orientation ("per-piece"), so
+        // its Gold-balanced exists; its grid shows its 16 active cells, not
+        // a square of 25 (columns 1 to 4 of rows 0 to 4), all the same
+        // fixed size, and no warning but the grids to check in game.
+        page.control(settings, "Soul Weapon").await.select_by_value("36").await.unwrap();
+        let variants = wait_option(&page, settings, "Gravure", "Gold-balanced").await;
+        assert_eq!(variants, ["", "Atk", "Balanced", "Gold-maxed", "Gold-balanced"]);
+        page.control(settings, "Gravure").await.select_by_value("Gold-balanced").await.unwrap();
+        let grid = grid_shape(&page, settings, 16).await;
+        assert_eq!((grid["slots"].as_u64(), grid["filled"].as_u64(), grid["columns"].as_u64(), grid["rows"].as_u64()),
+                   (Some(25), Some(16), Some(4), Some(5)), "{grid}");
+        assert_ne!(grid["cells"].as_u64(), Some(25), "not a square: {grid}");
+        assert_eq!(grid["sizes"].as_array().map(|s| s.len()), Some(1), "fixed-size cells: {grid}");
+        assert_eq!(grid["text"], "", "no emoji: {grid}");
+        assert_eq!(page.dialog_value(settings, "Pièces nécessaires").await.as_deref(),
+                   Some("2 × Line (I), 2 × L-Shape (L)"));
+        assert_eq!(page.dialog_value(settings, "Attention").await, None);
         let p = phone.clone();
         let saved = blocking(move || p.get_json("api/v1/plugins/slayer-legend/loadout"));
         assert_eq!(saved["loadouts"]["mpw18"]["preset"], "III", "{saved}");

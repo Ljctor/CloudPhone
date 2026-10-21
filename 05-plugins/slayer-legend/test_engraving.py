@@ -71,7 +71,9 @@ class Data(unittest.TestCase):
             with self.subTest(entry["name"]):
                 self.assertIn(entry["source"], SOURCES)
                 self.assertIs(entry["verified_in_game"], False)
-                self.assertIn(entry["colour"], ("green", "blue", "red", None))
+                # Every weapon has one: the wiki's, else the green, blue,
+                # red cycle by id (colour_deduced).
+                self.assertEqual(entry["colour"], ("red", "green", "blue")[entry["id"] % 3])
                 self.assertIn(entry["wiki_check"], CHECKS)
                 if entry["id"] <= 12:
                     self.assertEqual(entry["wiki_check"], "none")
@@ -276,7 +278,6 @@ class Gold(unittest.TestCase):
     def test_placeable(self):
         # While rotation is not confirmed, a variant that turns pieces is
         # listed but not placeable.
-        self.assertFalse(rules.rotation_allowed(TABLE))
         self.assertFalse(rules.rotation_allowed({"rotation": None}))
         self.assertTrue(rules.rotation_allowed({"rotation": True}))
         entry = rules.pattern_for("Ambition", TABLE)
@@ -331,7 +332,22 @@ class Oriented(unittest.TestCase):
     def test_modes(self):
         self.assertEqual([(rules.rotation_allowed(t), rules.per_piece(t), rules.any_orientation(t))
                           for t in ({"rotation": None}, {"rotation": True}, PER_PIECE, TABLE)],
-                         [(False, False, False), (True, False, True), (False, True, True), (False, False, False)])
+                         [(False, False, False), (True, False, True), (False, True, True), (False, True, True)])
+
+    def test_every_grid_has_its_gold_balanced(self):
+        # Per piece, layouts hold pieces in any orientation: every grid
+        # gets a complete gold filling, Vision's with 2 bars (no complete
+        # filling holds Gold-maxed's 3), and every variant is placeable
+        # (the pieces owned are checked by orientation when placing).
+        for entry in engraved():
+            listed = rules.variants(entry, rules.any_orientation(TABLE))
+            self.assertIn("Gold-balanced", listed, entry["name"])
+            self.assertTrue(all(v["placeable"] for v in listed.values()), entry["name"])
+        vision = rules.variants(rules.weapon_by_id(36, TABLE), True)
+        self.assertEqual((vision["Gold-maxed"]["bars"], vision["Gold-balanced"]["bars"]), (3, 2))
+        need = rules.needed(vision["Gold-balanced"], TABLE["shapes"])
+        self.assertEqual(need, {"I:1": 2, "L:1": 1, "L:3": 1})
+        self.assertEqual(rules.feasible(need, {"I:0": 2, "L:1": 1, "L:3": 1}), (False, {"I:1": 2}))
 
     def test_orientation(self):
         self.assertEqual([rules.orientation(SHAPES["O"], r) for r in range(4)], [0, 0, 0, 0])
@@ -551,15 +567,19 @@ class Routes(unittest.TestCase):
             call = self.setup_gateway(data_dir)
             listed = call("GET", "/engravings", Request()).body
             self.assertEqual(len(listed["weapons"]), 89)
-            self.assertIsNone(listed["rotation"])
+            self.assertEqual(listed["rotation"], "per-piece")
             self.assertEqual(listed["weapons"][31]["variants"], ["Balanced", "Crit", "Gold-maxed", "Gold-balanced"])
             one = call("GET", "/engraving", Request(id="32")).body
             self.assertEqual(one["name"], "Ambition")
             self.assertEqual([v["needed"] for v in one["variants"]],
                              [{"J": 1, "L": 3}, {"I": 1, "L": 2, "O": 1}, {"I": 4}, {"I": 4}])
-            self.assertEqual([v["placeable"] for v in one["variants"]], [False, False, True, True])
-            # Counted by shape until pieces are known to keep their orientation.
-            self.assertEqual({v["needed_oriented"] for v in one["variants"]}, {None})
+            self.assertEqual([v["placeable"] for v in one["variants"]], [True, True, True, True])
+            # Per piece, also counted by oriented piece.
+            self.assertEqual([v["needed_oriented"] for v in one["variants"]],
+                             [{"J:3": 1, "L:0": 1, "L:3": 2}, {"I:0": 1, "L:0": 1, "L:3": 1, "O:0": 1},
+                              {"I:0": 4}, {"I:0": 4}])
+            vision = call("GET", "/engraving", Request(id="36")).body
+            self.assertEqual([v["name"] for v in vision["variants"]], ["Atk", "Balanced", "Gold-maxed", "Gold-balanced"])
             # By id only.
             self.assertEqual(call("GET", "/engraving", Request(weapon="Ambition")).status, 404)
             self.assertEqual(call("GET", "/engraving", Request(id="x")).status, 404)

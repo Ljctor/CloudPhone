@@ -14,6 +14,9 @@
 //   { type: 'action', label, button, run(), disabled?() }
 //   { type: 'buttons', label, buttons: [{ label, run(), disabled?() }] }   a row of small buttons
 //   { type: 'status', label, value(), href?() }    href makes the value a link
+//   { type: 'grid', label, rows() }               a grid of fixed-size cells, rows() =>
+//                                                  [[cell, ...], ...], a cell: a CSS colour (filled),
+//                                                  'empty' (outlined) or null (not part of the grid)
 //   { type: 'section', key, label, folded? }       starts a foldable sub-section (folded: default)
 //   { type: 'dialog', label, button?, title?, options: Option[], select? }   a button opening
 //                                                  these options in a dialog over the panel;

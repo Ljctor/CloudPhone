@@ -1,6 +1,6 @@
 // The plugins' options in the options panel: one foldable section per
 // plugin, its options by kind (toggle, number, choice, action, buttons,
-// dialog, status) and the dialog an option opens. What is stored and
+// dialog, status, grid) and the dialog an option opens. What is stored and
 // folded is worked out in pluginSettings.ts.
 import React, { useEffect, useState } from 'react';
 import { tr } from './i18n';
@@ -127,6 +127,29 @@ function pluginOption(context, plugin, option, index) {
             {tr(option.button ?? 'Configurer')}
           </button>
         )}
+      </div>
+    );
+  }
+  if (option.type === 'grid') {
+    // Fixed-size cells, so that the shape does not depend on the font:
+    // null is not part of the grid (transparent), 'empty' an outlined
+    // empty cell, anything else the CSS colour that fills it.
+    const rows = option.rows?.() ?? [];
+    const columns = Math.max(0, ...rows.map((row) => row.length));
+    return (
+      <div key={key} style={styles.infoRow}>
+        <span style={styles.infoLabel}>{tr(option.label ?? '')}</span>
+        <div data-plugin-grid="" role="img" aria-label={tr(option.label ?? '')}
+          style={{ ...styles.pluginGrid, gridTemplateColumns: `repeat(${columns}, ${styles.pluginGridCell.width})` }}>
+          {rows.flatMap((row, r) => Array.from({ length: columns }, (_, c) => {
+            const cell = row[c] ?? null;
+            if (cell === null) return <span key={`${r},${c}`} style={styles.pluginGridCell} />;
+            return (
+              <span key={`${r},${c}`} data-cell={cell === 'empty' ? 'empty' : 'filled'}
+                style={{ ...styles.pluginGridCell, ...(cell === 'empty' ? styles.pluginGridEmpty : { background: cell }) }} />
+            );
+          }))}
+        </div>
       </div>
     );
   }

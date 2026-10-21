@@ -134,7 +134,6 @@ const ENGLISH = {
   'verte': 'green',
   'bleue': 'blue',
   'rouge': 'red',
-  'déduite, non vérifiée': 'deduced, not checked',
   'Navigation': 'Navigation',
   'Enregistrer mes parcours': 'Record my paths',
   'Activé': 'On',

@@ -78,7 +78,7 @@ export default function screenFeature(api) {
         const stage = screen.answer.stage;
         if (!stage.soul_colour) return '–';
         const colour = api.tr(COLOURS[stage.soul_colour] ?? stage.soul_colour);
-        return stage.soul_colour_confirmed ? colour : `${colour} (${api.tr('déduite, non vérifiée')})`;
+        return colour;
       }),
     ],
     dispose: () => {
