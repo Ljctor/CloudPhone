@@ -467,12 +467,17 @@ class Emulator:
         "starting UNTIL": running from that Unix time on, which the fake
         adb writes on `am start`), how long it takes to start, and the
         bounds of the crash dialog's "Close app" button (an input tap
-        inside it closes the dialog: the app is absent again). pidof,
-        dumpsys window, am start, uiautomator dump and input tap answer from
-        them; the picture shows while it runs."""
+        inside it closes the dialog: the app is absent again). With a
+        sign_in_button ([left, top, right, bottom] fractions) the state
+        "signin" is the app asking to sign in (sign_in_picture shown): a tap
+        on that button opens Google's account chooser (state "chooser",
+        listing accounts), whose account rows' bounds are in app-accounts;
+        a tap on one when it lists exactly one: running. pidof, dumpsys
+        window, am start, uiautomator dump and input tap answer from them;
+        the picture shows while it runs."""
         app = self.options.get("app")
         if not app:
-            for name in ("package", "activity", "state", "start", "close"):
+            for name in ("package", "activity", "state", "start", "close", "google", "accounts"):
                 if os.path.exists(self.path(f"bin-state/app-{name}")):
                     os.remove(self.path(f"bin-state/app-{name}"))
             return
@@ -482,6 +487,14 @@ class Emulator:
         write_atomic(self.path("bin-state/app-activity"), app.get("activity", ".MainActivity") + "\n")
         write_atomic(self.path("bin-state/app-start"), f"{int(app.get('start_seconds', 2))}\n")
         write_atomic(self.path("bin-state/app-close"), " ".join(map(str, close)) + "\n")
+        button = app.get("sign_in_button")
+        if button:
+            write_atomic(self.path("bin-state/app-google"), " ".join(
+                str(round(v * (width if i % 2 == 0 else height))) for i, v in enumerate(button)) + "\n")
+        # One row per account, 60 px apart from 40 % of the height.
+        rows = [f"{email} {round(width * 0.1)} {round(height * 0.4) + 60 * i} {round(width * 0.9)} "
+                f"{round(height * 0.4) + 60 * i + 50}" for i, email in enumerate(app.get("accounts", []))]
+        write_atomic(self.path("bin-state/app-accounts"), "".join(row + "\n" for row in rows))
         if "state" in app:
             write_atomic(self.path("bin-state/app-state"), app.pop("state") + "\n")
 
@@ -498,11 +511,13 @@ class Emulator:
 
     def app_picture(self, screen):
         app = self.options.get("app")
-        if not app or not app.get("picture") or self.app_state() != "running":
+        state = self.app_state()
+        rectangles = (app or {}).get("sign_in_picture" if state in ("signin", "chooser") else "picture")
+        if not app or not rectangles or state not in ("running", "signin", "chooser"):
             return None
         import numpy as np
         image = np.zeros((screen.height, screen.width, 3), dtype=np.uint8)
-        for left, top, right, bottom, colour in app["picture"]:
+        for left, top, right, bottom, colour in rectangles:
             image[int(top * screen.height):int(bottom * screen.height),
                   int(left * screen.width):int(right * screen.width)] = colour
         return image

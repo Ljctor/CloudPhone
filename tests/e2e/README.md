@@ -67,8 +67,11 @@ in a fresh directory per test:
   `picture`: rectangles on black shown while it runs): `pidof`, `am start`
   (running after its start time), the focus in `dumpsys window`, Android's
   crash dialog there and in `uiautomator dump`, closed by an `input tap` on
-  its "Close app" button. Generic, so that a plugin's watchdog can be tested
-  without the real app;
+  its "Close app" button; with `sign_in_button` (fractions), state `signin`
+  shows `sign_in_picture` and a tap on that button opens Google's account
+  chooser (`dumpsys window`, `uiautomator dump`: its `accounts`), where a
+  tap on the one account listed runs the app. Generic, so that a plugin's
+  watchdog can be tested without the real app;
 - the host figures (`/proc/loadavg`, `/proc/meminfo`, the unit's cgroup):
   `gateway_shim.py` starts the gateway with `open()` redirected for those
   paths only. The gateway itself is not modified;
@@ -117,7 +120,7 @@ configured count.
 | `tests/input.rs` | touches and keys over HTTP reach Android at the right place |
 | `tests/lifecycle.rs` | crash, restart, discovery file replaced, gateway restarts |
 | `tests/plugins.rs` | plugin host: list, served scripts, routes, token checks, screenshot (shared, counted in the state details), analysis off the event loop and adb for plugins, a plugin's state kept across gateway restarts, Slayer Legend's timed modes (30 minutes by default, refused until configured) and its shared lease (the token for POST and DELETE, released by its holder only), a plugin for another plugin API refused, broken plugins skipped |
-| `tests/watchdog.rs` | Slayer Legend's mpw18 watchdog at its real pace on the fake's app: a crash closed and relaunched (MAIN/LAUNCHER, never `-S`) and farming again within a minute, timings printed; a game not responding gets Wait once, then an alert, never a kill; a gateway start observes before relaunching; free play suspends it; another lease holder defers the relaunch; the page's row |
+| `tests/watchdog.rs` | Slayer Legend's mpw18 watchdog at its real pace on the fake's app: a crash closed and relaunched (MAIN/LAUNCHER, never `-S`) and farming again within a minute, timings printed; a game not responding gets Wait once, then an alert, never a kill; the sign-in screen gets "Sign in with Google" and the one account, a chooser with two accounts is one alert and no tap; a gateway start observes before relaunching; free play suspends it; another lease holder defers the relaunch; the page's row |
 | `tests/contract.rs` | what the emulator says (status, JSEP shapes, data channels, codecs): on the fake by default, on a deployed instance with `--features smoke` |
 | `tests/ui_page.rs` | Firefox: video plays and fits, muted, connected only with a frame, toolbar labels, landmarks, LED, metrics block, ↻ replaces only the video session, signalling back after a gateway restart or a long outage, English browser |
 | `tests/ui_banners.rs` | every status the page shows, covering or closable, with the LED colour; priority; closing; English |

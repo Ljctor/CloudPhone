@@ -8,7 +8,11 @@
 # (running after its start time), its crash dialog in `dumpsys window` and
 # `uiautomator dump`, closed by an `input tap` on its "Close app" button,
 # and its "not responding" dialog (state anr): "Wait" (the same place)
-# leaves it there, "Close app" below it kills the app.
+# leaves it there, "Close app" below it kills the app. State signin: the
+# app asks to sign in; an `input tap` on its button (app-google) opens
+# Google's account chooser (state chooser: its window in `dumpsys window`,
+# its accounts, app-accounts, in `uiautomator dump`), where a tap on the
+# one account listed signs in (running).
 state=$FAKE_ROOT/bin-state
 printf '%s\n' "$*" >>"$state/adb.log"
 if [ -e "$state/adb-fail" ]; then
@@ -29,6 +33,12 @@ case "$*" in
     elif [ "$app" = anr ]; then
       set -- $(echo "$*" | sed 's/.*input tap //') $(cat "$state/app-close")
       [ "$1" -ge "$3" ] && [ "$1" -le "$5" ] && [ "$2" -gt "$6" ] && [ "$2" -le $(($6 + $6 - $4)) ] && echo absent >"$state/app-state"
+    elif [ "$app" = signin ] && [ -s "$state/app-google" ]; then
+      set -- $(echo "$*" | sed 's/.*input tap //') $(cat "$state/app-google")
+      [ "$1" -ge "$3" ] && [ "$1" -le "$5" ] && [ "$2" -ge "$4" ] && [ "$2" -le "$6" ] && echo chooser >"$state/app-state"
+    elif [ "$app" = chooser ] && [ "$(wc -l <"$state/app-accounts")" -eq 1 ]; then
+      set -- $(echo "$*" | sed 's/.*input tap //') $(cut -d' ' -f2- "$state/app-accounts")
+      [ "$1" -ge "$3" ] && [ "$1" -le "$5" ] && [ "$2" -ge "$4" ] && [ "$2" -le "$6" ] && echo running >"$state/app-state"
     fi
     exit 0 ;;
   *"am start"*)
@@ -39,7 +49,7 @@ case "$*" in
     esac
     exit 0 ;;
   *"pidof"*)
-    if [ "$app" = running ] || [ "$app" = anr ]; then
+    if [ "$app" = running ] || [ "$app" = anr ] || [ "$app" = signin ] || [ "$app" = chooser ]; then
       case "$*" in *" $package") echo 4242; exit 0 ;; esac
     fi
     exit 1 ;;
@@ -58,13 +68,21 @@ case "$*" in
       printf '%s' "<node index=\"1\" text=\"Wait\" resource-id=\"android:id/aerr_wait\" bounds=\"[$1,$2][$3,$4]\" />"
       printf '%s' "<node index=\"2\" text=\"Close app\" resource-id=\"android:id/aerr_close\" bounds=\"[$1,$4][$3,$(($4 + $4 - $2))]\" />"
       printf '%s\n' "</hierarchy>"
+    elif [ "$app" = chooser ]; then
+      printf '%s' "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><hierarchy rotation=\"0\">"
+      printf '%s' "<node index=\"0\" text=\"Choose an account\" package=\"com.google.android.gms\" bounds=\"[40,300][440,340]\" />"
+      while read -r email left top right bottom; do
+        printf '%s' "<node index=\"1\" text=\"$email\" package=\"com.google.android.gms\" bounds=\"[$left,$top][$right,$bottom]\" />"
+      done <"$state/app-accounts"
+      printf '%s\n' "<node index=\"2\" text=\"Add another account\" package=\"com.google.android.gms\" bounds=\"[40,900][440,950]\" /></hierarchy>"
     else
       printf '%s\n' "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><hierarchy rotation=\"0\"></hierarchy>"
     fi
     echo "UI hierchary dumped to: /dev/tty" ;;
   *"dumpsys window"*)
     case "$app" in
-      running) echo "  mCurrentFocus=Window{1 u0 $package/$(cat "$state/app-activity")}" ;;
+      running|signin) echo "  mCurrentFocus=Window{1 u0 $package/$(cat "$state/app-activity")}" ;;
+      chooser) echo "  mCurrentFocus=Window{4 u0 com.google.android.gms/com.google.android.gms.common.account.AccountPickerActivity}" ;;
       crashed) echo "  mCurrentFocus=Window{2 u0 Application Error: $package}" ;;
       anr) echo "  mCurrentFocus=Window{3 u0 Application Not Responding: $package}" ;;
       *) echo "  mCurrentFocus=Window{0 u0 com.android.launcher3/.Launcher}" ;;

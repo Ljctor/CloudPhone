@@ -187,6 +187,57 @@ fn free_play_suspends_it_and_another_holder_of_the_lease_defers_the_relaunch() {
     never_killed(&cp);
 }
 
+/// The game asking to sign in (its two buttons, as the plugin measured
+/// them), with Google's chooser listing `accounts`.
+fn signing_in(accounts: &[&str]) -> CloudPhone {
+    let mut app = game("signin");
+    app["sign_in_button"] = json!([0.245, 0.722, 0.755, 0.770]);
+    app["accounts"] = json!(accounts);
+    app["sign_in_picture"] = json!([
+        [0.0, 0.0, 1.0, 1.0, [90, 60, 35]],
+        [0.245, 0.722, 0.755, 0.770, [235, 235, 235]], [0.285, 0.738, 0.325, 0.756, [65, 131, 239]],
+        [0.37, 0.742, 0.66, 0.752, [117, 117, 116]],
+        [0.245, 0.788, 0.755, 0.836, [235, 235, 235]], [0.28, 0.802, 0.32, 0.822, [0, 0, 0]],
+        [0.37, 0.808, 0.66, 0.818, [0, 0, 0]]]);
+    CloudPhone::start_with(json!({"plugins": [SLAYER_LEGEND], "options": {"app": app}}))
+}
+
+fn taps(cp: &CloudPhone) -> Vec<(i64, i64)> {
+    adb(cp).iter().filter_map(|c| c.split("shell input tap ").nth(1).map(str::to_string))
+        .map(|xy| { let v: Vec<i64> = xy.split(' ').map(|n| n.parse().unwrap()).collect(); (v[0], v[1]) }).collect()
+}
+
+#[test]
+fn the_sign_in_screen_gets_google_then_the_one_account_and_farms_again() {
+    let cp = signing_in(&["player@example.com"]);
+    // Observed, alerted, then the relaunch signs in.
+    wait_launch_done(&cp, Duration::from_secs(120));
+    wait_ok(&cp, Duration::from_secs(40));
+    let taps = taps(&cp);
+    // "Sign in with Google" (72–77 % down a 1040 px screen), then the account's row (40 % down).
+    assert_eq!(taps.len(), 2, "{taps:?}");
+    assert!((751..=800).contains(&taps[0].1), "Google's button: {taps:?}");
+    assert!((416..=466).contains(&taps[1].1), "the account: {taps:?}");
+    assert!(!taps.iter().any(|&(_, y)| (819..=870).contains(&y)), "never Apple's button: {taps:?}");
+    assert!(has_record(&cp, "warning", "Farming mpw18 : le jeu demande de se reconnecter (Sign in with Google)", true),
+            "{:#?}", plugin_records(&cp));
+    never_killed(&cp);
+}
+
+#[test]
+fn a_chooser_with_two_accounts_is_for_the_user_and_never_tapped() {
+    let cp = signing_in(&["player@example.com", "other@example.com"]);
+    wait_for("the launch to stop", Duration::from_secs(120), || {
+        let launch = cp.try_get_json("api/v1/plugins/slayer-legend/launch")?;
+        (launch["state"] == "blocked").then_some(launch)
+    });
+    let launch = cp.get_json("api/v1/plugins/slayer-legend/launch");
+    assert_eq!(launch["message"], "reconnexion Google : 2 comptes proposés au lieu d’un, à faire à la main", "{launch}");
+    let taps = taps(&cp);
+    assert_eq!(taps.len(), 1, "Google's button only: {taps:?}");
+    never_killed(&cp);
+}
+
 #[test]
 fn the_page_shows_the_watchdogs_look_and_an_outside_lease() {
     let cp = with_game("running");
