@@ -176,7 +176,7 @@ class Switch(unittest.TestCase):
         self.assertEqual(state["state"], "farming", state["message"])
         self.assertEqual(h.farmed[0][1], "mpw4")
         line = next(line for line in self.lines if line.startswith("switch "))
-        self.assertRegex(line, r"^switch mpw18→mpw4 in \d+ s \(stage \d+ s, preset \d+ s, auto \d+ s\), done$")
+        self.assertRegex(line, r"^switch mpw18→mpw4 in \d+ s \(stage \d+ s, preset \d+ s, auto \d+ s, soul_weapon \d+ s\), done$")
         self.assertEqual(game.alerts, [], "within budget: no alert")
 
     def test_the_timers_end_switches_back_on_time_without_a_watchdog(self):
