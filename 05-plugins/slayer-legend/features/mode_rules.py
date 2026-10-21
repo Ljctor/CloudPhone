@@ -167,3 +167,12 @@ def retry_after(failures, elapsed):
     trigger; None: no time left in SWITCH_BUDGET, it stays failed."""
     delay = min(RETRY_FIRST * 2 ** (failures - 1), RETRY_MOST)
     return delay if elapsed + delay < SWITCH_BUDGET else None
+
+
+def ready_text(name, seconds, applied=False, alert=None):
+    """The one notification once a farming mode is set up: the seconds
+    since it was chosen (applied: since its loadout changed), the lease's
+    wait included; alert: the over-budget one, after it."""
+    text = (f"Configuration {name} appliquée en {round(seconds)} s" if applied
+            else f"Farming {name} prêt en {round(seconds)} s")
+    return f"{text} ; {alert}" if alert else text

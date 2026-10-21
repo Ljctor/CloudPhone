@@ -4,7 +4,8 @@
 // it started. Its state is asked every 10 s. Options: the "Mode et
 // farming" section. Overlay hook, called by page_gold.js while the
 // overlay applies: overlay(), the mode's lines on the game, top left (the
-// time left of a timed mode under its name). The mpw18 and mpw4 dialogs
+// time left of a timed mode under its name, and "MISE EN PLACE..." under
+// it while the gateway sets the mode up; asked every 2 s then). The mpw18 and mpw4 dialogs
 // hold that mode's loadout (page_engraving.js). The État row ends with
 // the watchdog's look at the selected mode (page_watchdog.js).
 import loadout from './page_engraving.js';
@@ -82,7 +83,7 @@ export default function modeFeature(api, { known, watchdog }) {
     remember(await api.get('/mode').catch(() => null), asked);
     api.refresh();
     window.clearTimeout(farm.timer);
-    farm.timer = window.setTimeout(askMode, 10000);
+    farm.timer = window.setTimeout(askMode, farm.answer?.setup ? 2000 : 10000);
   };
   const sendMode = async () => {
     farm.sending += 1;
@@ -131,6 +132,7 @@ export default function modeFeature(api, { known, watchdog }) {
       const seconds = Math.max(0, Math.round((farm.answer?.until ?? 0) - Date.now() / 1000));
       return [
         api.tr(MODE_NAMES[current] ?? current).toUpperCase(),
+        ...(farm.answer?.setup ? [api.tr('MISE EN PLACE...')] : []),
         `(${(current === 'mpw18' || !farm.answer?.until ? api.tr('défaut') : clock(seconds)).toUpperCase()})`,
       ];
     },

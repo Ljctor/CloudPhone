@@ -2,7 +2,9 @@
 farming mpw4, free play or the Closed Mine; back to mpw18 when the timer
 ends (the mine ends its last entry first).
 
-GET  /mode         {mode, until, stage18, stage4, highest, configured, state, message, gold, mine}
+GET  /mode         {mode, until, stage18, stage4, highest, configured, state, message, setup, gold, mine}
+                   setup: true while the mode is being set up (its switch,
+                   waiting for the lease or tried again), for the overlay
 POST /mode         {mode, until, stage18, stage4, highest, floor, area}: a number
                    absent or null keeps its value; until absent keeps the
                    timer, null clears it (no time limit)
@@ -16,7 +18,10 @@ starts at once on its trigger (POST /mode, or the timer's end: the watch
 wakes on it), within rules.SWITCH_BUDGET seconds; a switch that stops is
 tried again on its own with a backoff (rules.retry_after) while within
 that budget, and only then alerts once; a mode left failed is farming
-again once the watchdog sees it farm (api confirm); each switch is one log
+again once the watchdog sees it farm (api confirm); once set up, one
+notification says how long it took since the mode was chosen (« Farming
+mpw18 prêt en 34 s »; « Configuration mpw18 appliquée en 21 s » for a
+change of the running mode's loadout); each switch is one log
 line with its steps' seconds, and one alert naming the slowest step when
 it took longer. While
 farming mpw4 it looks for the
@@ -62,6 +67,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
     def state():
         answer = {key: status[key] for key in ("mode", "until", "highest", "configured", "state", "message")}
         answer.update(stages())
+        answer["setup"] = status["state"] in ("moving", "waiting")
         answer["gold"] = status["scroll"]["gold"] if status["mode"] == "mpw4" else None
         answer["mine"] = mines["state"]()
         return answer
@@ -78,12 +84,15 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
             extra={"source": "slayer-legend", "notify": bool(alert)})
         return alert
 
-    async def set_stage(number, mpw):
+    async def set_stage(number, mpw, applied=False):
         """Brings the game to farming that stage with its loadout's preset,
         AUTO on. True once there; else one alert naming the step. While the
         shared lease cannot be had (the user played in the last minute,
         another holder), it waits for its next look (WATCH_EVERY), at most
-        rules.LEASE_WAIT: then one alert, for the user."""
+        rules.LEASE_WAIT: then one alert, for the user. Set up: one
+        notification with the seconds since the mode was chosen (applied:
+        since its loadout changed), naming the slowest step when over
+        rules.SWITCH_BUDGET."""
         name = f"mpw{mpw}"
         preset = loadouts["loadout"](name).get("preset")
         report("moving", f"Passage au stage {number} ({name})")
@@ -114,8 +123,8 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
             report("moving", f"Passage au stage {number} ({name}) : nouvel essai dans {delay} s ({answer['text']})"[:200])
             await ports.clock.sleep(delay)
         alert = switched(answer, since, waited)
-        if alert and answer["result"] == "done":
-            await ports.notify(alert)
+        if answer["result"] == "done":
+            await ports.notify(rules.ready_text(name, ports.clock.monotonic() - since, applied, alert))
         if answer["result"] == "failed":
             text = f"Passage au stage {number} ({name}) arrêté : {answer['text']}"
             report("failed", text[:200])

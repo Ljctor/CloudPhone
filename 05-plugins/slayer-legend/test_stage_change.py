@@ -521,7 +521,7 @@ class Mode(unittest.TestCase):
         calls, state, alerts = self.enter([done()])
         self.assertEqual(calls, [(931, "III", "mpw4")])
         self.assertEqual(state["state"], "farming", state["message"])
-        self.assertEqual(alerts, [])
+        self.assertEqual(alerts, ["Farming mpw4 prêt en 0 s"])
 
     def test_failure_is_tried_again_within_the_budget_then_one_alert(self):
         failed = {"result": "failed", "text": "ouverture de Select Region"}
@@ -537,7 +537,7 @@ class Mode(unittest.TestCase):
         calls, state, alerts = self.enter([failed, done()])
         self.assertEqual(len(calls), 2)
         self.assertEqual(state["state"], "farming", state["message"])
-        self.assertEqual(alerts, [])
+        self.assertEqual(alerts, ["Farming mpw4 prêt en 2 s"], "no failure alert, the retry's time in")
 
     def test_retry_backoff(self):
         self.assertEqual([mode_rules.retry_after(n, 0) for n in (1, 2, 3, 4, 5)], [2, 4, 8, 16, 16])
@@ -559,7 +559,7 @@ class Mode(unittest.TestCase):
         calls, state, alerts = self.enter(["l’utilisateur joue", done()])
         self.assertEqual(len(calls), 2)
         self.assertEqual(state["state"], "farming")
-        self.assertEqual(alerts, [])
+        self.assertEqual(alerts, ["Farming mpw4 prêt en 2 s"])
 
     def test_the_lease_waited_for_30_min_at_most_then_one_alert(self):
         held = 1 + mode_rules.LEASE_WAIT // mode_rules.BUSY_RETRY

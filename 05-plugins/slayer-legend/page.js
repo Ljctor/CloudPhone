@@ -41,6 +41,7 @@ const ENGLISH = {
   'Gold': 'Gold',
   'Gold par seconde': 'Gold per second',
   'Overlay gold/s': 'Gold/s overlay',
+  'MISE EN PLACE...': 'SETTING UP...',
   'Affiché': 'Shown',
   'Masqué': 'Hidden',
   'pas encore mesuré': 'not measured yet',

@@ -177,7 +177,8 @@ class Switch(unittest.TestCase):
         self.assertEqual(h.farmed[0][1], "mpw4")
         line = next(line for line in self.lines if line.startswith("switch "))
         self.assertRegex(line, r"^switch mpw18→mpw4 in \d+ s \(stage \d+ s, preset \d+ s, auto \d+ s, soul_weapon \d+ s\), done$")
-        self.assertEqual(game.alerts, [], "within budget: no alert")
+        self.assertEqual(len(game.alerts), 1, game.alerts)
+        self.assertRegex(game.alerts[0], r"^Farming mpw4 prêt en \d+ s$", "within budget: the time alone")
 
     def test_the_timers_end_switches_back_on_time_without_a_watchdog(self):
         game = SlowGame(stage=905, preset="IV")
@@ -213,8 +214,8 @@ class Switch(unittest.TestCase):
         self.assertEqual(state["state"], "farming", "it still completes")
         self.assertTrue(there(game, 925, "II"))
         self.assertEqual(len(game.alerts), 1, game.alerts)
-        self.assertRegex(game.alerts[0], r"^Passage mpw18 → mpw4 en \d+ s \(plus de 60 s\) : étape la plus lente : "
-                                         r"changement de stage \(\d+ s\)$")
+        self.assertRegex(game.alerts[0], r"^Farming mpw4 prêt en \d+ s ; Passage mpw18 → mpw4 en \d+ s \(plus de 60 s\) : "
+                                         r"étape la plus lente : changement de stage \(\d+ s\)$")
 
     def test_the_users_minute_is_waited_apart_and_never_counted(self):
         # The user played just before: the lease is refused for 40 s.
@@ -233,8 +234,29 @@ class Switch(unittest.TestCase):
         line = next(line for line in self.lines if line.startswith("switch "))
         self.assertRegex(line, r"^switch mpw18→mpw4 in (\d+) s \(.*\) \(\+4\d s waiting for the lease\), done$")
         self.assertLessEqual(int(line.split(" in ")[1].split(" ")[0]), mode_rules.SWITCH_BUDGET)
-        self.assertEqual(game.alerts, [], "the wait is the user's: no alert")
+        # The time since the choice, the user's wait included; no over-budget alert.
+        self.assertEqual(len(game.alerts), 1, game.alerts)
+        self.assertRegex(game.alerts[0], r"^Farming mpw4 prêt en \d+ s$")
+        self.assertGreaterEqual(int(game.alerts[0].split(" en ")[1].split(" ")[0]), 40)
         self.assertTrue(there(game, 925, "II"))
+
+    def test_while_it_sets_up_the_state_says_so(self):
+        game = SlowGame(stage=905, preset="IV")
+        h = harness(game)
+        seen = []
+
+        async def go():
+            await h.post({"mode": "mpw4", "stage4": 925})
+            await h.clock.until(lambda: game.now >= 3, 600)
+            seen.append((await h.state())[1]["setup"])
+            await h.clock.until(lambda: any(line.startswith("switch ") for line in self.lines), 600)
+            seen.append((await h.state())[1]["setup"])
+        asyncio.run(go())
+        self.assertEqual(seen, [True, False])
+
+    def test_the_ready_text(self):
+        self.assertEqual(mode_rules.ready_text("mpw18", 34.4), "Farming mpw18 prêt en 34 s")
+        self.assertEqual(mode_rules.ready_text("mpw18", 21.0, applied=True), "Configuration mpw18 appliquée en 21 s")
 
     def test_the_budget_report(self):
         line, alert = mode_rules.switch_report("mpw4", "mpw18", 38.2, {"stage": 24.0, "preset": 4.4, "auto": 6.0})
