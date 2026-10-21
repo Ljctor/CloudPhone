@@ -441,3 +441,48 @@ fn slayer_legends_backoff_wait_shows_in_the_state_row_with_retry() {
             .any(|r| r["text"] == "Réessayer maintenant : relance du jeu"), "{records}");
     });
 }
+
+/// The summaries of the Slayer Legend plugin's sections, in order, with
+/// whether each is open.
+async fn slayer_sections(page: &Page) -> serde_json::Value {
+    page.js("const p = [...document.querySelectorAll('[role=dialog] details')].find(d => d.querySelector(':scope > summary').innerText.trim() === 'Slayer Legend'); \
+             return p ? [...p.querySelectorAll(':scope > details')].map(d => [d.querySelector(':scope > summary').innerText.trim(), d.open]) : null",
+        vec![]).await
+}
+
+const OPEN_DEBUG: &str = "[...document.querySelectorAll('[role=dialog] summary')].find(s => s.innerText.trim() === 'Debug & développement').click()";
+
+#[test]
+fn slayer_legends_debug_section_is_last_folded_and_holds_the_developer_rows_and_its_log() {
+    let cp = CloudPhone::start_with(json!({"plugins": [SLAYER_LEGEND]}));
+    let phone = cp.clone();
+    browser_test(&cp, Options::without_video(), |page| async move {
+        page.open_options().await;
+        page.wait_js("the plugin's options", Duration::from_secs(15),
+            "const d = document.querySelector('[role=dialog]'); return !!d && d.innerText.includes('Mode et farming')", vec![]).await;
+        let sections = slayer_sections(&page).await;
+        let list = sections.as_array().unwrap_or_else(|| panic!("{sections}"));
+        assert_eq!(list.last(), Some(&json!(["Debug & développement", false])), "last and folded: {sections}");
+        let lines = page.dialog_lines(O).await;
+        for hidden in ["Écran détecté", "Enregistrer mes parcours", "Parcours enregistrés", "Bail", "Surveillance",
+                       "Détection du compteur", "Navigation"] {
+            assert!(!lines.iter().any(|l| l == hidden), "{hidden:?} not shown while folded: {lines:#?}");
+        }
+        // A record of the plugin's: its lease taken.
+        let p = phone.clone();
+        let lease = json!({"holder": "agent", "reason": "réglages", "seconds": 600});
+        assert_eq!(blocking(move || p.post_json("api/v1/plugins/slayer-legend/lease", &lease).status().as_u16()), 200);
+        page.js(OPEN_DEBUG, vec![]).await;
+        page.wait_dialog_value(O, "Bail", Duration::from_secs(25), |v| v == "agent (réglages)").await;
+        let lines = page.dialog_lines(O).await;
+        for shown in ["Écran détecté", "Enregistrer mes parcours", "Parcours enregistrés", "Surveillance", "Niveau"] {
+            assert!(lines.iter().any(|l| l == shown), "{shown:?} in the debug section: {lines:#?}");
+        }
+        let log = page.wait_js("the plugin's record in its log", Duration::from_secs(20),
+            "const p = [...document.querySelectorAll('[role=dialog] details')].find(d => d.querySelector(':scope > summary').innerText.trim() === 'Debug & développement'); \
+             const r = p ? [...p.querySelectorAll('[data-level]')].map(e => e.innerText) : []; \
+             return r.some(t => t.includes('lease taken by agent')) ? r : null", vec![]).await;
+        assert!(!log.as_array().unwrap().iter().any(|t| t.as_str().unwrap().contains("Le gateway a démarré")),
+            "only the plugin's records: {log}");
+    });
+}

@@ -1,12 +1,9 @@
 // The watchdog's part of the mode's État row (page_mode.js): what the
 // gateway's watchdog saw at its last look on the selected mode (a French
-// template with its parameters, translated with tr), the shared lease's
-// holder while someone other than the plugin holds it, and « Réessayer »
-// while a repair backs off. No option rows of its own. Asked only while
-// the panel shows the row, at most every 15 s (the watchdog's own pace).
-
-// The plugin's own holders of the lease (not shown).
-const OWN = ['watchdog', 'stage_change', 'mine', 'launch'];
+// template with its parameters, translated with tr) and « Réessayer »
+// while a repair backs off. No option rows of its own; debug: the shared
+// lease's holder and the watchdog's counters. Asked only while the panel
+// shows them, at most every 15 s (the watchdog's own pace).
 
 export default function watchdog(api) {
   const watched = { answer: null, at: 0, busy: false };
@@ -21,6 +18,27 @@ export default function watchdog(api) {
 
   return {
     options: [],
+    debug: [
+      {
+        type: 'status', label: 'Bail',
+        value: () => {
+          watch();
+          const held = watched.answer?.lease;
+          if (!watched.answer) return '…';
+          return held ? api.tr('{holder} ({reason})', held) : api.tr('libre');
+        },
+      },
+      {
+        type: 'status', label: 'Surveillance',
+        value: () => {
+          watch();
+          const counters = watched.answer?.counters;
+          if (!counters) return '…';
+          return api.tr('{looks} vérifications, {bad} échecs d’affilée, {alerts} alertes',
+            { looks: counters.looks, bad: counters.bad_in_a_row, alerts: counters.alerts });
+        },
+      },
+    ],
     // The text after the mode's own (" · OK"), '' when the watchdog has
     // nothing to say for mode: free play, a mode's entry, another mode
     // than its last look's.
@@ -29,10 +47,7 @@ export default function watchdog(api) {
       const answer = watched.answer;
       if (!answer?.line || answer.mode !== mode || mode === 'free') return '';
       if (answer.status?.template === 'En pause : entrée dans le mode {mode}') return '';
-      const parts = [api.tr(answer.line.template, answer.line.params)];
-      const held = answer.lease;
-      if (held && !OWN.includes(held.holder)) parts.push(api.tr('bail : {holder} ({reason})', held));
-      return ` · ${parts.join(' · ')}`;
+      return ` · ${api.tr(answer.line.template, answer.line.params)}`;
     },
     // « Réessayer » while a repair backs off: each waiting kind starts over.
     retry: (mode) => {

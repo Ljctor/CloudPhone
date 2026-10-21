@@ -1,10 +1,11 @@
 // The plugins' options in the options panel: one foldable section per
 // plugin, its options by kind (toggle, number, choice, action, buttons,
-// dialog, status, grid) and the dialog an option opens. What is stored and
+// dialog, status, grid, log) and the dialog an option opens. What is stored and
 // folded is worked out in pluginSettings.ts.
 import React, { useEffect, useState } from 'react';
 import { tr } from './i18n';
 import { infoRow } from './infoRows';
+import { LogFilter, LogList, serverRecords } from './logs';
 import { styles } from './styles';
 import {
   foldedChange, optionParts, pluginOptionChange, resolved, sectionFoldId, sectionFolded,
@@ -151,6 +152,17 @@ function pluginOption(context, plugin, option, index) {
           }))}
         </div>
       </div>
+    );
+  }
+  if (option.type === 'log') {
+    // The server's records that match() keeps (all without it), with the
+    // level filter shared with the other logs.
+    const entries = serverRecords().filter((record) => option.match?.(record) ?? true);
+    return (
+      <React.Fragment key={key}>
+        <LogFilter value={settings.logFilter} onChange={(logFilter) => updateSettings({ logFilter })} />
+        <LogList entries={entries} filter={settings.logFilter} rowStyle={styles.infoRow} labelStyle={styles.infoLabel} />
+      </React.Fragment>
     );
   }
   if (option.type === 'status') {

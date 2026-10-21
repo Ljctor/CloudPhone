@@ -2,7 +2,7 @@
 // records the screens before and after it (screen name and a small grey
 // thumbnail, never a screenshot), building a graph of the game's screens
 // (never replayed). On unless the user turned it off. Fire and forget: a
-// lost tap is only a missing edge. Options: the "Navigation" section.
+// lost tap is only a missing edge. Debug: its switch and counts.
 
 export default function trace(api) {
   const tracing = () => api.setting('traceTaps') !== 'off';
@@ -21,8 +21,8 @@ export default function trace(api) {
   };
 
   return {
-    options: [
-      { type: 'section', key: 'navigation', label: 'Navigation', folded: true },
+    options: [],
+    debug: [
       {
         type: 'choice', key: 'traceTaps', label: 'Enregistrer mes parcours',
         choices: [{ value: 'on', label: 'Activé' }, { value: 'off', label: 'Désactivé' }],

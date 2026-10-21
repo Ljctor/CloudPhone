@@ -2,7 +2,8 @@
 // plugins.ts in part 04 for the API). This file only assembles the
 // features, one module per feature beside it, each a function of the page
 // API returning its options, its onSetting and dispose hooks and, for the
-// mode, its overlay hook (its lines top left):
+// mode, its overlay hook (its lines top left), and, for the developer, its
+// debug rows (the plugin's last section, « Debug & développement »):
 // - page_screen.js: the game's screen and stage ("Jeu").
 // - page_launch.js: "Lancer le jeu": the gateway starts the game and
 //   brings it to the battle screen (TAP TO START, then Confirm).
@@ -12,10 +13,10 @@
 //   (gold_text.js); it calls the overlay hooks while the overlay applies.
 // - page_trace.js: "Enregistrer mes parcours" (on by default): each tap
 //   the user makes on the game is sent to the gateway, which records the
-//   screen before and after it (never replayed).
+//   screen before and after it (never replayed). In the debug section.
 // - page_watchdog.js: the gateway's watchdog at its last look on the
-//   selected mode, the shared lease's outside holder and « Réessayer »,
-//   at the end of the mode's État row (no rows of its own).
+//   selected mode and « Réessayer », at the end of the mode's État row;
+//   the lease and its counters in the debug section.
 // - page_counters.js: the emerald and diamond counters, on this screen
 //   only (nothing is sent to Android), cut at their comma or rewritten
 //   (counter_rewrite.js, with emerald_mask.js and emerald_font.js).
@@ -89,7 +90,6 @@ const ENGLISH = {
   'Inchangé': 'Unchanged',
   'Coupé à la virgule': 'Cut at the comma',
   'Réécrit': 'Rewritten',
-  'Détection du compteur': 'Counter detection',
   'Nombre affiché (vide : après la virgule)': 'Number shown (empty: after the comma)',
   'détecté': 'detected',
   'non détecté': 'not detected',
@@ -134,7 +134,6 @@ const ENGLISH = {
   'verte': 'green',
   'bleue': 'blue',
   'rouge': 'red',
-  'Navigation': 'Navigation',
   'Enregistrer mes parcours': 'Record my paths',
   'Activé': 'On',
   'Désactivé': 'Off',
@@ -148,7 +147,13 @@ const ENGLISH = {
   'Jeu libre : rien n’est surveillé': 'Free play: nothing is watched',
   'En pause : entrée dans le mode {mode}': 'Paused: entering {mode}',
   '{repair} dans {minutes} min': '{repair} in {minutes} min',
-  'bail : {holder} ({reason})': 'lease: {holder} ({reason})',
+  '{holder} ({reason})': '{holder} ({reason})',
+  'libre': 'free',
+  'Surveillance': 'Watchdog',
+  '{looks} vérifications, {bad} échecs d’affilée, {alerts} alertes': '{looks} looks, {bad} bad in a row, {alerts} alerts',
+  'Debug & développement': 'Debug & development',
+  'Détection des émeraudes': 'Emerald detection',
+  'Détection des diamants': 'Diamond detection',
   'Réessayer': 'Retry',
   'le jeu n’est plus au premier plan (plantage ?)': 'the game is no longer in front (a crash?)',
   'En pause : l’utilisateur joue': 'Paused: the user is playing',
@@ -223,10 +228,16 @@ export default function activate(api) {
   const goldPart = gold(api, { overlay: [modePart.overlay] });
   const tracePart = trace(api);
   const parts = [counterPart, launchPart, screenPart, modePart, goldPart, tracePart, watchdogPart];
-  // ...and shown in this one.
+  // ...and shown in this one, then « Debug & développement », last and
+  // folded: the parts' developer rows and the plugin's log records.
   const shown = [screenPart, launchPart, modePart, watchdogPart, goldPart, tracePart, counterPart];
+  const debug = [
+    { type: 'section', key: 'debug', label: 'Debug & développement', folded: true },
+    ...[screenPart, counterPart, watchdogPart, tracePart].flatMap((part) => part.debug ?? []),
+    { type: 'log', match: (record) => record.source === api.id || record.text.startsWith('Slayer Legend') },
+  ];
   return {
-    options: shown.flatMap((part) => part.options),
+    options: [...shown.flatMap((part) => part.options), ...debug],
     onSetting: (key, value) => {
       for (const part of parts) part.onSetting?.(key, value);
     },

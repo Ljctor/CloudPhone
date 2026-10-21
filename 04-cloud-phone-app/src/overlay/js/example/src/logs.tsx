@@ -72,6 +72,11 @@ export function useServerLog(gatewayUrl) {
   }, [gatewayUrl]);
 }
 
+// The server's records kept so far, newest first (as the lists show them).
+export function serverRecords() {
+  return SERVER_LOG;
+}
+
 export function useLog(enabled) {
   const [, setCount] = useState(0);
   useEffect(() => {

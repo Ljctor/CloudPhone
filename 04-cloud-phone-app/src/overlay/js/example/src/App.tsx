@@ -48,7 +48,8 @@ function App() {
   const server = useServerState(gatewayUrl, serverTab);
   const [emulatorSettings, refreshEmulatorSettings] = useEmulatorSettings(gatewayUrl, serverTab);
   useServerLog(gatewayUrl);
-  const logs = useLog(infoOpen);
+  // The logs show in Information, and plugins' log options in Options.
+  const logs = useLog(infoOpen || optionsOpen);
   const [toasts, dismissToast] = useToasts();
   const alerts = useAlerts(gatewayUrl, optionsOpen);
   const pluginLayer = useRef(null);

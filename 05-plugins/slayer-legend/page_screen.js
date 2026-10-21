@@ -1,7 +1,8 @@
 // The game's screen and the stage it farms, asked to the gateway only
 // while the options panel shows them: each render asks again once the
-// last answer is 3 s old. Options: the "Jeu" section's screen and stage
-// rows. known(): the last stage number read, for the mode's stage lists.
+// last answer is 3 s old. Options: the "Jeu" section's stage rows; debug:
+// the detected screen. known(): the last stage number read, for the
+// mode's stage lists.
 
 const SCREENS = {
   title: 'Écran titre', save: 'Choix de la sauvegarde', battle: 'Combat',
@@ -50,17 +51,11 @@ export default function screenFeature(api) {
     options: [
       { type: 'section', key: 'game', label: 'Jeu' },
       {
-        type: 'status', label: 'Écran détecté',
-        value: () => {
-          watchScreen();
-          const name = screen.answer?.screen;
-          if (!screen.at) return '…';
-          return api.tr(name ? SCREENS[name] ?? name : 'Pas de capture d’écran');
-        },
-      },
-      {
         type: 'status', label: 'Stage sélectionné',
-        visible: () => Boolean(screen.at),
+        visible: () => {
+          watchScreen();
+          return Boolean(screen.at);
+        },
         value: () => {
           const stage = screen.answer?.stage;
           if (!stage?.number) return api.tr('inconnu');
@@ -79,6 +74,17 @@ export default function screenFeature(api) {
         const colour = api.tr(COLOURS[stage.soul_colour] ?? stage.soul_colour);
         return colour;
       }),
+    ],
+    debug: [
+      {
+        type: 'status', label: 'Écran détecté',
+        value: () => {
+          watchScreen();
+          const name = screen.answer?.screen;
+          if (!screen.at) return '…';
+          return api.tr(name ? SCREENS[name] ?? name : 'Pas de capture d’écran');
+        },
+      },
     ],
     dispose: () => {
       window.clearTimeout(screen.timer);

@@ -19,6 +19,9 @@
 //   { type: 'grid', label, rows() }               a grid of fixed-size cells, rows() =>
 //                                                  [[cell, ...], ...], a cell: a CSS colour (filled),
 //                                                  'empty' (outlined) or null (not part of the grid)
+//   { type: 'log', match?(record) }               the server's log records match() keeps
+//                                                  ({time, level, source, text[, template,
+//                                                  params]}; all without it), with the level filter
 //   { type: 'section', key, label, folded? }       starts a foldable sub-section (folded: default)
 //   { type: 'dialog', label, button?, title?, options: Option[], select? }   a button opening
 //                                                  these options in a dialog over the panel;

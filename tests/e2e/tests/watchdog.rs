@@ -239,7 +239,7 @@ fn a_chooser_with_two_accounts_is_for_the_user_and_never_tapped() {
 }
 
 #[test]
-fn the_page_shows_the_watchdogs_look_and_an_outside_lease_in_the_modes_state() {
+fn the_page_shows_the_watchdogs_look_in_the_modes_state_and_the_lease_in_debug() {
     let cp = with_game("running");
     let phone = cp.clone();
     browser_test(&cp, Options::without_video(), |page| async move {
@@ -253,7 +253,11 @@ fn the_page_shows_the_watchdogs_look_and_an_outside_lease_in_the_modes_state() {
         let lease = json!({"holder": "agent", "reason": "réglages", "seconds": 600});
         let taken = blocking(move || phone.post_json("api/v1/plugins/slayer-legend/lease", &lease).status().as_u16());
         assert_eq!(taken, 200);
-        page.wait_dialog_value(fr::OPTIONS_PANEL, "État", Duration::from_secs(25),
-            |v| v.ends_with(" · OK · bail : agent (réglages)")).await;
+        // The lease is for the developer: in « Debug & développement », not in État.
+        page.js("[...document.querySelectorAll('[role=dialog] summary')].find(s => s.innerText.trim() === 'Debug & développement').click()",
+            vec![]).await;
+        page.wait_dialog_value(fr::OPTIONS_PANEL, "Bail", Duration::from_secs(25), |v| v == "agent (réglages)").await;
+        let state = page.dialog_value(fr::OPTIONS_PANEL, "État").await.unwrap_or_default();
+        assert!(state.ends_with(" · OK"), "{state}");
     });
 }
