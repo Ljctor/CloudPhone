@@ -94,6 +94,7 @@ a decision comes out.
 | `test_trace.py` | tests of `trace.py` on synthetic screenshots (`python3 -m unittest test_trace`) |
 | `test_engraving.py` | `engravings.json` is well formed and its variants fill their patterns; rotations, the gold layout, the pieces needed (`python3 -m unittest test_engraving`) |
 | `test_mine.py` | the mine on a scripted game, on virtual time, through the guard: an untick that will not take, the mine turned off and on in one tick, its taps waiting for the lease (a user input, an outside holder), the lease's routes and expiry, the free-play warning (`python3 -m unittest test_mine`) |
+| `test_switch.py` | a mode switch on virtual time with the phone's step latencies: under 60 s from a radio change, the timer's end switching back on time with no watchdog, the lease's wait said apart, one alert over budget (`python3 -m unittest test_switch`) |
 
 The tests run in this directory and are not installed, nor is this README.
 
@@ -194,6 +195,32 @@ Google session was lost; its relaunch then ended on the sign-in screen.
 Since then a Google window in front is the sign-in path (symptom sign_in,
 the relaunch's), another app counts only after 2 looks in a row, and the
 away record names the window in front.
+
+## Mode switch
+
+A mode switch (a radio change on the page, or the end of the mpw4, free
+play or mine timer back to mpw18) brings the battle screen to the target
+stage, its preset and AUTO on in under 60 s of the plugin's own time
+(`SWITCH_BUDGET`), the plugin alone. It starts at its trigger: POST /mode
+starts it at once, and the timed mode's watch wakes right at the timer's
+end (`next_look`), not at the watchdog's next look. Each step waits for its
+screen by polling fresh captures (`settle`: every 0.25 s, at most 4 s, 8 s
+for a stage to load), never a fixed long sleep; the fixed waits left are
+the controls' own (0.5 s for the unfold, 0.4 s between the two looks at the
+gear, and their folding away by themselves). While the lease cannot be had
+(the user played in the last minute, another holder), it tries again every
+2 s; that wait is the user's, logged apart and never counted. Each switch
+is one log line, e.g. `switch mpw4→mpw18 in 38 s (stage 24 s, preset 4 s,
+auto 6 s) (+12 s waiting for the lease)`; over budget the switch still
+completes, and one alert names the slowest step. Should a real switch go
+over, the number of Select Region moves is what to cut, never the waits
+that make each tap safe.
+
+Expected on the phone (not measured yet): a capture about 0.6 s, an adb
+tap about 0.4 s, Select Region about 1.2 s to open, a stage about 4 s to
+load. With these, `test_switch.py` gives 33–35 s: the stage 15–17 s (one
+region arrow and a few scrolls), the preset 14 s (two readings of the
+badge, each waiting for the controls to fold away), AUTO 4 s.
 
 ## Limits
 

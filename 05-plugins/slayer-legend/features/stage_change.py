@@ -18,9 +18,12 @@ whenever a switch is real; read_controls (the watchdog's) only while the
 preset or auto switch is.
 
 Each step looks first (a fresh screenshot), makes one guarded move
-(ports, nav.py) and looks again for what it expects; anything else stops
-the whole sequence with the step that failed, in French, for one alert by
-the caller. Nothing is tried twice.
+(ports, nav.py) and looks again for what it expects (settle: fresh
+captures every POLL seconds until it shows, at most SETTLE seconds,
+MOVE_SETTLE for a stage to load; no fixed long sleep: a mode switch has
+60 s); anything else stops the whole sequence with the step that failed,
+in French, for one alert by the caller. Nothing is tried twice. farm()'s
+answer gives each step's seconds (timings: stage, preset, auto).
 
 - Stage: closes the bottom panel open, only when its tab reads lit (else
   "écran inattendu"), opens the stage map (Select Region), goes to the
@@ -49,19 +52,21 @@ unfold, or None.
 
 import logging
 
-# Seconds to wait after a move before the next look.
-WAIT = 1.5
-MOVE_WAIT = 3.0
+# After a move: a fresh capture every POLL seconds until the screen
+# expected shows, at most SETTLE seconds (MOVE_SETTLE for a stage to load).
+POLL = 0.25
+SETTLE = 4.0
+MOVE_SETTLE = 8.0
 # The controls fold away about 2 s after the arrow unfolds them. Measured
 # on the phone: two separate guarded taps (the guard, then each its
 # ssh/adb round trip) missed the badge twice, so the arrow and the next
 # tap go in one adb call (ports.taps), UNFOLD_GAP apart, both guarded
 # first. Then UNFOLD_WAIT for the unfold, LOOK_GAP between the two looks at
-# the gear, FOLD_WAIT for them to fold away.
+# the gear; they fold away by themselves within FOLD_SETTLE.
 UNFOLD_GAP = 0.4
 UNFOLD_WAIT = 0.5
 LOOK_GAP = 0.4
-FOLD_WAIT = 2.5
+FOLD_SETTLE = 4.0
 SETTINGS_CLOSE = (0.09, 0.965)
 LEASE_SECONDS = 240
 HOLDER = "stage_change"
@@ -104,6 +109,23 @@ def stage_change(ports, screens, select, controls, rules, table):
             raise Stop("pas de capture d’écran")
         return shot
 
+    async def settle(read, *args, accept=bool, timeout=SETTLE, stable=False):
+        """(shot, value): fresh captures every POLL seconds until read(shot,
+        *args) is accepted (stable: the same value on two in a row, a list
+        that stopped scrolling), at most timeout seconds; the last one
+        then, for the caller to judge."""
+        deadline = ports.clock.monotonic() + timeout
+        previous = None
+        while True:
+            shot = await look()
+            value = await ports.analyse(read, shot, *args)
+            if accept(value) and (not stable or value == previous):
+                return shot, value
+            if ports.clock.monotonic() >= deadline:
+                return shot, value
+            previous = value
+            await ports.clock.sleep(POLL)
+
     async def front():
         if not await ports.focused():
             raise Stop("le jeu n’est plus au premier plan")
@@ -125,9 +147,8 @@ def stage_change(ports, screens, select, controls, rules, table):
         if not may_tap:
             raise Plan(f"fermer le panneau ({tab[1]})")
         await tap(shot, tab[1], "close", (tab[0], screens.TAB_TAP_Y))
-        await ports.clock.sleep(WAIT)
-        shot = await look()
-        if not await ports.analyse(screens.plain_battle, shot):
+        shot, plain = await settle(screens.plain_battle)
+        if not plain:
             raise Stop("fermeture du panneau du menu du bas")
         return shot
 
@@ -142,9 +163,7 @@ def stage_change(ports, screens, select, controls, rules, table):
             raise Plan(f"stage {seen or 'illisible'} → {target} : Select Region, région "
                        f"{names[rules.region_of(target)]}, Move sur la ligne lue comme {target}")
         await tap(shot, "battle", "stage_select", select.STAGE_MAP_TAP)
-        await ports.clock.sleep(WAIT)
-        shot = await look()
-        view = await ports.analyse(select.view, shot, names)
+        shot, view = await settle(select.view, names, accept=lambda v: v["popup"] and v["rows"], stable=True)
         if not view["popup"]:
             raise Stop("ouverture de Select Region")
         for _ in range(rules.MOST_MOVES):
@@ -153,9 +172,8 @@ def stage_change(ports, screens, select, controls, rules, table):
                 raise Stop(f"Select Region : {step[1]}")
             if step[0] == "move":
                 await tap(shot, "stage_select", "move", (select.MOVE_TAP_X, step[1]), verified=True)
-                await ports.clock.sleep(MOVE_WAIT)
-                shot = await look()
-                seen = await ports.analyse(select.battle_stage, shot, names)
+                shot, seen = await settle(select.battle_stage, names, accept=lambda v: v is not None,
+                                          timeout=MOVE_SETTLE)
                 if seen != target:
                     raise Stop(f"vérification après Move (lu : {seen or 'rien'})")
                 return
@@ -165,9 +183,9 @@ def stage_change(ports, screens, select, controls, rules, table):
                 start, end = rules.SWIPE_DOWN if step[1] == "down" else rules.SWIPE_UP
                 await front()
                 await ports.swipe(shot, "stage_select", "scroll", start, end, rules.SWIPE_MS)
-            await ports.clock.sleep(WAIT)
-            shot = await look()
-            after = await ports.analyse(select.view, shot, names)
+            moved_from = view
+            shot, after = await settle(select.view, names, accept=lambda v: rules.progressed(moved_from, v),
+                                       stable=True)
             if step[0] == "arrow" and after["region"] != view["region"] + (1 if step[1] == "next_region" else -1):
                 raise Stop("Select Region : la bannière ne lit pas la région suivante")
             if not rules.progressed(view, after):
@@ -195,7 +213,7 @@ def stage_change(ports, screens, select, controls, rules, table):
         """A battle look with the controls folded (they fold by themselves)."""
         shot = await to_battle()
         if await ports.analyse(controls.unfolded_now, shot):
-            await ports.clock.sleep(FOLD_WAIT)
+            await settle(controls.unfolded_now, accept=lambda v: not v, timeout=FOLD_SETTLE)
             shot = await to_battle()
         return shot
 
@@ -217,19 +235,16 @@ def stage_change(ports, screens, select, controls, rules, table):
         if await badge_of(first, second) == name:
             return
         await unfold(await folded_battle(), ("preset_badge", controls.BADGE_TAP))
-        await ports.clock.sleep(WAIT)
-        shot = await look()
-        if not await ports.analyse(controls.settings_open, shot):
+        shot, opened = await settle(controls.settings_open)
+        if not opened:
             raise Stop("ouverture de Battle settings")
         if await ports.analyse(controls.selected, shot) != name:
             await tap(shot, "battle_settings", "preset", controls.preset_tap(name))
-            await ports.clock.sleep(WAIT)
-            shot = await look()
-            chosen = await ports.analyse(controls.selected, shot)
+            shot, chosen = await settle(controls.selected, accept=lambda v: v == name)
             if chosen != name:
                 raise Stop(f"choix du preset {name} dans Battle settings (lu : {chosen or 'rien'})")
         await tap(shot, "battle_settings", "close", SETTINGS_CLOSE)
-        await ports.clock.sleep(WAIT)
+        await settle(screens.plain_battle)
         if await badge_of(*await controls_look()) != name:
             raise Stop(f"vérification du preset {name} sur le badge")
 
@@ -250,23 +265,27 @@ def stage_change(ports, screens, select, controls, rules, table):
             raise Plan("AUTO lu arrêté : toucher l’engrenage (en attente d’une capture AUTO arrêté pour "
                        "recalibrer la lecture)")
         await unfold(await folded_battle(), ("auto", controls.AUTO_TAP), verified={"auto"})
-        await ports.clock.sleep(WAIT)
         if await auto_state() != "on":
             raise Stop("AUTO pas en marche après l’avoir activé")
 
     async def run(mode, steps):
-        """Runs steps under the lease: {result, text}; ports.Busy when the
-        lease cannot be had (the caller waits for its next look). A plan
-        step is written to the log and the next steps go on."""
+        """Runs steps ((name, step) pairs) under the lease: {result, text,
+        timings: {name: seconds}}; ports.Busy when the lease cannot be had
+        (the caller tries again shortly). A plan step is written to the log
+        and the next steps go on."""
         plans = []
+        timings = {}
         async with ports.leased(HOLDER, f"farm {mode}", LEASE_SECONDS):
             try:
-                for step in steps:
+                for name, step in steps:
+                    began = ports.clock.monotonic()
                     try:
                         await step()
                     except Plan as e:
                         plans.append(str(e))
                         logging.info(f"Slayer Legend stage change, plan only: {e}")
+                    finally:
+                        timings[name] = round(ports.clock.monotonic() - began, 1)
             except Stop as e:
                 answer = {"result": "failed", "text": str(e)}
             except ports.Busy:
@@ -276,6 +295,7 @@ def stage_change(ports, screens, select, controls, rules, table):
                 answer = {"result": "failed", "text": str(e)}
             else:
                 answer = {"result": "plan" if plans else "done", "text": " ; ".join(plans)}
+        answer["timings"] = timings
         status["last"] = {**answer, "mode": mode}
         return answer
 
@@ -284,10 +304,10 @@ def stage_change(ports, screens, select, controls, rules, table):
         stage past highest (the highest seen farmed, None: unknown)."""
         if highest and stage > highest:
             return {"result": "failed", "text": f"stage {stage} au-delà du plus haut vu farmé ({highest})"}
-        steps = [lambda: change_stage(stage)]
+        steps = [("stage", lambda: change_stage(stage))]
         if preset:
-            steps.append(lambda: set_preset(preset))
-        steps.append(ensure_auto)
+            steps.append(("preset", lambda: set_preset(preset)))
+        steps.append(("auto", ensure_auto))
         return await run(mode, steps)
 
     async def read_controls():
@@ -325,9 +345,9 @@ def stage_change(ports, screens, select, controls, rules, table):
         return await handle_get(request)
 
     api = {"farm": farm,
-           "change_stage": lambda stage, mode="mpw18": run(mode, [lambda: change_stage(stage)]),
-           "set_preset": lambda name, mode="mpw18": run(mode, [lambda: set_preset(name)]),
-           "ensure_auto": lambda mode="mpw18": run(mode, [ensure_auto]),
+           "change_stage": lambda stage, mode="mpw18": run(mode, [("stage", lambda: change_stage(stage))]),
+           "set_preset": lambda name, mode="mpw18": run(mode, [("preset", lambda: set_preset(name))]),
+           "ensure_auto": lambda mode="mpw18": run(mode, [("auto", ensure_auto)]),
            "read_controls": read_controls, "switches": lambda: dict(switches),
            "battle_stage": lambda shot: select.battle_stage(shot, names)}
     return {"api": api, "routes": [("GET", "/farming", handle_get), ("POST", "/farming", handle_post)]}

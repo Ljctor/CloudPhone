@@ -10,7 +10,11 @@ POST /mode/timer   {add: minutes}: moves the end of the mode (and of the mine)
 
 Entering mpw18 or mpw4 farming brings the game there in the background
 (features/stage_change.py): the mode's stage, its Battle settings preset,
-AUTO on; a step that fails stops it with one alert naming the step. While
+AUTO on; a step that fails stops it with one alert naming the step. It
+starts at once on its trigger (POST /mode, or the timer's end: the watch
+wakes on it), within rules.SWITCH_BUDGET seconds; each switch is one log
+line with its steps' seconds, and one alert naming the slowest step when
+it took longer. While
 farming mpw4 it looks for the
 gold scroll every 30 s on the battle screen (gold: true, false once missing
 for 2 looks, null unknown) and alerts once when it goes, then once when it
@@ -37,7 +41,8 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
     and presets; farming: the stage change feature's api (farm)."""
     status = {"mode": rules.DEFAULT, "until": None, "highest": None,
               "configured": False, "state": "idle", "message": "", "task": None,
-              "scroll": scroll.fresh(), "gold_look": None, "warned": None, "change": None}
+              "scroll": scroll.fresh(), "gold_look": None, "warned": None, "change": None,
+              "switch": None, "switch_at": None}
     ports.store.register("mode", lambda: {key: status[key] for key in (
         "mode", "until", "highest", "configured")})
 
@@ -57,6 +62,18 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         answer["mine"] = mines["state"]()
         return answer
 
+    def switched(answer, since, began):
+        """The switch's log line, and its alert when over budget: since,
+        its trigger; began, when farm() got the lease (the wait before it
+        is the user's or another holder's, not counted)."""
+        before, after = status["switch"] or ("?", status["mode"])
+        line, alert = rules.switch_report(before, after, ports.clock.monotonic() - began,
+                                          answer.get("timings") or {}, began - since)
+        logging.getLogger("cloudphone.slayer-legend").log(
+            logging.WARNING if alert else logging.INFO, f"{line}, {answer['result']}",
+            extra={"source": "slayer-legend", "notify": bool(alert)})
+        return alert
+
     async def set_stage(number, mpw):
         """Brings the game to farming that stage with its loadout's preset,
         AUTO on. True once there; else one alert naming the step. While the
@@ -66,8 +83,9 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         name = f"mpw{mpw}"
         preset = loadouts["loadout"](name).get("preset")
         report("moving", f"Passage au stage {number} ({name})")
-        since = ports.clock.monotonic()
+        since = status["switch_at"] if status["switch_at"] is not None else ports.clock.monotonic()
         while True:
+            began = ports.clock.monotonic()
             try:
                 answer = await farming["farm"](number, preset, name, status["highest"])
                 break
@@ -78,7 +96,10 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
                     await ports.notify(text)
                     return False
                 report("waiting", f"Passage au stage {number} ({name}) en attente : {e}")
-                await ports.clock.sleep(rules.WATCH_EVERY)
+                await ports.clock.sleep(rules.BUSY_RETRY)
+        alert = switched(answer, since, began)
+        if alert and answer["result"] == "done":
+            await ports.notify(alert)
         if answer["result"] == "failed":
             text = f"Passage au stage {number} ({name}) arrêté : {answer['text']}"
             report("failed", text[:200])
@@ -90,9 +111,12 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         report("farming", f"Farming {name} au stage {number}" + (f", preset {preset}" if preset else ""))
         return True
 
-    async def enter(name):
+    async def enter(name, before=None):
         """What changing to mode name does (rules.entered): a stage change
-        runs in the background, the one under way is dropped."""
+        runs in the background at once, the one under way is dropped.
+        before: the mode it leaves (the switch's log line), its trigger
+        now."""
+        status.update(switch=(before or "?", name), switch_at=ports.clock.monotonic())
         change = status["change"]
         if change is not None and not change.done():
             change.cancel()
@@ -108,10 +132,11 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
             report("mine", "Mine")
 
     async def back_to_default(reason):
+        before = status["mode"]
         status.update(mode=rules.DEFAULT, until=None)
         await ports.notify(f"{reason} : retour au farming mpw18"
                            + (f" (stage {stages()['stage18']})" if stages()["stage18"] else ""))
-        await enter(rules.DEFAULT)
+        await enter(rules.DEFAULT, before)
 
     def gold_facts(shot):
         return scroll.seen(screens.classify(shot) == "battle", shot)
@@ -134,7 +159,8 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         gold scroll."""
         try:
             while status["mode"] != rules.DEFAULT:
-                await ports.clock.sleep(rules.WATCH_EVERY)
+                # Awake right at the timer's end: the switch back starts then.
+                await ports.clock.sleep(rules.next_look(status["until"], ports.clock.wall()))
                 why = rules.due(status["mode"], status["until"], mines["state"](), ports.clock.wall())
                 if why:
                     await back_to_default(REASONS[why])
@@ -170,7 +196,8 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         if error:
             return ports.respond({"error": error}, status=400)
         name, until, numbers, given = asked
-        changed = name != status["mode"]
+        before = status["mode"]
+        changed = name != before
         until = rules.timer_for(name, until, given, status["mode"], status["until"], ports.clock.wall())
         status.update(mode=name, until=until, configured=True, highest=numbers["highest"])
         loadouts["set_stage"]("mpw18", numbers["stage18"])
@@ -181,7 +208,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
             mines["stop"]()
         if changed:
             status.update(scroll=scroll.fresh(), gold_look=None)
-            await enter(name)
+            await enter(name, before)
         watch_if_timed()
         ports.store.save()
         return ports.respond(state())

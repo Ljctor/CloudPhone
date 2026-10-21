@@ -239,8 +239,12 @@ def readers(game):
 
 
 def run(game, call, switches="real"):
+    """The api call's answer; its step timings kept in game.timings."""
     part = feature.stage_change(game.ports(switches), *readers(game), rules, TABLE)
-    return asyncio.run(call(part["api"]))
+    answer = asyncio.run(call(part["api"]))
+    if isinstance(answer, dict):
+        game.timings = answer.pop("timings", None)
+    return answer
 
 
 def done():
@@ -445,7 +449,7 @@ class Mode(unittest.TestCase):
 
         async def wait(seconds):
             game.now += seconds
-            if seconds != mode_rules.WATCH_EVERY or not answers:
+            if not answers:
                 await asyncio.Event().wait()  # the timed mode's watch waits: only entering is tested
         ports.clock.sleep = wait
         ports.store = Store()
@@ -495,7 +499,7 @@ class Mode(unittest.TestCase):
         self.assertEqual(alerts, [])
 
     def test_the_lease_waited_for_30_min_at_most_then_one_alert(self):
-        held = 1 + mode_rules.LEASE_WAIT // mode_rules.WATCH_EVERY
+        held = 1 + mode_rules.LEASE_WAIT // mode_rules.BUSY_RETRY
         calls, state, alerts = self.enter(["bail tenu par mine"] * held + [done()])
         # mpw4 gave up after LEASE_WAIT (one alert); its timer then ended:
         # back to mpw18, which farms.

@@ -11,6 +11,15 @@ DEFAULT = "mpw18"
 TIMED_MINUTES = 30
 # Seconds between two checks of a timed mode.
 WATCH_EVERY = 10
+# A mode switch (the trigger: POST /mode, or a timer's end) reaches the
+# battle screen on its stage, preset and AUTO within this (seconds) of the
+# plugin's own time: waiting for the lease (the user's minute after an
+# input, another holder) is logged apart and never counted. Over it, the
+# switch still completes, logged with one alert naming the slowest step.
+SWITCH_BUDGET = 60
+# While the lease cannot be had (the user played in the last minute,
+# another holder), the switch tries again this often (seconds).
+BUSY_RETRY = 2
 # A stage change waits for the shared lease this long at most (seconds).
 LEASE_WAIT = 30 * 60
 # mpw4 farming: seconds between two looks for the gold scroll (on the
@@ -20,6 +29,35 @@ GOLD_EVERY = 30
 # user still playing can extend it.
 WARN_BEFORE = 2 * 60
 WARNING = "Le Cloud Phone reprend la main dans 2 min, prolonge le jeu libre si tu joues encore"
+
+
+def next_look(until, now):
+    """Seconds to the timed mode's next look: WATCH_EVERY, or less so as
+    to wake right at the timer's end (until, Unix time; None: no limit)."""
+    if until is None or until - now > WATCH_EVERY:
+        return WATCH_EVERY
+    return max(0.2, until - now + 0.1)
+
+
+STEP_NAMES = {"stage": "changement de stage", "preset": "préréglage", "auto": "AUTO"}
+
+
+def switch_report(before, after, seconds, timings, waited=0.0):
+    """(log line, alert or None) of one mode switch: before → after in
+    seconds of the plugin's own time (farm()'s run), timings {step:
+    seconds} (farm()'s), waited: seconds waiting for the lease before it,
+    said apart and never counted; the alert (French) when the plugin's
+    time is over SWITCH_BUDGET, naming the slowest step."""
+    steps = ", ".join(f"{name} {round(value)} s" for name, value in timings.items())
+    line = f"switch {before}→{after} in {round(seconds)} s" + (f" ({steps})" if steps else "")
+    if round(waited):
+        line += f" (+{round(waited)} s waiting for the lease)"
+    if seconds <= SWITCH_BUDGET:
+        return line, None
+    slowest = max(timings, key=timings.get) if timings else None
+    why = (f" : étape la plus lente : {STEP_NAMES.get(slowest, slowest)} ({round(timings[slowest])} s)"
+           if slowest else "")
+    return line, f"Passage {before} → {after} en {round(seconds)} s (plus de {SWITCH_BUDGET} s){why}"
 
 
 def warn_due(mode, until, warned, now):
