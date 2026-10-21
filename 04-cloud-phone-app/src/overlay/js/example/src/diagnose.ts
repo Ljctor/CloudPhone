@@ -54,6 +54,12 @@ export function diagnose({ server, stream, connectingFor, touchFailures }) {
   if (value && booted === null) {
     return { level: 'wait', blocking: stream !== 'connected', text: 'Le serveur se reconnecte à Android…', detail: null };
   }
+  if (stream === 'blocked') {
+    return {
+      level: 'info', blocking: true, text: 'Touchez l’écran pour lancer la vidéo',
+      detail: 'Le navigateur bloque la lecture automatique.',
+    };
+  }
   if (stream === 'disconnected') {
     return { level: 'wait', blocking: true, text: 'Vidéo interrompue', detail: 'Reconnexion…' };
   }

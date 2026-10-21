@@ -98,11 +98,14 @@ pub struct Options {
     pub wait_for_video: bool,
     /// Inner window size requested from Firefox.
     pub window: (u32, u32),
+    /// Firefox's `media.autoplay.default`: 0 allows all, 1 blocks audible
+    /// media (Firefox's default), 5 blocks all, until a user gesture.
+    pub autoplay: u8,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Options { accept_language: "fr-FR, fr", wait_for_video: true, window: (480, 960) }
+        Options { accept_language: "fr-FR, fr", wait_for_video: true, window: (480, 960), autoplay: 0 }
     }
 }
 
@@ -247,7 +250,7 @@ impl Page {
             "args": args,
             "prefs": {
                 "intl.accept_languages": options.accept_language,
-                "media.autoplay.default": 0,
+                "media.autoplay.default": options.autoplay,
                 "media.autoplay.blocking_policy": 0,
                 "full-screen-api.warning.timeout": 0,
                 "full-screen-api.transition-duration.enter": "0 0",

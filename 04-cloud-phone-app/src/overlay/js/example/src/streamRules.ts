@@ -21,7 +21,8 @@ export function serverHealthy(server) {
 // Android is usable again (after a crash, a restart or a lost stream) and
 // the video is cut or stuck: reconnect it without waiting for the user.
 export function autoReconnectDue({ healthy, stream, connectingFor }) {
-  if (!healthy || stream === 'connected') return false;
+  // Blocked: the browser waits for a gesture, a new stream would too.
+  if (!healthy || stream === 'connected' || stream === 'blocked') return false;
   return stream === 'disconnected' || connectingFor >= STUCK_AFTER_S;
 }
 
@@ -32,6 +33,7 @@ export function secondsSince(started, now) {
 
 // The log line for a new stream state: [French source text, values].
 export function streamStateLine(state) {
-  const said = { connected: 'Vidéo connectée', connecting: 'Vidéo en connexion…', disconnected: 'Vidéo coupée' }[state];
+  const said = { connected: 'Vidéo connectée', connecting: 'Vidéo en connexion…', disconnected: 'Vidéo coupée',
+    blocked: 'Le navigateur bloque la lecture automatique' }[state];
   return said ? [said] : ['Vidéo : {state}', { state }];
 }

@@ -68,31 +68,26 @@ const EmulatorWebrtcView: React.FC<EmulatorWebrtcViewProps> = ({
     }
   }, [audio, onAudioStateChange]);
 
+  // The browser refused to start the video even muted (autoplay blocked
+  // for all media): it waits for a gesture on the page.
+  const blocked = useRef<boolean>(false);
+  const frameCallback = useRef<number | null>(null);
+
   const onDisconnect = () => {
     hasRenderedFrame.current = false;
+    blocked.current = false;
     setConnect("disconnected");
     setAudio(false);
   };
 
-  const onConnect = (track: MediaStreamTrack) => {
-    const video = videoRef.current;
-    if (!video) {
-      // Component was unmounted.
-      return;
-    }
-
-    if (!video.srcObject) {
-      video.srcObject = new MediaStream();
-    }
-    
-    const stream = video.srcObject as MediaStream;
-    if (!stream.getTracks().find((t) => t.id === track.id)) {
-      stream.addTrack(track);
-    }
-
-    if (track.kind === "audio") {
-      setAudio(true);
-    }
+  // Start playing on the page's next gesture, once.
+  const playOnGesture = () => {
+    const events = ["pointerdown", "keydown", "touchend"];
+    const onGesture = () => {
+      events.forEach((name) => document.removeEventListener(name, onGesture, true));
+      safePlay();
+    };
+    events.forEach((name) => document.addEventListener(name, onGesture, true));
   };
 
   const safePlay = async () => {
@@ -101,13 +96,69 @@ const EmulatorWebrtcView: React.FC<EmulatorWebrtcViewProps> = ({
       // Component was unmounted.
       return;
     }
-
     try {
       await video.play();
       logger.debug("Automatic playback started!");
     } catch (error: any) {
-      // Notify listeners that we cannot start.
+      if (error?.name !== "NotAllowedError" || !videoRef.current) {
+        // AbortError: a new load interrupted this play(); canplay retries.
+        onError(error);
+        return;
+      }
+      // Audible autoplay refused: muted autoplay always is allowed, except
+      // when the browser blocks all media.
+      if (!video.muted) {
+        video.muted = true;
+        try {
+          await video.play();
+          return;
+        } catch (again: any) {
+          error = again;
+        }
+      }
       onError(error);
+      blocked.current = true;
+      setConnect("blocked");
+      playOnGesture();
+    }
+  };
+
+  // The first decoded frame, wherever it is seen first: a received WebRTC
+  // track is not enough, the browser may have a live but muted track with
+  // no decoded frame.
+  const watchFrames = () => {
+    const video = videoRef.current as any;
+    if (!video || frameCallback.current !== null || typeof video.requestVideoFrameCallback !== "function") return;
+    frameCallback.current = video.requestVideoFrameCallback(() => {
+      frameCallback.current = null;
+      onFirstFrame();
+    });
+  };
+
+  const onConnect = (track: MediaStreamTrack) => {
+    const video = videoRef.current;
+    if (!video) {
+      // Component was unmounted.
+      return;
+    }
+    // Muted before the stream is attached: autoplay of a muted video is
+    // allowed without a gesture.
+    video.muted = muted;
+
+    if (!video.srcObject) {
+      video.srcObject = new MediaStream();
+    }
+
+    const stream = video.srcObject as MediaStream;
+    if (!stream.getTracks().find((t) => t.id === track.id)) {
+      stream.addTrack(track);
+    }
+
+    if (track.kind === "audio") {
+      setAudio(true);
+    } else {
+      watchFrames();
+      safePlay();
     }
   };
 
@@ -116,16 +167,19 @@ const EmulatorWebrtcView: React.FC<EmulatorWebrtcViewProps> = ({
   };
 
   const onFirstFrame = () => {
-    // A received WebRTC track is not enough: the browser may have a live but
-    // muted track with no decoded frame. loadeddata/playing proves that the
-    // video element has received an actual frame. Keep displaying that last
-    // frame when a static Android screen temporarily reports `waiting`.
+    // loadeddata, playing or a presented frame prove that the video element
+    // has an actual frame. Keep displaying that last frame when a static
+    // Android screen temporarily reports `waiting`. A paused video (play
+    // refused) is not connected: it waits for a gesture.
+    const video = videoRef.current;
+    if (!video || (blocked.current && video.paused)) return;
+    blocked.current = false;
     hasRenderedFrame.current = true;
     setConnect("connected");
   };
 
   const onWaiting = () => {
-    if (!hasRenderedFrame.current) {
+    if (!hasRenderedFrame.current && !blocked.current) {
       setConnect("connecting");
     }
   };
@@ -170,6 +224,9 @@ const EmulatorWebrtcView: React.FC<EmulatorWebrtcViewProps> = ({
         objectFit: "contain",
         objectPosition: "center",
       }}
+      muted={muted}
+      autoPlay
+      playsInline
       onContextMenu={onContextMenu}
       onCanPlay={onCanPlay}
       onLoadedData={onFirstFrame}
