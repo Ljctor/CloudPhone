@@ -143,7 +143,7 @@ const ENGLISH = {
   'Détection des émeraudes': 'Emerald detection',
   'Détection des diamants': 'Diamond detection',
   'Réessayer': 'Retry',
-  'le jeu n’est plus au premier plan (plantage ?)': 'the game is no longer in front (a crash?)',
+  'le jeu n’est plus au premier plan': 'the game is no longer in front',
   'En pause : l’utilisateur joue': 'Paused: the user is playing',
   'Lancement du jeu en cours': 'Launching the game',
   'Réparation en cours : {repair}': 'Repair under way: {repair}',
@@ -154,12 +154,12 @@ const ENGLISH = {
   'le jeu ne tourne pas': 'the game is not running',
   'une autre application est au premier plan : {window}': 'another app is in front: {window}',
   'pas de vérification (fenêtre de passage au premier plan)': 'not checked (a passing window in front)',
-  'pas de vérification (autre fenêtre au premier plan, à confirmer)': 'not checked (another window in front, to confirm)',
+  'pas de vérification (autre fenêtre au premier plan)': 'not checked (another window in front)',
   'le jeu a planté (fenêtre d’erreur d’Android)': 'the game crashed (Android’s error window)',
   'le jeu est revenu à son écran titre': 'the game is back on its title screen',
   'le jeu demande de se reconnecter (Sign in with Google)': 'the game asks to sign in again (Sign in with Google)',
-  'écran inconnu après la fin du mode (connecté sur un autre appareil ? choix de sauvegarde ?) : à faire à la main':
-    'unknown screen after the mode ended (signed in on another device? a choice of saves?): do it by hand',
+  'écran inconnu après la fin du mode (connecté sur un autre appareil, ou choix de sauvegarde) : à faire à la main':
+    'unknown screen after the mode ended (signed in on another device, or a choice of saves): do it by hand',
   'un menu du jeu est ouvert depuis plus d’une minute sans l’utilisateur': 'a game menu has been open over a minute without the user',
   'mauvais stage, pas le {stage}': 'wrong stage, not {stage}',
   'mauvais préréglage de combat : pas le {preset}': 'wrong battle settings preset: not {preset}',
@@ -178,12 +178,12 @@ const ENGLISH = {
   '{mode} : le jeu est revenu à son écran titre': '{mode}: the game is back on its title screen',
   '{mode} : le jeu demande de se reconnecter (Sign in with Google)':
     '{mode}: the game asks to sign in again (Sign in with Google)',
-  '{mode} : écran inconnu après la fin du mode (connecté sur un autre appareil ? choix de sauvegarde ?) : à faire à la main':
-    '{mode}: unknown screen after the mode ended (signed in on another device? a choice of saves?): do it by hand',
+  '{mode} : écran inconnu après la fin du mode (connecté sur un autre appareil, ou choix de sauvegarde) : à faire à la main':
+    '{mode}: unknown screen after the mode ended (signed in on another device, or a choice of saves): do it by hand',
   '{mode} : un menu du jeu est ouvert depuis plus d’une minute sans l’utilisateur':
     '{mode}: a game menu has been open over a minute without the user',
   '{mode} : mauvais stage, pas le {stage}': '{mode}: wrong stage, not {stage}',
-  '{mode} : le jeu n’est plus au premier plan (plantage ?)': '{mode}: the game is no longer in front (a crash?)',
+  '{mode} : le jeu n’est plus au premier plan': '{mode}: the game is no longer in front',
   '{mode} : mauvais préréglage de combat : pas le {preset}': '{mode}: wrong battle settings preset: not {preset}',
   '{mode} : mauvais équipement : {what}': '{mode}: wrong equipment: {what}',
   '{mode} : écran inattendu': '{mode}: unexpected screen',

@@ -782,7 +782,7 @@ class ModesOnTheFeature(GoldTrigger):
     def test_the_mine_never_reads_the_controls_and_alerts_once_the_game_is_away(self):
         read, alerts, other = self.looks(14, "off", mode="mine", game=False)
         self.assertEqual((read, other, self.farmed), ([], [], []))
-        self.assertEqual(alerts, ["Mine fermée : le jeu n’est plus au premier plan (plantage ?)"])
+        self.assertEqual(alerts, ["Mine fermée : le jeu n’est plus au premier plan"])
 
     def test_the_mine_relaunches_the_game_then_goes_back_in(self):
         self.looks(14, "off", mode="mine", game=False, launched=True)
@@ -1101,7 +1101,7 @@ class Modes(unittest.TestCase):
         self.assertLessEqual(w.repairs[0][0], w.now - (rules.MINE_AWAY_LOOKS - rules.REPAIR_AFTER - 1) * E,
                              "before the alert's 2 minutes")
         w.looks(AWAY, 20)
-        self.assertIn(("warning", "Mine fermée : le jeu n’est plus au premier plan (plantage ?)"), w.alerts())
+        self.assertIn(("warning", "Mine fermée : le jeu n’est plus au premier plan"), w.alerts())
         # Each attempt after its backoff, never two in a row.
         times = [t for t, kind in w.repairs if kind == "mine_relaunch"]
         self.assertGreater(len(times), 1)

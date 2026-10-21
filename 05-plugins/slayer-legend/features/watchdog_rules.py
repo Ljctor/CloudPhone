@@ -139,15 +139,15 @@ SYMPTOMS = {
     "anr": "le jeu ne répond pas (fenêtre d’Android), « Attendre » sans effet : à faire à la main",
     "start_screen": "le jeu est revenu à son écran titre",
     "sign_in": "le jeu demande de se reconnecter (Sign in with Google)",
-    "after_mode_screen": "écran inconnu après la fin du mode (connecté sur un autre appareil ? choix de "
-                         "sauvegarde ?) : à faire à la main",
+    "after_mode_screen": "écran inconnu après la fin du mode (connecté sur un autre appareil, ou choix de "
+                         "sauvegarde) : à faire à la main",
     "menu": "un menu du jeu est ouvert depuis plus d’une minute sans l’utilisateur",
     "wrong_stage": "mauvais stage, pas le {stage}",
     "wrong_battle_settings": "mauvais préréglage de combat : pas le {preset}",
     "wrong_loadout": "mauvais équipement : {what}",
     "auto_off": "AUTO est arrêté",
     "unexpected": "écran inattendu",
-    "mine_away": "le jeu n’est plus au premier plan (plantage ?)",
+    "mine_away": "le jeu n’est plus au premier plan",
 }
 # The repair of each symptom (None: alert only).
 REPAIRS = {
@@ -300,7 +300,7 @@ def judge(seen, profile, numeral_of, last_input, resumed, memory, now, after_mod
     if not seen["focused"]:
         memory["away"] = away + 1
         if memory["away"] < AWAY_AFTER:
-            return "unknown", "pas de vérification (autre fenêtre au premier plan, à confirmer)", {}, memory
+            return "unknown", "pas de vérification (autre fenêtre au premier plan)", {}, memory
         window = seen.get("window") or "?"
         if GMS in window:
             # Google's own window (its account chooser, the Play Games
@@ -361,7 +361,7 @@ def _mine(seen, away, memory):
     if not seen["focused"]:
         memory["away"] = away + 1
         if memory["away"] < AWAY_AFTER:
-            return "unknown", "pas de vérification (autre fenêtre au premier plan, à confirmer)", {}, memory
+            return "unknown", "pas de vérification (autre fenêtre au premier plan)", {}, memory
         return "mine_away", SYMPTOMS["mine_away"], {}, memory
     return None, "OK", {}, memory
 
