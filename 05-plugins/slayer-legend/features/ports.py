@@ -14,10 +14,13 @@ of the gateway, so what it may do to the game is all here.
   guarded before the first is sent. Each also needs the shared lease, held
   by the task's sequence: refused (Busy) without it, or once the user
   played since it was taken.
-- lease, leased(holder, reason, seconds, user=False), Busy: the one shared
-  lease on the game's taps (see Lease); `async with leased(...)` runs a
-  tapping sequence under it, Busy when another holder has it or the user
-  plays.
+- lease, leased(holder, reason, seconds, user=False, pause=True), Busy:
+  the one shared lease on the game's taps (see Lease); `async with
+  leased(...)` runs a tapping sequence under it, Busy when another holder
+  has it or the user plays (pause=False: the user's last minute is not
+  waited for, e.g. a switch the user asked to resume now; an input during
+  the sequence still stops it).
+- pause_left(): the seconds left of the user-input pause (0: none).
 - last_input(): the user's last input ({monotonic, wall}) or None.
 - viewers(): the viewers connected now (None on a gateway that does not
   say: then nothing that shows on screen is done for the watchdog).
@@ -249,7 +252,9 @@ class Lease:
     holder only; one that expires is logged as a warning. A user input (a
     touch, a swipe or a key, context.last_input) refuses it for
     INPUT_PAUSE seconds and stops the sequence under way, unless it was
-    taken on the user's own press (user=True)."""
+    taken on the user's own press (user=True). pause=False takes it
+    within that minute (the user asked for it elsewhere), an input after
+    it still stopping the sequence."""
 
     def __init__(self, clock, last_input, enabled=lambda: True):
         self.clock = clock
@@ -273,7 +278,12 @@ class Lease:
     def playing(self):
         return self.input_since(self.clock.monotonic() - INPUT_PAUSE)
 
-    def take(self, holder, reason, seconds, user=False):
+    def pause_left(self):
+        """Seconds before the user-input pause ends (0: none)."""
+        last = self.last_input()
+        return max(0.0, last["monotonic"] + INPUT_PAUSE - self.clock.monotonic()) if last else 0.0
+
+    def take(self, holder, reason, seconds, user=False, pause=True):
         """None once holder has it (taken or renewed until now + seconds),
         or why not, in French."""
         seconds = min(float(seconds), LEASE_MAX)
@@ -282,7 +292,7 @@ class Lease:
         held = self.current()
         if held and held["holder"] != holder:
             return f"bail tenu par {held['holder']}"
-        if not user and self.playing():
+        if not user and pause and self.playing():
             return "l’utilisateur joue"
         now = self.clock.wall()
         self.held = {"holder": holder, "reason": reason, "since": held["since"] if held else now,
@@ -337,10 +347,10 @@ def build(context, nav):
     viewers = getattr(context, "viewers", None) or (lambda: None)
 
     @contextlib.asynccontextmanager
-    async def leased(holder, reason, seconds, user=False):
+    async def leased(holder, reason, seconds, user=False, pause=True):
         """The tapping sequence in the with block holds the lease (Busy
         when it cannot); released at its end."""
-        why = lease.take(holder, reason, seconds, user)
+        why = lease.take(holder, reason, seconds, user, pause)
         if why:
             raise Busy(why)
         token = HOLDER.set(holder)
@@ -474,6 +484,7 @@ def build(context, nav):
     return SimpleNamespace(
         capture=context.screenshot, analyse=context.analyse,
         tap=tap, taps=taps, hold=hold, swipe=swipe, lease=lease, leased=leased, Busy=Busy, last_input=last_input,
+        pause_left=lease.pause_left,
         viewers=viewers,
         focused=focused, focus=focus, running=running, start_game=start_game, dialog=dialog, crashed=crashed, close_crash=close_crash, wait_anr=wait_anr,
         account_chooser=account_chooser, choose_account=choose_account,

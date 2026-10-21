@@ -10,6 +10,10 @@ POST /mode         {mode, default, until, stage18, stage4, highest, floor, area}
                    absent or null keeps its value; until absent keeps the
                    timer, null clears it (no time limit)
 POST /mode/timer   {add: minutes}: moves the end of the mode (and of the mine)
+POST /mode/hold    {action: "free" | "resume"[, hold: id]}: a switch on hold
+                   while the user plays: free play instead, or the switch
+                   now (the user's minute not waited for); 409 when nothing
+                   is on hold, the same action again changes nothing
 
 Entering mpw18 or mpw4 farming brings the game there in the background
 (features/stage_change.py): the mode's stage, its Battle settings preset,
@@ -26,7 +30,16 @@ change of the running farming mode's loadout (engraving's on_change:
 stage, preset, soul weapon) runs the same path at once (loadout_changed),
 the soul weapon alone by its step alone (the stage change feature's
 ensure_soul_weapon), notified « Configuration mpw18 appliquée en 21 s ».
-Each switch is one log line with its steps' seconds. While
+Each switch is one log line with its steps' seconds. While the user
+played in the last minute (the lease refused: rules.USER_PLAYING), the
+switch is on hold: one alert says so with the delay before its next try
+(« Passage au farming mpw18 en attente : tu joues. Nouvel essai dans 60
+s. »), once per switch however long the wait; GET /mode's hold gives it
+({id, mode, left}) for the page's two buttons, POST /mode/hold their
+answer: « free » chooses free play, « resume » runs the switch now; with
+no answer it goes on by itself once the minute is over. The ready
+notification says the hold apart (« prêt en 95 s (dont 60 s d’attente :
+tu jouais) »). While
 farming mpw4 it looks for the
 gold scroll every 30 s on the battle screen (gold: true, false once missing
 for 2 looks, null unknown) and alerts once when it goes, then once when it
@@ -42,6 +55,7 @@ stage4 here are read from them and written to them.
 
 import asyncio
 import logging
+import secrets
 
 
 
@@ -53,7 +67,11 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
     status = {"mode": rules.DEFAULT, "default": rules.DEFAULT, "until": None, "highest": None,
               "configured": False, "state": "idle", "message": "", "task": None,
               "scroll": scroll.fresh(), "gold_look": None, "warned": None, "change": None,
-              "switch": None, "switch_at": None}
+              "switch": None, "switch_at": None,
+              # hold: the switch on hold while the user plays ({id, mode,
+              # until (monotonic), owner, action}), last_hold: the one that
+              # ended last ({id, action}), wake: wakes the switch's wait.
+              "hold": None, "last_hold": None, "wake": None}
     ports.store.register("mode", lambda: {key: status[key] for key in (
         "mode", "default", "until", "highest", "configured")})
 
@@ -71,6 +89,9 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
                                                "message")}
         answer.update(stages())
         answer["setup"] = status["state"] in ("moving", "waiting")
+        hold = status["hold"]
+        answer["hold"] = ({"id": hold["id"], "mode": hold["mode"],
+                           "left": max(0, round(hold["until"] - ports.clock.monotonic()))} if hold else None)
         answer["gold"] = status["scroll"]["gold"] if status["mode"] == "mpw4" else None
         answer["mine"] = mines["state"]()
         return answer
@@ -87,51 +108,113 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
             extra={"source": "slayer-legend", "notify": bool(alert)})
         return alert
 
+    def end_hold(action):
+        """The hold is over (action: "free", "resume", "timeout" once the
+        lease was had, "ended" when the switch ended otherwise)."""
+        hold = status["hold"]
+        if hold is None:
+            return
+        status["hold"] = None
+        status["last_hold"] = {"id": hold["id"], "action": action}
+        logging.info(f"Slayer Legend mode {hold['mode']}: hold {hold['id']} over ({action})")
+
+    async def pause(seconds):
+        """Sleeps seconds, or less when POST /mode/hold wakes it."""
+        wake = status["wake"] = asyncio.Event()
+        sleeper = asyncio.ensure_future(ports.clock.sleep(seconds))
+        waker = asyncio.ensure_future(wake.wait())
+        try:
+            await asyncio.wait({sleeper, waker}, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            sleeper.cancel()
+            waker.cancel()
+            if status["wake"] is wake:
+                status["wake"] = None
+
+    async def on_hold(name, applied, owner, alerted):
+        """The user played in the last minute: the switch is on hold until
+        the minute is over (its hold made, or moved later), one alert the
+        first time for this switch (alerted: it was sent). True once
+        alerted."""
+        left = ports.pause_left() or rules.BUSY_RETRY
+        hold = status["hold"]
+        if hold is None or hold["owner"] is not owner:
+            hold = status["hold"] = {"id": secrets.token_hex(4), "mode": name, "owner": owner, "action": None,
+                                     "applied": applied}
+            logging.info(f"Slayer Legend mode {name}: switch on hold {hold['id']}, the user plays "
+                         f"({round(left)} s left)")
+        hold["until"] = ports.clock.monotonic() + left
+        report("waiting", rules.hold_message(name, left, applied))
+        if not alerted:
+            await ports.notify(rules.hold_alert(name, left, applied))
+        return left
+
     async def set_stage(number, mpw, applied=False, step=None):
         """Brings the game to farming that stage with its loadout's preset,
         AUTO on. True once there; else one alert naming the step. While the
         shared lease cannot be had (the user played in the last minute,
         another holder), it waits for its next look (WATCH_EVERY), at most
-        rules.LEASE_WAIT: then one alert, for the user. Set up: one
-        notification with the seconds since the mode was chosen (applied:
-        since its loadout changed), naming the slowest step when over
-        rules.SWITCH_BUDGET. step: what runs in place of farm() (a
-        coroutine function: the soul weapon step alone)."""
+        rules.LEASE_WAIT: then one alert, for the user. While the user
+        plays it is on hold (on_hold: one alert, POST /mode/hold's choice).
+        Set up: one notification with the seconds since the mode was chosen
+        (applied: since its loadout changed), naming the slowest step when
+        over rules.SWITCH_BUDGET. step: what runs in place of farm() (a
+        coroutine function: the soul weapon step alone, taking force)."""
         name = f"mpw{mpw}"
         preset = loadouts["loadout"](name).get("preset")
         report("moving", f"Passage au stage {number} ({name})")
         since = status["switch_at"] if status["switch_at"] is not None else ports.clock.monotonic()
-        waited, failures = 0.0, 0
-        while True:
-            began = ports.clock.monotonic()
-            try:
-                answer = await (step() if step else farming["farm"](number, preset, name, status["highest"]))
-            except ports.Busy as e:
-                if not ports.enabled():
-                    # The plugin off: it waits for as long, no alert.
-                    since = ports.clock.monotonic()
-                if ports.clock.monotonic() - since >= rules.LEASE_WAIT:
-                    text = f"Passage au stage {number} ({name}) : bail toujours pris après 30 min ({e}), à faire à la main"
-                    report("failed", text[:200])
-                    await ports.notify(text)
-                    return False
-                report("waiting", f"Passage au stage {number} ({name}) en attente : {e}")
-                await ports.clock.sleep(rules.BUSY_RETRY)
-                waited += ports.clock.monotonic() - began
-                continue
-            if answer["result"] != "failed":
-                break
-            failures += 1
-            delay = rules.retry_after(failures, ports.clock.monotonic() - since - waited)
-            if delay is None:
-                break
-            logging.info(f"Slayer Legend mode {name}: switch stopped ({answer['text']}), "
-                         f"attempt {failures + 1} in {delay} s")
-            report("moving", f"Passage au stage {number} ({name}) : nouvel essai dans {delay} s ({answer['text']})"[:200])
-            await ports.clock.sleep(delay)
+        waited, held, failures = 0.0, 0.0, 0
+        me, alerted = object(), False
+        try:
+            while True:
+                began = ports.clock.monotonic()
+                hold = status["hold"]
+                force = bool(hold and hold["owner"] is me and hold["action"] == "resume")
+                if force:
+                    end_hold("resume")
+                    report("moving", f"Passage au stage {number} ({name}) : repris à ta demande")
+                try:
+                    forced = {"force": True} if force else {}
+                    answer = await (step(**forced) if step
+                                    else farming["farm"](number, preset, name, status["highest"], **forced))
+                except ports.Busy as e:
+                    if not ports.enabled():
+                        # The plugin off: it waits for as long, no alert.
+                        since = ports.clock.monotonic()
+                    if ports.clock.monotonic() - since >= rules.LEASE_WAIT:
+                        text = f"Passage au stage {number} ({name}) : bail toujours pris après 30 min ({e}), à faire à la main"
+                        report("failed", text[:200])
+                        await ports.notify(text)
+                        return False
+                    if str(e) == rules.USER_PLAYING:
+                        left = await on_hold(name, applied, me, alerted)
+                        alerted = True
+                        await pause(min(rules.BUSY_RETRY, left))
+                        held += ports.clock.monotonic() - began
+                    else:
+                        report("waiting", f"Passage au stage {number} ({name}) en attente : {e}")
+                        await ports.clock.sleep(rules.BUSY_RETRY)
+                    waited += ports.clock.monotonic() - began
+                    continue
+                if status["hold"] and status["hold"]["owner"] is me:
+                    end_hold("timeout")
+                if answer["result"] != "failed":
+                    break
+                failures += 1
+                delay = rules.retry_after(failures, ports.clock.monotonic() - since - waited)
+                if delay is None:
+                    break
+                logging.info(f"Slayer Legend mode {name}: switch stopped ({answer['text']}), "
+                             f"attempt {failures + 1} in {delay} s")
+                report("moving", f"Passage au stage {number} ({name}) : nouvel essai dans {delay} s ({answer['text']})"[:200])
+                await ports.clock.sleep(delay)
+        finally:
+            if status["hold"] and status["hold"]["owner"] is me:
+                end_hold("ended")
         alert = switched(answer, since, waited, applied)
         if answer["result"] == "done":
-            await ports.notify(rules.ready_text(name, ports.clock.monotonic() - since, applied, alert))
+            await ports.notify(rules.ready_text(name, ports.clock.monotonic() - since, applied, alert, held))
         if answer["result"] == "failed":
             text = f"Passage au stage {number} ({name}) arrêté : {answer['text']}"
             report("failed", text[:200])
@@ -193,7 +276,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
             return
         step = None
         if fields == {"soul_weapon"} and "ensure_soul_weapon" in farming:
-            step = lambda: farming["ensure_soul_weapon"](name, after)
+            step = lambda **forced: farming["ensure_soul_weapon"](name, after, **forced)
         status["change"] = ports.spawn(set_stage(after["stage"], int(name[3:]), applied=True, step=step))
 
     def free_text():
@@ -303,6 +386,41 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         ports.store.save()
         return ports.respond(state())
 
+    async def go_free():
+        """POST /mode/hold's « free »: free play, as its radio button
+        chooses it (timed, unless it is the default mode)."""
+        before = status["mode"]
+        until = rules.timer_for("free", None, False, before, status["until"], ports.clock.wall(),
+                                status["default"])
+        status.update(mode="free", until=until, configured=True, scroll=scroll.fresh(), gold_look=None)
+        mines["stop"]()
+        await enter("free", before)
+        watch_if_timed()
+        ports.store.save()
+
+    async def handle_hold(request):
+        """{action: "free" | "resume"[, hold: id]}: the user's answer to a
+        switch on hold (the page's buttons, the phone alert's)."""
+        try:
+            body = await request.json()
+        except (ValueError, TypeError, AttributeError):
+            body = None
+        action, error = rules.hold_request(body, status["hold"], status["last_hold"])
+        if error:
+            return ports.respond({"error": error[1]}, status=error[0])
+        if action == "free":
+            hold = status["hold"]
+            logging.info(f"Slayer Legend mode {hold['mode']}: on hold, free play asked")
+            end_hold("free")
+            await go_free()
+        elif action == "resume":
+            hold = status["hold"]
+            hold["action"] = "resume"
+            logging.info(f"Slayer Legend mode {hold['mode']}: on hold, resumed now")
+            if status["wake"] is not None:
+                status["wake"].set()
+        return ports.respond(state())
+
     async def resume(app):
         """At the gateway's start: the timed mode state.json kept goes on."""
         if rules.watched(status["mode"], status["default"]):
@@ -335,7 +453,8 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         loadouts["on_change"](loadout_changed)
 
     return {
-        "routes": [("GET", "/mode", handle_state), ("POST", "/mode", handle_mode), ("POST", "/mode/timer", handle_timer)],
+        "routes": [("GET", "/mode", handle_state), ("POST", "/mode", handle_mode), ("POST", "/mode/timer", handle_timer),
+                   ("POST", "/mode/hold", handle_hold)],
         "startup": [resume],
         # For the watchdog: the mode now (it runs only in the default one).
         "api": {"state": state, "confirm": confirm},

@@ -145,8 +145,9 @@ class Game:
             pass
 
         @contextlib.asynccontextmanager
-        async def leased(holder, reason, seconds, user=False):
-            if game.state["busy"]:
+        async def leased(holder, reason, seconds, user=False, pause=True):
+            # pause=False: the user's minute is not waited for.
+            if game.state["busy"] and (pause or game.state["busy"] != "l’utilisateur joue"):
                 raise Busy(game.state["busy"])
             game.leases.append((holder, reason))
             yield
@@ -201,7 +202,8 @@ class Game:
                                focused=focused,
                                notify=notify, clock=SimpleNamespace(sleep=sleep, wall=lambda: 1e9 + game.now,
                                                                      monotonic=lambda: game.now),
-                               leased=leased, Busy=Busy, store=store, enabled=lambda: True, respond=lambda value, status=200: (status, value))
+                               leased=leased, Busy=Busy, pause_left=lambda: game.state.get("pause_left", 60),
+                               store=store, enabled=lambda: True, respond=lambda value, status=200: (status, value))
 
 
 def readers(game):
@@ -559,6 +561,14 @@ class Mode(unittest.TestCase):
         calls, state, alerts = self.enter(["l’utilisateur joue", done()])
         self.assertEqual(len(calls), 2)
         self.assertEqual(state["state"], "farming")
+        self.assertIsNone(state["hold"], "the hold is over")
+        self.assertEqual(alerts[0], "Passage au farming mpw4 en attente : tu joues. Nouvel essai dans 60 s.")
+        # The fake's sleeps all move one clock: the hold's time is all of it.
+        self.assertRegex(alerts[1], r"^Farming mpw4 prêt en (\d+) s \(dont \1 s d’attente : tu jouais\)$")
+        self.assertEqual(len(alerts), 2)
+
+    def test_another_holder_is_waited_for_without_a_hold(self):
+        calls, state, alerts = self.enter(["bail tenu par mine", done()])
         self.assertEqual(alerts, ["Farming mpw4 prêt en 2 s"])
 
     def test_the_lease_waited_for_30_min_at_most_then_one_alert(self):

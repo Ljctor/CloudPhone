@@ -174,5 +174,88 @@ class FreePlayWarning(unittest.TestCase):
                                         "prolonge le jeu libre si tu joues encore")
 
 
+class Hold(unittest.TestCase):
+    """A switch on hold while the user plays: one alert, the user's choice."""
+
+    def test_the_alert_and_the_state_row(self):
+        self.assertEqual(rules.hold_alert("mpw18", 59.6),
+                         "Passage au farming mpw18 en attente : tu joues. Nouvel essai dans 60 s.")
+        self.assertEqual(rules.hold_alert("mpw4", 12, applied=True),
+                         "Configuration mpw4 en attente : tu joues. Nouvel essai dans 12 s.")
+        self.assertEqual(rules.hold_message("mpw18", 42),
+                         "Passage au farming mpw18 en attente : tu joues · nouvel essai dans 42 s")
+        self.assertEqual(rules.hold_message("mpw18", 0.2), "Passage au farming mpw18 en attente : tu joues · "
+                                                           "nouvel essai dans 1 s", "never « dans 0 s »")
+
+    def test_the_ready_text_says_the_hold_apart(self):
+        self.assertEqual(rules.ready_text("mpw18", 95, held=60.2),
+                         "Farming mpw18 prêt en 95 s (dont 60 s d’attente : tu jouais)")
+        self.assertEqual(rules.ready_text("mpw18", 34, held=0.3), "Farming mpw18 prêt en 34 s")
+        self.assertEqual(rules.ready_text("mpw4", 80, applied=True, alert="X", held=50),
+                         "Configuration mpw4 appliquée en 80 s (dont 50 s d’attente : tu jouais) ; X")
+
+    def test_free_or_resume_while_on_hold(self):
+        hold = {"id": "a1", "action": None}
+        self.assertEqual(rules.hold_request({"action": "free"}, hold, None), ("free", None))
+        self.assertEqual(rules.hold_request({"action": "resume", "hold": "a1"}, hold, None), ("resume", None))
+
+    def test_the_same_answer_again_changes_nothing(self):
+        self.assertEqual(rules.hold_request({"action": "resume"}, {"id": "a1", "action": "resume"}, None),
+                         ("again", None))
+        self.assertEqual(rules.hold_request({"action": "free"}, None, {"id": "a1", "action": "free"}),
+                         ("again", None))
+        self.assertEqual(rules.hold_request({"action": "free", "hold": "a1"}, None, {"id": "a1", "action": "free"}),
+                         ("again", None))
+
+    def test_nothing_on_hold_is_a_conflict(self):
+        for body, hold, last in (({"action": "resume"}, None, None),
+                                 ({"action": "resume"}, None, {"id": "a1", "action": "free"}),
+                                 ({"action": "resume"}, None, {"id": "a1", "action": "timeout"}),
+                                 ({"action": "free", "hold": "old"}, {"id": "a2", "action": None},
+                                  {"id": "a1", "action": "free"})):
+            action, error = rules.hold_request(body, hold, last)
+            self.assertEqual((action, error[0]), (None, 409), body)
+
+    def test_a_bad_body(self):
+        for body in (None, {}, {"action": "later"}, []):
+            self.assertEqual(rules.hold_request(body, {"id": "a1", "action": None}, None)[1][0], 400, body)
+
+
+class Clock:
+    def __init__(self):
+        self.now = 1000.0
+
+    def wall(self):
+        return 1e9 + self.now
+
+    def monotonic(self):
+        return self.now
+
+
+class Pause(unittest.TestCase):
+    """ports.Lease: the user's minute, and a switch resumed within it."""
+
+    def setUp(self):
+        self.clock, self.last = Clock(), {"monotonic": 990.0, "wall": 0}
+        self.lease = load("features/ports").Lease(self.clock, lambda: self.last)
+
+    def test_the_time_left(self):
+        self.assertEqual(self.lease.pause_left(), 50)
+        self.clock.now = 1100
+        self.assertEqual(self.lease.pause_left(), 0)
+
+    def test_resumed_now_it_is_taken_within_the_minute(self):
+        self.assertEqual(self.lease.take("stage_change", "farm mpw18", 60), rules.USER_PLAYING)
+        self.assertIsNone(self.lease.take("stage_change", "farm mpw18", 60, pause=False))
+        self.lease.check("stage_change")
+
+    def test_an_input_after_it_still_stops_the_sequence(self):
+        self.lease.take("stage_change", "farm mpw18", 60, pause=False)
+        self.clock.now += 1
+        self.last = {"monotonic": self.clock.now, "wall": 0}
+        with self.assertRaises(RuntimeError):
+            self.lease.check("stage_change")
+
+
 if __name__ == "__main__":
     unittest.main()

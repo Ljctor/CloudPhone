@@ -306,14 +306,15 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         if await auto_state() != "on":
             raise Stop("AUTO pas en marche après l’avoir activé")
 
-    async def run(mode, steps):
+    async def run(mode, steps, force=False):
         """Runs steps ((name, step) pairs) under the lease: {result, text,
         timings: {name: seconds}}; ports.Busy when the lease cannot be had
         (the caller tries again shortly). A plan step is written to the log
-        and the next steps go on."""
+        and the next steps go on. force: the user's last minute is not
+        waited for (they asked to resume now)."""
         plans = []
         timings = {}
-        async with ports.leased(HOLDER, f"farm {mode}", LEASE_SECONDS):
+        async with ports.leased(HOLDER, f"farm {mode}", LEASE_SECONDS, **({"pause": False} if force else {})):
             try:
                 for name, step in steps:
                     began = ports.clock.monotonic()
@@ -356,18 +357,18 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         except Stop as e:
             raise Stop(f"Soul Weapon : {e}") from None
 
-    async def ensure_soul_weapon(mode, loadout=None):
+    async def ensure_soul_weapon(mode, loadout=None, force=False):
         """The soul weapon step alone, under the lease (e.g. the active
         mode's loadout just changed): {result: "done" or "failed", text};
         ports.Busy when the lease cannot be had (the caller retries). A
         weapon read equipped since the last relaunch or user input is not
         read again (≈0 s); another one is."""
-        return await run(mode, [("soul_weapon", lambda: equip_soul_weapon(mode, loadout))])
+        return await run(mode, [("soul_weapon", lambda: equip_soul_weapon(mode, loadout))], force)
 
-    async def farm(stage, preset, mode, highest=None):
+    async def farm(stage, preset, mode, highest=None, force=False):
         """Farming stage with preset (None: kept as it is), AUTO on, then the
         loadout's soul weapon; never a stage past highest (the highest seen
-        farmed, None: unknown)."""
+        farmed, None: unknown). force: see run."""
         if highest and stage > highest:
             return {"result": "failed", "text": f"stage {stage} au-delà du plus haut vu farmé ({highest})"}
         steps = [("stage", lambda: change_stage(stage))]
@@ -375,7 +376,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
             steps.append(("preset", lambda: set_preset(preset)))
         steps.append(("auto", ensure_auto))
         steps.append(("soul_weapon", lambda: equip_soul_weapon(mode)))
-        return await run(mode, steps)
+        return await run(mode, steps, force)
 
     async def after_relaunch(mode):
         """The soul weapon read again once the game is back: the lease

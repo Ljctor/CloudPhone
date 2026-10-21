@@ -208,13 +208,56 @@ def retry_after(failures, elapsed):
     return delay if elapsed + delay < SWITCH_BUDGET else None
 
 
-def ready_text(name, seconds, applied=False, alert=None):
+def ready_text(name, seconds, applied=False, alert=None, held=0.0):
     """The one notification once a farming mode is set up: the seconds
     since it was chosen (applied: since its loadout changed), the lease's
-    wait included; alert: the over-budget one, after it."""
+    wait included; held: the part of it on hold while the user played,
+    said apart; alert: the over-budget one, after it."""
     text = (f"Configuration {name} appliquée en {round(seconds)} s" if applied
             else f"Farming {name} prêt en {round(seconds)} s")
+    if round(held):
+        text += f" (dont {round(held)} s d’attente : tu jouais)"
     return f"{text} ; {alert}" if alert else text
+
+
+# The lease's refusal while the user played in the last minute (ports.Lease):
+# the switch is on hold, said once, with a choice.
+USER_PLAYING = "l’utilisateur joue"
+HOLD_ACTIONS = ("free", "resume")
+
+
+def hold_what(name, applied=False):
+    """« Passage au farming mpw18 », or « Configuration mpw18 » (applied)."""
+    return f"Configuration {name}" if applied else f"Passage au farming {name}"
+
+
+def hold_alert(name, left, applied=False):
+    """The one alert when a switch is put on hold because the user plays:
+    left, the seconds before its next try."""
+    return f"{hold_what(name, applied)} en attente : tu joues. Nouvel essai dans {max(1, round(left))} s."
+
+
+def hold_message(name, left, applied=False):
+    """The État row's text while on hold."""
+    return f"{hold_what(name, applied)} en attente : tu joues · nouvel essai dans {max(1, round(left))} s"
+
+
+def hold_request(body, hold, last):
+    """POST /mode/hold {action: "free" | "resume"[, hold: id]}: (action,
+    None) to do it, ("again", None) when it was already done for that hold
+    (idempotent: nothing more to do), or (None, (status, error)): 400 a bad
+    body, 409 nothing on hold (or another hold than the one named). hold:
+    the hold now ({id, action}) or None; last: the hold that ended last
+    ({id, action}) or None."""
+    action = body.get("action") if isinstance(body, dict) else None
+    if action not in HOLD_ACTIONS:
+        return None, (400, "Expected {action: \"free\" | \"resume\"}")
+    named = body.get("hold")
+    if hold and (named is None or named == hold["id"]):
+        return ("again" if hold.get("action") == action else action), None
+    if last and last.get("action") == action and (named is None or named == last["id"]):
+        return "again", None
+    return None, (409, "Aucun passage de mode en attente")
 
 
 REASONS = {"mine done": "Mine terminée", "mine stopped": "Mine arrêtée", "timer": "Minuteur écoulé",

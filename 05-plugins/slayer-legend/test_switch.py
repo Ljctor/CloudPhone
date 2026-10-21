@@ -110,9 +110,9 @@ def harness(game):
     stage_part = base.feature.stage_change(ports, *readers, base.rules, base.TABLE)
     farmed = []
 
-    async def farm(stage, preset, mode, highest=None):
+    async def farm(stage, preset, mode, highest=None, force=False):
         farmed.append((game.now, mode))
-        return await stage_part["api"]["farm"](stage, preset, mode, highest)
+        return await stage_part["api"]["farm"](stage, preset, mode, highest, force)
 
     stages = {"mpw18": 905, "mpw4": 925}
     presets = {"mpw18": "IV", "mpw4": "II"}
@@ -151,6 +151,7 @@ def harness(game):
                              {"farm": farm, "ensure_soul_weapon": ensure_soul_weapon})
     post = next(h for method, path, h in part["routes"] if method == "POST" and path == "/mode")
     get = next(h for method, path, h in part["routes"] if method == "GET")
+    hold = next(h for method, path, h in part["routes"] if method == "POST" and path == "/mode/hold")
 
     class Request:
         def __init__(self, body):
@@ -161,7 +162,8 @@ def harness(game):
 
     return SimpleNamespace(clock=clock, ports=ports, farmed=farmed, presets=presets, stages=stages,
                            change=change, souls=souls,
-                           post=lambda body: post(Request(body)), state=lambda: get(None))
+                           post=lambda body: post(Request(body)), state=lambda: get(None),
+                           hold=lambda body: hold(Request(body)))
 
 
 def there(game, stage, preset):
@@ -300,11 +302,84 @@ class Switch(unittest.TestCase):
         line = next(line for line in self.lines if line.startswith("switch "))
         self.assertRegex(line, r"^switch mpw18→mpw4 in (\d+) s \(.*\) \(\+4\d s waiting for the lease\), done$")
         self.assertLessEqual(int(line.split(" in ")[1].split(" ")[0]), mode_rules.SWITCH_BUDGET)
-        # The time since the choice, the user's wait included; no over-budget alert.
-        self.assertEqual(len(game.alerts), 1, game.alerts)
-        self.assertRegex(game.alerts[0], r"^Farming mpw4 prêt en \d+ s$")
-        self.assertGreaterEqual(int(game.alerts[0].split(" en ")[1].split(" ")[0]), 40)
+        # The hold said once; the time since the choice, the user's wait
+        # included and said apart; no over-budget alert.
+        self.assertEqual(len(game.alerts), 2, game.alerts)
+        self.assertEqual(game.alerts[0], "Passage au farming mpw4 en attente : tu joues. Nouvel essai dans 60 s.")
+        self.assertRegex(game.alerts[1], r"^Farming mpw4 prêt en \d+ s \(dont 4\d s d’attente : tu jouais\)$")
+        self.assertGreaterEqual(int(game.alerts[1].split(" en ")[1].split(" ")[0]), 40)
         self.assertTrue(there(game, 925, "II"))
+
+    def on_hold(self, game, h, at, then, free=False):
+        """mpw4 chosen while the user plays; at seconds later, then(h)."""
+        seen = {}
+
+        async def answer():
+            await h.clock.sleep(at)
+            seen["during"] = (await h.state())[1]
+            seen["answers"] = await then(h)
+
+        async def go():
+            asyncio.get_running_loop().create_task(answer())
+            await h.post({"mode": "mpw4", "stage4": 925})
+            await h.clock.until(lambda: "answers" in seen and (
+                any(line.startswith("switch ") for line in self.lines) or game.state["busy"] and free), 600)
+            return (await h.state())[1]
+        seen["after"] = asyncio.run(go())
+        return seen
+
+    def test_on_hold_one_alert_while_the_user_keeps_playing_then_it_goes_on(self):
+        game = SlowGame(stage=905, preset="IV", busy="l’utilisateur joue")
+
+        async def stop_playing(h):
+            await h.clock.sleep(140)
+            game.state["busy"] = None
+            return []
+        seen = self.on_hold(game, harness(game), 30, stop_playing)
+        during = seen["during"]
+        self.assertEqual((during["state"], during["setup"], during["hold"]["mode"]), ("waiting", True, "mpw4"))
+        self.assertEqual(during["message"], "Passage au farming mpw4 en attente : tu joues · nouvel essai dans 60 s")
+        self.assertEqual(len(game.alerts), 2, game.alerts)
+        self.assertEqual(game.alerts[0], "Passage au farming mpw4 en attente : tu joues. Nouvel essai dans 60 s.")
+        self.assertRegex(game.alerts[1], r"^Farming mpw4 prêt en \d+ s \(dont 1[67]\d s d’attente : tu jouais\)$")
+        self.assertEqual((seen["after"]["state"], seen["after"]["hold"]), ("farming", None))
+
+    def test_resume_now_runs_the_switch_while_the_user_plays(self):
+        game = SlowGame(stage=905, preset="IV", busy="l’utilisateur joue")
+
+        async def resume(h):
+            return [await h.hold({"action": "resume"})]
+        seen = self.on_hold(game, harness(game), 10, resume)
+        self.assertEqual(seen["answers"][0][0], 200)
+        self.assertTrue(there(game, 925, "II"))
+        self.assertEqual(seen["after"]["state"], "farming")
+        self.assertRegex(game.alerts[-1], r"^Farming mpw4 prêt en \d+ s \(dont 1\d s d’attente : tu jouais\)$")
+        self.assertEqual(len(game.alerts), 2, game.alerts)
+
+    def test_free_play_instead_touches_nothing(self):
+        game = SlowGame(stage=905, preset="IV", busy="l’utilisateur joue")
+        h = harness(game)
+
+        async def free(h):
+            answers = [await h.hold({"action": "free"})]
+            answers.append(await h.hold({"action": "free"}))
+            answers.append(await h.hold({"action": "resume"}))
+            await h.clock.sleep(120)
+            return answers
+        seen = self.on_hold(game, h, 10, free, free=True)
+        codes = [status for status, _ in seen["answers"]]
+        self.assertEqual(codes, [200, 200, 409], "the same answer again changes nothing; another: nothing on hold")
+        after = seen["after"]
+        self.assertEqual((after["mode"], after["state"], after["hold"]), ("free", "free", None))
+        self.assertIsNotNone(after["until"], "free play is timed, as its radio button")
+        self.assertEqual(game.moves, [], "nothing tapped")
+        self.assertEqual(game.alerts, ["Passage au farming mpw4 en attente : tu joues. Nouvel essai dans 60 s."])
+
+    def test_nothing_on_hold_is_refused(self):
+        game = SlowGame(stage=905, preset="IV")
+        h = harness(game)
+        self.assertEqual(asyncio.run(h.hold({"action": "resume"}))[0], 409)
+        self.assertEqual(asyncio.run(h.hold({"action": "later"}))[0], 400)
 
     def test_a_preset_change_of_the_running_mode_is_applied_at_once(self):
         game = SlowGame(stage=905, preset="IV")
