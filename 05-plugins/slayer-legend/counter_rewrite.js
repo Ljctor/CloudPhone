@@ -402,7 +402,7 @@ export function startEmeraldMask(api, state, counter = COUNTERS.emerald) {
         lastServer = Date.now();
         const answer = await api.get(counter.path);
         if (!answer) throw new Error('gateway');
-        show(answer.mask, answer.mask ? null : `${answer.reason}, serveur`);
+        show(answer.mask, answer.mask ? null : `${answer.reason}, server`);
         return;
       }
       const scale = video.videoWidth / 360;
