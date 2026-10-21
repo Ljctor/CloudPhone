@@ -102,6 +102,8 @@ REPAIR_AFTER = 2
 # Looks in a row with another app in front before it is "away" (a passing
 # window, the focus said wrong once, is not).
 AWAY_AFTER = 2
+# Google's windows in front are the sign-in path, not another app.
+GMS = "com.google.android.gms"
 # Looks seen at the gateway's start before any repair.
 OBSERVE_FIRST = 2
 # After a repair that did not take: no repair of that kind this long.
@@ -111,7 +113,7 @@ HOUR = 3600
 SYMPTOMS = {
     "adb_missing": "adb ne répond pas : l’émulateur ou adb manque",
     "not_running": "le jeu ne tourne pas",
-    "away": "une autre application est au premier plan",
+    "away": "une autre application est au premier plan : {window}",
     "crash": "le jeu a planté (fenêtre d’erreur d’Android)",
     "anr": "le jeu ne répond pas (fenêtre d’Android), « Attendre » sans effet : à faire à la main",
     "start_screen": "le jeu est revenu à son écran titre",
@@ -199,7 +201,8 @@ def judge(seen, profile, numeral_of, last_input, resumed, memory, now, after_mod
     """(symptom, text, params, memory) for one look.
 
     seen: {adb (False: adb does not answer), running, focused (None:
-    cannot tell, see ports.focus; False AWAY_AFTER looks in a row: away), crash (an
+    cannot tell, see ports.focus; False AWAY_AFTER looks in a row: away, or
+    sign_in for a Google window), window (the one in front), crash (an
     Android error window in front), anr (its "not responding" one), screen (None: no capture), numeral
     (battle: the numeral ending the stage's name, None: unread),
     battle_settings (the preset's name read, None: not read), loadout
@@ -243,7 +246,12 @@ def judge(seen, profile, numeral_of, last_input, resumed, memory, now, after_mod
         memory["away"] = away + 1
         if memory["away"] < AWAY_AFTER:
             return "unknown", "pas de vérification (autre fenêtre au premier plan, à confirmer)", {}, memory
-        return "away", SYMPTOMS["away"], {}, memory
+        window = seen.get("window") or "?"
+        if GMS in window:
+            # Google's own window (its account chooser, the Play Games
+            # prompt): the sign-in path, the relaunch's (launch_rules).
+            return "sign_in", SYMPTOMS["sign_in"], {}, memory
+        return "away", SYMPTOMS["away"], {"window": window}, memory
     screen = seen["screen"]
     if screen in ("title", "save"):
         return "start_screen", SYMPTOMS["start_screen"], {}, memory

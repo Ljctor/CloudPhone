@@ -85,7 +85,8 @@ class Focus(unittest.TestCase):
     """ports.focus_of: who has the focus, for the watchdog's "away"."""
 
     def test_the_game_in_front(self):
-        self.assertEqual(ports.focus_of(f"  mCurrentFocus={GAME}\n{GAME_APP}\n"), (True, GAME))
+        self.assertEqual(ports.focus_of(f"  mCurrentFocus={GAME}\n{GAME_APP}\n"),
+                         (True, "com.gear2.growslayer/com.google.firebase.MessagingUnityPlayerActivity"))
 
     def test_a_passing_window_over_the_game_cannot_tell(self):
         for window in ("null", "Window{3 u0 InputMethod}", "Window{4 u0 Toast}", "Window{5 u0 PopupWindow:1f}"):
@@ -98,7 +99,10 @@ class Focus(unittest.TestCase):
     def test_another_app_in_front(self):
         launcher = "Window{6 u0 com.android.launcher3/com.android.launcher3.uioverride.QuickstepLauncher}"
         self.assertEqual(ports.focus_of(f"  mCurrentFocus={launcher}\n  mFocusedApp=ActivityRecord{{7 u0 "
-                                        "com.android.launcher3/.Launcher t1}\n"), (False, launcher))
+                                        "com.android.launcher3/.Launcher t1}\n"),
+                         (False, "com.android.launcher3/com.android.launcher3.uioverride.QuickstepLauncher"))
+        self.assertEqual(ports.focus_of("  mCurrentFocus=null\n  mFocusedApp=ActivityRecord{7 u0 "
+                                        "com.android.settings/.Settings t1}\n"), (False, "com.android.settings/.Settings"))
         # The keyboard over another app is that app's.
         self.assertFalse(ports.focus_of("  mCurrentFocus=Window{3 u0 InputMethod}\n"
                                         "  mFocusedApp=ActivityRecord{7 u0 com.android.settings/.Settings t1}\n")[0])

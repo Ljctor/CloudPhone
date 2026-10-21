@@ -104,7 +104,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         seen["crash"], seen["anr"] = dialog == "crash", dialog == "anr"
         if running and not dialog:
             focus = await ports.focus()
-            seen["focused"] = focus["game"]
+            seen["focused"], seen["window"] = focus["game"], focus["window"]
             if not focus["game"]:
                 # Which window, for the diagnosis (a launcher, a system
                 # dialog, Google's; never the account's).

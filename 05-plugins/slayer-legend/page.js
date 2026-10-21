@@ -157,7 +157,7 @@ const ENGLISH = {
   'menu du jeu ouvert': 'game menu open',
   'adb ne répond pas : l’émulateur ou adb manque': 'adb does not answer: the emulator or adb is missing',
   'le jeu ne tourne pas': 'the game is not running',
-  'une autre application est au premier plan': 'another app is in front',
+  'une autre application est au premier plan : {window}': 'another app is in front: {window}',
   'Préréglage et AUTO': 'Preset and AUTO',
   'Préréglage et AUTO non vérifiés : quelqu’un regarde l’écran': 'Preset and AUTO not checked: someone is watching the screen',
   'pas de vérification (fenêtre de passage au premier plan)': 'not checked (a passing window in front)',
@@ -177,7 +177,8 @@ const ENGLISH = {
   // The watchdog's log records.
   'Farming mpw18 : adb ne répond pas : l’émulateur ou adb manque': 'mpw18 farming: adb does not answer: the emulator or adb is missing',
   'Farming mpw18 : le jeu ne tourne pas': 'mpw18 farming: the game is not running',
-  'Farming mpw18 : une autre application est au premier plan': 'mpw18 farming: another app is in front',
+  'Farming mpw18 : une autre application est au premier plan : {window}':
+    'mpw18 farming: another app is in front: {window}',
   'Farming mpw18 : le jeu a planté (fenêtre d’erreur d’Android)': 'mpw18 farming: the game crashed (Android’s error window)',
   'Farming mpw18 : le jeu ne répond pas (fenêtre d’Android), « Attendre » sans effet : à faire à la main':
     'mpw18 farming: the game is not responding (Android’s window), « Wait » did not help: do it by hand',

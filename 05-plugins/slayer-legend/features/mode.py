@@ -61,15 +61,22 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         """Brings the game to farming that stage with its loadout's preset,
         AUTO on. True once there; else one alert naming the step. While the
         shared lease cannot be had (the user played in the last minute,
-        another holder), it waits for its next look (WATCH_EVERY)."""
+        another holder), it waits for its next look (WATCH_EVERY), at most
+        rules.LEASE_WAIT: then one alert, for the user."""
         name = f"mpw{mpw}"
         preset = loadouts["loadout"](name).get("preset")
         report("moving", f"Passage au stage {number} ({name})")
+        since = ports.clock.monotonic()
         while True:
             try:
                 answer = await farming["farm"](number, preset, name, status["highest"])
                 break
             except ports.Busy as e:
+                if ports.clock.monotonic() - since >= rules.LEASE_WAIT:
+                    text = f"Passage au stage {number} ({name}) : bail toujours pris après 30 min ({e}), à faire à la main"
+                    report("failed", text[:200])
+                    await ports.notify(text)
+                    return False
                 report("waiting", f"Passage au stage {number} ({name}) en attente : {e}")
                 await ports.clock.sleep(rules.WATCH_EVERY)
         if answer["result"] == "failed":

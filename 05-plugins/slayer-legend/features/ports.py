@@ -86,6 +86,14 @@ def crash_window(dumpsys):
 
 # Windows that take the focus for a moment over the app in front.
 PASSING = ("InputMethod", "Toast", "PopupWindow")
+WINDOW_NAME = re.compile(r"(?:Window|ActivityRecord)\{\S+ u\d+ ([^}\s]+(?: [^}\s]+)*?)(?: t\d+)?\}")
+
+
+def window_name(window):
+    """"com.android.launcher3/.Launcher" of "Window{6 u0
+    com.android.launcher3/.Launcher}" (an ActivityRecord alike)."""
+    found = WINDOW_NAME.search(window or "")
+    return found.group(1) if found else window
 
 
 def focus_of(dumpsys):
@@ -99,11 +107,11 @@ def focus_of(dumpsys):
     if not current and not apps:
         return None, None
     if any(PACKAGE in window for window in current):
-        return True, next(window for window in current if PACKAGE in window)
+        return True, window_name(next(window for window in current if PACKAGE in window))
     window = next((w for w in current if w != "null"), None)
     if any(PACKAGE in app for app in apps) and (window is None or any(kind in window for kind in PASSING)):
-        return None, window
-    return False, window or next((app for app in apps if app != "null"), None)
+        return None, window_name(window)
+    return False, window_name(window or next((app for app in apps if app != "null"), None))
 
 
 def close_button(hierarchy, name="aerr_close"):

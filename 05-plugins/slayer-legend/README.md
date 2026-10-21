@@ -166,12 +166,40 @@ with an alert and places nothing. It also reads the pieces available; if
 the chosen variant needs pieces that are not there, it alerts with the
 list of what is missing and places nothing.
 
+## Sign-in after a relaunch
+
+The game may ask to sign in again (its sign-in screen: "Sign in with
+Google" above "Sign in with Apple"). The launch taps "Sign in with Google"
+once per launch (Apple's button is forbidden), then, on Google's own
+account chooser (read by uiautomator), the account only when exactly one
+is listed and only when the launch's tap opened it, then the save notice's
+Confirm. The sign-in screen back after the tap, or a chooser with none or
+several accounts: one alert, finish by hand.
+
+First check in game (2026-10-21, the real phone): a relaunch ended on the
+sign-in screen; the next launch went sign-in → "Sign in with Google" →
+(the account) → save notice → battle, and the watchdog read "OK (stage
+920)".
+
+Hypothesis, not checked: the watchdog's « une autre application est au
+premier plan » that night, right after the gateway's start, was Google's
+own window (com.google.android.gms, the Play Games prompt) once the game's
+Google session was lost; its relaunch then ended on the sign-in screen.
+Since then a Google window in front is the sign-in path (symptom sign_in,
+the relaunch's), another app counts only after 2 looks in a row, and the
+away record names the window in front.
+
 ## Limits
 
 - The watchdog's stage check reads only the Roman numeral ending the
   stage's name on the battle screen: another region's stage with the same
   numeral passes (the region's banner is not read yet). Power Saving Mode
   shows no name: there the stage is not checked.
+- The watchdog takes a game menu with the skill bar showing (its blue
+  mana bar) for the battle screen: classify() says "menu" there on a
+  plain battle at 480×1040 (features/watchdog.py, facts). Pop-ups that
+  leave the skill bar visible (a level-up, a reward) would then pass for
+  battle; this needs tests on real captures of those pop-ups.
 - The relaunch's timing: a crash or a game that stopped is seen within
   about 30 s (2 looks 15 s apart), the relaunch starts within a minute,
   then the game takes its own load time to reach the battle screen.

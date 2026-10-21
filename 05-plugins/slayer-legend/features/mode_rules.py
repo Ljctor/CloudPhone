@@ -11,6 +11,8 @@ DEFAULT = "mpw18"
 TIMED_MINUTES = 30
 # Seconds between two checks of a timed mode.
 WATCH_EVERY = 10
+# A stage change waits for the shared lease this long at most (seconds).
+LEASE_WAIT = 30 * 60
 # mpw4 farming: seconds between two looks for the gold scroll (on the
 # battle screen, gold_scroll.py), with a screenshot at most WATCH_EVERY old.
 GOLD_EVERY = 30

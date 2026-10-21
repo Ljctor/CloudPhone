@@ -640,6 +640,21 @@ class Focus(unittest.TestCase):
         w.looks(AWAY, 2)
         self.assertEqual(w.symptoms[-2:], ["unknown", "away"])
 
+    def test_the_away_alert_names_the_window(self):
+        w = Watch()
+        w.looks(BATTLE, 4)
+        w.looks({**AWAY, "window": "com.android.launcher3/.Launcher"}, 3)
+        alert = next(r for r in w.records if r[4])
+        self.assertEqual(alert[2].format(**alert[3]), "Farming mpw18 : une autre application est au premier plan : "
+                                                      "com.android.launcher3/.Launcher")
+
+    def test_googles_window_is_the_sign_in_path(self):
+        w = Watch()
+        w.looks(BATTLE, 4)
+        w.looks({**AWAY, "window": "com.google.android.gms/.games.ui.signin.SignInActivity"}, 3)
+        self.assertEqual(w.symptoms[-1], "sign_in")
+        self.assertEqual(w.kinds(), ["relaunch"])
+
     def test_cannot_tell_is_no_symptom(self):
         w = Watch()
         w.looks(BATTLE, 4)

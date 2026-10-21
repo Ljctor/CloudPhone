@@ -444,6 +444,7 @@ class Mode(unittest.TestCase):
         ports = game.ports()
 
         async def wait(seconds):
+            game.now += seconds
             if seconds != mode_rules.WATCH_EVERY or not answers:
                 await asyncio.Event().wait()  # the timed mode's watch waits: only entering is tested
         ports.clock.sleep = wait
@@ -492,6 +493,15 @@ class Mode(unittest.TestCase):
         self.assertEqual(len(calls), 2)
         self.assertEqual(state["state"], "farming")
         self.assertEqual(alerts, [])
+
+    def test_the_lease_waited_for_30_min_at_most_then_one_alert(self):
+        held = 1 + mode_rules.LEASE_WAIT // mode_rules.WATCH_EVERY
+        calls, state, alerts = self.enter(["bail tenu par mine"] * held + [done()])
+        # mpw4 gave up after LEASE_WAIT (one alert); its timer then ended:
+        # back to mpw18, which farms.
+        self.assertEqual([mode for _, _, mode in calls], ["mpw4"] * held + ["mpw18"])
+        self.assertIn("bail toujours pris après 30 min (bail tenu par mine), à faire à la main", alerts[0])
+        self.assertEqual(len([a for a in alerts if "bail" in a]), 1)
 
     def test_plan_is_said_not_alerted(self):
         calls, state, alerts = self.enter([{"result": "plan", "text": "stage 915 → 931"}])
