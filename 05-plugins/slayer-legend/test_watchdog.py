@@ -260,74 +260,12 @@ class Repairs(unittest.TestCase):
         w.looks(GONE, 7)
         self.assertEqual(len(w.repairs), 1, "no relaunch during the passive watch")
         self.assertEqual(rules.counters(w.memory, w.wall())["bad_in_a_row"], 11, "a repair does not reset it")
-        self.assertEqual(len(w.alerts()), 1, "one alert for the whole problem")
+        self.assertEqual(len(w.alerts()), 2, "the problem's alert and its first failure's")
         without = [r for r in w.records if r[2].startswith("Réparation sans effet")]
-        self.assertEqual([(r[1], r[4]) for r in without], [("warning", False)], "a warning, not a phone alert")
+        self.assertEqual([(r[1], r[4]) for r in without], [("warning", True)], "the first failure: a phone alert")
+        self.assertEqual(without[0][3], {"repair": "relance du jeu", "minutes": 1})
         w.look(GONE)
         self.assertEqual(len(w.repairs), 2)
-
-    def test_three_relaunches_an_hour_then_blocked_with_one_alert(self):
-        w = Watch()
-        w.looks(GONE, 200)
-        self.assertEqual(len(w.repairs), 3, w.repairs)
-        blocked = [text for level, text in w.alerts() if text.startswith("Réparation bloquée")]
-        self.assertEqual(len(blocked), 1)
-        self.assertIn("relaunch", rules.counters(w.memory, w.wall())["blocked_since"])
-
-    def test_back_to_battle_is_capped_at_10_an_hour(self):
-        w = Watch()
-        # A menu that comes back after each way back to battle.
-        for _ in range(11):
-            w.looks(BATTLE, 1)
-            w.looks(MENU, 6)
-        self.assertEqual(w.kinds(), ["back_to_battle"] * 10)
-        self.assertEqual(len([t for _, t in w.alerts() if t.startswith("Réparation bloquée")]), 1)
-
-    def test_blocked_clears_on_an_input(self):
-        w = Watch()
-        w.looks(GONE, 200)
-        w.tap()
-        w.looks(GONE, 5)
-        self.assertEqual(w.paused, ["En pause : l’utilisateur joue"] * 4)
-        self.assertEqual(w.memory["blocked"], {})
-        self.assertEqual(len(w.repairs), 4, "the user took over: a new hourly count")
-        self.assertEqual(len(w.alerts()), 2, "the problem's alert and one blocked alert")
-
-    def test_a_good_look_does_not_clear_blocked(self):
-        w = Watch()
-        w.looks(GONE, 200)
-        w.looks(BATTLE, 5)
-        self.assertIn("relaunch", w.memory["blocked"])
-
-    def test_blocked_clears_once_the_hour_frees_a_slot(self):
-        w = Watch()
-        w.looks(GONE, 200)
-        first = w.repairs[0][0]
-        while w.now < first + rules.HOUR:
-            w.look(GONE)
-        self.assertEqual(w.memory["blocked"], {})
-        self.assertEqual(len(w.repairs), 4)
-
-    def test_blocked_again_within_the_hour_is_not_said_again(self):
-        w = Watch()
-        w.looks(GONE, 200)
-        w.tap()
-        w.looks(GONE, 4)
-        w.looks(GONE, 60)
-        blocked = [t for t in w.notifications() if t.startswith("Réparation bloquée")]
-        self.assertEqual(len(blocked), 1, w.notifications())
-
-    def test_the_cap_survives_a_gateway_restart(self):
-        w = Watch()
-        w.looks(GONE, 130)
-        self.assertEqual(len(w.repairs), 3)
-        again = Watch(kept=rules.persisted(w.memory))
-        again.now = w.now
-        again.looks(GONE, 40)
-        self.assertEqual(again.repairs, [], "the hour's three relaunches are kept")
-        self.assertEqual(rules.counters(again.memory, again.wall())["repairs_this_hour"],
-                         {"relaunch": 3, "back_to_battle": 0, "stage_change": 0, "select_preset": 0, "loadout": 0,
-                          "auto_on": 0})
 
     def test_a_restart_never_resumes_a_repair(self):
         w = Watch()
@@ -374,6 +312,139 @@ class Repairs(unittest.TestCase):
         self.assertEqual(len(w.alerts()), 1)
 
 
+class Backoff(unittest.TestCase):
+    """Each kind backs off on its own after real failures: 1, 2, 4, 8, 16,
+    then 30 minutes, never for good; few alerts; a durable recovery starts
+    it over. On virtual time, a look every rules.EVERY seconds."""
+
+    def gone_for(self, w, seconds):
+        end = w.now + seconds
+        while w.now < end:
+            w.look(GONE)
+
+    def test_the_delays(self):
+        self.assertEqual([rules.delay(n) for n in range(9)], [0, 60, 120, 240, 480, 960, 1800, 1800, 1800])
+        self.assertEqual((rules.delay(3, 1.0), rules.delay(3, -1.0)), (264.0, 216.0), "±10 %")
+
+    def test_three_hours_gone_tries_on_and_on_further_apart(self):
+        w = Watch()
+        self.gone_for(w, 3 * 3600)
+        times = [t for t, _ in w.repairs]
+        gaps = [b - a for a, b in zip(times, times[1:])]
+        # After each failure (seen a look later): its delay, the 2-minute
+        # passive watch at least.
+        for gap, wanted in zip(gaps, [120, 120, 240, 480, 960, 1800, 1800]):
+            self.assertGreaterEqual(gap, wanted + E, gaps)
+            self.assertLess(gap, wanted + 3 * E, gaps)
+        self.assertGreaterEqual(times[-1], 3 * 3600 - 1800 - 3 * E, "it never stops")
+        self.assertIn(rules.counters(w.memory, w.wall())["next_attempt"]["relaunch"]["failures"],
+                      (len(times) - 1, len(times)))
+
+    def test_the_alerts_first_failure_8_min_30_min_then_silence(self):
+        w = Watch()
+        self.gone_for(w, 3 * 3600)
+        said = [(text, params.get("minutes")) for _, level, text, params, notify in w.records if notify]
+        self.assertEqual(said, [
+            ("Farming mpw18 : le jeu ne tourne pas", None),
+            ("Réparation sans effet : {repair}, prochain essai dans {minutes} min", 1),
+            ("Farming mpw18 : {repair} toujours en échec, prochaine tentative dans {minutes} min", 8),
+            ("Farming mpw18 : {repair} toujours en échec, prochaine tentative dans {minutes} min", 30)])
+        self.assertFalse([r for r in w.records if "bloquée" in r[2].lower()])
+
+    def test_the_status_says_when_the_next_try_is(self):
+        w = Watch()
+        self.gone_for(w, 600)
+        self.assertGreater(rules.waiting(w.memory, "not_running", w.wall()), 0)
+        self.assertIsNone(rules.waiting(w.memory, "menu", w.wall()))
+
+    def test_a_durable_recovery_starts_over_a_short_one_does_not(self):
+        w = Watch()
+        self.gone_for(w, 15 * 60)
+        failures = w.memory["backoff"]["relaunch"]["failures"]
+        last = w.memory["backoff"]["relaunch"]["delay"]
+        self.assertGreaterEqual(last, 480)
+        # Two minutes of battle: shorter than the last delay.
+        w.looks(BATTLE, 8)
+        self.assertEqual(w.memory["backoff"]["relaunch"]["failures"], failures)
+        # The last delay of battle: durable.
+        w.looks(BATTLE, int(last // E) + 1)
+        self.assertEqual(w.memory["backoff"], {})
+        self.assertEqual(w.notifications()[-1], "Farming mpw18 : rétabli")
+
+    def test_a_short_delay_needs_the_5_minute_floor(self):
+        w = Watch()
+        self.gone_for(w, 90)
+        self.assertEqual(w.memory["backoff"]["relaunch"]["failures"], 1)
+        w.looks(BATTLE, rules.RECOVERY_FLOOR // E - 1)
+        self.assertIn("relaunch", w.memory["backoff"])
+        w.looks(BATTLE, 2)
+        self.assertEqual(w.memory["backoff"], {})
+
+    def test_the_backoff_survives_a_gateway_restart(self):
+        w = Watch()
+        self.gone_for(w, 15 * 60)
+        state = w.memory["backoff"]["relaunch"]
+        again = Watch(kept=rules.persisted(w.memory))
+        again.now = w.now
+        self.assertEqual(again.memory["backoff"]["relaunch"], state)
+        while again.wall() < state["next"] - E:
+            again.look(GONE)
+        self.assertEqual(again.repairs, [], "no attempt before its next time")
+        again.looks(GONE, 3)
+        self.assertEqual(again.kinds(), ["relaunch"])
+        self.assertEqual(rules.kept_backoff({"relaunch": {"failures": "x"}, "nope": {}}), {})
+
+    def test_a_deferral_or_a_plan_does_not_count(self):
+        w = Watch()
+        w.lease = "fps"
+        w.looks(GONE, 20)
+        self.assertEqual((w.repairs, w.memory["backoff"]), ([], {}))
+        w = Watch(act=False)
+        w.looks(BATTLE, 3)
+        w.looks(OTHER_STAGE, 20)
+        self.assertEqual(w.memory["backoff"], {})
+        # A repair the feature deferred (Busy): not_run, then the same symptom.
+        w = Watch()
+        w.looks(GONE, 3)
+        w.memory = rules.not_run(w.memory, "relaunch")
+        w.look(GONE)
+        self.assertEqual(w.memory["backoff"], {})
+        self.assertFalse([r for r in w.records if r[2].startswith("Réparation sans effet")])
+
+    def test_a_sequence_that_stopped_counts_once(self):
+        w = Watch()
+        w.looks({**BATTLE, "stage": 921}, 3)
+        self.assertEqual(w.memory["verifying"], "stage_change")
+        w.memory, said = rules.stopped(w.memory, "stage_change", w.wall())
+        self.assertEqual([a[4] for a in said], [True])
+        w.look({**BATTLE, "stage": 921})
+        self.assertEqual(w.memory["backoff"]["stage_change"]["failures"], 1)
+
+    def test_a_user_input_keeps_the_delay(self):
+        w = Watch()
+        self.gone_for(w, 15 * 60)
+        before = dict(w.memory["backoff"]["relaunch"])
+        w.tap()
+        w.looks(GONE, 5)
+        self.assertEqual(w.memory["backoff"]["relaunch"], before)
+
+    def test_retry_now_starts_the_kind_over(self):
+        w = Watch()
+        self.gone_for(w, 15 * 60)
+        w.memory = rules.retry(w.memory, "relaunch")
+        count = len(w.repairs)
+        w.look(GONE)
+        self.assertEqual(len(w.repairs), count + 1, "at once")
+
+    def test_each_kind_backs_off_on_its_own(self):
+        w = Watch()
+        self.gone_for(w, 15 * 60)
+        w.looks(BATTLE, 1)
+        w.looks(MENU, 6)
+        self.assertEqual(w.kinds()[-1], "back_to_battle")
+        self.assertNotIn("back_to_battle", w.memory["backoff"])
+
+
 class Profile(unittest.TestCase):
     LOADOUT = {"preset": "III", "soul_weapon": {"id": 32, "variant": "Gold"}, "weapon": "Ambition"}
 
@@ -407,12 +478,14 @@ class StageAndControls(unittest.TestCase):
         good = rules.judge({**BATTLE, "stage": 920}, PROFILE, NUMERALS.get, None, False, rules.fresh(), 60)
         self.assertEqual((good[0], good[1]), (None, "OK (stage {stage})"))
 
-    def test_wrong_stage_is_farmed_back_with_the_caps(self):
+    def test_wrong_stage_is_farmed_back_with_its_backoff(self):
         w = Watch()
         w.looks({**BATTLE, "stage": 921}, 4)
         self.assertEqual(w.kinds(), ["stage_change"])
         w.looks({**BATTLE, "stage": 921}, 40)
-        self.assertLessEqual(w.kinds().count("stage_change"), rules.CAPS["stage_change"])
+        # 10 minutes: tries at about 1, 3 (the 2-minute watch), 5 and 9 minutes.
+        self.assertEqual(w.kinds().count("stage_change"), 4, w.repairs)
+        self.assertEqual(w.memory["backoff"]["stage_change"]["failures"], 4)
 
     def test_auto_off_is_its_symptom_and_repair(self):
         w = Watch()
@@ -811,7 +884,8 @@ class Flapping(unittest.TestCase):
             w.looks(MENU, 6)
             w.look(BATTLE)
         self.assertLessEqual(len(w.notifications()), 3, w.notifications())
-        self.assertLessEqual(len(w.repairs), 10)
+        # Each way back worked (battle at the next look): no failure, no backoff.
+        self.assertEqual(w.memory["backoff"], {})
 
     def test_a_relaunch_then_a_pop_up_on_return(self):
         w = Watch()

@@ -63,10 +63,18 @@ screen (Power Saving Mode needs none).
   repair. One repair at a time; the next look verifies it. One that did
   not take is followed by a passive watch of WATCH_AFTER_FAILURE (looks
   and alerts, no repair of that kind), as the mine's stop pass is.
-- Each kind of repair has an hourly cap (CAPS, counted on Unix time and
-  kept across gateway restarts: persisted()), then is blocked with one
-  warning alert (blocked again within the hour: no new alert). Blocked
-  clears on a user input or once the hourly window frees a slot.
+- Each kind of repair backs off on its own, and never stops for good:
+  after its nth failure, no attempt of that kind for DELAYS[n] (1, 2, 4,
+  8, 16 minutes, then 30 at most, each ±JITTER). Only a real failure
+  counts: the repair ran and the next look still sees its symptom
+  (failed), or its sequence stopped (stopped); a deferral (the lease, a
+  user input) or a plan does not (not_run). The backoff of a kind starts
+  over after a durable recovery: good looks for at least the last delay
+  used, RECOVERY_FLOOR at least; a user input keeps it; the page's
+  « Réessayer maintenant » clears it (retry). Its alerts: the first
+  failure, the delay first reaching 8 minutes, then 30 (ESCALATE), then
+  silence until « rétabli ». The next attempt's time is kept across
+  gateway restarts (persisted()).
 - The relaunch and the way back to battle always tap for real. The stage
   change, the preset and the loadout can be plan-only (until their screens
   are mapped and the user approves them): then the plan is said once per
@@ -148,32 +156,53 @@ REPAIRS = {
 REPAIR_NAMES = {"relaunch": "relance du jeu", "back_to_battle": "retour au combat",
                 "stage_change": "changement de stage", "select_preset": "choix du préréglage de combat",
                 "loadout": "rééquipement", "auto_on": "remise en marche d’AUTO"}
-# Repairs of each kind at most per hour.
-CAPS = {"relaunch": 3, "back_to_battle": 10, "stage_change": 3, "select_preset": 3, "loadout": 3, "auto_on": 3}
+# Seconds without attempt of a kind after its nth failure (DELAYS[n],
+# the last one for any later), each ±JITTER of it.
+DELAYS = (0, 60, 120, 240, 480, 960, 1800)
+JITTER = 0.1
+# A durable recovery: good looks for the last delay used, this long at least.
+RECOVERY_FLOOR = 5 * 60
+# Delays (seconds) whose first reach is a phone alert.
+ESCALATE = (480, 1800)
+KINDS = tuple(REPAIR_NAMES)
 ERRORS = ("adb_missing",)
 # Repairs that are never plan-only.
 ALWAYS_REAL = ("relaunch", "back_to_battle")
+
+
+def kept_backoff(saved):
+    """The backoff kept in state.json, checked: {kind: {failures, next
+    (Unix time of the next attempt allowed), delay (the last one, seconds),
+    said (the ESCALATE delays alerted)}}."""
+    kept = {}
+    for kind, state in (saved if isinstance(saved, dict) else {}).items():
+        try:
+            if kind in KINDS:
+                kept[kind] = {"failures": int(state["failures"]), "next": float(state["next"]),
+                              "delay": float(state["delay"]),
+                              "said": [int(d) for d in state.get("said", []) if d in ESCALATE]}
+        except (KeyError, TypeError, ValueError, AttributeError):
+            continue
+    return kept
 
 
 def fresh(kept=None):
     """What the watchdog remembers when it starts (kept: persisted() of
     the last run, from state.json), or when a mode suspended it."""
     kept = kept or {}
-    repairs = {kind: [float(t) for t in kept.get("repairs", {}).get(kind, []) if isinstance(t, (int, float))]
-               for kind in CAPS}
     return {"looks": 0, "streak": 0, "since_repair": 0, "good": 0, "symptom": None, "alerted": False,
-            "alerts": 0, "repairs": repairs, "blocked": {}, "block_notified": {}, "watch": {},
+            "alerts": 0, "backoff": kept_backoff(kept.get("backoff")), "good_since": None, "watch": {},
             "verifying": None, "menu_since": None, "planned": None, "deferred": None,
             "away": 0}
 
 
 def persisted(memory):
-    """What a gateway restart keeps: the repairs' times (for the caps)."""
-    return {"repairs": {kind: list(times) for kind, times in memory["repairs"].items()}}
+    """What a gateway restart keeps: each kind's backoff."""
+    return {"backoff": {kind: {**state, "said": list(state["said"])} for kind, state in memory["backoff"].items()}}
 
 
 def suspended(memory):
-    """A mode suspended the watchdog: it starts over, with its caps."""
+    """A mode suspended the watchdog: it starts over, with its backoff."""
     return {**fresh(persisted(memory)), "looks": memory["looks"]}
 
 
@@ -301,22 +330,76 @@ def record(level, text, params=None, notify=False):
     return ("record", level, text, params or {}, notify)
 
 
-def in_hour(times, wall):
-    return [t for t in times if wall - t < HOUR]
+def delay(failures, jitter=0.0):
+    """Seconds without attempt after the failures-th failure; jitter in
+    [-1, 1] spreads it by JITTER."""
+    return DELAYS[min(failures, len(DELAYS) - 1)] * (1 + JITTER * max(-1.0, min(1.0, jitter)))
 
 
-def unblocked(memory, input_wall, wall):
-    """Blocked kinds clear on a user input since they were blocked (with a
-    new hourly count: the user took over) or once the hourly window frees
-    a slot; never on a good look."""
-    blocked, repairs = dict(memory["blocked"]), dict(memory["repairs"])
-    for kind, since in memory["blocked"].items():
-        if input_wall is not None and since < input_wall:
-            repairs[kind] = [t for t in repairs.get(kind, []) if t > input_wall]
-            del blocked[kind]
-        elif len(in_hour(repairs.get(kind, []), wall)) < CAPS[kind]:
-            del blocked[kind]
-    return {**memory, "blocked": blocked, "repairs": repairs}
+def minutes(seconds):
+    return max(1, round(seconds / 60))
+
+
+def failure(memory, kind, wall, jitter=0.0):
+    """(memory, actions): one real failure of kind: its next delay, and
+    its alert the first time and when the delay first reaches ESCALATE."""
+    state = memory["backoff"].get(kind, {"failures": 0, "said": []})
+    failures = state["failures"] + 1
+    base = DELAYS[min(failures, len(DELAYS) - 1)]
+    wait = delay(failures, jitter)
+    said = list(state["said"])
+    values = {"repair": REPAIR_NAMES[kind], "minutes": minutes(wait)}
+    reached = next((d for d in ESCALATE if base >= d and d not in said), None)
+    if failures == 1:
+        action = record("warning", "Réparation sans effet : {repair}, prochain essai dans {minutes} min", values,
+                        notify=True)
+    elif reached is not None:
+        action = record("warning", "Farming mpw18 : {repair} toujours en échec, prochaine tentative dans "
+                                   "{minutes} min", values, notify=True)
+    else:
+        action = record("normal", "Réparation sans effet : {repair}, prochain essai dans {minutes} min", values)
+    if reached is not None:
+        said.append(reached)
+    memory = {**memory, "backoff": {**memory["backoff"], kind: {
+        "failures": failures, "next": wall + wait, "delay": wait, "said": said}}}
+    return memory, [action]
+
+
+def stopped(memory, kind, wall, jitter=0.0):
+    """(memory, actions): the repair under way stopped (its sequence
+    answered failed): one real failure, not counted again at the next look."""
+    if memory["verifying"] != kind:
+        return memory, []
+    memory = {**memory, "verifying": None, "watch": {**memory["watch"], kind: wall + WATCH_AFTER_FAILURE}}
+    return failure(memory, kind, wall, jitter)
+
+
+def not_run(memory, kind):
+    """The repair did not run (deferred: the lease, a user input; or a
+    plan): no failure, nothing to verify."""
+    return {**memory, "verifying": None} if memory["verifying"] == kind else memory
+
+
+def retry(memory, kind):
+    """« Réessayer maintenant »: that kind's backoff starts over."""
+    return {**memory, "backoff": {k: v for k, v in memory["backoff"].items() if k != kind},
+            "watch": {k: v for k, v in memory["watch"].items() if k != kind}}
+
+
+def waiting(memory, symptom, wall):
+    """Minutes before the next attempt of symptom's repair, or None."""
+    state = memory["backoff"].get(REPAIRS.get(symptom))
+    return minutes(state["next"] - wall) if state and state["next"] > wall else None
+
+
+def recovered(memory, wall):
+    """Kinds whose good looks lasted their last delay (RECOVERY_FLOOR at
+    least) start over."""
+    since = memory["good_since"]
+    if since is None:
+        return memory
+    return {**memory, "backoff": {kind: state for kind, state in memory["backoff"].items()
+                                  if wall - since < max(state["delay"], RECOVERY_FLOOR)}}
 
 
 def decide(memory, symptom, text, params, context, wall):
@@ -335,13 +418,16 @@ def decide(memory, symptom, text, params, context, wall):
     once "rétabli". A good look in between (the battle screen between two
     pop-ups) resets the bad looks in a row, nothing else."""
     actions = []
-    memory = unblocked(memory, context.get("input_wall"), wall)
     if symptom in ("unknown", "pending"):
         return memory, actions
+    memory = dict(memory)
     verifying, memory["verifying"] = memory["verifying"], None
     if symptom is None:
         if verifying:
             actions.append(record("normal", "Réparation réussie : {repair}", {"repair": REPAIR_NAMES[verifying]}))
+        if memory["good_since"] is None:
+            memory["good_since"] = wall
+        memory = recovered(memory, wall)
         memory.update(streak=0, since_repair=0, symptom=None, good=memory["good"] + 1)
         if memory["good"] >= RECOVERED_AFTER:
             if memory["alerted"]:
@@ -349,13 +435,15 @@ def decide(memory, symptom, text, params, context, wall):
             memory.update(alerted=False, watch={}, planned=None, deferred=None)
         return memory, actions
     memory["good"] = 0
+    memory["good_since"] = None
     repair = REPAIRS[symptom]
     if verifying:
         if repair == verifying:
-            # The repair did not take: watch this kind passively for a while.
+            # The repair did not take: a real failure; watch this kind
+            # passively for a while.
             memory["watch"] = {**memory["watch"], verifying: wall + WATCH_AFTER_FAILURE}
-            actions.append(record("warning", "Réparation sans effet : {repair}, surveillance seule 2 minutes",
-                                  {"repair": REPAIR_NAMES[verifying]}))
+            memory, said = failure(memory, verifying, wall, context.get("jitter", 0.0))
+            actions += said
         else:
             # It took; something else is wrong now (a pop-up after a relaunch).
             actions.append(record("normal", "Réparation réussie : {repair}", {"repair": REPAIR_NAMES[verifying]}))
@@ -369,8 +457,9 @@ def decide(memory, symptom, text, params, context, wall):
         actions.append(record("error" if symptom in ERRORS else "warning", "Farming mpw18 : " + text, params,
                               notify=True))
     if (repair is None or memory["since_repair"] < REPAIR_AFTER or memory["looks"] <= OBSERVE_FIRST
-            or repair not in context.get("available", ()) or repair in memory["blocked"]
-            or memory["watch"].get(repair, 0) > wall):
+            or repair not in context.get("available", ())
+            or memory["watch"].get(repair, 0) > wall
+            or memory["backoff"].get(repair, {}).get("next", 0) > wall):
         return memory, actions
     holder = context.get("lease")
     if holder:
@@ -384,19 +473,6 @@ def decide(memory, symptom, text, params, context, wall):
             memory["planned"] = symptom
             actions.append(("plan", repair))
         return memory, actions
-    recent = in_hour(memory["repairs"].get(repair, []), wall)
-    if len(recent) >= CAPS[repair]:
-        memory["repairs"] = {**memory["repairs"], repair: recent}
-        memory["blocked"] = {**memory["blocked"], repair: wall}
-        # Blocked again within the hour: not said again.
-        notify = wall - memory["block_notified"].get(repair, -HOUR) >= HOUR
-        if notify:
-            memory["block_notified"] = {**memory["block_notified"], repair: wall}
-        actions.append(record("warning", "Réparation bloquée : {repair}, {cap} fois en une heure ; "
-                                         "fais-le à la main", {"repair": REPAIR_NAMES[repair], "cap": CAPS[repair]},
-                              notify=notify))
-        return memory, actions
-    memory["repairs"] = {**memory["repairs"], repair: recent + [wall]}
     memory["verifying"] = repair
     memory["since_repair"] = 0
     actions.append(record("normal", "Réparation : {repair}", {"repair": REPAIR_NAMES[repair]}))
@@ -445,10 +521,12 @@ def gold_alert(kept, auto):
 
 
 def counters(memory, wall):
-    """The state details' counters, the repairs per kind."""
+    """The state details' counters; next_attempt: each kind backing off,
+    {repair (its French name), failures, next (Unix time of its next
+    attempt allowed)}."""
     return {"looks": memory["looks"], "bad_in_a_row": memory["streak"], "alerts": memory["alerts"],
-            "repairs_this_hour": {kind: len(in_hour(times, wall)) for kind, times in memory["repairs"].items()},
-            "blocked_since": dict(memory["blocked"])}
+            "next_attempt": {kind: {"repair": REPAIR_NAMES[kind], "failures": state["failures"],
+                                    "next": state["next"]} for kind, state in memory["backoff"].items()}}
 
 
 def profile(loadout, stage18):
