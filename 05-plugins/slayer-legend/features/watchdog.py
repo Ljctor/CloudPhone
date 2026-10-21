@@ -3,7 +3,10 @@ no mine), it looks at the game every rules.EVERY seconds and, when the
 farming is not going on, alerts and relaunches the game.
 
 GET /watchdog   {status: {template, params}, text, symptom, paused,
-                 counters, lease, repairing, profile}
+                 counters, lease, repairing, profile, controls}
+
+controls: {template, params} when the preset and AUTO are not checked
+(someone watches the screen), else None.
 
 Each look checks that adb answers, that Android's crash dialog is not in
 front, that the game's process runs and is in front, then the screen
@@ -21,7 +24,9 @@ own holder "stage_change", and plan-only while its switch says so, see
 features/stage_change.py). On the battle screen the stage is read whole
 (region and numeral); the preset and AUTO are read on one unfold of the
 right edge's controls (a tap, under the lease) at most every
-CONTROLS_EVERY seconds, only when a switch of theirs is real. The way
+CONTROLS_EVERY seconds, and only while no viewer watches the screen (the
+unfold would show under their eyes); the status then says they are not
+checked. The way
 back to battle from a game menu stays an alert (its close buttons differ
 per panel); the soul weapon and its engraving wait for phase 3.
 
@@ -40,7 +45,8 @@ AVAILABLE = ("relaunch",)
 # Repairs by the stage change feature, and the switch that makes each real.
 FARMING = {"stage_change": "stage_change", "select_preset": "preset", "auto_on": "auto"}
 # Seconds between two readings of the preset and AUTO (each an unfold).
-CONTROLS_EVERY = 60
+CONTROLS_EVERY = 300
+UNCHECKED = "Préréglage et AUTO non vérifiés : quelqu’un regarde l’écran"
 
 
 def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, loadout, farming=None, gold=None):
@@ -53,7 +59,8 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
     memory = rules.fresh(ports.store.saved.get("watchdog"))
     status = {"template": "Démarrage", "params": {}, "symptom": None, "paused": None, "repairing": None,
               "mode": None, "ended_at": None, "resumed": False, "anr_waited": False, "controls": None,
-              "gold": rules.gold_fresh()}
+              "gold": rules.gold_fresh(),
+              "gold_due": False, "unchecked": False}
     available = AVAILABLE + (tuple(FARMING) if farming else ())
     ports.store.register("watchdog", lambda: rules.persisted(memory))
 
@@ -96,7 +103,12 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         dialog = await ports.dialog()
         seen["crash"], seen["anr"] = dialog == "crash", dialog == "anr"
         if running and not dialog:
-            seen["focused"] = await ports.focused()
+            focus = await ports.focus()
+            seen["focused"] = focus["game"]
+            if not focus["game"]:
+                # Which window, for the diagnosis (a launcher, a system
+                # dialog, Google's; never the account's).
+                logging.info(f"Slayer Legend watchdog: the game is not in front: {focus['window']}")
         if seen["focused"]:
             shot = await ports.capture(max_age=rules.MAX_AGE)
             if shot:
@@ -106,16 +118,23 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
     async def read_controls(seen):
         """The preset and AUTO, read on one unfold at most every
         CONTROLS_EVERY seconds on the battle screen (kept in between), or
-        at once when gold/s reads 0 (a trigger: AUTO may be off). AUTO read
-        on while gold/s stays at 0: one alert."""
+        at once when gold/s reads 0 (a trigger: AUTO may be off), only
+        while no viewer is connected (else not checked, and the status
+        says so; a trigger waits for them to leave). AUTO read on while
+        gold/s stays at 0: one alert."""
         if not farming or seen["screen"] != "battle":
             return
         now = ports.clock.monotonic()
-        triggered = False
         if gold:
-            status["gold"], triggered = rules.gold_zero(status["gold"], gold["current"](), ports.clock.wall())
-            if triggered:
+            status["gold"], trigger = rules.gold_zero(status["gold"], gold["current"](), ports.clock.wall())
+            if trigger:
                 logging.info("Slayer Legend watchdog: gold/s at 0, AUTO read at once")
+                status["gold_due"] = True
+        watched = ports.viewers()
+        status["unchecked"] = watched != 0
+        if status["unchecked"]:
+            return
+        triggered, status["gold_due"] = status["gold_due"], False
         kept = status["controls"]
         if kept is None or triggered or now - kept[1] >= CONTROLS_EVERY:
             reading = await farming["read_controls"]()
@@ -138,7 +157,8 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             if kind == "auto_on":
                 answer = await farming["ensure_auto"]("mpw18")
             else:
-                answer = await farming["farm"](part["stage"], part["preset"], "mpw18")
+                answer = await farming["farm"](part["stage"], part["preset"], "mpw18",
+                                               modes["state"]().get("highest"))
         except ports.Busy as e:
             say("normal", "Réparation différée : {repair} ({why})",
                 {"repair": rules.REPAIR_NAMES[kind], "why": str(e)})
@@ -271,7 +291,8 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                 "text": status["template"].format(**status["params"]) if status["params"] else status["template"],
                 "symptom": status["symptom"], "paused": status["paused"], "repairing": status["repairing"],
                 "counters": rules.counters(memory, ports.clock.wall()), "lease": held,
-                "profile": profile()}
+                "profile": profile(), "controls": {"template": UNCHECKED, "params": {}}
+                if status["unchecked"] else None}
 
     async def handle_state(request):
         return ports.respond(state())

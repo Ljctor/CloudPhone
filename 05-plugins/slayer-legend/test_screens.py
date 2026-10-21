@@ -76,6 +76,37 @@ HIERARCHY = ("<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><hierarchy
              "class=\"android.widget.Button\" bounds=\"[54,606][426,672]\" /></hierarchy>")
 
 
+GAME = "Window{1a u0 com.gear2.growslayer/com.google.firebase.MessagingUnityPlayerActivity}"
+GAME_APP = ("  mFocusedApp=ActivityRecord{2b u0 com.gear2.growslayer/"
+            "com.google.firebase.MessagingUnityPlayerActivity t9}")
+
+
+class Focus(unittest.TestCase):
+    """ports.focus_of: who has the focus, for the watchdog's "away"."""
+
+    def test_the_game_in_front(self):
+        self.assertEqual(ports.focus_of(f"  mCurrentFocus={GAME}\n{GAME_APP}\n"), (True, GAME))
+
+    def test_a_passing_window_over_the_game_cannot_tell(self):
+        for window in ("null", "Window{3 u0 InputMethod}", "Window{4 u0 Toast}", "Window{5 u0 PopupWindow:1f}"):
+            self.assertEqual(ports.focus_of(f"  mCurrentFocus={window}\n{GAME_APP}\n")[0], None, window)
+
+    def test_nothing_said_cannot_tell(self):
+        self.assertEqual(ports.focus_of(""), (None, None))
+        self.assertEqual(ports.focus_of("Can't find service: window"), (None, None))
+
+    def test_another_app_in_front(self):
+        launcher = "Window{6 u0 com.android.launcher3/com.android.launcher3.uioverride.QuickstepLauncher}"
+        self.assertEqual(ports.focus_of(f"  mCurrentFocus={launcher}\n  mFocusedApp=ActivityRecord{{7 u0 "
+                                        "com.android.launcher3/.Launcher t1}\n"), (False, launcher))
+        # The keyboard over another app is that app's.
+        self.assertFalse(ports.focus_of("  mCurrentFocus=Window{3 u0 InputMethod}\n"
+                                        "  mFocusedApp=ActivityRecord{7 u0 com.android.settings/.Settings t1}\n")[0])
+
+    def test_another_display_does_not_hide_the_game(self):
+        self.assertTrue(ports.focus_of(f"  mCurrentFocus=null\n  mCurrentFocus={GAME}\n")[0])
+
+
 class CrashDialog(unittest.TestCase):
     def test_its_window_in_front(self):
         self.assertEqual(ports.crash_window(DUMPSYS), "crash")

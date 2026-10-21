@@ -19,7 +19,13 @@ of the gateway, so what it may do to the game is all here.
   tapping sequence under it, Busy when another holder has it or the user
   plays.
 - last_input(): the user's last input ({monotonic, wall}) or None.
-- focused(): the game is the app in front. running(): its process is
+- viewers(): the viewers connected now (None on a gateway that does not
+  say: then nothing that shows on screen is done for the watchdog).
+- focused(): the game is the app in front (its window has the focus).
+  focus(): for the watchdog, {game: True (in front), False (another app's
+  window has the focus), None (cannot tell: no focus said, or a passing
+  window over the game, the keyboard, a toast, a pop-up, the focus moving),
+  window: the window that has it} (see focus_of). running(): its process is
   there (False when gone, None when adb cannot tell). start_game(): opens
   it as the launcher does (am start, MAIN/LAUNCHER, never -S: it never
   kills the game), for the launch (the user's press, or the mpw18
@@ -76,6 +82,28 @@ def crash_window(dumpsys):
             if ANR_WINDOW in line:
                 return "anr"
     return None
+
+
+# Windows that take the focus for a moment over the app in front.
+PASSING = ("InputMethod", "Toast", "PopupWindow")
+
+
+def focus_of(dumpsys):
+    """(game, window) from `dumpsys window`: game True when the game's
+    window has the focus (mCurrentFocus); None when no window has it (null,
+    the focus moving between windows) or a passing window has it (PASSING)
+    while the game is still the focused app (mFocusedApp), or when dumpsys
+    says neither; else False, with the window that has the focus."""
+    current = [line.split("mCurrentFocus=", 1)[1].strip() for line in dumpsys.splitlines() if "mCurrentFocus=" in line]
+    apps = [line.split("mFocusedApp=", 1)[1].strip() for line in dumpsys.splitlines() if "mFocusedApp=" in line]
+    if not current and not apps:
+        return None, None
+    if any(PACKAGE in window for window in current):
+        return True, next(window for window in current if PACKAGE in window)
+    window = next((w for w in current if w != "null"), None)
+    if any(PACKAGE in app for app in apps) and (window is None or any(kind in window for kind in PASSING)):
+        return None, window
+    return False, window or next((app for app in apps if app != "null"), None)
 
 
 def close_button(hierarchy, name="aerr_close"):
@@ -281,6 +309,7 @@ def build(context, nav):
     # Older gateways do not say when the user plays.
     last_input = getattr(context, "last_input", None) or (lambda: None)
     lease = Lease(clock, last_input)
+    viewers = getattr(context, "viewers", None) or (lambda: None)
 
     @contextlib.asynccontextmanager
     async def leased(holder, reason, seconds, user=False):
@@ -330,6 +359,11 @@ def build(context, nav):
     async def focused():
         code, out = await adb("shell", "dumpsys", "window")
         return code == 0 and any("mCurrentFocus" in line and PACKAGE in line for line in out.splitlines())
+
+    async def focus():
+        code, out = await adb("shell", "dumpsys", "window")
+        game, window = focus_of(out) if code == 0 else (None, None)
+        return {"game": game, "window": window}
 
     async def running():
         """False when the game's process is gone, None when adb cannot tell."""
@@ -403,7 +437,8 @@ def build(context, nav):
     return SimpleNamespace(
         capture=context.screenshot, analyse=context.analyse,
         tap=tap, taps=taps, hold=hold, swipe=swipe, lease=lease, leased=leased, Busy=Busy, last_input=last_input,
-        focused=focused, running=running, start_game=start_game, dialog=dialog, crashed=crashed, close_crash=close_crash, wait_anr=wait_anr,
+        viewers=viewers,
+        focused=focused, focus=focus, running=running, start_game=start_game, dialog=dialog, crashed=crashed, close_crash=close_crash, wait_anr=wait_anr,
         account_chooser=account_chooser, choose_account=choose_account,
         notify=context.notify,
         clock=clock,

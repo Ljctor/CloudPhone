@@ -9,9 +9,12 @@ POST /farming   {stage_change, preset, auto}: each "real" or "plan" (a
 Each repair has its switch, kept in state.json ("farming"), "plan" by
 default: then the plan is written to the log and nothing is tapped. Each
 is turned to "real" after a first run watched with the user. The AUTO
-gear itself stays plan-only even when its switch is real (AUTO_TAP_LEARNED):
-its OFF reading is calibrated on an ON frame only, until a real OFF
-capture recalibrates it; a real switch still lets it read AUTO.
+gear itself stays plan-only (AUTO_TAP_LEARNED): its OFF reading is
+calibrated on an ON frame only, until a real OFF capture recalibrates it;
+until then POST /farming refuses auto "real" (400), and a "real" kept in
+state.json reads as "plan". The auto switch is the gear's tap only: AUTO
+is read (on the controls' unfold, as the preset is) whenever a switch is
+real.
 
 Each step looks first (a fresh screenshot), makes one guarded move
 (ports, nav.py) and looks again for what it expects; anything else stops
@@ -74,9 +77,13 @@ class Plan(Exception):
     """A plan-only step: what it would do, in French."""
 
 
+AUTO_NOT_LEARNED = "Le bouton AUTO n’est pas encore appris (pas de capture AUTO arrêté) : « auto » reste en plan"
+
+
 def kept_switches(saved):
     saved = saved if isinstance(saved, dict) else {}
-    return {name: "real" if saved.get(name) == "real" else "plan" for name in SWITCHES}
+    return {name: "real" if saved.get(name) == "real" and (name != "auto" or AUTO_TAP_LEARNED) else "plan"
+            for name in SWITCHES}
 
 
 def stage_change(ports, screens, select, controls, rules, table):
@@ -231,14 +238,14 @@ def stage_change(ports, screens, select, controls, rules, table):
         return await ports.analyse(controls.auto, first, second)
 
     async def ensure_auto():
-        if not real("auto"):
+        if not any(real(name) for name in SWITCHES):
             raise Plan("vérifier AUTO (l’engrenage tourne), le toucher s’il est arrêté")
         state = await auto_state()
         if state == "on":
             return
         if state is None:
             raise Stop("état d’AUTO illisible")
-        if not AUTO_TAP_LEARNED:
+        if not (AUTO_TAP_LEARNED and real("auto")):
             raise Plan("AUTO lu arrêté : toucher l’engrenage (en attente d’une capture AUTO arrêté pour "
                        "recalibrer la lecture)")
         await unfold(await folded_battle(), ("auto", controls.AUTO_TAP), verified={"auto"})
@@ -284,9 +291,9 @@ def stage_change(ports, screens, select, controls, rules, table):
 
     async def read_controls():
         """{preset, auto} read on one unfold of the controls (a tap: under
-        the lease), or None: their switches are both plan, the lease
-        cannot be had, or anything unexpected."""
-        if not (real("preset") or real("auto")):
+        the lease), or None: every switch is plan, the lease cannot be
+        had, or anything unexpected."""
+        if not any(real(name) for name in SWITCHES):
             return None
         try:
             async with ports.leased(HOLDER, "lecture du préréglage et d’AUTO", 30):
@@ -306,6 +313,8 @@ def stage_change(ports, screens, select, controls, rules, table):
             body = None
         if not isinstance(body, dict) or any(body.get(k) not in (None, "real", "plan") for k in SWITCHES):
             return ports.respond({"error": "Expected {stage_change, preset, auto}: \"real\" or \"plan\""}, status=400)
+        if body.get("auto") == "real" and not AUTO_TAP_LEARNED:
+            return ports.respond({"error": AUTO_NOT_LEARNED}, status=400)
         for name in SWITCHES:
             if body.get(name):
                 if switches[name] != body[name]:

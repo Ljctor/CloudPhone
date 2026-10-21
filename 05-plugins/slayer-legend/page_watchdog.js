@@ -26,6 +26,11 @@ export default function watchdog(api) {
         },
       },
       {
+        type: 'status', label: 'Préréglage et AUTO',
+        visible: () => Boolean(watched.answer?.controls),
+        value: () => api.tr(watched.answer.controls.template, watched.answer.controls.params),
+      },
+      {
         type: 'status', label: 'Bail',
         visible: () => Boolean(watched.answer?.lease),
         value: () => api.tr('{holder} : {reason}', watched.answer.lease),

@@ -99,6 +99,9 @@ ALERT_AFTER_OTHER = 4
 # another screen is the disconnect screen or the save choice.
 AFTER_MODE = 5 * 60
 REPAIR_AFTER = 2
+# Looks in a row with another app in front before it is "away" (a passing
+# window, the focus said wrong once, is not).
+AWAY_AFTER = 2
 # Looks seen at the gateway's start before any repair.
 OBSERVE_FIRST = 2
 # After a repair that did not take: no repair of that kind this long.
@@ -158,7 +161,8 @@ def fresh(kept=None):
                for kind in CAPS}
     return {"looks": 0, "streak": 0, "since_repair": 0, "good": 0, "symptom": None, "alerted": False,
             "alerts": 0, "repairs": repairs, "blocked": {}, "block_notified": {}, "watch": {},
-            "verifying": None, "menu_since": None, "planned": None, "deferred": None}
+            "verifying": None, "menu_since": None, "planned": None, "deferred": None,
+            "away": 0}
 
 
 def persisted(memory):
@@ -194,7 +198,8 @@ def roman(number):
 def judge(seen, profile, numeral_of, last_input, resumed, memory, now, after_mode=False):
     """(symptom, text, params, memory) for one look.
 
-    seen: {adb (False: adb does not answer), running, focused, crash (an
+    seen: {adb (False: adb does not answer), running, focused (None:
+    cannot tell, see ports.focus; False AWAY_AFTER looks in a row: away), crash (an
     Android error window in front), anr (its "not responding" one), screen (None: no capture), numeral
     (battle: the numeral ending the stage's name, None: unread),
     battle_settings (the preset's name read, None: not read), loadout
@@ -216,6 +221,7 @@ def judge(seen, profile, numeral_of, last_input, resumed, memory, now, after_mod
     banner is read in phase 2; until then the status says "numéral III",
     never a stage number."""
     memory = {**memory, "looks": memory["looks"] + 1}
+    away, memory["away"] = memory.get("away", 0), 0
     if seen["adb"] and seen.get("running") and seen.get("focused") and not seen.get("crash") \
             and not seen.get("anr") \
             and seen.get("screen") is None:
@@ -229,7 +235,14 @@ def judge(seen, profile, numeral_of, last_input, resumed, memory, now, after_mod
         return "crash", SYMPTOMS["crash"], {}, memory
     if not seen["running"]:
         return "not_running", SYMPTOMS["not_running"], {}, memory
+    if seen["focused"] is None:
+        # A passing window over the game (the keyboard, a toast, a pop-up)
+        # or the focus moving: nothing to judge.
+        return "unknown", "pas de vérification (fenêtre de passage au premier plan)", {}, memory
     if not seen["focused"]:
+        memory["away"] = away + 1
+        if memory["away"] < AWAY_AFTER:
+            return "unknown", "pas de vérification (autre fenêtre au premier plan, à confirmer)", {}, memory
         return "away", SYMPTOMS["away"], {}, memory
     screen = seen["screen"]
     if screen in ("title", "save"):

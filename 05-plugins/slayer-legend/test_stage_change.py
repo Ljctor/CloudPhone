@@ -394,12 +394,25 @@ class Switches(unittest.TestCase):
             first = (await get(None))[1]["switches"]
             changed = (await post(Request({"stage_change": "real"})))[1]["switches"]
             refused = await post(Request({"auto": "yes"}))
-            return first, changed, refused
-        first, changed, refused = asyncio.run(go())
+            not_learned = await post(Request({"auto": "real", "preset": "real"}))
+            return first, changed, refused, not_learned
+        first, changed, refused, not_learned = asyncio.run(go())
         self.assertEqual(first, {"stage_change": "plan", "preset": "plan", "auto": "plan"})
         self.assertEqual(changed, {"stage_change": "real", "preset": "plan", "auto": "plan"})
         self.assertEqual(refused[0], 400)
+        # The AUTO tap is not learned: auto stays plan, nothing else changes.
+        self.assertEqual(not_learned[0], 400)
+        self.assertIn("AUTO n’est pas encore appris", not_learned[1]["error"])
         self.assertEqual(ports.store.sections["farming"](), {"switches": changed})
+
+    def test_a_real_auto_kept_reads_as_plan_until_learned(self):
+        self.assertEqual(feature.kept_switches({"stage_change": "real", "auto": "real"}),
+                         {"stage_change": "real", "preset": "plan", "auto": "plan"})
+        feature.AUTO_TAP_LEARNED = True
+        try:
+            self.assertEqual(feature.kept_switches({"auto": "real"})["auto"], "real")
+        finally:
+            feature.AUTO_TAP_LEARNED = False
 
 
 class Store:

@@ -7,6 +7,7 @@ ANR dialog, on fake ports. Run: python3 -m unittest test_watchdog
 import asyncio
 import contextlib
 import importlib.util
+import logging
 import os
 import types
 import unittest
@@ -152,7 +153,10 @@ class OtherScreen(unittest.TestCase):
         w = Watch()
         w.looks(BATTLE, 4)
         w.looks(OTHER, 3)
-        w.looks(AWAY, 2)
+        # The first look with another app in front only says "to confirm".
+        w.looks(AWAY, rules.AWAY_AFTER)
+        self.assertEqual(w.kinds(), [])
+        w.look(AWAY)
         self.assertEqual(w.kinds(), ["relaunch"])
 
 
@@ -482,9 +486,10 @@ class GoldTrigger(unittest.TestCase):
     (rules.EVERY apart), gold/s always 0 over a full window: when the
     preset and AUTO are read."""
 
-    def looks(self, count, auto):
-        """count looks, AUTO read as auto; (the looks that read the
-        controls, the alerts, the farming calls other than reading)."""
+    def looks(self, count, auto, viewers=lambda look: 0, stage=920):
+        """count looks, AUTO read as auto, viewers(look) connected; (the
+        looks that read the controls, the alerts, the farming calls other
+        than reading); self.state: GET /watchdog's at the end."""
         spec = importlib.util.spec_from_file_location("watchdog_feature", os.path.join(HERE, "features", "watchdog.py"))
         feature = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(feature)
@@ -516,6 +521,7 @@ class GoldTrigger(unittest.TestCase):
                 coroutines.append(coroutine)
 
             last_input = staticmethod(lambda: None)
+            viewers = staticmethod(lambda: viewers(looked[0]))
 
             @staticmethod
             async def running():
@@ -526,8 +532,8 @@ class GoldTrigger(unittest.TestCase):
                 return None
 
             @staticmethod
-            async def focused():
-                return True
+            async def focus():
+                return {"game": True, "window": "game"}
 
             @staticmethod
             async def capture(max_age):
@@ -535,7 +541,7 @@ class GoldTrigger(unittest.TestCase):
 
             @staticmethod
             async def analyse(facts, shot):
-                return "battle", 3, 920
+                return "battle", 3, stage
 
             @staticmethod
             async def notify(text):
@@ -549,11 +555,17 @@ class GoldTrigger(unittest.TestCase):
             other.append(args)
             return {"result": "plan", "text": "plan"}
 
-        farming = {"read_controls": read_controls, "battle_stage": lambda shot: 920, "ensure_auto": refused,
-                   "farm": refused, "switches": lambda: {"stage_change": "plan", "preset": "plan", "auto": "plan"}}
+        self.farmed = farmed = []
+
+        async def farm(*args):
+            farmed.append(args)
+            return {"result": "plan", "text": "plan"}
+
+        farming = {"read_controls": read_controls, "battle_stage": lambda shot: stage, "ensure_auto": refused,
+                   "farm": farm, "switches": lambda: {"stage_change": "real", "preset": "plan", "auto": "plan"}}
         gold = {"current": lambda: {"rate": 0, "span": 300, "last": Ports.clock.wall() - 1}}
         built = feature.watchdog(
-            Ports, None, None, rules, NUMERALS.get, {"state": lambda: {"mode": "mpw18"}},
+            Ports, None, None, rules, NUMERALS.get, {"state": lambda: {"mode": "mpw18", "highest": 925}},
             {"state": lambda: {"enabled": False}},
             {"running": lambda: False, "start": lambda *a: None, "state": lambda: {}},
             lambda mode: {"stage": 920, "preset": 1}, farming, gold)
@@ -564,25 +576,76 @@ class GoldTrigger(unittest.TestCase):
                 await coroutines[0]
 
         with self.assertLogs("cloudphone.slayer-legend", "INFO"):
+            logging.getLogger("cloudphone.slayer-legend").info("GoldTrigger: %d looks", count)
             asyncio.run(run())
+        self.state = asyncio.run(built["routes"][0][2](None))
         return read, alerts, other
 
     def test_the_second_zero_reads_auto_at_once_and_auto_on_is_one_alert(self):
-        read, alerts, other = self.looks(8, "on")
+        read, alerts, other = self.looks(24, "on")
         # The first look reads (nothing kept), the second zero at once (not
-        # CONTROLS_EVERY later), then once a minute again.
-        self.assertEqual(read[:2], [1, 2])
-        self.assertLess(E * (read[1] - read[0]), self.every)
-        self.assertEqual(len(read), 3)
+        # CONTROLS_EVERY later), then every CONTROLS_EVERY again.
+        self.assertEqual(self.every, 300)
+        self.assertEqual(read, [1, 2, 2 + self.every // E])
+        self.assertIsNone(self.state["controls"])
         self.assertEqual(len(alerts), 1)
         self.assertIn(rules.GOLD_ALERT, alerts[0])
         self.assertEqual(other, [], "AUTO read on: nothing tapped")
+
+    def test_never_while_someone_watches_and_the_status_says_so(self):
+        read, alerts, other = self.looks(6, "on", viewers=lambda look: 1)
+        self.assertEqual((read, other), ([], []))
+        self.assertIn("non vérifiés", self.state["controls"]["template"])
+        self.assertEqual([a for a in alerts if rules.GOLD_ALERT in a], [])
+
+    def test_a_trigger_seen_while_watched_reads_once_they_left(self):
+        # Watched for the first 4 looks (the trigger at look 2): read at look 5.
+        read, alerts, _ = self.looks(6, "on", viewers=lambda look: 1 if look <= 4 else 0)
+        self.assertEqual(read, [5])
+        self.assertEqual(len(alerts), 1)
+
+    def test_a_gateway_that_does_not_say_is_watched(self):
+        read, _, _ = self.looks(3, "on", viewers=lambda look: None)
+        self.assertEqual(read, [])
+
+    def test_the_stage_repair_never_goes_past_the_highest_seen(self):
+        # Another stage read on battle: farm() gets mode's highest, as mode.set_stage does.
+        self.looks(8, "on", stage=940)
+        stage, _, mode, highest = self.farmed[0]
+        self.assertEqual((stage, mode, highest), (920, "mpw18", 925))
 
     def test_auto_off_after_the_trigger_is_the_usual_repair_on_plan(self):
         read, alerts, other = self.looks(8, "off")
         self.assertEqual(read[:2], [1, 2])
         self.assertFalse([a for a in alerts if rules.GOLD_ALERT in a])
         self.assertEqual(other, [], "the auto switch on plan: never ensure_auto")
+
+
+class Focus(unittest.TestCase):
+    """Another app in front counts only AWAY_AFTER looks in a row; a
+    passing window or a focus Android does not say is never "away"."""
+
+    def test_one_look_with_another_window_is_not_away(self):
+        w = Watch()
+        w.looks(BATTLE, 4)
+        for _ in range(5):
+            w.look(AWAY)
+            w.look(BATTLE)
+        self.assertNotIn("away", w.symptoms)
+        self.assertEqual((w.kinds(), w.alerts()), ([], []))
+
+    def test_two_looks_in_a_row_are_away(self):
+        w = Watch()
+        w.looks(BATTLE, 4)
+        w.looks(AWAY, 2)
+        self.assertEqual(w.symptoms[-2:], ["unknown", "away"])
+
+    def test_cannot_tell_is_no_symptom(self):
+        w = Watch()
+        w.looks(BATTLE, 4)
+        w.looks({**AWAY, "focused": None}, 10)
+        self.assertEqual(set(w.symptoms[4:]), {"unknown"})
+        self.assertEqual((w.kinds(), w.alerts()), ([], []))
 
 
 class SignInScreen(unittest.TestCase):
@@ -738,7 +801,7 @@ class Flapping(unittest.TestCase):
     def test_a_relaunch_then_a_pop_up_on_return(self):
         w = Watch()
         w.looks(BATTLE, 4)
-        w.looks(AWAY, 2)
+        w.looks(AWAY, 3)
         w.looks(MENU, 6)
         w.looks(BATTLE, 4)
         self.assertEqual(w.kinds(), ["relaunch", "back_to_battle"])
