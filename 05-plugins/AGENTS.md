@@ -67,7 +67,9 @@ Rules:
       top-right spot opens Black Orb).
     - The Soul Weapon icon: only once the Weapon tab reads active; then its
       title must read "Soul Weapon". Closed with its red X, then the panel
-      with its own tab.
+      with its own tab. If an ordinary weapon's card opened instead (its
+      button reads Enhance MAX), its red X only, then one alert; never its
+      Enhance MAX or Equip.
     - Selecting a weapon in the left list: a whole cell, in its upper part,
       never on an orange tag the fresh capture shows.
     - Scrolling that list: a slow drag from one whole cell's upper part to

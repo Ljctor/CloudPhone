@@ -36,7 +36,7 @@ import logging
 
 EQUIPMENT_TAP = (0.41, 0.966)
 WEAPON_TAB_TAP = (0.12, 0.414)
-SOUL_WEAPON_TAP = (0.92, 0.446)
+SOUL_WEAPON_TAP = (0.92, 0.445)
 CLOSE_TAP = (0.5, 0.955)
 ENGRAVING_TAP = (0.33, 0.636)
 ENGRAVING_CLOSE_TAP = (0.11, 0.955)
@@ -104,7 +104,13 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, expected_cells=No
         if tab != "weapon":
             raise Stop(f"onglet Weapon de l’équipement pas actif (lu : {tab or 'rien'})")
         await helpers.tap(shot, "equipment_weapon", "soul_weapon", SOUL_WEAPON_TAP)
-        shot, opened = await wait_for(reader.title)
+        shot, opened = await wait_for(lambda s: reader.title(s) or reader.weapon_detail(s))
+        if opened and not reader.title(shot):
+            # The tap opened an ordinary weapon's card (the list scrolled
+            # under the icon): closed, nothing else touched there.
+            await helpers.tap(shot, "weapon_detail", "close", CLOSE_TAP)
+            await wait_for(lambda s: reader.tab(s) == "weapon")
+            raise Stop("la fiche d’une arme s’est ouverte au lieu de Soul Weapon (fermée)")
         if not opened:
             raise Stop("ouverture de l’écran Soul Weapon")
         return shot

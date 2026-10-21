@@ -90,6 +90,9 @@ CARD_FONT = dict(font.FONT, **{
     "f": ['.###', '.#..', '##..', '####', '.#..', '.#..', '.#..', '....', '....'],
     "a": ['.....', '.....', '.####', '#####', '#..##', '#####', '.####', '.....', '.....'],
     "d": ['...##', '...##', '#####', '#.###', '#..##', '#####', '.####', '.....', '.....'],
+    # From "Vision" (2026-10-21).
+    "s": ['.....', '.....', '#####', '####.', '...##', '#####', '.###.', '.....', '.....'],
+    "o": ['....', '....', '####', '#..#', '#..#', '####', '.##.', '....', '....'],
 })
 
 # A name read is within this many edits per character of its weapon's,
@@ -268,6 +271,21 @@ def tab(shot):
     if bright[best] < 100 or any(bright[best] < 1.4 * v for v in others):
         return None
     return best
+
+
+# An ordinary weapon's card (Enhance / Combine, its buttons Enhance MAX and
+# Equip at the bottom): seen when the Soul Weapon icon's tap landed on the
+# weapon list. Not captured: read by its left button's text.
+DETAIL_BUTTON_AREA = (0.1, 0.8, 0.49, 0.87)
+
+
+def weapon_detail(shot):
+    """An ordinary weapon's card is open: its left button reads "Enhance
+    MAX"."""
+    for text, _, _ in font.read(shot, DETAIL_BUTTON_AREA, font=CARD_FONT):
+        if font.close(text, ["EnhanceMAX", "Harvest", "Craft", "Breakdown"], most=0.3, margin=2) == "EnhanceMAX":
+            return True
+    return False
 
 
 def equipped_badge(shot):

@@ -37,6 +37,8 @@ class Graph(unittest.TestCase):
             ("equipment_weapon", "batch_combine", (0.50, 0.905)),
             ("battle", "scroll", (0.94, 0.15)),
             ("battle", "better_weapon_toast", (0.85, 0.345)),
+            ("weapon_detail", "enhance", (0.3, 0.835)),
+            ("weapon_detail", "equip", (0.7, 0.835)),
             ("black_orb", "orb", (0.50, 0.60)),
             ("black_orb", "obtain", (0.89, 0.963)),
             ("black_orb", "summon", (0.50, 0.963)),

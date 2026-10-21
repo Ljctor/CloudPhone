@@ -56,6 +56,9 @@ class Readers(unittest.TestCase):
     def test_names(self):
         self.assertEqual(reader.name(screen("sw_name_ambition"), NAMES), "Ambition")
         self.assertEqual(reader.name(screen("sw_name_grand"), NAMES), "Grand")
+        self.assertEqual(reader.name(screen("sw_name_vision"), NAMES), "Vision")
+        # The Soul Weapon screen is not an ordinary weapon's card.
+        self.assertFalse(reader.weapon_detail(screen("sw_title", "sw_name_vision")))
         # Against a list without it, the closest is not taken.
         self.assertIsNone(reader.name(screen("sw_name_grand"), [n for n in NAMES if n != "Grand"]))
         self.assertIsNone(reader.name(screen("sw_title"), NAMES))
@@ -218,7 +221,7 @@ class Game:
         self.state = {"screen": "battle", "panel": None, "tab": "weapon", "offset": 0, "selected": None,
                       "equipped": AMBITION, "owned": {AMBITION, GRAND - 1, 20}, "descending": True,
                       "first_id": GRAND, "focused": True, "busy": None, "tag_unread": False,
-                      "equip_fails": False, "name_unread": False}
+                      "equip_fails": False, "name_unread": False, "detail_instead": False}
         self.state.update(state)
         if self.state["selected"] is None:
             self.state["selected"] = self.state["equipped"]
@@ -253,7 +256,9 @@ class Game:
         elif screen == "equipment_accessories" and move == "weapon":
             s["tab"] = "weapon"
         elif move == "soul_weapon" and screen == "equipment_weapon":
-            s["screen"] = "soul"
+            s["screen"] = "detail" if s["detail_instead"] else "soul"
+        elif screen == "weapon_detail" and move == "close":
+            s["screen"] = "equipment"
         elif screen == "soul_weapon" and move == "select":
             cell = next(c for c in self.cells() if c["top"] <= point[1] <= c["bottom"])
             s["selected"] = cell["id"]
@@ -348,6 +353,7 @@ def fake_reader(game):
     return SimpleNamespace(
         names_of=reader.names_of, select_point=reader.select_point, view=view, ENGRAVING_CALIBRATED=False,
         title=lambda shot: shot[2]["screen"] == "soul",
+        weapon_detail=lambda shot: shot[2]["screen"] == "detail",
         tab=lambda shot: shot[2]["tab"] if shot[2]["screen"] == "equipment" else None)
 
 
@@ -440,6 +446,14 @@ class Sequence(unittest.TestCase):
         self.assertEqual(game.state["equipped"], 36)
         self.assertLessEqual(game.now, 60)
         self.assertEqual(game.leases[-1], ("stage_change", "farm mpw18"))
+
+    def test_a_weapon_card_instead_is_closed_and_alerted(self):
+        game = Game(detail_instead=True)
+        answer, _ = equip(game, "mpw4")
+        self.assertEqual(answer["result"], "failed")
+        self.assertIn("fiche d’une arme", answer["text"])
+        self.assertIn(("weapon_detail", "close"), game.moves)
+        self.assertNotIn(("weapon_detail", "equip"), game.moves)
 
     def test_accessories_tab_first(self):
         game = Game(tab="accessories", selected=AMBITION)

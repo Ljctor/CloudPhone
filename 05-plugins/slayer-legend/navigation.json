@@ -808,9 +808,9 @@
      "to": "soul_weapon",
      "tap": [
       0.92,
-      0.446
+      0.445
      ],
-     "label": "sword on a beige background: Soul Weapon (only once the Weapon tab reads active: on Accessories the same spot opens Black Orb)"
+     "label": "sword on a beige background: Soul Weapon (only once the Weapon tab reads active: on Accessories the same spot opens Black Orb); at 0.462 a scrolled weapon list's cell is under it and opens weapon_detail (seen 2026-10-21)"
     },
     {
      "id": "batch_combine",
@@ -822,6 +822,48 @@
      "label": "Batch Combine",
      "forbidden": true,
      "reason": "overwrites or re-rolls the user's equipment"
+    }
+   ]
+  },
+  "weapon_detail": {
+   "name": "Weapon detail",
+   "recognise": "tabs Enhance / Combine at the top of a card, the weapon's grade name and name, Equip Effect, Owned Effects, buttons Enhance MAX and Equip (soul_weapon.weapon_detail: the left button reads Enhance MAX)",
+   "source": "seen 2026-10-21 (a tap on the Weapon list's top right cell when the list was scrolled)",
+   "moves": [
+    {
+     "id": "close",
+     "to": "equipment_weapon",
+     "tap": [
+      0.5,
+      0.955
+     ],
+     "label": "red X"
+    },
+    {
+     "id": "enhance",
+     "to": "weapon_detail",
+     "area": [
+      0.1,
+      0.8,
+      0.49,
+      0.87
+     ],
+     "label": "Enhance MAX",
+     "forbidden": true,
+     "reason": "spends enhance materials"
+    },
+    {
+     "id": "equip",
+     "to": "weapon_detail",
+     "area": [
+      0.51,
+      0.8,
+      0.9,
+      0.87
+     ],
+     "label": "Equip",
+     "forbidden": true,
+     "reason": "changes the user's equipped weapon"
     }
    ]
   },
