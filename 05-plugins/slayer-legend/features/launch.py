@@ -10,6 +10,10 @@ the navigation guard (ports.tap, ports.hold), under the shared lease
 (holder "launch"): while another holder has it, the launch does not start.
 Android's crash dialog ("Slayer Legend keeps stopping") is closed by its
 "Close app" button (ports.close_crash), then the game is opened again.
+The sign-in screen the game may show after a relaunch gets "Sign in with
+Google" once (the user's choice, 2026-10-17), then Google's chooser its one
+account (read by uiautomator, ports.account_chooser), then the save notice
+its Confirm; anything else there is one alert, for the user.
 """
 
 import asyncio
@@ -38,7 +42,15 @@ def launch(ports, screens, rules):
             if not shot:
                 continue
             crash = await ports.crashed()
-            screen = "crash" if crash else await ports.analyse(screens.classify, shot)
+            chooser = None
+            if not crash and memory["signed_in"] is not None:
+                chooser = await ports.account_chooser()
+            if crash:
+                screen = "crash"
+            elif chooser is not None:
+                screen = "chooser_one" if chooser["count"] == 1 else "chooser_other"
+            else:
+                screen = await ports.analyse(screens.classify, shot)
             if screen in ("battle", "menu") and await ports.focused():
                 report("done", "Le jeu est sur l’écran de combat")
                 return
@@ -70,6 +82,20 @@ def launch(ports, screens, rules):
                 await ports.tap(shot, "title", "start", screens.START_TAP)
                 memory["last_tap"] = ports.clock.monotonic()
                 report("starting", "Écran titre touché, connexion")
+            elif move == "sign_in":
+                await ports.tap(shot, "sign_in", "google", screens.SIGN_IN_GOOGLE_TAP)
+                memory["last_tap"] = ports.clock.monotonic()
+                report("starting", "« Sign in with Google » touché")
+            elif move == "choose_account":
+                await ports.choose_account(shot, chooser["point"])
+                memory["last_tap"] = ports.clock.monotonic()
+                report("loading", "Compte Google choisi")
+            elif move in ("blocked_sign_in", "blocked_chooser"):
+                text = ("reconnexion Google impossible : à faire à la main" if move == "blocked_sign_in" else
+                        f"reconnexion Google : {chooser['count']} comptes proposés au lieu d’un, à faire à la main")
+                report("blocked", text)
+                await ports.notify(f"Slayer Legend : {text}")
+                return
             elif move == "blocked_other":
                 report("blocked", "Écran inattendu : termine le lancement à la main")
                 return

@@ -100,6 +100,9 @@ const ENGLISH = {
   'Ouverture du jeu': 'Opening the game',
   'Écran titre touché, connexion': 'Title screen tapped, signing in',
   'Dernière sauvegarde confirmée, chargement': 'Latest save confirmed, loading',
+  '« Sign in with Google » touché': '« Sign in with Google » tapped',
+  'Compte Google choisi': 'Google account chosen',
+  'reconnexion Google impossible : à faire à la main': 'Google sign-in failed: do it by hand',
   'Le jeu est sur l’écran de combat': 'The game is on the battle screen',
   'Sortie du mode économie d’énergie': 'Leaving Power Saving Mode',
   'Le mode économie d’énergie ne se ferme pas : touche son bouton à la main': 'Power Saving Mode does not close: tap its button by hand',
@@ -157,6 +160,7 @@ const ENGLISH = {
   'une autre application est au premier plan': 'another app is in front',
   'le jeu a planté (fenêtre d’erreur d’Android)': 'the game crashed (Android’s error window)',
   'le jeu est revenu à son écran titre': 'the game is back on its title screen',
+  'le jeu demande de se reconnecter (Sign in with Google)': 'the game asks to sign in again (Sign in with Google)',
   'écran inconnu après la fin du mode (connecté sur un autre appareil ? choix de sauvegarde ?) : à faire à la main':
     'unknown screen after the mode ended (signed in on another device? a choice of saves?): do it by hand',
   'un menu du jeu est ouvert depuis plus d’une minute sans l’utilisateur': 'a game menu has been open over a minute without the user',
@@ -174,6 +178,8 @@ const ENGLISH = {
   'Farming mpw18 : le jeu ne répond pas (fenêtre d’Android), « Attendre » sans effet : à faire à la main':
     'mpw18 farming: the game is not responding (Android’s window), « Wait » did not help: do it by hand',
   'Farming mpw18 : le jeu est revenu à son écran titre': 'mpw18 farming: the game is back on its title screen',
+  'Farming mpw18 : le jeu demande de se reconnecter (Sign in with Google)':
+    'mpw18 farming: the game asks to sign in again (Sign in with Google)',
   'Farming mpw18 : écran inconnu après la fin du mode (connecté sur un autre appareil ? choix de sauvegarde ?) : à faire à la main':
     'mpw18 farming: unknown screen after the mode ended (signed in on another device? a choice of saves?): do it by hand',
   'Farming mpw18 : un menu du jeu est ouvert depuis plus d’une minute sans l’utilisateur':

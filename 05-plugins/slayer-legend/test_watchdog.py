@@ -585,6 +585,16 @@ class GoldTrigger(unittest.TestCase):
         self.assertEqual(other, [], "the auto switch on plan: never ensure_auto")
 
 
+class SignInScreen(unittest.TestCase):
+    def test_the_sign_in_screen_is_relaunched(self):
+        # The relaunch signs in with Google (launch_rules), once per relaunch.
+        w = Watch()
+        w.looks({**BATTLE, "screen": "sign_in"}, 4)
+        self.assertEqual(w.symptoms[-1], "sign_in")
+        self.assertEqual(w.kinds(), ["relaunch"])
+        self.assertIn("Sign in with Google", w.alerts()[0][1])
+
+
 class NotResponding(unittest.TestCase):
     def test_an_anr_is_one_alert_and_never_a_relaunch(self):
         w = Watch()

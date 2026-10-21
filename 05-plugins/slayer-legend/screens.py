@@ -2,8 +2,9 @@
 moves on them are.
 
 classify(shot) is one of: title, save (the "last save time" notice),
-battle, menu (one of the battle screen's panels over it), saver (Power
-Saving Mode) or other. Screens are recognised from a few pixel areas, as
+sign_in (the game asks to sign in again: "Sign in with Google" / "Sign in
+with Apple", seen after a relaunch), battle, menu (one of the battle
+screen's panels over it), saver (Power Saving Mode) or other. Screens are recognised from a few pixel areas, as
 (left, top, right, bottom) fractions of the screen, measured on a 360x780
 screen (the page's device shapes keep this ratio). A screenshot is
 (width, height, RGB888 bytes).
@@ -29,6 +30,17 @@ TOP_EMERALD = (0.377, 0.018, 0.402, 0.030)
 SAVER_BUTTON = (0.33, 0.83, 0.67, 0.92)
 SAVER_TEXT = (0.40, 0.465, 0.60, 0.48)
 SAVER_TOP = (0.10, 0.10, 0.90, 0.25)  # bottom menu names, white on dark
+# The sign-in screen (measured on a real 480x1040 capture): two light grey
+# buttons, "Sign in with Google" (the coloured G, grey text) above "Sign
+# in with Apple" (a black apple, black text), the game's background
+# between them.
+SIGN_IN_GOOGLE = (0.255, 0.726, 0.745, 0.766)
+SIGN_IN_APPLE = (0.255, 0.792, 0.745, 0.832)
+SIGN_IN_GAP = (0.255, 0.774, 0.745, 0.785)
+SIGN_IN_G = (0.275, 0.735, 0.335, 0.758)
+SIGN_IN_GOOGLE_TEXT = (0.36, 0.735, 0.68, 0.758)
+SIGN_IN_APPLE_LOGO = (0.275, 0.803, 0.325, 0.823)
+SIGN_IN_GOOGLE_TAP = (0.50, 0.746)
 
 
 def share(shot, area, test):
@@ -75,9 +87,29 @@ def green(r, g, b):
     return g >= 64 and g > 1.3 * r and g > 2 * b
 
 
+def dark(r, g, b):
+    return max(r, g, b) < 45
+
+
+def coloured(r, g, b):
+    return max(r, g, b) - min(r, g, b) > 80
+
+
+def sign_in(shot):
+    """Both sign-in buttons where they were measured, Google's above
+    Apple's (told apart by their logos and text colours)."""
+    return (share(shot, SIGN_IN_GOOGLE, light) > 0.6 and share(shot, SIGN_IN_APPLE, light) > 0.6
+            and share(shot, SIGN_IN_GAP, light) < 0.1
+            and share(shot, SIGN_IN_G, coloured) > 0.1 and share(shot, SIGN_IN_G, dark) < 0.02
+            and share(shot, SIGN_IN_GOOGLE_TEXT, grey) > 0.05 and share(shot, SIGN_IN_GOOGLE_TEXT, dark) < 0.02
+            and share(shot, SIGN_IN_APPLE_LOGO, dark) > 0.2)
+
+
 def classify(shot):
     if share(shot, CONFIRM_BUTTON, orange) > 0.6 and share(shot, EXIT_BUTTON, grey) > 0.6:
         return "save"
+    if sign_in(shot):
+        return "sign_in"
     # The top bar's emerald: the battle screen, or one of its panels over it
     # (the bottom menu names then go dark or are covered).
     if share(shot, TOP_EMERALD, green) > 0.15:

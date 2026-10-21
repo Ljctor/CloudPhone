@@ -45,6 +45,54 @@
     }
    ]
   },
+  "sign_in": {
+   "name": "Sign-in screen",
+   "recognise": "classify() == 'sign_in': SLAYER LEGEND logo, two light grey buttons at the bottom, 'Sign in with Google' (coloured G) above 'Sign in with Apple' (black apple), no TAP TO START",
+   "source": "real capture 2026-10-21 (after a relaunch)",
+   "moves": [
+    {
+     "id": "google",
+     "to": "account_chooser",
+     "tap": [
+      0.5,
+      0.746
+     ],
+     "label": "Sign in with Google (once per launch)"
+    },
+    {
+     "id": "apple",
+     "to": "unknown",
+     "area": [
+      0.245,
+      0.788,
+      0.755,
+      0.836
+     ],
+     "label": "Sign in with Apple",
+     "forbidden": true,
+     "reason": "not the user's way in (the plugin signs in with Google only)"
+    }
+   ]
+  },
+  "account_chooser": {
+   "name": "Google's account chooser (Android's, not the game's)",
+   "recognise": "dumpsys window: mCurrentFocus is a com.google.android.gms window; uiautomator lists the accounts (e-mail addresses)",
+   "source": "not seen yet: Android's own window, positions from uiautomator",
+   "moves": [
+    {
+     "id": "account",
+     "to": "save_notice",
+     "area": [
+      0.0,
+      0.0,
+      1.0,
+      1.0
+     ],
+     "label": "The one account listed",
+     "precondition": "uiautomator dump: exactly one account (an e-mail address) listed, tapped at its bounds' centre"
+    }
+   ]
+  },
   "loading": {
    "name": "Loading",
    "recognise": "dark dragon gate, 'Loading...'; nothing to tap",

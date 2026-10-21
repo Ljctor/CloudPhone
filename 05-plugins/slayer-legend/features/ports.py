@@ -30,6 +30,11 @@ of the gateway, so what it may do to the game is all here.
   wait_anr(shot): the ANR dialog's "Wait" (its "Close app" would kill the
   game: never). Both are found by uiautomator (native, so their bounds are
   exact) and go through the guard (crash_dialog, anr_dialog).
+- account_chooser(): Google's account chooser in front (after "Sign in
+  with Google"): {count, point} of the accounts uiautomator lists (point:
+  the one account's centre, pixels, when there is exactly one), or None
+  when it is not in front; choose_account(shot, point) taps it through the
+  guard (account_chooser/account). The accounts are never logged.
 - notify(text): the Cloud Phone's phone alerts, when the user turned them on.
 - clock: wall() (Unix seconds), monotonic(), sleep(seconds).
 - spawn(coroutine): runs it as a background task.
@@ -54,7 +59,10 @@ ACTIVITY = f"{PACKAGE}/com.google.firebase.MessagingUnityPlayerActivity"
 # whatever the language.
 CRASH_WINDOW = f"Application Error: {PACKAGE}"
 ANR_WINDOW = f"Application Not Responding: {PACKAGE}"
+GMS = "com.google.android.gms"
 NODE = re.compile(r"<node\b[^>]*>")
+TEXT = re.compile(r'\btext="([^"]*)"')
+EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 BOUNDS = re.compile(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"')
 
 
@@ -81,6 +89,26 @@ def close_button(hierarchy, name="aerr_close"):
                 left, top, right, bottom = map(int, found.groups())
                 return (left + right) // 2, (top + bottom) // 2
     return None
+
+
+def chooser_window(dumpsys):
+    """Google's own window has the focus (`dumpsys window`): its account
+    chooser, the one Google window the launch expects."""
+    return any("mCurrentFocus" in line and GMS in line for line in dumpsys.splitlines())
+
+
+def accounts(hierarchy):
+    """The centres (x, y, pixels) of the accounts Google's chooser lists in
+    `uiautomator dump`: its nodes whose text is an e-mail address, one per
+    address."""
+    found = {}
+    for node in NODE.findall(hierarchy):
+        text = TEXT.search(node)
+        bounds = BOUNDS.search(node)
+        if f'package="{GMS}"' in node and text and bounds and EMAIL.match(text.group(1).strip()):
+            left, top, right, bottom = map(int, bounds.groups())
+            found.setdefault(text.group(1).strip().lower(), ((left + right) // 2, (top + bottom) // 2))
+    return list(found.values())
 
 
 class State:
@@ -347,6 +375,20 @@ def build(context, nav):
     async def wait_anr(shot):
         return await press_dialog(shot, "anr_dialog", "wait", "aerr_wait")
 
+    async def account_chooser():
+        code, out = await adb("shell", "dumpsys", "window")
+        if code != 0 or not chooser_window(out):
+            return None
+        code, out = await adb("shell", "uiautomator", "dump", "/dev/tty", timeout=20)
+        found = accounts(out) if code == 0 else []
+        return {"count": len(found), "point": found[0] if len(found) == 1 else None}
+
+    async def choose_account(shot, point):
+        lease.check(HOLDER.get())
+        width, height, _ = shot
+        allowed("account_chooser", "account", (point[0] / width, point[1] / height), verified=True)
+        await adb("shell", "input", "tap", str(point[0]), str(point[1]))
+
     def spawn(coroutine):
         return asyncio.get_running_loop().create_task(coroutine)
 
@@ -362,6 +404,7 @@ def build(context, nav):
         capture=context.screenshot, analyse=context.analyse,
         tap=tap, taps=taps, hold=hold, swipe=swipe, lease=lease, leased=leased, Busy=Busy, last_input=last_input,
         focused=focused, running=running, start_game=start_game, dialog=dialog, crashed=crashed, close_crash=close_crash, wait_anr=wait_anr,
+        account_chooser=account_chooser, choose_account=choose_account,
         notify=context.notify,
         clock=clock,
         spawn=spawn, store=store, data_path=data_path, respond=context.json,

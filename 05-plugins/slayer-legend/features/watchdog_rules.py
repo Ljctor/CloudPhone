@@ -27,6 +27,8 @@ Symptom → response, one look at a time (SYMPTOMS, REPAIRS):
 |                                           | alert; never "Close app" (a kill)     |
 | game not running, not in front, a crash   | relaunch (phase 1b)                   |
 | dialog, its title or save notice          |                                       |
+| the sign-in screen (after a relaunch)     | relaunch: "Sign in with Google" once, |
+|                                           | the chooser's one account (launch)    |
 | a game menu 60 s with no user input       | back to battle, no relaunch           |
 | battle on another stage than the profile's| stage change (phase 2)                |
 | Power Saving Mode                         | well; the stage is unread there: only |
@@ -47,7 +49,7 @@ look every EVERY seconds; a user who plays (an input in the last
 PAUSE_AFTER_INPUT seconds) is not a disruption.
 
 Repairs apply only to what is recognised: the process, the focus, an
-Android crash window, the title and save screens, a game menu, the battle
+Android crash window, the title, sign-in and save screens, a game menu, the battle
 screen (Power Saving Mode needs none).
 
 - A symptom ALERT_AFTER looks in a row (ALERT_AFTER_OTHER for another
@@ -110,6 +112,7 @@ SYMPTOMS = {
     "crash": "le jeu a planté (fenêtre d’erreur d’Android)",
     "anr": "le jeu ne répond pas (fenêtre d’Android), « Attendre » sans effet : à faire à la main",
     "start_screen": "le jeu est revenu à son écran titre",
+    "sign_in": "le jeu demande de se reconnecter (Sign in with Google)",
     "after_mode_screen": "écran inconnu après la fin du mode (connecté sur un autre appareil ? choix de "
                          "sauvegarde ?) : à faire à la main",
     "menu": "un menu du jeu est ouvert depuis plus d’une minute sans l’utilisateur",
@@ -127,6 +130,8 @@ REPAIRS = {
     "crash": "relaunch",
     "anr": None,
     "start_screen": "relaunch",
+    # The relaunch signs in with Google, once per relaunch (launch_rules).
+    "sign_in": "relaunch",
     "after_mode_screen": None,
     "menu": "back_to_battle",
     "wrong_stage": "stage_change",
@@ -229,6 +234,8 @@ def judge(seen, profile, numeral_of, last_input, resumed, memory, now, after_mod
     screen = seen["screen"]
     if screen in ("title", "save"):
         return "start_screen", SYMPTOMS["start_screen"], {}, memory
+    if screen == "sign_in":
+        return "sign_in", SYMPTOMS["sign_in"], {}, memory
     if screen == "menu":
         since = now if menu_since is None else menu_since
         memory["menu_since"] = since

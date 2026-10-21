@@ -1,6 +1,6 @@
 """The readers on crops of real captures (fixtures/: the region banner,
 stage rows, battle stage names, the unfolded controls, Battle settings'
-title and presets; never a full screen, nothing with the account's name),
+title and presets, the sign-in screen's two buttons; never a full screen, nothing with the account's name),
 each pasted back where it was on an empty 480x1040 screen, and the pixel
 font's confusion matrix on the texts they hold.
 Run: python3 -m unittest test_fixtures"""
@@ -25,6 +25,7 @@ def load(name):
 font = load("pixel_font")
 select = load("stage_select")
 controls = load("battle_controls")
+screens = load("screens")
 with open(os.path.join(HERE, "stages.json"), encoding="utf-8") as f:
     NAMES = select.regions(json.load(f))
 GIANT = NAMES.index("Giant's Glass")
@@ -140,6 +141,37 @@ class Readings(unittest.TestCase):
     def test_auto_both_states(self):
         self.assertEqual(controls.auto(screen("controls_auto_on_1"), screen("controls_auto_on_2")), "on")
         self.assertEqual(controls.auto(screen("controls_auto_off_1"), screen("controls_auto_off_2")), "off")
+
+
+class SignIn(unittest.TestCase):
+    def test_the_two_buttons_are_the_sign_in_screen(self):
+        # On the game's dark background (its gate, behind the buttons).
+        self.assertEqual(screens.classify(screen("sign_in_buttons", colour=(90, 60, 35))), "sign_in")
+        self.assertEqual(screens.classify(screen("sign_in_buttons")), "sign_in")
+
+    def test_the_google_tap_lands_on_googles_button(self):
+        _, _, x, y, w, h, data = crop("sign_in_buttons")
+        tx, ty = round(screens.SIGN_IN_GOOGLE_TAP[0] * 480) - x, round(screens.SIGN_IN_GOOGLE_TAP[1] * 1040) - y
+        # The button's light grey (or its grey text) around the point.
+        pixel = data[(ty * w + tx) * 3:(ty * w + tx) * 3 + 3]
+        self.assertTrue(min(pixel) > 100, pixel)
+        self.assertTrue(screens.SIGN_IN_GOOGLE[1] < screens.SIGN_IN_GOOGLE_TAP[1] < screens.SIGN_IN_GOOGLE[3])
+
+    def test_one_button_alone_or_swapped_is_not(self):
+        _, _, x, y, w, h, data = crop("sign_in_buttons")
+        half = (screens.SIGN_IN_GAP[1] * 1040 - y)
+        rows = [data[r * w * 3:(r + 1) * w * 3] for r in range(h)]
+        top, bottom = rows[:int(half)], rows[int(half):]
+        for kept in ([*top, *[bytes(w * 3)] * len(bottom)], [*[bytes(w * 3)] * len(top), *bottom]):
+            pixels = bytearray(bytes((90, 60, 35)) * (480 * 1040))
+            for r, row in enumerate(kept):
+                start = ((y + r) * 480 + x) * 3
+                pixels[start:start + w * 3] = row
+            self.assertNotEqual(screens.classify((480, 1040, bytes(pixels))), "sign_in")
+
+    def test_other_crops_are_not_the_sign_in_screen(self):
+        for name in ("controls_iii_auto_on", "banner_giants_glass", "row_920"):
+            self.assertNotEqual(screens.classify(screen(name)), "sign_in", name)
 
 
 class Confusion(unittest.TestCase):
