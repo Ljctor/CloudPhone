@@ -37,8 +37,8 @@ Rules:
     - "Wait" on Android's "isn't responding" dialog: once per dialog, never
       its "Close app".
     - The right edge's arrow that unfolds the controls, to read the preset
-      badge and AUTO: only with no viewer connected, at most every 5
-      minutes, only while the preset or auto switch is real.
+      badge and AUTO: at most every 5 minutes, whoever watches (only a
+      user's input pauses it, a minute), only while the preset or auto switch is real.
   - Stage change and preset (mode changes and the watchdog's repairs,
     each only while its switch is real):
     - Closing a bottom panel with its own tab: only when that tab reads lit.

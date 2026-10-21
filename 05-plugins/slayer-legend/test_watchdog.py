@@ -695,26 +695,18 @@ class GoldTrigger(unittest.TestCase):
         # CONTROLS_EVERY later), then every CONTROLS_EVERY again.
         self.assertEqual(self.every, 300)
         self.assertEqual(read, [1, 2, 2 + self.every // E])
-        self.assertIsNone(self.state["controls"])
         self.assertEqual(len(alerts), 1)
         self.assertIn(rules.GOLD_ALERT, alerts[0])
         self.assertEqual(other, [], "AUTO read on: nothing tapped")
 
-    def test_never_while_someone_watches_and_the_status_says_so(self):
-        read, alerts, other = self.looks(6, "on", viewers=lambda look: 1)
-        self.assertEqual((read, other), ([], []))
-        self.assertIn("non vérifiés", self.state["controls"]["template"])
-        self.assertEqual([a for a in alerts if rules.GOLD_ALERT in a], [])
-
-    def test_a_trigger_seen_while_watched_reads_once_they_left(self):
-        # Watched for the first 4 looks (the trigger at look 2): read at look 5.
-        read, alerts, _ = self.looks(6, "on", viewers=lambda look: 1 if look <= 4 else 0)
-        self.assertEqual(read, [5])
-        self.assertEqual(len(alerts), 1)
-
-    def test_a_gateway_that_does_not_say_is_watched(self):
-        read, _, _ = self.looks(3, "on", viewers=lambda look: None)
-        self.assertEqual(read, [])
+    def test_someone_watching_changes_nothing(self):
+        # No viewer gate: watched or not (or a gateway that does not say),
+        # the same reads and the same alert.
+        alone = self.looks(6, "on")
+        self.assertNotIn("controls", self.state)
+        for viewers in (lambda look: 1, lambda look: None):
+            self.assertEqual(self.looks(6, "on", viewers=viewers), alone)
+        self.assertEqual(alone[0], [1, 2])
 
     def test_the_stage_repair_never_goes_past_the_highest_seen(self):
         # Another stage read on battle: farm() gets mode's highest, as mode.set_stage does.

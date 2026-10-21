@@ -161,7 +161,6 @@ const ENGLISH = {
   'adb ne répond pas : l’émulateur ou adb manque': 'adb does not answer: the emulator or adb is missing',
   'le jeu ne tourne pas': 'the game is not running',
   'une autre application est au premier plan : {window}': 'another app is in front: {window}',
-  'Préréglage et AUTO non vérifiés : quelqu’un regarde l’écran': 'Preset and AUTO not checked: someone is watching the screen',
   'pas de vérification (fenêtre de passage au premier plan)': 'not checked (a passing window in front)',
   'pas de vérification (autre fenêtre au premier plan, à confirmer)': 'not checked (another window in front, to confirm)',
   'le jeu a planté (fenêtre d’erreur d’Android)': 'the game crashed (Android’s error window)',

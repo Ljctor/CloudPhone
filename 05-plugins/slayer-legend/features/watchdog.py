@@ -7,16 +7,13 @@ play, nothing.
 
 GET /watchdog   {mode, status: {template, params}, text, line: {template,
                  params}, symptom, paused, counters, waiting, lease,
-                 repairing, profile, controls}
+                 repairing, profile}
 POST /watchdog/retry   {kind}: « Réessayer », that repair's backoff starts
                  over (needs the page token)
 
 line: the watchdog's part of the mode's État row ("OK", the symptom,
 "relance du jeu dans 4 min" while a repair backs off); waiting: the kinds
 backing off now (each its next attempt still ahead), for « Réessayer ».
-
-controls: {template, params} when the preset and AUTO are not checked
-(someone watches the screen), else None.
 
 Each look checks that adb answers, that Android's crash dialog is not in
 front, that the game's process runs and is in front, then the screen
@@ -35,9 +32,8 @@ own holder "stage_change", and plan-only while its switch says so, see
 features/stage_change.py). On the battle screen the stage is read whole
 (region and numeral); the preset and AUTO are read on one unfold of the
 right edge's controls (a tap, under the lease) at most every
-CONTROLS_EVERY seconds, and only while no viewer watches the screen (the
-unfold would show under their eyes); the status then says they are not
-checked. The way
+CONTROLS_EVERY seconds, whoever watches the screen (only a user's input
+pauses it, a minute). The way
 back to battle from a game menu stays an alert (its close buttons differ
 per panel); the soul weapon and its engraving wait for phase 3.
 
@@ -58,7 +54,6 @@ AVAILABLE = ("relaunch",)
 FARMING = {"stage_change": "stage_change", "select_preset": "preset", "auto_on": "auto"}
 # Seconds between two readings of the preset and AUTO (each an unfold).
 CONTROLS_EVERY = 300
-UNCHECKED = "Préréglage et AUTO non vérifiés : quelqu’un regarde l’écran"
 # The farming modes (their own stage, preset and AUTO).
 FARMED = ("mpw18", "mpw4")
 
@@ -74,7 +69,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
     status = {"template": "Démarrage", "params": {}, "symptom": None, "paused": None, "repairing": None,
               "mode": None, "ended_at": None, "resumed": False, "anr_waited": False, "controls": None,
               "gold": rules.gold_fresh(),
-              "gold_due": False, "unchecked": False}
+              "gold_due": False}
     available = AVAILABLE + (tuple(FARMING) if farming else ())
     ports.store.register("watchdog", lambda: rules.persisted(memory))
 
@@ -135,10 +130,8 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
     async def read_controls(seen):
         """The preset and AUTO, read on one unfold at most every
         CONTROLS_EVERY seconds on the battle screen (kept in between), or
-        at once when gold/s reads 0 (a trigger: AUTO may be off), only
-        while no viewer is connected (else not checked, and the status
-        says so; a trigger waits for them to leave). AUTO read on while
-        gold/s stays at 0: one alert."""
+        at once when gold/s reads 0 (a trigger: AUTO may be off), viewers
+        or not. AUTO read on while gold/s stays at 0: one alert."""
         if not farming or seen["screen"] != "battle" or status["mode"] not in FARMED:
             return
         now = ports.clock.monotonic()
@@ -147,10 +140,6 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             if trigger:
                 logging.info("Slayer Legend watchdog: gold/s at 0, AUTO read at once")
                 status["gold_due"] = True
-        watched = ports.viewers()
-        status["unchecked"] = watched != 0
-        if status["unchecked"]:
-            return
         triggered, status["gold_due"] = status["gold_due"], False
         kept = status["controls"]
         if kept is None or triggered or now - kept[1] >= CONTROLS_EVERY:
@@ -372,8 +361,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                 "waiting": sorted(kind for kind, kept in memory["backoff"].items() if kept["next"] > wall),
                 "symptom": status["symptom"], "paused": status["paused"], "repairing": status["repairing"],
                 "counters": rules.counters(memory, wall), "lease": held,
-                "profile": profile(), "controls": {"template": UNCHECKED, "params": {}}
-                if status["unchecked"] else None}
+                "profile": profile()}
 
     async def handle_state(request):
         return ports.respond(state())
