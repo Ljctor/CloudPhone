@@ -13,7 +13,10 @@ Entering mpw18 or mpw4 farming brings the game there in the background
 AUTO on, then its soul weapon equipped; a step that fails stops it with
 one alert naming the step. It
 starts at once on its trigger (POST /mode, or the timer's end: the watch
-wakes on it), within rules.SWITCH_BUDGET seconds; each switch is one log
+wakes on it), within rules.SWITCH_BUDGET seconds; a switch that stops is
+tried again on its own with a backoff (rules.retry_after) while within
+that budget, and only then alerts once; a mode left failed is farming
+again once the watchdog sees it farm (api confirm); each switch is one log
 line with its steps' seconds, and one alert naming the slowest step when
 it took longer. While
 farming mpw4 it looks for the
@@ -63,13 +66,13 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         answer["mine"] = mines["state"]()
         return answer
 
-    def switched(answer, since, began):
+    def switched(answer, since, waited):
         """The switch's log line, and its alert when over budget: since,
-        its trigger; began, when farm() got the lease (the wait before it
-        is the user's or another holder's, not counted)."""
+        its trigger; waited, the seconds it waited for the lease (the
+        user's or another holder's, not counted)."""
         before, after = status["switch"] or ("?", status["mode"])
-        line, alert = rules.switch_report(before, after, ports.clock.monotonic() - began,
-                                          answer.get("timings") or {}, began - since)
+        line, alert = rules.switch_report(before, after, ports.clock.monotonic() - since - waited,
+                                          answer.get("timings") or {}, waited)
         logging.getLogger("cloudphone.slayer-legend").log(
             logging.WARNING if alert else logging.INFO, f"{line}, {answer['result']}",
             extra={"source": "slayer-legend", "notify": bool(alert)})
@@ -85,11 +88,11 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         preset = loadouts["loadout"](name).get("preset")
         report("moving", f"Passage au stage {number} ({name})")
         since = status["switch_at"] if status["switch_at"] is not None else ports.clock.monotonic()
+        waited, failures = 0.0, 0
         while True:
             began = ports.clock.monotonic()
             try:
                 answer = await farming["farm"](number, preset, name, status["highest"])
-                break
             except ports.Busy as e:
                 if ports.clock.monotonic() - since >= rules.LEASE_WAIT:
                     text = f"Passage au stage {number} ({name}) : bail toujours pris après 30 min ({e}), à faire à la main"
@@ -98,7 +101,19 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
                     return False
                 report("waiting", f"Passage au stage {number} ({name}) en attente : {e}")
                 await ports.clock.sleep(rules.BUSY_RETRY)
-        alert = switched(answer, since, began)
+                waited += ports.clock.monotonic() - began
+                continue
+            if answer["result"] != "failed":
+                break
+            failures += 1
+            delay = rules.retry_after(failures, ports.clock.monotonic() - since - waited)
+            if delay is None:
+                break
+            logging.info(f"Slayer Legend mode {name}: switch stopped ({answer['text']}), "
+                         f"attempt {failures + 1} in {delay} s")
+            report("moving", f"Passage au stage {number} ({name}) : nouvel essai dans {delay} s ({answer['text']})"[:200])
+            await ports.clock.sleep(delay)
+        alert = switched(answer, since, waited)
         if alert and answer["result"] == "done":
             await ports.notify(alert)
         if answer["result"] == "failed":
@@ -109,8 +124,18 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         if answer["result"] == "plan":
             report("plan", f"Passage au stage {number} ({name}), plan seul : {answer['text']}"[:200])
             return False
-        report("farming", f"Farming {name} au stage {number}" + (f", preset {preset}" if preset else ""))
+        report("farming", farming_text(name, number, preset))
         return True
+
+    def farming_text(name, number, preset):
+        return f"Farming {name} au stage {number}" + (f", preset {preset}" if preset else "")
+
+    def confirm(name):
+        """The watchdog saw mode name farm as its loadout says (a look, or
+        its repair done): a switch left failed is over."""
+        if status["mode"] == name and status["state"] == "failed":
+            logging.info(f"Slayer Legend mode {name}: farming, as the watchdog sees it")
+            report("farming", farming_text(name, loadouts["stage"](name), loadouts["loadout"](name).get("preset")))
 
     async def enter(name, before=None):
         """What changing to mode name does (rules.entered): a stage change
@@ -256,5 +281,5 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         "routes": [("GET", "/mode", handle_state), ("POST", "/mode", handle_mode), ("POST", "/mode/timer", handle_timer)],
         "startup": [resume],
         # For the watchdog: the mode now (it runs only in the default one).
-        "api": {"state": state},
+        "api": {"state": state, "confirm": confirm},
     }

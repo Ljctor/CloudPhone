@@ -201,6 +201,8 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             if notify:
                 await ports.notify(text)
             await notify_all([(*action[:4], False) for action in actions])
+        elif answer["result"] == "done":
+            modes["confirm"](name)
         elif answer["result"] == "plan":
             memory = rules.not_run(memory, kind)
             say("normal", "Plan seul : {repair} : {plan}",
@@ -303,6 +305,8 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                    "act": {kind: farming["switches"]()[switch] == "real" for kind, switch in FARMING.items()}
                    if farming else {}, "available": available, "jitter": random.uniform(-1.0, 1.0),
                    "mode": name}
+        if symptom is None and name in FARMED:
+            modes["confirm"](name)
         memory, actions = rules.decide(memory, symptom, text, params, context, wall)
         ports.store.save()
         minutes = rules.waiting(memory, symptom, wall)

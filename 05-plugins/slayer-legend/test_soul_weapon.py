@@ -359,7 +359,8 @@ def fake_screens():
         s = shot[2]
         return (0.41, "equipment_weapon") if s["screen"] == "equipment" else None
 
-    return SimpleNamespace(plain_battle=plain, open_tab=open_tab, TAB_TAP_Y=screens.TAB_TAP_Y)
+    return SimpleNamespace(plain_battle=plain, open_tab=open_tab, TAB_TAP_Y=screens.TAB_TAP_Y,
+                           classify=lambda shot: shot[2]["screen"])
 
 
 def build(game, loadout=None):

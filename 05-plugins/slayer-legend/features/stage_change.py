@@ -154,16 +154,34 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         else:
             await ports.tap(shot, screen, move, point, verified=verified, seen=seen)
 
+    def battle_or_panel(shot):
+        """"plain", the open panel's tab, "saver", or None (another screen)."""
+        if screens.plain_battle(shot):
+            return "plain"
+        if screens.classify(shot) == "saver":
+            return "saver"
+        return screens.open_tab(shot)
+
     async def to_battle(may_tap=True):
-        """A fresh look at the battle screen with nothing over it: a bottom
-        panel open is closed with its own tab, only when that tab reads
-        lit (the reading is not calibrated yet: no guess)."""
-        shot = await look()
-        if await ports.analyse(screens.plain_battle, shot):
+        """A fresh look at the battle screen with nothing over it, waiting
+        up to SETTLE for it (a screen passing by, a toast sliding in): a
+        bottom panel open is closed with its own tab, only when that tab
+        reads lit (no guess); Power Saving Mode is left by its hold (once:
+        the game shows battle again behind it). The game's « Better Soul
+        Weapon » toast is no obstacle (screens.better_weapon_toast)."""
+        shot, seen = await settle(battle_or_panel)
+        if seen == "saver":
+            if not may_tap:
+                raise Plan("quitter le mode économie d’énergie")
+            await front()
+            await ports.hold(shot, "saver", "leave", screens.SAVER_TAP, screens.SAVER_HOLD_MS)
+            shot, seen = await settle(battle_or_panel, accept=lambda v: v not in (None, "saver"))
+        if seen == "plain":
             return shot
-        tab = await ports.analyse(screens.open_tab, shot)
+        tab = seen if isinstance(seen, tuple) else None
         if tab is None:
-            raise Stop("écran inattendu (ni le combat, ni un panneau du menu du bas reconnu)")
+            raise Stop(f"écran inattendu (ni le combat, ni un panneau du menu du bas reconnu ; lu : "
+                       f"{await ports.analyse(screens.classify, shot)})")
         if not may_tap:
             raise Plan(f"fermer le panneau ({tab[1]})")
         await tap(shot, tab[1], "close", (tab[0], screens.TAB_TAP_Y))

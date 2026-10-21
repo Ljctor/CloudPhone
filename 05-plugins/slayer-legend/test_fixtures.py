@@ -1,6 +1,8 @@
 """The readers on crops of real captures (fixtures/: the region banner,
 stage rows, battle stage names, the unfolded controls, Battle settings'
-title and presets, the sign-in screen's two buttons; never a full screen, nothing with the account's name),
+title and presets, the sign-in screen's two buttons, the battle
+screen's emerald, mana bar and menu labels under the « Better Soul Weapon »
+toast; never a full screen, nothing with the account's name),
 each pasted back where it was on an empty 480x1040 screen, and the pixel
 font's confusion matrix on the texts they hold.
 Run: python3 -m unittest test_fixtures"""
@@ -172,6 +174,31 @@ class SignIn(unittest.TestCase):
     def test_other_crops_are_not_the_sign_in_screen(self):
         for name in ("controls_iii_auto_on", "banner_giants_glass", "row_920"):
             self.assertNotEqual(screens.classify(screen(name)), "sign_in", name)
+
+
+class BetterWeaponToast(unittest.TestCase):
+    """The game's « Better Soul Weapon / Equip » toast over the battle
+    screen (13:36 capture): a known overlay, never tapped, that leaves the
+    screen a plain battle."""
+    BATTLE = ("battle_emerald", "battle_mana_bar", "battle_menu_labels")
+
+    def test_the_battle_under_the_toast_is_still_plain(self):
+        shot = screen(*self.BATTLE, "toast_better_weapon")
+        self.assertTrue(screens.plain_battle(shot))
+        self.assertIsNone(screens.open_tab(shot), "no bottom panel open")
+        self.assertTrue(screens.better_weapon_toast(shot))
+
+    def test_no_toast_without_it(self):
+        self.assertFalse(screens.better_weapon_toast(screen(*self.BATTLE)))
+        self.assertFalse(screens.better_weapon_toast(screen(*self.BATTLE, colour=(230, 230, 230))))
+
+    def test_its_area_is_forbidden_on_every_screen_it_shows_on(self):
+        nav = load("nav")
+        x, y = (0.71 + 1.0) / 2, (0.32 + 0.37) / 2
+        for name in ("battle", "character_enhance", "skill", "equipment_weapon", "companion",
+                     "adventure_map", "shop_summon"):
+            refusal = nav.guard(name, "better_weapon_toast", x, y)
+            self.assertIn("forbidden", refusal or "", name)
 
 
 class Confusion(unittest.TestCase):

@@ -79,7 +79,8 @@ class Game:
         self.state = {"screen": "battle", "panel": None, "stage": 915, "region": None, "offset": 0,
                       "preset": "III", "selected": None, "auto": True, "unfolded": None,
                       "move_lands": None, "auto_unreadable": False, "focused": True, "busy": None,
-                      "controls_unknown": False, "banner_stuck": False, "unfolded_forever": False}
+                      "controls_unknown": False, "banner_stuck": False, "unfolded_forever": False,
+                      "passing_until": None}
         self.state.update(state)
         self.moves = []
         self.calls = []
@@ -88,6 +89,9 @@ class Game:
 
     # -- what a screenshot holds
     def snapshot(self):
+        # A screen passing by (an animation, a toast): battle after that.
+        if self.state["passing_until"] is not None and self.now >= self.state["passing_until"]:
+            self.state.update(screen="battle", passing_until=None)
         s = dict(self.state)
         s["unfolded"] = self.unfolded()
         s["now"] = self.now
@@ -131,6 +135,8 @@ class Game:
             s.update(screen="battle", preset=s["selected"])
         elif move == "auto":
             s["auto"] = not s["auto"]
+        elif move == "leave" and screen == "saver":
+            s["screen"] = "battle"
 
     def ports(self, switches="real"):
         game = self
@@ -170,6 +176,12 @@ class Game:
                 game.apply(screen, move, point)
                 game.now += gap
 
+        async def hold(shot, screen, move, point, milliseconds):
+            guarded(screen, move, point, "hold")
+            game.moves.append((screen, move))
+            game.apply(screen, move, point)
+            game.now += milliseconds / 1000
+
         async def swipe(shot, screen, move, start, end, milliseconds):
             guarded(screen, move, start, "swipe")
             game.moves.append((screen, move))
@@ -185,7 +197,8 @@ class Game:
             game.alerts.append(text)
 
         store = Store({"farming": {"switches": {name: switches for name in feature.SWITCHES}}})
-        return SimpleNamespace(capture=capture, analyse=analyse, tap=tap, taps=taps, swipe=swipe, focused=focused,
+        return SimpleNamespace(capture=capture, analyse=analyse, tap=tap, taps=taps, swipe=swipe, hold=hold,
+                               focused=focused,
                                notify=notify, clock=SimpleNamespace(sleep=sleep, wall=lambda: 1e9 + game.now,
                                                                      monotonic=lambda: game.now),
                                leased=leased, Busy=Busy, store=store, respond=lambda value, status=200: (status, value))
@@ -223,7 +236,9 @@ def readers(game):
             return None
         return "on" if second[2]["auto"] else "off"
 
-    fake_screens = SimpleNamespace(plain_battle=plain, open_tab=open_tab, TAB_TAP_Y=screens.TAB_TAP_Y)
+    fake_screens = SimpleNamespace(plain_battle=plain, open_tab=open_tab, TAB_TAP_Y=screens.TAB_TAP_Y,
+                                   classify=lambda shot: shot[2]["screen"], SAVER_TAP=screens.SAVER_TAP,
+                                   SAVER_HOLD_MS=screens.SAVER_HOLD_MS)
     fake_select = SimpleNamespace(regions=select.regions, view=view_of, battle_stage=battle_stage,
                                   STAGE_MAP_TAP=select.STAGE_MAP_TAP, ARROW_TAPS=select.ARROW_TAPS,
                                   MOVE_TAP_X=select.MOVE_TAP_X)
@@ -362,6 +377,26 @@ class Sequence(unittest.TestCase):
         self.assertIn("écran inattendu", run(game, lambda api: api["farm"](920, "III", "mpw18"))["text"])
         self.assertEqual(game.moves, [])
 
+    def test_a_screen_passing_by_is_waited_for(self):
+        game = Game(screen="other", passing_until=1.5)
+        self.assertEqual(run(game, lambda api: api["farm"](920, "III", "mpw18")), done())
+        self.assertEqual(game.state["stage"], 920)
+
+    def test_the_unexpected_screen_is_named(self):
+        game = Game(screen="other")
+        self.assertIn("lu : other", run(game, lambda api: api["farm"](920, "III", "mpw18"))["text"])
+
+    def test_power_saving_mode_is_left_by_its_hold(self):
+        game = Game(screen="saver")
+        self.assertEqual(run(game, lambda api: api["farm"](920, "III", "mpw18")), done())
+        self.assertEqual(game.moves[0], ("saver", "leave"))
+        self.assertEqual(game.state["stage"], 920)
+
+    def test_power_saving_mode_in_plan_taps_nothing(self):
+        game = Game(screen="saver")
+        self.assertEqual(run(game, lambda api: api["farm"](920, "III", "mpw18"), switches="plan")["result"], "plan")
+        self.assertEqual(game.moves, [])
+
     def test_an_unread_panel_is_an_unexpected_screen(self):
         game = Game(panel="no_tab_lit")
         self.assertIn("écran inattendu", run(game, lambda api: api["farm"](920, "III", "mpw18"))["text"])
@@ -432,7 +467,7 @@ class Store:
 
 
 class Mode(unittest.TestCase):
-    def enter(self, answers):
+    def enter(self, answers, confirm=None):
         """answers: what farm does each time: an answer, or Busy's text."""
         game = Game()
         calls = []
@@ -472,8 +507,10 @@ class Mode(unittest.TestCase):
                 async def json(self):
                     return {"mode": "mpw4", "stage4": 931}
             await handler(Request())
-            for _ in range(10):
+            for _ in range(20):
                 await asyncio.sleep(0)
+            if confirm:
+                part["api"]["confirm"](confirm)
             get = next(h for method, path, h in part["routes"] if method == "GET")
             return (await get(None))[1]
 
@@ -486,11 +523,37 @@ class Mode(unittest.TestCase):
         self.assertEqual(state["state"], "farming", state["message"])
         self.assertEqual(alerts, [])
 
-    def test_failure_is_one_alert(self):
-        calls, state, alerts = self.enter([{"result": "failed", "text": "ouverture de Select Region"}])
+    def test_failure_is_tried_again_within_the_budget_then_one_alert(self):
+        failed = {"result": "failed", "text": "ouverture de Select Region"}
+        calls, state, alerts = self.enter([failed] * 8)
+        # Tried at 0, 2, 6, 14, 30 and 46 s: the next would be past 60 s.
+        self.assertEqual(len(calls), 6)
         self.assertEqual(state["state"], "failed")
         self.assertEqual(len(alerts), 1)
         self.assertIn("ouverture de Select Region", alerts[0])
+
+    def test_a_failure_then_a_success_farms_without_alert(self):
+        failed = {"result": "failed", "text": "écran inattendu"}
+        calls, state, alerts = self.enter([failed, done()])
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(state["state"], "farming", state["message"])
+        self.assertEqual(alerts, [])
+
+    def test_retry_backoff(self):
+        self.assertEqual([mode_rules.retry_after(n, 0) for n in (1, 2, 3, 4, 5)], [2, 4, 8, 16, 16])
+        self.assertIsNone(mode_rules.retry_after(5, 46))
+        self.assertEqual(mode_rules.retry_after(4, 30), 16)
+
+    def test_the_watchdog_confirms_a_failed_mode(self):
+        failed = {"result": "failed", "text": "écran inattendu"}
+        calls, state, alerts = self.enter([failed] * 8, confirm="mpw4")
+        self.assertEqual(state["state"], "farming", state["message"])
+        self.assertIn("931", state["message"])
+
+    def test_a_confirmation_for_another_mode_changes_nothing(self):
+        failed = {"result": "failed", "text": "écran inattendu"}
+        calls, state, alerts = self.enter([failed] * 8, confirm="mpw18")
+        self.assertEqual(state["state"], "failed")
 
     def test_a_user_who_plays_makes_it_wait_for_the_next_look(self):
         calls, state, alerts = self.enter(["l’utilisateur joue", done()])

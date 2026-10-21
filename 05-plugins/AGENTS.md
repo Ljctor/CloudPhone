@@ -42,6 +42,8 @@ Rules:
   - Stage change and preset (mode changes and the watchdog's repairs,
     each only while its switch is real):
     - Closing a bottom panel with its own tab: only when that tab reads lit.
+    - "Press here to finish Power Saving Mode": held 4 s, once per
+      sequence, only when the screen reads Power Saving Mode.
     - Opening Select Region (the stage map button on the battle screen).
     - Select Region's region arrows: only while its banner reads one region.
     - Select Region's arrows and list scrolls: at most 10 moves for the whole
@@ -84,5 +86,9 @@ Rules:
   - Closed mine (mode "mine"): its floor row, the Area, 3 feathers,
     scrolling its floor list, and unticking "Repeat entry" (at most 3
     tries, then one alert).
+  - Never tapped, on any screen: the game's "Better Soul Weapon / Equip"
+    toast (right edge, y 0.32-0.37; forbidden in `navigation.json`): it
+    equips the game's pick, while the soul weapon is the mode's loadout.
+    It is no obstacle either: the battle under it reads as such.
 - Screenshots of a game go in the repository only when reviewed one by one
   (no Google account, no server address); never commit raw captures.

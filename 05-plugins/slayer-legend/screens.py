@@ -146,6 +146,21 @@ def open_tab(shot):
     return TABS[best]
 
 
+# The game's « Better Soul Weapon / Equip » toast at the right of the
+# battle (real captures, 2026-10-21): the weapon's icon on dark, then two
+# white lines. A known overlay: never tapped (navigation.json
+# forbids its area on the battle screen and the panels), and it covers none
+# of the areas the screens are told by.
+TOAST_AREA = (0.70, 0.315, 1.0, 0.375)
+TOAST_ICON = (0.725, 0.33, 0.785, 0.36)
+TOAST_TEXT = (0.81, 0.33, 0.99, 0.34)
+
+
+def better_weapon_toast(shot):
+    """The « Better Soul Weapon / Equip » toast shows (nothing to do: never tapped)."""
+    return share(shot, TOAST_ICON, dark) > 0.4 and share(shot, TOAST_TEXT, white) > 0.1
+
+
 # The battle screen with no panel or pop-up over it shows the skill bar:
 # its blue mana bar (the start of it, filled unless the mana is spent).
 MANA_BAR = (0.12, 0.546, 0.30, 0.551)

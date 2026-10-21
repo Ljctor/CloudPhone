@@ -639,6 +639,7 @@ class GoldTrigger(unittest.TestCase):
             return {"result": "plan", "text": "plan"}
 
         self.farmed = farmed = []
+        self.confirmed = confirmed = []
 
         async def farm(*args):
             farmed.append(args)
@@ -649,7 +650,8 @@ class GoldTrigger(unittest.TestCase):
         gold = {"current": lambda: {"rate": 0, "span": 300, "last": Ports.clock.wall() - 1}}
         built = feature.watchdog(
             Ports, None, None, rules, NUMERALS.get,
-            {"state": lambda: {"mode": mode, "highest": 925, "state": "moving" if entering else "farming"}},
+            {"state": lambda: {"mode": mode, "highest": 925, "state": "moving" if entering else "farming"},
+             "confirm": confirmed.append},
             {"state": lambda: {"enabled": mode == "mine"}},
             {"running": lambda: False, "start": lambda *a: None, "state": lambda: {}},
             lambda name: {"mpw18": {"stage": 920, "preset": 1}, "mpw4": {"stage": 915, "preset": "II"}}[name],
@@ -738,6 +740,24 @@ class ModesOnTheFeature(GoldTrigger):
         self.assertIn("Farming mpw4 : mauvais stage, pas le 915", alerts)
         self.assertEqual(self.state["mode"], "mpw4")
         self.assertEqual(self.state["profile"]["stage"], 915)
+
+    def test_a_look_that_sees_the_mode_farm_confirms_it(self):
+        # The mode row leaves "failed" once the watchdog sees it farm.
+        self.looks(4, "on")
+        self.assertIn("mpw18", self.confirmed)
+
+    def test_a_wrong_stage_confirms_nothing_until_repaired(self):
+        self.looks(4, "on", stage=940)
+        self.assertEqual(self.confirmed, [])
+
+    def test_a_repair_done_confirms_the_mode(self):
+        self.looks(8, "on", stage=940, answer={"result": "done", "text": ""})
+        self.assertTrue(self.farmed)
+        self.assertIn("mpw18", self.confirmed)
+
+    def test_the_mine_and_free_play_confirm_nothing(self):
+        self.looks(4, "on", mode="free")
+        self.assertEqual(self.confirmed, [])
 
     def test_mpw18_ok_is_its_line(self):
         self.looks(4, "on")
@@ -899,7 +919,7 @@ class WaitOnTheDialog(unittest.TestCase):
                 pass
 
         built = feature.watchdog(
-            Ports, None, None, rules, NUMERALS.get, {"state": lambda: {"mode": "mpw18"}},
+            Ports, None, None, rules, NUMERALS.get, {"state": lambda: {"mode": "mpw18"}, "confirm": lambda name: None},
             {"state": lambda: {"enabled": False}},
             {"running": lambda: False, "start": lambda *a: None, "state": lambda: {}}, lambda mode: None)
 

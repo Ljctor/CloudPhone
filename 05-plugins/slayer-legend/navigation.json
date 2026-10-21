@@ -122,6 +122,19 @@
    "source": "explored 2026-10-18",
    "moves": [
     {
+     "id": "better_weapon_toast",
+     "to": "unknown",
+     "area": [
+      0.7,
+      0.315,
+      1.0,
+      0.375
+     ],
+     "label": "the game's « Better Soul Weapon / Equip » toast at the right of the battle (screens.better_weapon_toast)",
+     "forbidden": true,
+     "reason": "equips the game's pick: the soul weapon is the mode's loadout, never the game's suggestion"
+    },
+    {
      "id": "menu_character",
      "to": "character_enhance",
      "tap": [
@@ -284,6 +297,19 @@
    "recognise": "panel tabs Enhance/Growth/Promotion at y 0.537, Enhance selected",
    "source": "explored 2026-10-18",
    "moves": [
+    {
+     "id": "better_weapon_toast",
+     "to": "unknown",
+     "area": [
+      0.7,
+      0.315,
+      1.0,
+      0.375
+     ],
+     "label": "the game's « Better Soul Weapon / Equip » toast at the right of the battle (screens.better_weapon_toast)",
+     "forbidden": true,
+     "reason": "equips the game's pick: the soul weapon is the mode's loadout, never the game's suggestion"
+    },
     {
      "id": "close",
      "to": "battle",
@@ -595,6 +621,19 @@
    "source": "explored 2026-10-18",
    "moves": [
     {
+     "id": "better_weapon_toast",
+     "to": "unknown",
+     "area": [
+      0.7,
+      0.315,
+      1.0,
+      0.375
+     ],
+     "label": "the game's « Better Soul Weapon / Equip » toast at the right of the battle (screens.better_weapon_toast)",
+     "forbidden": true,
+     "reason": "equips the game's pick: the soul weapon is the mode's loadout, never the game's suggestion"
+    },
+    {
      "id": "close",
      "to": "battle",
      "tap": [
@@ -682,6 +721,19 @@
    "recognise": "tabs Weapon/Accessories/Relic/Spirit at y 0.414, Weapon selected, weapon grid, Batch Combine",
    "source": "explored 2026-10-18",
    "moves": [
+    {
+     "id": "better_weapon_toast",
+     "to": "unknown",
+     "area": [
+      0.7,
+      0.315,
+      1.0,
+      0.375
+     ],
+     "label": "the game's « Better Soul Weapon / Equip » toast at the right of the battle (screens.better_weapon_toast)",
+     "forbidden": true,
+     "reason": "equips the game's pick: the soul weapon is the mode's loadout, never the game's suggestion"
+    },
     {
      "id": "close",
      "to": "battle",
@@ -1232,6 +1284,19 @@
    "source": "explored 2026-10-18",
    "moves": [
     {
+     "id": "better_weapon_toast",
+     "to": "unknown",
+     "area": [
+      0.7,
+      0.315,
+      1.0,
+      0.375
+     ],
+     "label": "the game's « Better Soul Weapon / Equip » toast at the right of the battle (screens.better_weapon_toast)",
+     "forbidden": true,
+     "reason": "equips the game's pick: the soul weapon is the mode's loadout, never the game's suggestion"
+    },
+    {
      "id": "close",
      "to": "battle",
      "tap": [
@@ -1367,6 +1432,19 @@
    "recognise": "panel 'Adventure', tabs Adventure/Dungeon/Guild at y 0.249, parchment map with CLEAR regions",
    "source": "explored 2026-10-18",
    "moves": [
+    {
+     "id": "better_weapon_toast",
+     "to": "unknown",
+     "area": [
+      0.7,
+      0.315,
+      1.0,
+      0.375
+     ],
+     "label": "the game's « Better Soul Weapon / Equip » toast at the right of the battle (screens.better_weapon_toast)",
+     "forbidden": true,
+     "reason": "equips the game's pick: the soul weapon is the mode's loadout, never the game's suggestion"
+    },
     {
      "id": "close",
      "to": "battle",
@@ -1907,6 +1985,19 @@
    "recognise": "tabs Summon/Package/Goods/Golden Key/Event at y 0.438, summons priced in diamonds",
    "source": "explored 2026-10-18",
    "moves": [
+    {
+     "id": "better_weapon_toast",
+     "to": "unknown",
+     "area": [
+      0.7,
+      0.315,
+      1.0,
+      0.375
+     ],
+     "label": "the game's « Better Soul Weapon / Equip » toast at the right of the battle (screens.better_weapon_toast)",
+     "forbidden": true,
+     "reason": "equips the game's pick: the soul weapon is the mode's loadout, never the game's suggestion"
+    },
     {
      "id": "close",
      "to": "battle",

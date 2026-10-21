@@ -22,6 +22,10 @@ SWITCH_BUDGET = 60
 BUSY_RETRY = 2
 # A stage change waits for the shared lease this long at most (seconds).
 LEASE_WAIT = 30 * 60
+# A switch that stopped (a screen passing by, a step missed) is tried
+# again after 2, 4, 8 then every 16 seconds, while within SWITCH_BUDGET of
+# its trigger; then one alert.
+RETRY_FIRST, RETRY_MOST = 2, 16
 # mpw4 farming: seconds between two looks for the gold scroll (on the
 # battle screen, gold_scroll.py), with a screenshot at most WATCH_EVERY old.
 GOLD_EVERY = 30
@@ -155,3 +159,11 @@ def restored(mode, until, mine_enabled, now):
     if mode == "mine" and not mine_enabled:
         mode, until = DEFAULT, None
     return mode, until, ended
+
+
+def retry_after(failures, elapsed):
+    """Seconds before the next attempt of a switch that stopped failures
+    times, elapsed seconds (its own, the lease's wait apart) after its
+    trigger; None: no time left in SWITCH_BUDGET, it stays failed."""
+    delay = min(RETRY_FIRST * 2 ** (failures - 1), RETRY_MOST)
+    return delay if elapsed + delay < SWITCH_BUDGET else None
