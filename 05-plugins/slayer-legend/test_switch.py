@@ -79,9 +79,10 @@ class Clock:
                 future.set_result(None)
 
 
-def harness(game):
+def harness(game, scroll=None, saved=None):
     """The mode feature over the real stage change, every capture and tap
-    taking its time."""
+    taking its time. scroll: gold_scroll's stand-in (default: nothing
+    seen); saved: state.json's sections at the gateway's start."""
     clock = Clock(game)
     ports = game.ports("real")
     plain = {"capture": ports.capture, "tap": ports.tap, "taps": ports.taps, "swipe": ports.swipe}
@@ -143,10 +144,10 @@ def harness(game):
              "state": lambda: {"enabled": False, "state": "off", "floor": None, "area": None}}
     values = SimpleNamespace(time_or_none=lambda v: v, number_or_none=lambda v, top: v)
     # mpw4's gold scroll looks share the captures; nothing seen.
-    scroll = SimpleNamespace(fresh=lambda: {"gold": None}, seen=lambda battle, shot: None,
-                             look=lambda kept, seen: (kept, None))
+    scroll = scroll or SimpleNamespace(fresh=lambda: {"gold": None}, seen=lambda battle, shot: None,
+                                       look=lambda kept, seen: (kept, None))
     screens = SimpleNamespace(classify=lambda shot: "battle")
-    ports.store = base.Store()
+    ports.store = base.Store(saved)
     part = mode_feature.mode(ports, mode_rules, None, values, mines, screens, scroll, loadouts,
                              {"farm": farm, "ensure_soul_weapon": ensure_soul_weapon})
     post = next(h for method, path, h in part["routes"] if method == "POST" and path == "/mode")
@@ -161,7 +162,7 @@ def harness(game):
             return self.body
 
     return SimpleNamespace(clock=clock, ports=ports, farmed=farmed, presets=presets, stages=stages,
-                           change=change, souls=souls,
+                           change=change, souls=souls, startup=part["startup"],
                            post=lambda body: post(Request(body)), state=lambda: get(None),
                            hold=lambda body: hold(Request(body)))
 
@@ -506,6 +507,61 @@ class Switch(unittest.TestCase):
         self.assertEqual(mode_rules.next_look(200, 100), mode_rules.WATCH_EVERY)
         self.assertAlmostEqual(mode_rules.next_look(103, 100), 3.1)
         self.assertEqual(mode_rules.next_look(90, 100), 0.2)
+
+
+class GoldScrollInMpw4(unittest.TestCase):
+    """mpw4 farming looks for the gold scroll whether it is the default
+    mode (« Mode par défaut ») or a timed one."""
+    GONE = "Farming mpw4 : plus de parchemin doré"
+
+    def missing(self):
+        """The real record and debounce, the scroll never seen in battle."""
+        real = base.load("gold_scroll")
+        return SimpleNamespace(fresh=real.fresh, look=real.look,
+                               seen=lambda battle, shot: False if battle else None)
+
+    def alerted(self, h, game, start, limit=400):
+        async def go():
+            await start()
+            await h.clock.until(lambda: self.GONE in game.alerts, game.now + limit)
+            return (await h.state())[1]
+        return asyncio.run(go())
+
+    def test_as_the_default_mode(self):
+        game = SlowGame(stage=905, preset="IV")
+        h = harness(game, scroll=self.missing())
+        state = self.alerted(h, game, lambda: h.post({"mode": "mpw4", "stage4": 925, "default": "mpw4"}))
+        self.assertEqual((state["mode"], state["default"], state["until"], state["gold"]),
+                         ("mpw4", "mpw4", None, False))
+
+    def test_as_a_timed_mode(self):
+        game = SlowGame(stage=905, preset="IV")
+        h = harness(game, scroll=self.missing())
+        state = self.alerted(h, game, lambda: h.post({"mode": "mpw4", "stage4": 925,
+                                                     "until": h.ports.clock.wall() + 3600}))
+        self.assertEqual((state["mode"], state["default"], state["gold"]), ("mpw4", "mpw18", False))
+
+    def test_back_to_the_default_mpw4_after_a_timed_mode(self):
+        game = SlowGame(stage=905, preset="IV")
+        h = harness(game, scroll=self.missing())
+
+        async def start():
+            await h.post({"mode": "mpw18", "default": "mpw4", "stage4": 925,
+                          "until": h.ports.clock.wall() + 60})
+        state = self.alerted(h, game, start, limit=900)
+        self.assertEqual((state["mode"], state["until"], state["gold"]), ("mpw4", None, False))
+        self.assertIn("Minuteur écoulé : retour au farming mpw4 (stage 925)", game.alerts)
+
+    def test_after_a_gateway_restart_as_the_default_mode(self):
+        game = SlowGame(stage=925, preset="II")
+        h = harness(game, scroll=self.missing(),
+                    saved={"mode": {"mode": "mpw4", "default": "mpw4", "until": None, "configured": True}})
+
+        async def start():
+            for hook in h.startup:
+                await hook(None)
+        state = self.alerted(h, game, start)
+        self.assertEqual((state["mode"], state["default"], state["gold"]), ("mpw4", "mpw4", False))
 
 
 if __name__ == "__main__":
