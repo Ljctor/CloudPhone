@@ -82,6 +82,31 @@ fn a_plugins_log_records_carry_its_id_as_their_source() {
 }
 
 #[test]
+fn a_plugins_alert_reaches_the_phone_through_ntfy_only_when_alerts_are_on() {
+    let cp = with(json!([PROBE]));
+    let alert = |text: &str| {
+        let answer = cp.post_json("api/v1/plugins/e2e-probe/alert", &json!({"text": text}));
+        assert_eq!(answer.status(), 200);
+        answer.json().unwrap()["sent"].clone()
+    };
+    // Alerts off: the record only.
+    assert_eq!(alert("Probe alert while off"), false);
+    assert_eq!(cp.post_json("api/v1/notify", &json!({"enabled": true})).status(), 200);
+    assert_eq!(alert("Probe alert while on"), true);
+    let posts = cp.fake().ntfy_posts();
+    let texts: Vec<&str> = posts.iter().filter_map(|p| p["text"].as_str()).collect();
+    assert!(texts.contains(&"Probe alert while on") && !texts.contains(&"Probe alert while off"), "{posts:?}");
+    let sent = posts.iter().find(|p| p["text"] == "Probe alert while on").unwrap();
+    assert_eq!(sent["headers"]["Title"], "Sonde e2e", "titled with the plugin's name: {sent}");
+    // Both are records with notify, for the logs.
+    let records = cp.get_json("api/v1/logs")["records"].as_array().cloned().unwrap();
+    for text in ["Probe alert while off", "Probe alert while on"] {
+        let record = records.iter().find(|r| r["text"] == text).unwrap_or_else(|| panic!("{text:?} in {records:?}"));
+        assert_eq!((record["source"].as_str(), &record["notify"]), (Some("e2e-probe"), &json!(true)), "{record}");
+    }
+}
+
+#[test]
 fn a_plugins_post_route_needs_the_page_token_and_the_pages_origin() {
     let cp = with(json!([PROBE]));
     assert_eq!(post_without_token(&cp, "api/v1/plugins/e2e-probe/count", None), 403, "no token");

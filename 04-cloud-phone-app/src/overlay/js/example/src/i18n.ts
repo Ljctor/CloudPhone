@@ -131,13 +131,11 @@ const EN = {
   'Envoyer': 'Send',
   'ntfy est une app de notifications (Android, iOS, web). Installe-la, touche + et colle le lien.':
     'ntfy is a notification app (Android, iOS, web). Install it, tap + and paste the link.',
-  // Logs and toasts
+  // Logs
   'Niveau': 'Level',
   'Tout': 'All',
   'Avertissements et erreurs': 'Warnings and errors',
   'Erreurs': 'Errors',
-  'Notifications': 'Notifications',
-  'Fermer la notification': 'Close the notification',
   'Touchez ↻ pour réessayer.': 'Tap ↻ to retry.',
   'Les touches passent de nouveau par le canal de données': 'Touches go through the data channel again',
   'Les touches passent par le serveur (canal de données fermé) : elles peuvent être plus lentes':

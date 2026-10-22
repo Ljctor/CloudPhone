@@ -107,10 +107,9 @@ export function useInput({ gatewayUrl, display, showMarker: markerShown }) {
       inputPath.current = 'data channel';
       return;
     }
-    // The session fell back to the server path: slower, worth a toast.
+    // The session fell back to the server path: slower, worth a warning.
     if (inputPath.current !== 'HTTP') {
-      pageLog('warning', english('Les touches passent par le serveur (canal de données fermé) : elles peuvent être plus lentes'),
-        { notify: true });
+      pageLog('warning', english('Les touches passent par le serveur (canal de données fermé) : elles peuvent être plus lentes'));
     }
     inputPath.current = 'HTTP';
     enqueue(sender, coordinates, pressed, move);

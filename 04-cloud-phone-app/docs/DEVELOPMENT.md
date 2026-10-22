@@ -13,7 +13,7 @@ the browser and the gateway; `App.tsx` only assembles them.
 |---|---|
 | `js/example/src/App.tsx` | the page's assembly: calls the hooks below, passes their state to the components, lays out the screen, the panels and the toolbar |
 | `js/example/src/main.tsx` | mounts `App` |
-| `js/example/src/layout.ts` | the screen's fitted size and the toolbar's place (side, below, overlay), Android's size from the emulator status, the running size's key, the toasts' top (pure) |
+| `js/example/src/layout.ts` | the screen's fitted size and the toolbar's place (side, below, overlay), Android's size from the emulator status, the running size's key (pure) |
 | `js/example/src/useLayout.ts` | the window's size, this device's pixel ratio and screen, the emulator status fetch, the screen refitted on resize and fullscreen, the reload after a screen size change |
 | `js/example/src/usePanels.ts` | which panel is open (information, options) and the information tab; information opens on the client tab; the flags the panel-only polls follow (server tab, information, options) |
 | `js/example/src/infoPanel.tsx` | the open panel's frame: its title, close button and, for information, the client and server tabs |
@@ -35,8 +35,8 @@ the browser and the gateway; `App.tsx` only assembles them.
 | `js/example/src/androidSettings.tsx` | the polls of `GET /api/v1/display` and `GET /api/v1/emulator-settings`, the form that changes them |
 | `js/example/src/toolbarStatus.ts` | the round trip's colour, the connection LED's colour (pure) |
 | `js/example/src/toolbar.tsx` | the toolbar (keys, figures, options, reconnect, fullscreen, fold and dock), the bar's folded state, the floating handle |
-| `js/example/src/logRecords.ts` | which records a log keeps and shows, how a notify record changes the toasts (pure) |
-| `js/example/src/logs.tsx` | the page's log and the server's (`GET /api/v1/logs`), the log list, the level filter, the toasts |
+| `js/example/src/logRecords.ts` | which records a log keeps and shows (pure) |
+| `js/example/src/logs.tsx` | the page's log and the server's (`GET /api/v1/logs`), the log list, the level filter |
 | `js/example/src/logSection.tsx` | a log in the information panel: folded at first, with its filter |
 | `js/example/src/notify.tsx` | phone alerts (`GET`/`POST /api/v1/notify`), the options panel's section |
 | `js/example/src/pageSettings.ts` | the per-viewer settings' key and defaults, reading them from the stored text, a change, the log sections' folded state (pure) |
@@ -225,12 +225,15 @@ One stream of records, two outputs. A record is
 - `source`: `gateway`, `emulator` (the unit, Android's boot and its apps),
   `adb`, a plugin's id (its `context.log`, `plugins.py`), or `page` for the
   page's own records.
-- `notify` (only when true): the page also shows the record as a toast.
+- `notify` (only when true): an event worth the user's attention. It is
+  a mark on the record only: the page lists it like the others and pops
+  nothing up over the screen. Phone alerts (ntfy) are sent on their own,
+  by `http/events.py` and the plugins' `context.notify()`.
 - `params` (records with parameters): the values `text` was filled with,
   as data (a viewer's id tells the page that connected it is itself).
 - `text` is in English, whatever the page's language, and the page shows
   it as it is (no translation): the gateway's and the plugins' records,
-  and the phone alerts, which are the same records with `notify`. The
+  and the phone alerts. The
   statuses a page shows elsewhere (a plugin's state, an error in an
   answer) are French templates the page translates instead.
 - Every error says what to do next, in one sentence after the event (the
@@ -278,22 +281,20 @@ journalctl -t cloudphone-gateway CLOUDPHONE_SOURCE=adb
 **The page.** Its own records (source `page`): stream state changes, each
 new message of `diagnose()` (error, warning for "being fixed", normal for
 "works but worse"), touches falling back to the server path (HTTP, a
-warning with notify) and back, and every `console.warn`/`console.error`
+warning) and back, and every `console.warn`/`console.error`
 and uncaught error. Its warnings and errors also reach the browser's
 console at the same level. It reads `GET /api/v1/logs` every 4 s, with
 or without the panel open, and keeps the last 200 records of each side.
 Colours at display time only: normal in the theme's foreground (white),
 warning orange (`#ff9f0a`), error red (`#ff453a`).
 
-Toasts: notify records from either side that arrive after the page's
-first read of the log, stacked at the top of the screen (under a banner
-when one shows, never over the toolbar), above the panels. Each has a
-close cross; normal ones go after 6 s, warnings after 12 s, errors stay.
-The same level, source and text again adds `×2` to the open toast instead
-of a new one; at most 4 are shown. A viewer's own connection is not a
-toast on its own page (`params.viewer`). While the tab is hidden, a system
-notification too, only if the browser already allows notifications for
-the page: the page never asks for the permission.
+Alerts reach the user only on the phone, through ntfy, as described under
+Phone alerts below. Nothing pops up over the screen for a record, with or
+without `notify`, and the page never raises a system notification. Over
+the game, only a plugin's own status lines remain, such as Slayer Legend's
+top left; the records are read in the two logs. The covers and banners of
+`diagnose()`, described under Stream behaviour, are the page's connection
+status, not alerts.
 
 To see a warning and an error in the panel: open Information → Serveur and
 unfold Journaux du serveur. A screen size the gateway refuses is a
@@ -307,7 +308,7 @@ curl -s -H "X-CloudPhone-Token: $TOKEN" -H 'Content-Type: application/json' \
 
 An error comes with any of the failures above, e.g. on a test instance
 `systemctl stop cloudphone-emulator` (Android stopped without a request:
-an error record and a red toast; start it again afterwards). The level
+a red error record; start it again afterwards). The level
 filter set to Erreurs keeps only those.
 
 ## Stream behaviour

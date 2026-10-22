@@ -390,8 +390,8 @@ Android, you open it again from the page.
 
 ## 10. Turn on phone alerts (optional, 2 minutes)
 
-The page shows what happens as toasts and in its logs, but only while it is
-open. To hear about a crash or a restart with the page closed, the gateway
+The page shows nothing over the game for an alert: alerts go to your phone
+only, and the page keeps what happens in its logs. To hear about a crash or a restart with the page closed, the gateway
 can send alerts to your phone through ntfy.sh, a public notification
 service:
 
@@ -407,9 +407,8 @@ service:
 The topic name works like a password: anyone who knows it can read the
 alerts, so do not share it; the page is the only place that shows it. The
 server keeps the setting across restarts and upgrades. Messages only name
-an app and what happened. What triggers an alert, how long toasts stay and
-how to read the logs:
-[INSTALL.md](INSTALL.md#logs-toasts-and-phone-alerts).
+an app and what happened. What triggers an alert and how to read the logs:
+[INSTALL.md](INSTALL.md#logs-and-phone-alerts).
 
 ## Install the Slayer Legend plugin (part 05, optional)
 

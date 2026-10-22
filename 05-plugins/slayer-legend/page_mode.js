@@ -113,7 +113,7 @@ export default function modeFeature(api, { known, watchdog, stage }) {
     const hold = farm.answer?.hold;
     const result = await api.post('/mode/hold', { action, ...(hold ? { hold: hold.id } : {}) }).catch(() => null);
     if (result?.ok) remember(result.body);
-    else if (result) api.toast(result.body?.error_t ?? `HTTP ${result.status}`);
+    else if (result) api.warn(result.body?.error_t ?? `HTTP ${result.status}`);
     await askMode();
   };
   // The hold's seconds left, counted down between two answers.

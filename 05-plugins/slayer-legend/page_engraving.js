@@ -2,7 +2,8 @@
 // (I to V), the soul weapon and its engraving variant, chosen in that
 // mode's dialog of page_mode.js (options(mode)) and saved in the gateway
 // on change, SAVE_AFTER ms after the last one (POST /loadout, merge: only
-// what was chosen here), silently: a toast only when it is refused. The
+// what was chosen here), silently: a warning in the page's log only when
+// it is refused (nothing pops up over the game). The
 // weapons and their variants come from the gateway (GET /engravings, GET
 // /engraving?id=N, from engravings.json); the variant's grid is drawn
 // read-only (a 'grid' option). Nothing is equipped or placed in the game
@@ -133,7 +134,7 @@ export default function loadoutFeature(api) {
     else {
       const why = result?.body?.error_t
         ?? (result ? `HTTP ${result.status}` : { template: 'gateway injoignable', params: {} });
-      api.toast?.('équipement de {mode} non enregistré : {why}', { mode, why });
+      api.warn?.('équipement de {mode} non enregistré : {why}', { mode, why });
     }
     api.refresh();
   };

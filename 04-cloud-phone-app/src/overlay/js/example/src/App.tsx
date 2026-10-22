@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Emulator, logger } from '../../src';
 import { PAGE_CSS, styles } from './styles';
 import { postFetch, postHeaders } from './api';
-import { Toasts, useLog, useServerLog, useToasts } from './logs';
+import { useLog, useServerLog } from './logs';
 import { LogSection } from './logSection';
 import { AlertsPanel, useAlerts } from './notify';
 import { serverSections } from './serverInfo';
@@ -12,12 +12,12 @@ import { ServerPanel } from './serverPanel';
 import { EmulatorSettings, useDisplayState, useEmulatorSettings } from './androidSettings';
 import { changeInProgress } from './emulatorSettings';
 import { useServerState } from './serverState';
-import { bannerShown, diagnose } from './diagnose';
+import { diagnose } from './diagnose';
 import { Banner, StatusCover, useDismissed } from './banner';
 import { useStreamStats } from './useStreamStats';
 import { useInput } from './useInput';
 import { useStream } from './useStream';
-import { mainDirection, toastsTop } from './layout';
+import { mainDirection } from './layout';
 import { deviceSize, useAndroidDisplay, useFittedScreen, useReloadOnResize } from './useLayout';
 import { usePanels } from './usePanels';
 import { Toolbar, useBarFold } from './toolbar';
@@ -55,7 +55,6 @@ function App() {
   useServerLog(gatewayUrl);
   // The logs show in Information, and plugins' log options in Options.
   const logs = useLog(infoOpen || optionsOpen);
-  const [toasts, dismissToast] = useToasts();
   const alerts = useAlerts(gatewayUrl, optionsOpen);
   const pluginLayer = useRef(null);
   const plugins = usePlugins({
@@ -101,8 +100,6 @@ function App() {
           <StatusCover problem={problem} stream={state} reconnecting={reconnecting} />
           <Banner problem={problem} dismissed={dismissed} dismiss={setDismissed} />
           <div ref={pluginLayer} style={styles.pluginLayer} aria-hidden="true" />
-          <Toasts toasts={toasts} dismiss={dismissToast}
-            top={toastsTop(bannerShown(problem, dismissed))} />
           {panel && (
             <InfoPanel panel={panel} infoTab={infoTab} setInfoTab={setInfoTab} close={() => setPanel(null)}>
               {panel === 'info' && infoTab === 'server' && (

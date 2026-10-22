@@ -174,19 +174,6 @@ export const styles = {
   // In the corner, with the same padding on both sides: the text stays
   // centred.
   bannerWithClose: { padding: '10px 28px' },
-  // Over the screen only (never the toolbar), above the panels; only the
-  // toasts themselves take touches.
-  toasts: {
-    position: 'absolute', left: '8px', right: '8px', zIndex: 6, pointerEvents: 'none',
-    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px',
-  },
-  toast: {
-    position: 'relative', pointerEvents: 'auto', maxWidth: '100%', boxSizing: 'border-box',
-    padding: '8px 30px 8px 12px', borderRadius: '8px', background: 'rgba(20, 22, 27, 0.94)',
-    border: '1px solid #3b3f47', fontFamily: 'system-ui, sans-serif',
-    fontSize: '13px', lineHeight: 1.35, boxShadow: '0 4px 14px rgba(0, 0, 0, 0.5)', overflowWrap: 'anywhere',
-  },
-  toastCount: { color: '#8a919c' },
   bannerClose: {
     position: 'absolute', top: '4px', right: '4px',
     width: '22px', height: '22px', padding: 0, border: 'none',

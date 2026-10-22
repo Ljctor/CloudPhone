@@ -119,7 +119,7 @@ configured count.
 | `tests/api.rs` | ping, caching, 404/405, viewers, disconnect-others, origin checks on the socket, consistency between endpoints |
 | `tests/input.rs` | touches and keys over HTTP reach Android at the right place |
 | `tests/lifecycle.rs` | crash, restart, discovery file replaced, gateway restarts |
-| `tests/plugins.rs` | plugin host: list, served scripts, routes, token checks, screenshot (shared, counted in the state details), analysis off the event loop and adb for plugins, a plugin's state kept across gateway restarts, Slayer Legend's timed modes (30 minutes by default, refused until configured) and its shared lease (the token for POST and DELETE, released by its holder only), a plugin for another plugin API refused, broken plugins skipped |
+| `tests/plugins.rs` | plugin host: list, served scripts, routes, token checks, a plugin's alert sent through ntfy only while alerts are on, screenshot (shared, counted in the state details), analysis off the event loop and adb for plugins, a plugin's state kept across gateway restarts, Slayer Legend's timed modes (30 minutes by default, refused until configured) and its shared lease (the token for POST and DELETE, released by its holder only), a plugin for another plugin API refused, broken plugins skipped |
 | `tests/watchdog.rs` | Slayer Legend's watchdog at its real pace on the fake's app: a crash closed and relaunched (MAIN/LAUNCHER, never `-S`) and farming again within a minute, timings printed; a game not responding gets Wait once, then an alert, never a kill; the sign-in screen gets "Sign in with Google" and the one account, a chooser with two accounts is one alert and no tap; a gateway start observes before relaunching; free play suspends it; another lease holder defers the relaunch; the page shows its look at the end of the mode's État row |
 | `tests/contract.rs` | what the emulator says (status, JSEP shapes, data channels, codecs): on the fake by default, on a deployed instance with `--features smoke` |
 | `tests/ui_page.rs` | Firefox: video plays and fits, muted, connected only with a frame, toolbar labels, landmarks, LED, metrics block, ↻ replaces only the video session, signalling back after a gateway restart or a long outage, English browser |
@@ -128,6 +128,7 @@ configured count.
 | `tests/ui_input.rs` | a click lands on the Android pixel under it (several sizes and windows); drags, clamped at the edge; toolbar keys; HTTP fallbacks; the touch seen in the video |
 | `tests/ui_changes.rs` | Apply from the page: one merged request, pending/applying/failed shown, the page reloads at a new size |
 | `tests/ui_panels.rs` | Information panel (Client and Serveur tabs) and Options panel |
+| `tests/ui_logs.rs` | alerts never pop up over the screen (no toast, no system notification) while their ntfy alert is still sent; the server's and the page's logs, coloured by level, with a filter |
 | `tests/ui_forms.rs` | Android settings and screen size fields, presets, Apply enabled only while they differ |
 | `tests/ui_settings.rs` | client options and language in `localStorage`, plugin options included |
 | `tests/ui_fullscreen.rs` | fullscreen, fold button, 3 s autofold, handle, docking |

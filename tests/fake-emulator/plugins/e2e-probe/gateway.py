@@ -1,6 +1,6 @@
 """Test plugin for the e2e suite, gateway side: one route per thing the
 plugin host offers (GET, POST behind the token, screenshot, adb, analysis,
-the user's activity, the log)."""
+the user's activity, the log, an alert)."""
 
 import time
 
@@ -47,8 +47,16 @@ def setup(context):
         context.log(body.get("level", "normal"), body["text"], bool(body.get("notify")), **body.get("params", {}))
         return context.json({"logged": True})
 
+    async def handle_alert(request):
+        # An alert as the plugins send them: a record with notify, and the
+        # same text to the user's phone (ntfy, when alerts are on).
+        body = await request.json()
+        context.log(body.get("level", "warning"), body["text"], True)
+        return context.json({"sent": bool(await context.notify(body["text"]))})
+
     context.add_get("/hello", handle_hello)
     context.add_post("/log", handle_log)
+    context.add_post("/alert", handle_alert)
     context.add_get("/activity", handle_activity)
     context.add_get("/count", handle_count)
     context.add_post("/count", handle_increment)

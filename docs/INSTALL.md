@@ -135,8 +135,8 @@ Play as on a new phone.
   minutes); **Disconnect** appears only when another device is connected.
   The cog opens **Options**: **Language**, **Show the cursor**, **Fold the
   bar 3 s after entering fullscreen**, **Phone alerts**, **Plugins**.
-- Both Information tabs end with a log, and events also show as toasts: see
-  [Logs, toasts and phone alerts](#logs-toasts-and-phone-alerts).
+- Both Information tabs end with a log; alerts go to your phone only: see
+  [Logs and phone alerts](#logs-and-phone-alerts).
 
 ## Configuration
 
@@ -218,7 +218,7 @@ Either way the gateway restarts; Android keeps running. Details:
 [`05-plugins/README.md`](../05-plugins/README.md),
 [`05-plugins/slayer-legend/README.md`](../05-plugins/slayer-legend/README.md).
 
-## Logs, toasts and phone alerts
+## Logs and phone alerts
 
 **Logs.** Information → Client ends with **Journaux du client** (Client
 logs, the page's own records: stream, touches, errors) and Information →
@@ -229,12 +229,13 @@ what to do next. One **Niveau** (Level) filter serves both: all, warnings
 and errors, or errors only. The gateway keeps its last 500 records in
 memory; the page keeps the last 200 of each side.
 
-**Toasts.** Events worth your attention also show as toasts at the top of
-the screen: the gateway starting or following a new emulator, Android
+**Nothing pops up over the game.** Alerts reach you only as the phone
+alerts described below; over the Android screen the page shows no toast
+and no notification for them. Events worth your attention are records in
+the logs above: the gateway starting or following a new emulator, Android
 crashing, stopping or restarting, adb going offline, a settings change
 requested, applied or failed, another device connecting or disconnecting
-the others, touches falling back to HTTP. Normal toasts go after 6 s,
-warnings after 12 s; errors stay until you close them. The full list:
+the others, touches falling back to HTTP. The full list:
 [DEVELOPMENT.md](../04-cloud-phone-app/docs/DEVELOPMENT.md#logs).
 
 The same records reach journald under the identifier `cloudphone-gateway`:

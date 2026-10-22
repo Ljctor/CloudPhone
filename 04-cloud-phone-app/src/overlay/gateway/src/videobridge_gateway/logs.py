@@ -8,7 +8,8 @@ it as it is):
   INFO is normal, WARNING warning, ERROR and CRITICAL error);
 - source: "gateway", "emulator", "adb", a plugin's id (its context.log,
   plugins.py), or "page" on the page's side;
-- notify: the page also shows the record as a toast;
+- notify: an event worth the user's attention, a mark only (the page
+  pops nothing up; phone alerts go through http/notify.send());
 - params: the values its text was filled with, as data (log()).
 
 Records go to journald with PRIORITY 6, 4 or 3 and SYSLOG_IDENTIFIER

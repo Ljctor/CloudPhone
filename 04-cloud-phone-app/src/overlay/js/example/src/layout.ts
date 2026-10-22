@@ -51,8 +51,3 @@ export function sizeKey(running) {
   if (!running?.width) return null;
   return `${running.width}x${running.height}`;
 }
-
-// The toasts' top: below the banner while it shows.
-export function toastsTop(bannerShown) {
-  return bannerShown ? '72px' : '8px';
-}

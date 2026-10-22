@@ -206,8 +206,9 @@ class PluginContext:
 
     def log(self, level, text, notify=False, **params):
         """One record of the gateway's log whose source is the plugin's id:
-        level "normal", "warning" or "error"; notify: also a toast on the
-        page. With params, text is a template filled with them. An addition
+        level "normal", "warning" or "error"; notify: worth attention, a
+        mark only (the page pops nothing up; the phone alert is notify()).
+        With params, text is a template filled with them. An addition
         to API 1."""
         logs.log(level, self.id, text, notify, **params)
 

@@ -3,7 +3,8 @@
 //! cursor to read only new ones. Failures forced on the fake emulator
 //! (emulator gone, adb offline or never answering, a bad or failing
 //! screen size request) must give records of the right level, errors
-//! saying what to do next; events the page shows as toasts carry notify.
+//! saying what to do next; events worth the user's attention carry notify
+//! (a mark only: the page pops nothing up, phone alerts go through ntfy).
 use cloudphone_e2e::*;
 use serde_json::{json, Value};
 use std::time::Duration;
@@ -115,12 +116,12 @@ fn a_bad_screen_size_request_is_a_warning_and_a_failed_one_an_error() {
     assert_eq!(cp.post_json("api/v1/display", &json!({"width": "360", "height": 780, "density": 160})).status(), 400);
     let refused = wait_record(&cp, "warning", "gateway", "Screen size change refused", SOON);
     assert!(refused["text"].as_str().unwrap().contains("width, height and density are required"), "{refused}");
-    assert!(refused["notify"].is_null(), "a refused request is not a toast: {refused}");
+    assert!(refused["notify"].is_null(), "a refused request carries no notify: {refused}");
 
     cp.fake().control(json!({"fail_next": {"display": "set-resolution.sh: no space left"}}));
     assert_eq!(cp.post_json("api/v1/display", &json!({"width": 360, "height": 780, "density": 160})).status(), 202);
     let asked = wait_record(&cp, "normal", "gateway", "Screen size change requested", SOON);
-    assert_eq!(asked["notify"], true, "a requested reboot is a toast: {asked}");
+    assert_eq!(asked["notify"], true, "a requested reboot carries notify: {asked}");
     assert_eq!(asked["params"]["size"], "360×780");
     let failed = wait_record(&cp, "error", "gateway", "Screen size change failed", SOON);
     assert_eq!(failed["notify"], true);

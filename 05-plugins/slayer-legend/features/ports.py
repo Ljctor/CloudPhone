@@ -70,8 +70,9 @@ of the gateway, so what it may do to the game is all here.
   alerts are English.
 - log(level, text, notify=False, **params): one record of the gateway's
   log, its source the plugin's id (context.log; Python logging tagged so
-  on an older gateway): level "normal", "warning" or "error", notify also a
-  toast on the page. exception(text): an error record with the traceback
+  on an older gateway): level "normal", "warning" or "error", notify marks
+  it worth attention (a mark only: the page pops nothing up; the phone
+  alert is notify(text)). exception(text): an error record with the traceback
   of the exception being handled.
 """
 

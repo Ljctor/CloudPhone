@@ -1,5 +1,6 @@
 // Test plugin for the e2e suite, page side: one option of each type, a
-// drawing in the plugin's layer, calls to its gateway routes; two dialog
+// drawing in the plugin's layer, calls to its gateway routes, a warning
+// in the page's log; two dialog
 // rows sharing a radio group, the second with nothing to configure and
 // chosen only once the first's toggle is on.
 import { FRAME_COLOUR } from './helper.js';
@@ -15,6 +16,7 @@ export default function activate(api) {
     'Choix B': 'Choice B',
     'Réglages du choix A': 'Choice A settings',
     'Autoriser B': 'Allow B',
+    'Avertir': 'Warn',
   });
   const state = { count: null };
   let frame = null;
@@ -45,6 +47,8 @@ export default function activate(api) {
         },
       },
       { type: 'status', label: 'Compteur', value: () => (state.count === null ? '–' : String(state.count)) },
+      // A warning record in the page's log (api.warn): nothing pops up.
+      { type: 'action', label: 'Avertir', button: 'Avertir', run: () => api.warn('Probe warning') },
       {
         type: 'status', label: 'Vidéo vue',
         value: () => { const v = api.video(); return v && v.videoWidth ? `${v.videoWidth}×${v.videoHeight}` : '–'; },
