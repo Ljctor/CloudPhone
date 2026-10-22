@@ -16,10 +16,10 @@ picked in the list):
   (or the selection's red) frame, the selected one has its top in red.
   Cells cut by the list's edges are left out.
 - tags(): the orange tags in the list column ([left, top, right, bottom]),
-  and tag(): the text of the one tag, "Equip" or "Unequip", read strictly
-  (one tag, one line, the closest of the two by at least 2 edits), else
-  None. Not calibrated on a capture yet (the tag was seen, not captured):
-  until then it reads nothing it is not sure of.
+  and tag(): the text of the one tag, matched against templates of its
+  white text cut from real captures (TAG_TEMPLATES: Unequip from
+  fixtures/sw_tag_unequip; Equip not captured yet), else None.
+  TAG_LEARNED (both templates there) gates the Equip tap.
 - tab(): the Equipment panel's active tab, "weapon" or "accessories" (the
   Accessories tab has its own top-right icon, Black Orb), by which tab's
   text is clearly the brightest; None otherwise.
@@ -238,21 +238,78 @@ def tags(shot):
     return boxes
 
 
+# The tag's white text (min channel at least TAG_INK), cropped to its ink,
+# as cut from real captures: "Unequip" from fixtures/sw_tag_unequip
+# (2026-10-22, the equipped Vision). "Equip" is added from
+# fixtures/sw_tag_equip once captured (an owned weapon, not equipped).
+TAG_INK = 100
+TAG_TEMPLATES = {
+    "Unequip": (
+        "#...#..........................#......",
+        "#...#..........................#......",
+        "#...#.####...###...####.#...#.##.####.",
+        "#...#.#####.#####.#####.#...#.##.#####",
+        "#...#.#...#.#####.#...#.#...#..#.#...#",
+        "#...#.#...#.#####.#...#.#...#..#.#...#",
+        "#...#.#...#.#.....#####.#...#..#.#####",
+        "#####.#...#.#####..####.#####..#.####.",
+        ".###..#...#..####.....#..####..#.#....",
+        "......................#..........#....",
+    ),
+}
+# The Equip tap is real only once both tags read on real captures.
+TAG_LEARNED = {"Equip", "Unequip"} <= set(TAG_TEMPLATES)
+# At most this share of a template's pixels may differ.
+TAG_MOST = 0.08
+
+
+def _tag_ink(shot, box):
+    """The tag's text as rows of "#" and ".", cropped to its ink; () when
+    none."""
+    left, top, right, bottom = _box(shot, box)
+    ink = {(x, y) for y in range(top, bottom) for x in range(left, right) if min(_pixel(shot, x, y)) >= TAG_INK}
+    if not ink:
+        return ()
+    xs, ys = [x for x, _ in ink], [y for _, y in ink]
+    return tuple("".join("#" if (x, y) in ink else "." for x in range(min(xs), max(xs) + 1))
+                 for y in range(min(ys), max(ys) + 1))
+
+
+def _tag_distance(ink, template):
+    """The share of differing pixels at the best shift of at most one pixel
+    (1.0 when the sizes differ by more)."""
+    if abs(len(ink) - len(template)) > 1 or abs(len(ink[0]) - len(template[0])) > 1:
+        return 1.0
+    height, width = max(len(ink), len(template)), max(len(ink[0]), len(template[0]))
+    best = None
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            wrong = 0
+            for y in range(-1, height + 1):
+                for x in range(-1, width + 1):
+                    a = 0 <= y < len(ink) and 0 <= x < len(ink[0]) and ink[y][x] == "#"
+                    ty, tx = y + dy, x + dx
+                    b = 0 <= ty < len(template) and 0 <= tx < len(template[0]) and template[ty][tx] == "#"
+                    wrong += a != b
+            best = wrong if best is None else min(best, wrong)
+    return best / max(1, sum(row.count("#") for row in template))
+
+
 def tag(shot):
-    """(text, box) of the one tag in the list: text "Equip" or "Unequip",
-    read strictly; (None, box) when it does not read clearly, (None,
-    None) without exactly one tag."""
+    """(text, box) of the one tag in the list: "Equip" or "Unequip" when
+    its text matches that template (TAG_TEMPLATES); (None, box) when it
+    matches none, (None, None) without exactly one tag."""
     found = tags(shot)
     if len(found) != 1:
         return None, None
     box = found[0]
-    lines = font.read(shot, box, channel=min, font=CARD_FONT)
-    if len(lines) != 1:
+    ink = _tag_ink(shot, box)
+    if not ink:
         return None, box
-    text = lines[0][0]
-    if "?" in text or " " in text:
-        return None, box
-    return font.close(text, ["Equip", "Unequip"], most=0.2, margin=2), box
+    for text, template in TAG_TEMPLATES.items():
+        if _tag_distance(ink, template) <= TAG_MOST:
+            return text, box
+    return None, box
 
 
 def tab(shot):

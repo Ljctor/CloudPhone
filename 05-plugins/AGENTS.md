@@ -78,7 +78,10 @@ Rules:
     - Equip (the orange tag): only when the fresh capture reads exactly one
       tag, reading "Equip", the tap on it, and the card's name read as the
       loadout's weapon, owned (Owned : 1 or more); afterwards the tag must
-      read Unequip with the name unchanged.
+      read Unequip with the name unchanged. Gated by `TAG_LEARNED`
+      (`soul_weapon.py`): closed until both tags read on real captures
+      (`fixtures/sw_tag_equip`, `sw_tag_unequip`); until then no Equip tap,
+      an error alert « Equip tag not calibrated, not equipped ».
     - At most 10 list moves (selects, scrolls and Equip together); a move
       that changes nothing stops it, with one alert naming the step.
     - Never the « Better Soul Weapon / Equip » toast (below).
@@ -112,5 +115,20 @@ Rules:
     toast (right edge, y 0.32-0.37; forbidden in `navigation.json`): it
     equips the game's pick, while the soul weapon is the mode's loadout.
     It is no obstacle either: the battle under it reads as such.
+- Gates on readings (binding for every plugin): a tap or gesture
+  conditioned on a reading is never real until its reader has a crop of a
+  REAL capture (`fixtures/`) and a green test for EVERY state it must tell
+  apart (Equip and Unequip; padlock open and closed; a preview invalid and
+  valid; a popup open). Until then the gate is closed: the move is refused
+  and the step ends with an error alert (red) stating the fact, e.g.
+  « Soul Weapon: Equip tag not calibrated, not equipped », like
+  `AUTO_TAP_LEARNED`. A gate is a module-level `*_LEARNED`, `*_TELLS` or
+  `*_CALIBRATED` flag listed in `slayer-legend/test_gates.py` with its
+  fixtures: an open gate missing one fails that test (red, not skipped).
+  The first real run after a gate opens is made with the user present and
+  recorded in `docs/TODO.md` (date, readings, result).
+- No text ever asks the user to do something by hand: a step that cannot
+  be done is an error alert stating what was not done, a report for the
+  developer to fix.
 - Screenshots of a game go in the repository only when reviewed one by one
   (no Google account, no server address); never commit raw captures.

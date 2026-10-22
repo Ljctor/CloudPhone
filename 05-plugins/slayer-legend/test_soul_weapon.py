@@ -123,13 +123,13 @@ def tagged(text, top=0.835, scale=2):
 
 
 class Tag(unittest.TestCase):
-    def test_synthetic_tags(self):
-        text, box = reader.tag(tagged("Equip"))
-        self.assertEqual(text, "Equip")
-        self.assertTrue(box[0] <= 0.09 <= box[2] and box[1] <= 0.845 <= box[3])
-        self.assertEqual(reader.tag(tagged("Unequip", scale=1))[0], "Unequip")
-        # Something else in orange: no reading.
-        self.assertIsNone(reader.tag(tagged("Grand"))[0])
+    def test_synthetic_tags_read_nothing(self):
+        # Text drawn in another font matches no template cut from the game:
+        # found as a tag, read as nothing.
+        for text in ("Equip", "Unequip", "Grand"):
+            found, box = reader.tag(tagged(text))
+            self.assertIsNone(found)
+            self.assertTrue(box[0] <= 0.09 <= box[2] and box[1] <= 0.845 <= box[3])
         self.assertEqual(reader.tag(screen("sw_list_none")), (None, None))
 
     @unittest.skipUnless(os.path.exists(os.path.join(FIXTURES, "sw_tag_equip.txt")),
@@ -137,10 +137,13 @@ class Tag(unittest.TestCase):
     def test_equip_tag_capture(self):
         self.assertEqual(reader.tag(screen("sw_tag_equip"))[0], "Equip")
 
-    @unittest.skipUnless(os.path.exists(os.path.join(FIXTURES, "sw_tag_unequip.txt")),
-                         "no capture of the Unequip tag yet (fixtures/sw_tag_unequip.txt)")
     def test_unequip_tag_capture(self):
-        self.assertEqual(reader.tag(screen("sw_tag_unequip"))[0], "Unequip")
+        text, box = reader.tag(screen("sw_tag_unequip"))
+        self.assertEqual(text, "Unequip")
+        self.assertTrue(box[0] < 0.1 < box[2] and box[1] < 0.623 < box[3])
+
+    def test_the_equip_gate_is_closed_until_both_tags_are_captured(self):
+        self.assertEqual(reader.TAG_LEARNED, os.path.exists(os.path.join(FIXTURES, "sw_tag_equip.txt")))
 
 
 def rows(count=5, selected=None):
@@ -156,7 +159,7 @@ def view(selected=None, row=None, owned=1, tag=None, count=5, opened=True):
 class Plan(unittest.TestCase):
     def plan(self, v, target="Ambition", direction=None, memory=None):
         memory = memory or rules.fresh_memory(direction)
-        return rules.plan(v, target, rules.observe(memory, v, ORDER), ORDER)
+        return rules.plan(v, target, rules.observe(memory, v, ORDER), ORDER, True)
 
     def test_done_and_equip(self):
         self.assertEqual(self.plan(view("Ambition", 2, tag="Unequip")), ("done",))
@@ -165,12 +168,23 @@ class Plan(unittest.TestCase):
         self.assertEqual(self.plan(view("Ambition", 2, tag="Equip")), ("equip",))
         self.assertEqual(self.plan(dict(view("Ambition", 2), badge=True)), ("done",))
 
+    def test_no_equip_until_the_tag_is_calibrated(self):
+        v = view("Ambition", 2, tag="Equip")
+        step = rules.plan(v, "Ambition", rules.observe(rules.fresh_memory(None), v, ORDER), ORDER)
+        self.assertEqual(step[0], "fail")
+        self.assertIn("tag not calibrated", step[1])
+        self.assertIn("not equipped", step[1])
+        # Done, select and scroll do not need it.
+        v = view("Ambition", 2, tag="Unequip")
+        self.assertEqual(rules.plan(v, "Ambition", rules.observe(rules.fresh_memory(None), v, ORDER), ORDER),
+                         ("done",))
+
     def test_failures(self):
         self.assertIn("Owned : 0", self.plan(view("Ambition", 2, owned=0, tag="Equip"))[1])
         self.assertIn("illisible", self.plan(view("Ambition", 2, owned=None, tag="Equip"))[1])
         self.assertIn("étiquette", self.plan(view("Ambition", 2))[1])
         self.assertIn("pas reconnu", self.plan(view(opened=False))[1])
-        self.assertIn("partagé", self.plan(view("Grand", 0), target="Silence")[1])
+        self.assertIn("name shared", self.plan(view("Grand", 0), target="Silence")[1])
         self.assertIn("illisible", self.plan(view(None, 1))[1])
         self.assertIn("liste", self.plan(view("Grand", None, count=0))[1])
 
@@ -356,6 +370,7 @@ def fake_reader(game):
 
     return SimpleNamespace(
         names_of=reader.names_of, select_point=reader.select_point, view=view, CARD_FONT=reader.CARD_FONT,
+        TAG_LEARNED=game.state.get("tag_learned", True),
         title=lambda shot: shot[2]["screen"] == "soul",
         weapon_detail=lambda shot: shot[2]["screen"] == "detail",
         tab=lambda shot: shot[2]["tab"] if shot[2]["screen"] == "equipment" else None)
@@ -473,6 +488,15 @@ class Sequence(unittest.TestCase):
         self.assertIn("Soul Weapon", answer["text"])
         self.assertIn("Owned : 0", answer["text"])
         self.assertNotIn(("soul_weapon", "equip"), game.moves)
+
+    def test_equip_gate_closed_one_error_alert(self):
+        game = Game(selected=AMBITION, tag_learned=False)
+        answer, _ = equip(game, "mpw4")
+        self.assertEqual(answer["result"], "failed")
+        self.assertIn("Equip tag not calibrated, not equipped", answer["text"])
+        self.assertNotIn(("soul_weapon", "equip"), game.moves)
+        # Selecting and scrolling still ran.
+        self.assertIn(("soul_weapon", "select"), game.moves)
 
     def test_unread_tag_or_name_taps_no_tag(self):
         for state in ({"tag_unread": True}, {"name_unread": True}):

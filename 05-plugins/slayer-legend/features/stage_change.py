@@ -49,7 +49,7 @@ during it stops it at the next tap.
   mode's loadout's soul weapon equipped (features/soul_weapon.py). Its
   switch, soul_weapon, is "real" by default (the user's choice: no plan
   mode), "off" an emergency stop; kept in state.json ("soul_weapon").
-  Its failure is the sequence's, "Soul Weapon : <step>" (stage, preset and
+  Its failure is the sequence's, "Soul Weapon: <step>" (logged as an error) (stage, preset and
   AUTO are done by then). After a watchdog relaunch (relaunched(mode)) it
   runs alone, with one alert if it fails.
 
@@ -355,7 +355,8 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         try:
             await souls["ensure"](chosen["id"], chosen.get("variant"))
         except Stop as e:
-            raise Stop(f"Soul Weapon : {e}") from None
+            logging.error(f"Slayer Legend soul weapon: {e}")
+            raise Stop(f"Soul Weapon: {e}") from None
 
     async def ensure_soul_weapon(mode, loadout=None, force=False):
         """The soul weapon step alone, under the lease (e.g. the active

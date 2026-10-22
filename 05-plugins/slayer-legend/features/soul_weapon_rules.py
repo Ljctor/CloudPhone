@@ -21,7 +21,9 @@ plan() answers one of:
   from);
 - ("scroll", "down" or "up"): the target's cell is past the list's end;
 - ("equip",): the target is selected, owned (at least 1) and its tag
-  reads Equip;
+  reads Equip; only once the tag's reading is calibrated on real captures
+  of both tags (tag_learned: soul_weapon.TAG_LEARNED), else ("fail", ...)
+  (an error alert stating it, not equipped), like AUTO_TAP_LEARNED;
 - ("fail", why): anything else, in French.
 At most MOST_MOVES moves for the whole sequence, and it stops when a move
 changes nothing (progressed).
@@ -87,14 +89,14 @@ def scrolled(memory):
     return memory
 
 
-def plan(view, target, memory, names):
+def plan(view, target, memory, names, tag_learned=False):
     """The next move toward the target (a name of names, the game's order)
-    being equipped."""
+    being equipped; Equip only with tag_learned."""
     if not view.get("open"):
         return ("fail", "écran Soul Weapon pas reconnu")
     goal = place(target, names)
     if goal is None:
-        return ("fail", f"arme {target} inconnue ou de nom partagé (à équiper à la main)")
+        return ("fail", f"weapon {target} unknown or its name shared, not equipped")
     rows = view.get("rows") or []
     row = selected_row(view)
     name = view.get("selected")
@@ -109,6 +111,8 @@ def plan(view, target, memory, names):
             return ("fail", f"{target} pas possédée (Owned : 0)")
         if view.get("owned") is None:
             return ("fail", f"{target} : « Owned » illisible")
+        if not tag_learned:
+            return ("fail", f"{target}: Equip tag not calibrated, not equipped")
         if view.get("tag") == "Equip" and view.get("tag_box"):
             return ("equip",)
         return ("fail", f"{target} : étiquette Equip / Unequip illisible")

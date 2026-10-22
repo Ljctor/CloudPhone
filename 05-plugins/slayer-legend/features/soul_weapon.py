@@ -171,7 +171,7 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
             raise Stop(f"arme {target_id} inconnue")
         target = entry["name"]
         if rules.shared(target, table):
-            raise Stop(f"{target} : deux armes portent ce nom, à équiper à la main")
+            raise Stop(f"{target}: two weapons share this name, not equipped")
         cache = status["cache"]
         last_input = (ports.last_input() or {}).get("wall") if hasattr(ports, "last_input") else None
         if cache and cache["id"] == target_id and rules.fresh_cache(cache, ports.clock.wall(), last_input,
@@ -186,7 +186,7 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
         result, moves = "equipped", 0
         while True:
             memory = rules.observe(memory, view, order)
-            step = rules.plan(view, target, memory, order)
+            step = rules.plan(view, target, memory, order, reader.TAG_LEARNED)
             if step[0] == "done":
                 break
             if step[0] == "fail":
