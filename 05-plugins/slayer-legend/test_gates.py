@@ -28,7 +28,7 @@ def load(name):
 GATES = [
     ("soul_weapon", "TAG_LEARNED", ["sw_tag_equip", "sw_tag_unequip"], "test_soul_weapon"),
     ("soul_weapon", "BADGE_TELLS", ["sw_badge_red", "sw_badge_grey", "sw_badge_owned_grey"], "test_soul_weapon"),
-    ("features/stage_change", "AUTO_TAP_LEARNED", ["controls_iii_auto_on", "controls_auto_off"], "test_stage_change"),
+    ("stage", "PROGRESS_CALIBRATED", ["bar_empty", "bar_partial", "bar_full", "bar_flash"], "test_fixtures"),
     ("engraving_screen", "PADLOCK_LEARNED", ["eg_cards_unlocked", "eg_cards_relocked"], "test_engraving_screen"),
     ("engraving_screen", "POPUP_LEARNED", ["eg_popup_locked", "eg_popup_unlocked", "eg_cards_relocked"],
      "test_engraving_screen"),

@@ -1,5 +1,5 @@
 """Equips a farming mode's soul weapon (its loadout's soul_weapon id): the
-last step of the stage change feature's farm(), after AUTO, and the step
+last step of the stage change feature's farm(), after the preset, and the step
 the watchdog asks for after a relaunch (once the game is back). Never
 periodic.
 

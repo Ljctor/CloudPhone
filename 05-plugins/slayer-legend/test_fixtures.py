@@ -27,6 +27,7 @@ def load(name):
 font = load("pixel_font")
 select = load("stage_select")
 controls = load("battle_controls")
+stage = load("stage")
 screens = load("screens")
 with open(os.path.join(HERE, "stages.json"), encoding="utf-8") as f:
     NAMES = select.regions(json.load(f))
@@ -115,9 +116,9 @@ class Readings(unittest.TestCase):
 
     def test_taps_land_on_the_unfolded_controls(self):
         """The second tap of the unfold call, checked on the unfolded
-        capture: the badge's tap on its numeral, the gear's on the AUTO
-        tile; and the folded arrow's spot is on that tile once unfolded
-        (why the controls must read folded before the arrow is tapped)."""
+        capture: the badge's tap on its numeral; and the folded arrow's
+        spot is on the AUTO tile once unfolded (why the controls must read
+        folded before the arrow is tapped)."""
         sw, sh, data = screen("controls_iii_auto_on")
 
         def pixel(point):
@@ -129,20 +130,28 @@ class Readings(unittest.TestCase):
         xs, ys = [x for x, _ in white], [y for _, y in white]
         bx, by = controls.BADGE_TAP[0] * sw, controls.BADGE_TAP[1] * sh
         self.assertTrue(min(xs) <= bx <= max(xs) and min(ys) <= by <= max(ys), (min(xs), max(xs), min(ys), max(ys)))
-        for point in (controls.AUTO_TAP, controls.ARROW_TAP):
-            r, g, b = pixel(point)
-            self.assertTrue(max(r, g, b) - min(r, g, b) < 20 and max(r, g, b) > 150, (point, (r, g, b)))
+        r, g, b = pixel(controls.ARROW_TAP)
+        self.assertTrue(max(r, g, b) - min(r, g, b) < 20 and max(r, g, b) > 150, (r, g, b))
 
     def test_battle_settings(self):
         shot = screen("settings_title", "settings_presets_iii")
         self.assertTrue(controls.settings_open(shot))
         self.assertEqual(controls.selected(shot), "III")
 
-    @unittest.skipUnless(os.path.exists(os.path.join(FIXTURES, "controls_auto_off_1.txt")),
-                         "no real capture with AUTO off yet: its two frames recalibrate auto()")
-    def test_auto_both_states(self):
-        self.assertEqual(controls.auto(screen("controls_auto_on_1"), screen("controls_auto_on_2")), "on")
-        self.assertEqual(controls.auto(screen("controls_auto_off_1"), screen("controls_auto_off_2")), "off")
+
+class ProgressBar(unittest.TestCase):
+    """The stage progress bar under the stage's name (stage.progress), on
+    crops of a real series (stage 920, a look every 15 s)."""
+
+    def test_its_states(self):
+        self.assertEqual(stage.progress(screen("bar_empty")), 0.0)
+        self.assertAlmostEqual(stage.progress(screen("bar_partial")), 122 / 214)
+        self.assertEqual(stage.progress(screen("bar_full")), 1.0)
+        # A white flash frame draws it grey: unread, never 0.
+        self.assertIsNone(stage.progress(screen("bar_flash")))
+
+    def test_nothing_drawn_is_unread(self):
+        self.assertIsNone(stage.progress(screen("row_920")))
 
 
 class SignIn(unittest.TestCase):

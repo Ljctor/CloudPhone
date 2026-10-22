@@ -225,9 +225,9 @@
       0.93,
       0.447
      ],
-     "label": "AUTO gear, once unfolded: toggles AUTO; sent in the same adb call as preset_arrow",
-     "precondition": "AUTO reads OFF (the gear stands still on two fresh screenshots): never tapped while it is on",
-     "effect": "turns AUTO on or off",
+     "label": "AUTO gear, once unfolded: toggles AUTO",
+     "forbidden": true,
+     "reason": "user, 2026-10-22: the AUTO button is never tapped (it turned AUTO off once); a stalled stage progress bar is an alert instead",
      "source": "measured 2026-10-21"
     },
     {

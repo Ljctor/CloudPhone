@@ -39,7 +39,7 @@ EPOCH = 1_800_000_000.0
 # Stage 920's name ends with III in this table; 921 with IV.
 NUMERALS = {920: 3, 921: 4}
 PROFILE = rules.profile(None, 920)
-ALL = ("relaunch", "back_to_battle", "stage_change", "select_preset", "loadout", "auto_on")
+ALL = ("relaunch", "back_to_battle", "stage_change", "select_preset", "loadout")
 
 BATTLE = {"adb": True, "running": True, "focused": True, "screen": "battle", "numeral": 3}
 OTHER_STAGE = {**BATTLE, "numeral": 4}
@@ -511,25 +511,26 @@ class StageAndControls(unittest.TestCase):
         self.assertEqual(w.kinds().count("stage_change"), 4, w.repairs)
         self.assertEqual(w.memory["backoff"]["stage_change"]["failures"], 4)
 
-    def test_auto_off_is_its_symptom_and_repair(self):
+    def test_auto_off_is_no_symptom_and_never_a_repair(self):
+        # The AUTO button is never tapped (the user, 2026-10-22).
         w = Watch()
-        w.looks({**BATTLE, "auto": "off"}, 3)
-        self.assertEqual(w.symptoms[-1], "auto_off")
-        self.assertEqual(w.kinds(), ["auto_on"])
-        self.assertIsNone(rules.judge({**BATTLE, "auto": None}, PROFILE, NUMERALS.get, None, False,
-                                      rules.fresh(), 60)[0], "unread is not off")
+        w.looks({**BATTLE, "auto": "off"}, 6)
+        self.assertEqual(w.symptoms, [None] * 6)
+        self.assertEqual((w.kinds(), w.plans), ([], []))
+        self.assertNotIn("auto_on", rules.REPAIR_NAMES)
+        self.assertNotIn("auto_off", rules.SYMPTOMS)
 
     def test_a_switch_on_plan_plans_once(self):
-        w = Watch(act=False)
-        w.looks({**BATTLE, "auto": "off"}, 6)
+        w = Watch(act=False, profile=rules.profile({"preset": "III"}, 920))
+        w.looks({**BATTLE, "battle_settings": "II"}, 6)
         self.assertEqual(w.kinds(), [])
-        self.assertEqual([kind for _, kind in w.plans], ["auto_on"])
+        self.assertEqual([kind for _, kind in w.plans], ["select_preset"])
 
 
 class GoldAtZero(unittest.TestCase):
     """gold/s at 0 over a full window, two fresh readings in a row: AUTO is
-    read at once. A trigger, never a proof: AUTO is tapped only on an OFF
-    reading; read ON, one alert."""
+    read at once. A trigger, never a proof, and never a tap: read ON, one
+    alert."""
 
     def zeros(self, readings):
         """rules.gold_zero over (rate, span, age) readings, one new sample
@@ -573,7 +574,7 @@ class GoldAtZero(unittest.TestCase):
         self.assertFalse(kept["alerted"], "gold back: the next time is said again")
 
     def test_gold_alone_is_never_a_symptom(self):
-        # judge sees only the AUTO reading: unread (None) is no auto_off.
+        # judge never makes a symptom of the AUTO reading.
         self.assertIsNone(rules.judge({**BATTLE, "auto": None}, PROFILE, NUMERALS.get, None, False,
                                       rules.fresh(), 60)[0])
 
@@ -584,10 +585,12 @@ class GoldTrigger(unittest.TestCase):
     preset and AUTO are read."""
 
     def looks(self, count, auto, viewers=lambda look: 0, stage=920, answer=None, mode="mpw18", entering=False,
-              game=True, launched=False):
-        """count looks, AUTO read as auto, viewers(look) connected; (the
-        looks that read the controls, the alerts, the farming calls other
-        than reading); self.state: GET /watchdog's at the end."""
+              game=True, launched=False, bar=lambda look: look * 0.27 % 1, screen=lambda look: "battle"):
+        """count looks, AUTO read as auto, viewers(look) connected, the
+        stage progress bar read as bar(look) (None: unreadable; by default
+        it moves) on screen(look); (the looks that read the controls, the
+        alerts, the farming calls other than reading); self.state: GET
+        /watchdog's at the end."""
         spec = importlib.util.spec_from_file_location("watchdog_feature", os.path.join(HERE, "features", "watchdog.py"))
         feature = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(feature)
@@ -646,7 +649,8 @@ class GoldTrigger(unittest.TestCase):
 
             @staticmethod
             async def analyse(facts, shot):
-                return "battle", 3, stage
+                name = screen(looked[0])
+                return name, 3 if name == "battle" else None, stage, bar(looked[0]) if name == "battle" else None
 
             @staticmethod
             async def notify(text):
@@ -655,10 +659,6 @@ class GoldTrigger(unittest.TestCase):
         async def read_controls():
             read.append(looked[0])
             return {"preset": 1, "auto": auto}
-
-        async def refused(*args):
-            other.append(("ensure_auto", *args))
-            return {"result": "plan", "text": "plan"}
 
         self.farmed = farmed = []
         self.confirmed = confirmed = []
@@ -679,8 +679,8 @@ class GoldTrigger(unittest.TestCase):
             farmed.append(args)
             return answer or {"result": "plan", "text": "plan"}
 
-        farming = {"read_controls": read_controls, "battle_stage": lambda shot: stage, "ensure_auto": refused,
-                   "farm": farm, "switches": lambda: {"stage_change": "real", "preset": "plan", "auto": "plan"}}
+        farming = {"read_controls": read_controls, "battle_stage": lambda shot: stage,
+                   "farm": farm, "switches": lambda: {"stage_change": "real", "preset": "plan"}}
         gold = {"current": lambda: {"rate": 0, "span": 300, "last": Ports.clock.wall() - 1}}
         built = feature.watchdog(
             Ports, None, None, rules, NUMERALS.get,
@@ -748,11 +748,11 @@ class GoldTrigger(unittest.TestCase):
         stage, _, mode, highest = self.farmed[0]
         self.assertEqual((stage, mode, highest), (920, "mpw18", 925))
 
-    def test_auto_off_after_the_trigger_is_the_usual_repair_on_plan(self):
+    def test_auto_off_after_the_trigger_is_no_repair(self):
         read, alerts, other = self.looks(8, "off")
         self.assertEqual(read[:2], [1, 2])
         self.assertFalse([a for a in alerts if rules.GOLD_ALERT in a])
-        self.assertEqual(other, [], "the auto switch on plan: never ensure_auto")
+        self.assertEqual((other, self.farmed), ([], []), "AUTO is never tapped")
 
 
 class ModesOnTheFeature(GoldTrigger):
@@ -821,6 +821,93 @@ class ModesOnTheFeature(GoldTrigger):
         read, alerts, other = self.looks(6, "off", stage=940, mode="free", game=False)
         self.assertEqual((read, alerts, other, self.farmed), ([], [], [], []))
         self.assertEqual(self.state["line"]["template"], "Jeu libre : rien n’est surveillé")
+
+
+class StageProgressBar(GoldTrigger):
+    """The stage progress bar's stall (rules.bar_look): an error alert, no
+    repair, no tap, replayed on the feature's fake ports (a look every
+    rules.EVERY s). The bar is read on looks 1, 2, ... as bar(look)."""
+
+    PX = 1 / 214
+
+    def stalled(self, alerts):
+        return [a for a in alerts if "Stage progress bar stalled" in a]
+
+    def test_the_rule(self):
+        kept, stalled = rules.bar_fresh(), None
+        for look, value in enumerate([0.2, 0.2 + 5 * self.PX, 0.2, 0.2 + 9 * self.PX], 1):
+            kept, stalled = rules.bar_look(kept, value, look * E)
+        self.assertEqual(stalled, rules.STALL_LOOKS * E)
+        # Over 10 px is a move; so is the end of a stage's drop.
+        self.assertTrue(rules.bar_moved(0.2, 0.2 + 11 * self.PX))
+        self.assertTrue(rules.bar_moved(1.0, 0.0))
+        kept, stalled = rules.bar_look(kept, None, 5 * E)
+        self.assertEqual((kept["still"], stalled), (3, 4 * E), "unread: neither a move nor a still look")
+        self.assertIn("progress_stalled", rules.ERRORS)
+        self.assertIsNone(rules.REPAIRS["progress_stalled"])
+
+    def test_steady_movement_is_no_alert(self):
+        _, alerts, other = self.looks(30, "on")
+        self.assertEqual((self.stalled(alerts), other, self.farmed), ([], [], []))
+
+    def test_a_45_s_stall_is_one_error_alert_and_no_tap(self):
+        _, alerts, other = self.looks(12, "on", bar=lambda look: look * 0.27 % 1 if look <= 4 else 0.4)
+        self.assertEqual(self.stalled(alerts),
+                         ["Farming mpw18: Stage progress bar stalled for 45 s (AUTO reads on)"])
+        self.assertEqual((other, self.farmed), ([], []))
+        self.assertEqual(self.state["symptom"], "progress_stalled")
+
+    def test_the_end_of_a_stage_is_no_stall(self):
+        # Full for two looks, then the reset to empty, then filling again.
+        bars = [0.3, 0.6, 1.0, 1.0, 1.0, 0.0, 0.3, 0.6, 0.9, 1.0, 1.0, 0.0, 0.3]
+        _, alerts, _ = self.looks(len(bars), "on", bar=lambda look: bars[look - 1])
+        self.assertEqual(self.stalled(alerts), [])
+
+    def test_unknown_readings_in_between_are_not_counted(self):
+        # A flash frame (unread) every other look: the 3 still looks take 90 s.
+        bar = lambda look: look * 0.27 % 1 if look <= 4 else (None if look % 2 else 0.4)
+        _, alerts, _ = self.looks(11, "on", bar=bar)
+        self.assertEqual(self.stalled(alerts), [])
+        _, alerts, _ = self.looks(12, "on", bar=bar)
+        self.assertEqual(self.stalled(alerts), ["Farming mpw18: Stage progress bar stalled for 90 s (AUTO reads on)"])
+
+    def test_another_screen_starts_the_count_over(self):
+        # Power Saving Mode has no bar: unknown, and the count starts over.
+        # Still on looks 4, 5, 7, 8 and 9: 4 still looks without it.
+        screen = lambda look: "saver" if look == 6 else "battle"
+        bar = lambda look: look * 0.27 % 1 if look <= 3 else 0.4
+        _, alerts, _ = self.looks(9, "on", bar=bar, screen=screen)
+        self.assertEqual(self.stalled(alerts), [])
+        _, alerts, _ = self.looks(9, "on", bar=bar)
+        self.assertEqual(len(self.stalled(alerts)), 1)
+
+    def test_a_menu_open_is_the_menu_symptom_not_a_stall(self):
+        screen = lambda look: "battle" if look <= 2 else "menu"
+        _, alerts, _ = self.looks(12, "on", bar=lambda look: 0.4, screen=screen)
+        self.assertEqual(self.stalled(alerts), [])
+        self.assertTrue(any("menu" in a for a in alerts), alerts)
+
+    def test_movement_again_is_recovered(self):
+        bar = lambda look: 0.4 if look <= 6 else look * 0.27 % 1
+        _, alerts, _ = self.looks(12, "on", bar=bar)
+        self.assertEqual(len(self.stalled(alerts)), 1)
+        self.assertEqual(alerts[-1], "Farming mpw18: recovered")
+
+    def test_free_play_and_the_mine_count_nothing(self):
+        for mode in ("free", "mine"):
+            _, alerts, _ = self.looks(12, "on", bar=lambda look: 0.4, mode=mode)
+            self.assertEqual(self.stalled(alerts), [], mode)
+
+    def test_said_again_at_8_and_30_minutes_then_recovered(self):
+        w = Watch()
+        for look in range(1, 130):
+            w.look({**BATTLE, "stalled": look * E, "auto": None})
+        self.assertEqual([a for a in w.alerts() if "stalled" in a[1]],
+                         [("error", "Farming mpw18: Stage progress bar stalled for 15 s (AUTO reads unknown)"),
+                          ("error", "Farming mpw18: Stage progress bar stalled for 480 s (AUTO reads unknown)"),
+                          ("error", "Farming mpw18: Stage progress bar stalled for 1800 s (AUTO reads unknown)")])
+        w.looks(BATTLE, rules.RECOVERED_AFTER)
+        self.assertEqual(w.alerts()[-1], ("normal", "Farming mpw18: recovered"))
 
 
 class Focus(unittest.TestCase):

@@ -1,4 +1,4 @@
-"""Reaching a stage, its preset and AUTO on: the planning rules on views
+"""Reaching a stage and its preset (AUTO never tapped): the planning rules on views
 described here, and the guarded sequence against a scripted game (fake
 ports with the real navigation guard, readers answering from the game's
 state, virtual time). Nothing touches Android.
@@ -256,7 +256,7 @@ def readers(game):
                                   STAGE_MAP_TAP=select.STAGE_MAP_TAP, ARROW_TAPS=select.ARROW_TAPS,
                                   MOVE_TAP_X=select.MOVE_TAP_X)
     fake_controls = SimpleNamespace(
-        ARROW_TAP=controls.ARROW_TAP, BADGE_TAP=controls.BADGE_TAP, AUTO_TAP=controls.AUTO_TAP,
+        ARROW_TAP=controls.ARROW_TAP, BADGE_TAP=controls.BADGE_TAP,
         controls=lambda shot: None if shot[2]["controls_unknown"] else (
             "unfolded" if shot[2]["unfolded"] else "folded"),
         unfolded_now=lambda shot: shot[2]["unfolded"], badge=badge, auto=auto,
@@ -335,27 +335,14 @@ class Sequence(unittest.TestCase):
         self.assertEqual(game.moves, [])
         self.assertTrue(any("plan only" in line for line in logs.output))
 
-    def test_auto_off_stays_plan_until_recalibrated(self):
-        game = Game(stage=920, auto=False)
-        answer = run(game, lambda api: api["ensure_auto"]())
-        self.assertEqual(answer["result"], "plan")
-        self.assertIn("AUTO lu arrêté", answer["text"])
+    def test_auto_off_is_never_tapped(self):
+        # The user's order, 2026-10-22: no AUTO step, no AUTO api.
+        game = Game(stage=915, auto=False)
+        self.assertEqual(run(game, lambda api: api["farm"](920, "IV", "mpw18")), done())
         self.assertNotIn(("battle", "auto"), game.moves)
-
-    def test_auto_off_is_turned_on_once_learned(self):
-        game = Game(stage=920, auto=False)
-        feature.AUTO_TAP_LEARNED = True
-        try:
-            self.assertEqual(run(game, lambda api: api["ensure_auto"]()), done())
-        finally:
-            feature.AUTO_TAP_LEARNED = False
-        self.assertTrue(game.state["auto"])
-        self.assertEqual(game.moves.count(("battle", "auto")), 1)
-
-    def test_auto_unreadable_is_not_touched(self):
-        game = Game(stage=920, auto=False, auto_unreadable=True)
-        self.assertIn("AUTO", run(game, lambda api: api["ensure_auto"]())["text"])
-        self.assertNotIn(("battle", "auto"), game.moves)
+        self.assertFalse(game.state["auto"])
+        self.assertNotIn("auto", game.timings)
+        self.assertNotIn("ensure_auto", feature.stage_change(game.ports(), *readers(game), rules, TABLE)["api"])
 
     def test_unfold_and_badge_from_folded_in_one_call(self):
         game = Game(stage=920, preset="III")
@@ -455,26 +442,20 @@ class Switches(unittest.TestCase):
         async def go():
             first = (await get(None))[1]["switches"]
             changed = (await post(Request({"stage_change": "real"})))[1]["switches"]
-            refused = await post(Request({"auto": "yes"}))
-            not_learned = await post(Request({"auto": "real", "preset": "real"}))
-            return first, changed, refused, not_learned
-        first, changed, refused, not_learned = asyncio.run(go())
-        self.assertEqual(first, {"stage_change": "plan", "preset": "plan", "auto": "plan"})
-        self.assertEqual(changed, {"stage_change": "real", "preset": "plan", "auto": "plan"})
+            refused = await post(Request({"preset": "yes"}))
+            no_auto = await post(Request({"auto": "real", "preset": "real"}))
+            return first, changed, refused, no_auto
+        first, changed, refused, no_auto = asyncio.run(go())
+        self.assertEqual(first, {"stage_change": "plan", "preset": "plan"})
+        self.assertEqual(changed, {"stage_change": "real", "preset": "plan"})
         self.assertEqual(refused[0], 400)
-        # The AUTO tap is not learned: auto stays plan, nothing else changes.
-        self.assertEqual(not_learned[0], 400)
-        self.assertIn("AUTO n’est pas encore appris", french(not_learned[1]["error_t"]))
+        # No auto switch (AUTO is never tapped): refused, nothing changes.
+        self.assertEqual(no_auto[0], 400)
         self.assertEqual(ports.store.sections["farming"](), {"switches": changed})
 
-    def test_a_real_auto_kept_reads_as_plan_until_learned(self):
+    def test_an_auto_switch_kept_is_dropped(self):
         self.assertEqual(feature.kept_switches({"stage_change": "real", "auto": "real"}),
-                         {"stage_change": "real", "preset": "plan", "auto": "plan"})
-        feature.AUTO_TAP_LEARNED = True
-        try:
-            self.assertEqual(feature.kept_switches({"auto": "real"})["auto"], "real")
-        finally:
-            feature.AUTO_TAP_LEARNED = False
+                         {"stage_change": "real", "preset": "plan"})
 
 
 class Store:

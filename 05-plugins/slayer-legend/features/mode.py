@@ -17,7 +17,7 @@ POST /mode/hold    {action: "free" | "resume"[, hold: id]}: a switch on hold
 
 Entering mpw18 or mpw4 farming brings the game there in the background
 (features/stage_change.py): the mode's stage, its Battle settings preset,
-AUTO on, then its soul weapon equipped; a step that fails stops it with
+then its soul weapon equipped (AUTO is never tapped); a step that fails stops it with
 one alert naming the step. It
 starts at once on its trigger (POST /mode, or the timer's end: the watch
 wakes on it), within rules.SWITCH_BUDGET seconds; a switch that stops is
@@ -161,8 +161,8 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         return left
 
     async def set_stage(number, mpw, applied=False, step=None):
-        """Brings the game to farming that stage with its loadout's preset,
-        AUTO on. True once there; else one alert naming the step. While the
+        """Brings the game to farming that stage with its loadout's preset.
+        True once there; else one alert naming the step. While the
         shared lease cannot be had (the user played in the last minute,
         another holder), it waits for its next look (WATCH_EVERY), at most
         rules.LEASE_WAIT: then one alert, for the user. While the user

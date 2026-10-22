@@ -15,8 +15,9 @@ None at the moment.
   round trip) arrived after the fold, on the gear. AUTO was turned back
   on the same night (gear spinning, skills on cooldown). Fix: unfold and
   next tap in one adb call, both guarded first, only when a fresh capture
-  reads the controls folded; the AUTO gear is tapped only after an OFF
-  reading (a still gear) and never to turn AUTO off.
+  reads the controls folded. Since 2026-10-22 (the user's order) the AUTO
+  button is never tapped at all (forbidden in navigation.json): a stage
+  progress bar that stops moving is an error alert instead.
 
 - 2026-10-21, Slayer Legend: the plugin equipped the soul weapon Vision in
   mpw18 by itself (the user saw the result) while the Equip tag reader had

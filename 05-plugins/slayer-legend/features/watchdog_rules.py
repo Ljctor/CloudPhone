@@ -6,8 +6,8 @@ feature (watchdog.py beside this file) takes the looks and makes the
 repairs, every move through the navigation guard, under the shared lease.
 
 The watchdog checks that the game does what the selected mode says:
-mpw18 and mpw4 farming, each with its own stage, Battle settings preset
-and AUTO (the same symptoms and repairs); the Closed Mine, whose screens
+mpw18 and mpw4 farming, each with its own stage and Battle settings
+preset (the same symptoms and repairs); the Closed Mine, whose screens
 are the mine feature's: the watchdog only owns its "game away" alert
 (mine_away: the game gone, crashed or not in front for MINE_AWAY_LOOKS
 looks, one alert, no repair). Free play suspends it, and so does a mode's
@@ -39,8 +39,8 @@ Symptom → response, one look at a time (SYMPTOMS, REPAIRS):
 |                                           | a battle look can say "wrong stage"   |
 | wrong Battle settings preset              | select the preset (phase 3)           |
 | (mpw18's loadout, the engraving's store)  |                                       |
-| AUTO read off (a still gear, on the       | AUTO on (stage_change.ensure_auto)    |
-| controls' check)                          |                                       |
+| the stage progress bar still for          | error alert, no repair, no tap (the   |
+| STALL_LOOKS looks (bar_look)              | AUTO button is never tapped)          |
 | wrong soul weapon or engraving            | loadout (phase 3)                     |
 | another screen (a stage transition, a     | no tap: observed, an alert after      |
 | loading screen, an unknown pop-up)        | ALERT_AFTER_OTHER looks               |
@@ -155,7 +155,7 @@ SYMPTOMS = {
     "wrong_stage": "mauvais stage, pas le {stage}",
     "wrong_battle_settings": "mauvais préréglage de combat : pas le {preset}",
     "wrong_loadout": "mauvais équipement : {what}",
-    "auto_off": "AUTO est arrêté",
+    "progress_stalled": "barre de progression du stage immobile depuis {seconds} s (AUTO : {state})",
     "unexpected": "écran inattendu",
     "mine_away": "le jeu n’est plus au premier plan",
 }
@@ -174,7 +174,7 @@ REPAIRS = {
     "wrong_stage": "stage_change",
     "wrong_battle_settings": "select_preset",
     "wrong_loadout": "loadout",
-    "auto_off": "auto_on",
+    "progress_stalled": None,
     "unexpected": None,
     # The relaunch, then the mine's own way back in (features/mine.py reenter).
     "mine_away": "mine_relaunch",
@@ -182,7 +182,7 @@ REPAIRS = {
 REPAIR_NAMES = {"relaunch": t("relance du jeu"), "mine_relaunch": t("relance du jeu et retour dans la mine"),
                 "back_to_battle": t("retour au combat"),
                 "stage_change": t("changement de stage"), "select_preset": t("choix du préréglage de combat"),
-                "loadout": t("rééquipement"), "auto_on": t("remise en marche d’AUTO")}
+                "loadout": t("rééquipement")}
 # Seconds without attempt of a kind after its nth failure (DELAYS[n],
 # the last one for any later), each ±JITTER of it.
 DELAYS = (0, 60, 120, 240, 480, 960, 1800)
@@ -194,7 +194,9 @@ QUIET_AFTER_ALERT = 30 * 60
 # Delays (seconds) whose first reach is a phone alert.
 ESCALATE = (480, 1800)
 KINDS = tuple(REPAIR_NAMES)
-ERRORS = ("adb_missing", "anr", "after_mode_screen")
+ERRORS = ("adb_missing", "anr", "after_mode_screen", "progress_stalled")
+# Alert-only symptoms said again when they last this long (seconds).
+TIERED = ("progress_stalled",)
 # Repairs that are never plan-only.
 ALWAYS_REAL = ("relaunch", "mine_relaunch", "back_to_battle")
 
@@ -223,7 +225,7 @@ def fresh(kept=None):
             "alerts": 0, "backoff": kept_backoff(kept.get("backoff")), "good_since": None, "watch": {},
             "repaired": False, "notified": {}, "alert_notified": False,
             "verifying": None, "menu_since": None, "planned": None, "deferred": None,
-            "away": 0}
+            "away": 0, "tiers": []}
 
 
 def persisted(memory):
@@ -273,7 +275,9 @@ def judge(seen, profile, numeral_of, last_input, resumed, memory, now, after_mod
     battle_settings (the preset's name read, None: not read), loadout
     (None: not checked; else what is wrong, "" when nothing), stage (battle:
     the stage number its name reads as, region and numeral, None: unread),
-    auto ("on", "off", None: not read)}.
+    auto ("on", "off", None: not read; information only, never a tap),
+    stalled (battle: the seconds the stage progress bar has been still,
+    bar_look; None: not stalled)}.
     profile: see profile(); numeral_of(number): the numeral the stage's
     name ends with in the table, or None. resumed: a mode just ended (no
     menu grace); after_mode: one ended less than AFTER_MODE ago (another
@@ -346,8 +350,9 @@ def judge(seen, profile, numeral_of, last_input, resumed, memory, now, after_mod
             return "wrong_battle_settings", SYMPTOMS["wrong_battle_settings"], {"preset": preset}, memory
         if seen.get("loadout"):
             return "wrong_loadout", SYMPTOMS["wrong_loadout"], {"what": seen["loadout"]}, memory
-        if seen.get("auto") == "off":
-            return "auto_off", SYMPTOMS["auto_off"], {}, memory
+        if seen.get("stalled") is not None:
+            return "progress_stalled", SYMPTOMS["progress_stalled"], {
+                "seconds": round(seen["stalled"]), "state": AUTO_STATES.get(seen.get("auto"), AUTO_STATES[None])}, memory
         if number is not None and number == wanted:
             return None, "OK (stage {stage})", {"stage": wanted}, memory
         if numeral is not None and numeral == expected:
@@ -502,7 +507,7 @@ def decide(memory, symptom, text, params, context, wall):
             if memory["alerted"] and memory["alert_notified"]:
                 actions.append(record("normal", "{mode}: recovered", {"mode": named}, notify=True))
             memory.update(alerted=False, alert_notified=False, repaired=False, watch={}, planned=None,
-                          deferred=None)
+                          deferred=None, tiers=[])
         return memory, actions
     memory["good"] = 0
     memory["good_since"] = None
@@ -521,7 +526,8 @@ def decide(memory, symptom, text, params, context, wall):
     memory["streak"] = memory["streak"] + 1 if same else 1
     memory["since_repair"] = memory["since_repair"] + 1 if same else 1
     memory["symptom"] = symptom
-    alert_after = {"unexpected": ALERT_AFTER_OTHER, "mine_away": MINE_AWAY_LOOKS}.get(symptom, ALERT_AFTER)
+    alert_after = {"unexpected": ALERT_AFTER_OTHER, "mine_away": MINE_AWAY_LOOKS,
+                   "progress_stalled": 1}.get(symptom, ALERT_AFTER)
     if memory["streak"] >= alert_after and not memory["alerted"]:
         memory["alerted"] = True
         memory["alerts"] += 1
@@ -532,6 +538,13 @@ def decide(memory, symptom, text, params, context, wall):
             memory["notified"] = {**memory["notified"], family: wall}
         actions.append(record("error" if symptom in ERRORS else "warning", status(text, params, mode),
                               notify=not quiet))
+    elif symptom in TIERED and memory["alerted"]:
+        # Still there: said again once it lasts each ESCALATE (8, 30 min).
+        tier = next((d for d in ESCALATE if params.get("seconds", 0) >= d and d not in memory.get("tiers", [])),
+                    None)
+        if tier is not None:
+            memory["tiers"] = [*memory.get("tiers", []), tier]
+            actions.append(record("error", status(text, params, mode), notify=True))
     if (repair is None or memory["since_repair"] < REPAIR_AFTER or memory["looks"] <= OBSERVE_FIRST
             or repair not in context.get("available", ())
             or memory["watch"].get(repair, 0) > wall
@@ -558,8 +571,7 @@ def decide(memory, symptom, text, params, context, wall):
 
 
 # Gold per second at 0 often means AUTO is off (the slayer does nothing): a
-# trigger to read AUTO at once, never a proof (AUTO is tapped only on an
-# OFF reading). It needs a full window (gold_rules.WINDOW, less one
+# trigger to read AUTO at once, never a proof (AUTO is never tapped). It needs a full window (gold_rules.WINDOW, less one
 # reading), a fresh sample (at most GOLD_FRESH seconds old, counted on the
 # battle screen) and GOLD_ZEROS such readings in a row.
 GOLD_FULL = 290
@@ -595,6 +607,52 @@ def gold_alert(kept, auto):
     if auto == "on" and kept["zeros"] >= GOLD_ZEROS and not kept["alerted"]:
         return {**kept, "alerted": True}, True
     return kept, False
+
+
+# The stage progress bar (stage.progress: its fill, 0 to 1 of its 214 px),
+# read at each look on the plain battle screen only. Measured on
+# 2026-10-22 (stage 920, a look every 15 s): it fills at about 4.3 px/s,
+# empty to full in 55-60 s, then back to empty about once a minute: about
+# 65 px between two looks, and no pause longer than one look. Moved: a
+# change over BAR_EPSILON (10 px) since the last move, or a drop over
+# BAR_DROP (100 px: the end of a stage). Stalled: STALL_LOOKS readable
+# looks in a row without a move (45 s). Power Saving Mode shows no bar and
+# nothing that counts the battle (its "In battle . . ." dots cycle on their
+# own): unknown there, never left to read the bar. Alert only: the AUTO
+# button is never tapped (the user's order, 2026-10-22).
+BAR_EPSILON = 10 / 214
+BAR_DROP = 100 / 214
+STALL_LOOKS = 3
+# No counting this long (seconds) after a relaunch: the game settles.
+BAR_SETTLE = 60
+# AUTO as the stall's alert says it (read on the controls, information only).
+AUTO_STATES = {"on": t("en marche"), "off": t("arrêté"), None: t("inconnu")}
+
+
+def bar_fresh():
+    """Nothing counted: the bar's value at its last move, that move's time
+    and the readable looks since without a move."""
+    return {"value": None, "since": None, "still": 0}
+
+
+def bar_moved(before, value):
+    return abs(value - before) > BAR_EPSILON or before - value > BAR_DROP
+
+
+def bar_look(kept, value, now):
+    """(kept, stalled): one battle look's reading of the bar (value: its
+    fill, None: unreadable, then neither a move nor a still look); stalled:
+    the seconds since its last move once STALL_LOOKS still looks in a row,
+    else None. A look that is not the plain battle screen, a paused
+    watchdog, the mine or free play: bar_fresh() instead (the count starts
+    over)."""
+    if value is not None:
+        if kept["value"] is None or bar_moved(kept["value"], value):
+            kept = {"value": value, "since": now, "still": 0}
+        else:
+            kept = {**kept, "still": kept["still"] + 1}
+    stalled = now - kept["since"] if kept["still"] >= STALL_LOOKS else None
+    return kept, stalled
 
 
 def counters(memory, wall):

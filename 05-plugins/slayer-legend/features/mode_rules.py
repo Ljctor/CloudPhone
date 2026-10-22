@@ -27,7 +27,7 @@ TIMED_MINUTES = 30
 # Seconds between two checks of a timed mode.
 WATCH_EVERY = 10
 # A mode switch (the trigger: POST /mode, or a timer's end) reaches the
-# battle screen on its stage, preset and AUTO within this (seconds) of the
+# battle screen on its stage and preset within this (seconds) of the
 # plugin's own time: waiting for the lease (the user's minute after an
 # input, another holder) is logged apart and never counted. Over it, the
 # switch still completes, logged with one alert naming the slowest step.
@@ -58,7 +58,7 @@ def next_look(until, now):
     return max(0.2, until - now + 0.1)
 
 
-STEP_NAMES = {"stage": "stage change", "preset": "preset", "auto": "AUTO", "soul_weapon": "Soul Weapon"}
+STEP_NAMES = {"stage": "stage change", "preset": "preset", "soul_weapon": "Soul Weapon"}
 # A farming mode's loadout fields whose change is applied at once.
 LOADOUT_FIELDS = ("stage", "preset", "soul_weapon")
 

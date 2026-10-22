@@ -23,7 +23,7 @@ plan() answers one of:
 - ("equip",): the target is selected, owned (at least 1) and its tag
   reads Equip; only once the tag's reading is calibrated on real captures
   of both tags (tag_learned: soul_weapon.TAG_LEARNED), else ("fail", ...)
-  (an error alert stating it, not equipped), like AUTO_TAP_LEARNED;
+  (an error alert stating it, not equipped);
 - ("fail", why): anything else, in French.
 At most MOST_MOVES moves for the whole sequence, and it stops when a move
 changes nothing (progressed).

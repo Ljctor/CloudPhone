@@ -23,13 +23,13 @@ font = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(font)
 
 NUMERALS = ("I", "II", "III", "IV", "V")
-# The folded controls' arrow, and once unfolded the badge and the gear.
+# The folded controls' arrow, and once unfolded the badge. The AUTO gear is
+# read only, never tapped (forbidden in navigation.json).
 ARROW_TAP = (0.975, 0.444)
 BADGE_TAP = (0.965, 0.405)
 # The folded arrow: a grey triangle on a small dark tile.
 ARROW = (0.955, 0.425, 0.995, 0.465)
 ARROW_SHARE = (0.05, 0.45)
-AUTO_TAP = (0.93, 0.447)
 # Only the numeral's rows: what drops in the fight passes under the badge.
 BADGE = (0.94, 0.399, 0.99, 0.4095)
 GEAR = (0.906, 0.430, 0.963, 0.454)

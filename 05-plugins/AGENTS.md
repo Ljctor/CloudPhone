@@ -38,8 +38,10 @@ Rules:
     - "Wait" on Android's "isn't responding" dialog: once per dialog, never
       its "Close app".
     - The right edge's arrow that unfolds the controls, to read the preset
-      badge and AUTO: at most every 5 minutes, whoever watches (only a
-      user's input pauses it, a minute), only while the preset or auto switch is real.
+      badge and AUTO (AUTO only read, for the alerts): at most every 5
+      minutes, whoever watches (only a user's input pauses it, a minute),
+      only while the preset switch is real.
+    - Nothing for a stalled stage progress bar: an error alert only.
   - Stage change and preset (mode changes, a change of the running
     mode's loadout, and the watchdog's repairs,
     each only while its switch is real):
@@ -57,9 +59,7 @@ Rules:
     - The preset's button in Battle settings: only once Battle settings
       reads open, and another preset reads selected.
     - Battle settings' close button: after its preset reads selected.
-    - The AUTO gear: not tapped until a real AUTO-off capture calibrates
-      its reading (`AUTO_TAP_LEARNED`).
-  - Soul weapon (last step of a mode change, after AUTO, and once after a
+  - Soul weapon (last step of a mode change, after the preset, and once after a
     watchdog relaunch; never periodic; switch `soul_weapon`, real by
     default, "off" stops it; skipped while the last check read the target
     equipped and no relaunch or user input came since):
@@ -128,6 +128,10 @@ Rules:
     and Dungeon have no reader calibrated on a capture (the mine ends,
     back to the default mode, one alert). The feathers are not tapped when
     the pop-up reads no feather left (once calibrated): the mine ends.
+  - Never tapped, on any screen: the AUTO button (the user's order,
+    2026-10-22; forbidden in `navigation.json`, like Breakdown and Change):
+    no switch, gate or repair taps it; AUTO is only read, and a stage
+    progress bar that stops moving is an error alert instead.
   - Never tapped, on any screen: the game's "Better Soul Weapon / Equip"
     toast (right edge, y 0.32-0.37; forbidden in `navigation.json`): it
     equips the game's pick, while the soul weapon is the mode's loadout.
@@ -138,8 +142,7 @@ Rules:
   apart (Equip and Unequip; padlock open and closed; a preview invalid and
   valid; a popup open). Until then the gate is closed: the move is refused
   and the step ends with an error alert (red) stating the fact, e.g.
-  « Soul Weapon: Equip tag not calibrated, not equipped », like
-  `AUTO_TAP_LEARNED`. A gate is a module-level `*_LEARNED`, `*_TELLS` or
+  « Soul Weapon: Equip tag not calibrated, not equipped ». A gate is a module-level `*_LEARNED`, `*_TELLS` or
   `*_CALIBRATED` flag listed in `slayer-legend/test_gates.py` with its
   fixtures: an open gate missing one fails that test (red, not skipped).
   The first real run after a gate opens is made with the user present and

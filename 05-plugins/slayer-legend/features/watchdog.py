@@ -1,7 +1,7 @@
 """The watchdog: it checks that the game does what the selected mode
 says, looking at it every rules.EVERY seconds, and when it does not,
 alerts and repairs: mpw18 and mpw4 farming each with its own loadout
-(stage, Battle settings preset, AUTO); the Closed Mine, whose screens are
+(stage, Battle settings preset); the Closed Mine, whose screens are
 the mine feature's: the game away (rules.mine_away) is relaunched, then
 the mine re-entered by the mine feature (reenter); free play, nothing.
 
@@ -28,13 +28,21 @@ The repairs: the relaunch (the launch feature's, holder "watchdog" of the
 shared lease, stopped by a user input): it never kills the game, closes
 Android's crash dialog by its button, takes the latest save, and leaves
 Power Saving Mode. A wrong stage or Battle settings preset: the stage
-change feature's farm(); AUTO read off: its ensure_auto (each under its
-own holder "stage_change", and plan-only while its switch says so, see
-features/stage_change.py). On the battle screen the stage is read whole
-(region and numeral); the preset and AUTO are read on one unfold of the
-right edge's controls (a tap, under the lease) at most every
-CONTROLS_EVERY seconds, whoever watches the screen (only a user's input
-pauses it, a minute). The way
+change feature's farm() (under its own holder "stage_change", and
+plan-only while its switch says so, see features/stage_change.py). On the
+battle screen the stage is read whole (region and numeral); the preset and
+AUTO are read on one unfold of the right edge's controls (the arrow's tap,
+under the lease) at most every CONTROLS_EVERY seconds, whoever watches the
+screen (only a user's input pauses it, a minute). AUTO is never tapped
+(the user's order, 2026-10-22): its reading is only said in the alerts.
+
+The stage progress bar (stage.progress, under the stage's name) is read
+at each look on the plain battle screen while mpw18 or mpw4 farms; still
+for rules.STALL_LOOKS readable looks in a row (rules.bar_look) it is the
+symptom progress_stalled: an error alert, no repair, no tap. Not counted
+while paused (free play, a mode's entry, a user input), in the mine, on
+another screen (a menu: its own symptom) or within rules.BAR_SETTLE of a
+relaunch: the count starts over. The way
 back to battle from a game menu stays an alert (its close buttons differ
 per panel); the soul weapon and its engraving wait for phase 3.
 
@@ -50,10 +58,10 @@ import random
 
 AVAILABLE = ("relaunch", "mine_relaunch")
 # Repairs by the stage change feature, and the switch that makes each real.
-FARMING = {"stage_change": "stage_change", "select_preset": "preset", "auto_on": "auto"}
+FARMING = {"stage_change": "stage_change", "select_preset": "preset"}
 # Seconds between two readings of the preset and AUTO (each an unfold).
 CONTROLS_EVERY = 300
-# The farming modes (their own stage, preset and AUTO).
+# The farming modes (their own stage and preset).
 FARMED = ("mpw18", "mpw4")
 
 
@@ -68,7 +76,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
     status = {"text": ports.t("Démarrage"), "symptom": None, "paused": None, "repairing": None,
               "mode": None, "ended_at": None, "resumed": False, "anr_waited": False, "controls": None,
               "gold": rules.gold_fresh(),
-              "gold_due": False}
+              "gold_due": False, "bar": rules.bar_fresh(), "relaunched_at": None}
     available = AVAILABLE + (tuple(FARMING) if farming else ())
     ports.store.register("watchdog", lambda: rules.persisted(memory))
 
@@ -102,13 +110,14 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             name = "battle"  # the skill bar shows: no panel over the battle
         battle = name == "battle"
         return (name, stage.read_battle(shot) if battle else None,
-                farming["battle_stage"](shot) if battle and farming else None)
+                farming["battle_stage"](shot) if battle and farming else None,
+                stage.progress(shot) if battle and screens.plain_battle(shot) else None)
 
     async def look():
         """What one look sees (watchdog_rules.judge's seen)."""
         running = await ports.running()
         seen = {"adb": running is not None, "running": bool(running), "crash": False, "anr": False,
-                "focused": False, "screen": None, "numeral": None, "stage": None}
+                "focused": False, "screen": None, "numeral": None, "stage": None, "bar": None}
         if running is None:
             return seen
         dialog = await ports.dialog()
@@ -123,7 +132,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         if seen["focused"]:
             shot = await ports.capture(max_age=rules.MAX_AGE)
             if shot:
-                seen["screen"], seen["numeral"], seen["stage"] = await ports.analyse(facts, shot)
+                seen["screen"], seen["numeral"], seen["stage"], seen["bar"] = await ports.analyse(facts, shot)
         return seen
 
     async def read_controls(seen):
@@ -158,8 +167,8 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                 await ports.notify(said)
 
     async def farm_repair(kind):
-        """A stage change repair: farm() for the stage and the preset,
-        ensure_auto for AUTO; read again at the next look. Deferred or a
+        """A stage change repair: farm() for the stage and the preset; read
+        again at the next look. Deferred or a
         plan: not a failure (rules.not_run); stopped: one (rules.stopped)."""
         nonlocal memory
         status["controls"] = None
@@ -168,11 +177,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         status["repairing"] = kind
         show(ports.t("Réparation en cours : {repair}", repair=rules.REPAIR_NAMES[kind]))
         try:
-            if kind == "auto_on":
-                answer = await farming["ensure_auto"](name)
-            else:
-                answer = await farming["farm"](part["stage"], part["preset"], name,
-                                               modes["state"]().get("highest"))
+            answer = await farming["farm"](part["stage"], part["preset"], name, modes["state"]().get("highest"))
         except ports.Busy as e:
             memory = rules.not_run(memory, kind)
             say("normal", "Repair deferred: {repair} ({why})", {"repair": rules.REPAIR_NAMES[kind], "why": e.t})
@@ -233,6 +238,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         finally:
             status["repairing"] = None
         ended = launches["state"]()
+        status["relaunched_at"] = ports.clock.monotonic()
         if ended["state"] == "done" and farming and "relaunched" in farming:
             # The game is back: its soul weapon read again (features/soul_weapon.py).
             farming["relaunched"](mode_now())
@@ -276,6 +282,8 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             memory = rules.suspended(memory)
             status["resumed"] = True
         status["paused"] = why
+        if why or launches["running"]():
+            status["bar"] = rules.bar_fresh()
         if why:
             if name not in rules.MODE_NAMES or moving:
                 memory = rules.suspended(memory)
@@ -292,6 +300,11 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         else:
             status["anr_waited"] = False
         await read_controls(seen)
+        settled = status["relaunched_at"] is None or now - status["relaunched_at"] >= rules.BAR_SETTLE
+        if name in FARMED and seen["screen"] == "battle" and settled:
+            status["bar"], seen["stalled"] = rules.bar_look(status["bar"], seen["bar"], now)
+        else:
+            status["bar"] = rules.bar_fresh()
         after_mode = status["ended_at"] is not None and now - status["ended_at"] < rules.AFTER_MODE
         symptom, text, params, memory = rules.judge(
             seen, profile(), numeral_of, last["monotonic"] if last else None, status["resumed"], memory, now,

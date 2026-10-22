@@ -1,24 +1,21 @@
-"""Brings the game to farming a stage with its Battle settings preset,
-AUTO on: the moves the mode feature makes when a farming mode starts, and
-the watchdog's repairs.
+"""Brings the game to farming a stage with its Battle settings preset:
+the moves the mode feature makes when a farming mode starts, and the
+watchdog's repairs. The AUTO button is never tapped (the user's order,
+2026-10-22; forbidden in navigation.json): AUTO is only read, for the
+watchdog's alerts.
 
-GET  /farming   {switches: {stage_change, preset, auto}, soul_weapon, last}
+GET  /farming   {switches: {stage_change, preset}, soul_weapon, last}
                 (last: {result, text_t, timings, mode}, text_t a status text)
-POST /farming   {stage_change, preset, auto}: each "real" or "plan" (a
+POST /farming   {stage_change, preset}: each "real" or "plan" (a
                 field absent keeps its value); soul_weapon: "real" or
                 "off"; engraving: "off" or "real" (only with the user
                 present: features/soul_weapon.py); needs the page token
 
 Each repair has its switch, kept in state.json ("farming"), "plan" by
 default: then the plan is written to the log and nothing is tapped. Each
-is turned to "real" after a first run watched with the user. The AUTO
-gear itself stays plan-only (AUTO_TAP_LEARNED): its OFF reading is
-calibrated on an ON frame only, until a real OFF capture recalibrates it;
-until then POST /farming refuses auto "real" (400), and a "real" kept in
-state.json reads as "plan". The auto switch is the gear's tap only: in a
-sequence, AUTO is read (on the controls' unfold, as the preset is)
-whenever a switch is real; read_controls (the watchdog's) only while the
-preset or auto switch is.
+is turned to "real" after a first run watched with the user.
+read_controls (the watchdog's: the preset and, as information, AUTO) only
+while the preset switch is.
 
 Each step looks first (a fresh screenshot), makes one guarded move
 (ports, nav.py) and looks again for what it expects (settle: fresh
@@ -26,7 +23,7 @@ captures every POLL seconds until it shows, at most SETTLE seconds,
 MOVE_SETTLE for a stage to load; no fixed long sleep: a mode switch has
 60 s); anything else stops the whole sequence with the step that failed
 (a status text, features/texts.py), for one alert by the caller. Nothing is tried twice. farm()'s
-answer gives each step's seconds (timings: stage, preset, auto).
+answer gives each step's seconds (timings: stage, preset, soul_weapon).
 
 - Stage: closes the bottom panel open, only when its tab reads lit (else
   « écran inattendu »), opens the stage map (Select Region), goes to the
@@ -38,25 +35,22 @@ answer gives each step's seconds (timings: stage, preset, auto).
 - Preset: unfolds the right edge's controls and taps the badge (see
   unfold), checks Battle settings by its title, taps the preset unless it
   is the one framed, checks the frame, closes, then reads the badge.
-- AUTO: two looks at the unfolded controls a moment apart: a spinning
-  gear is on. Off, the gear is tapped, then read again. Never tapped while
-  it is on or cannot be told.
 
 Every sequence holds the shared lease (holder "stage_change", reason
 "farm <mode>"): ports.Busy when another holder has it or the user played
 in the last minute (the caller waits for its next look), and a user input
 during it stops it at the next tap.
 
-- Soul Weapon (last, after AUTO: a slow one never delays farming): the
+- Soul Weapon (last: a slow one never delays farming): the
   mode's loadout's soul weapon equipped (features/soul_weapon.py). Its
   switch, soul_weapon, is "real" by default (the user's choice: no plan
   mode), "off" an emergency stop; kept in state.json ("soul_weapon").
-  Its failure is the sequence's, « Soul Weapon : <step> » (logged as an error) (stage, preset and
-  AUTO are done by then). After a watchdog relaunch (relaunched(mode)) it
+  Its failure is the sequence's, « Soul Weapon : <step> » (logged as an error) (stage and
+  preset are done by then). After a watchdog relaunch (relaunched(mode)) it
   runs alone, with one alert if it fails.
 
-api: farm(stage, preset, mode) runs the four; change_stage, set_preset,
-ensure_auto, ensure_soul_weapon(mode, loadout=None) alone (the last for a
+api: farm(stage, preset, mode) runs the three; change_stage, set_preset,
+ensure_soul_weapon(mode, loadout=None) alone (the last for a
 loadout change of the active mode); each answers {result: "done", "plan"
 or "failed", text_t: why or the plan, a status text, or None}. read_controls() for the watchdog: {preset, auto} read
 on one unfold, or None. relaunched(mode) for the watchdog's relaunch.
@@ -86,9 +80,7 @@ LEASE_SECONDS = 240
 RELAUNCH_RETRY = 10
 RELAUNCH_WAIT = 300
 HOLDER = "stage_change"
-SWITCHES = ("stage_change", "preset", "auto")
-# The AUTO gear's tap waits for a real OFF capture (see above).
-AUTO_TAP_LEARNED = False
+SWITCHES = ("stage_change", "preset")
 
 
 def t(template, **params):
@@ -121,13 +113,9 @@ def joined(texts):
     return t("{first} ; {then}", first=texts[0], then=joined(texts[1:]))
 
 
-AUTO_NOT_LEARNED = "Le bouton AUTO n’est pas encore appris (pas de capture AUTO arrêté) : « auto » reste en plan"
-
-
 def kept_switches(saved):
     saved = saved if isinstance(saved, dict) else {}
-    return {name: "real" if saved.get(name) == "real" and (name != "auto" or AUTO_TAP_LEARNED) else "plan"
-            for name in SWITCHES}
+    return {name: "real" if saved.get(name) == "real" else "plan" for name in SWITCHES}
 
 
 def stage_change(ports, screens, select, controls, rules, table, soul=None):
@@ -314,26 +302,6 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         if await badge_of(*await controls_look()) != name:
             raise Stop("vérification du preset {preset} sur le badge", preset=name)
 
-    async def auto_state():
-        """"on", "off" or None (cannot tell) on the next two looks."""
-        first, second = await controls_look()
-        return await ports.analyse(controls.auto, first, second)
-
-    async def ensure_auto():
-        if not any(real(name) for name in SWITCHES):
-            raise Plan("vérifier AUTO (l’engrenage tourne), le toucher s’il est arrêté")
-        state = await auto_state()
-        if state == "on":
-            return
-        if state is None:
-            raise Stop("état d’AUTO illisible")
-        if not (AUTO_TAP_LEARNED and real("auto")):
-            raise Plan("AUTO lu arrêté : toucher l’engrenage (en attente d’une capture AUTO arrêté pour "
-                       "recalibrer la lecture)")
-        await unfold(await folded_battle(), ("auto", controls.AUTO_TAP), verified={"auto"})
-        if await auto_state() != "on":
-            raise Stop("AUTO pas en marche après l’avoir activé")
-
     async def run(mode, steps, force=False):
         """Runs steps ((name, step) pairs) under the lease: {result, text,
         timings: {name: seconds}}; ports.Busy when the lease cannot be had
@@ -395,7 +363,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         return await run(mode, [("soul_weapon", lambda: equip_soul_weapon(mode, loadout))], force)
 
     async def farm(stage, preset, mode, highest=None, force=False):
-        """Farming stage with preset (None: kept as it is), AUTO on, then the
+        """Farming stage with preset (None: kept as it is), then the
         loadout's soul weapon. A stage past highest (the highest seen
         farmed, None: unknown) is tried too: the gateway may never have
         seen a stage the game has unlocked. Only a region the stage change
@@ -406,7 +374,6 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         steps = [("stage", lambda: change_stage(stage))]
         if preset:
             steps.append(("preset", lambda: set_preset(preset)))
-        steps.append(("auto", ensure_auto))
         steps.append(("soul_weapon", lambda: equip_soul_weapon(mode)))
         return await run(mode, steps, force)
 
@@ -437,10 +404,11 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         return ports.spawn(after_relaunch(mode))
 
     async def read_controls():
-        """{preset, auto} read on one unfold of the controls (a tap: under
-        the lease), or None: the preset and auto switches are both plan,
-        the lease cannot be had, or anything unexpected."""
-        if not (real("preset") or real("auto")):
+        """{preset, auto} read on one unfold of the controls (the arrow's
+        tap, under the lease; AUTO only read, for the alerts), or None: the
+        preset switch is plan, the lease cannot be had, or anything
+        unexpected."""
+        if not real("preset"):
             return None
         try:
             async with ports.leased(HOLDER, "reading the preset and AUTO", 30):
@@ -460,13 +428,13 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
             body = await request.json()
         except (ValueError, TypeError, AttributeError):
             body = None
-        if not isinstance(body, dict) or any(body.get(k) not in (None, "real", "plan") for k in SWITCHES) \
+        # No auto switch: the AUTO button is never tapped (refused).
+        if not isinstance(body, dict) or "auto" in body \
+                or any(body.get(k) not in (None, "real", "plan") for k in SWITCHES) \
                 or body.get("soul_weapon") not in (None, "real", "off") \
                 or body.get("engraving") not in (None, "real", "off"):
-            return ports.respond({"error_t": t("Attendu : {expected}", expected='{stage_change, preset, auto}: "real" | '
+            return ports.respond({"error_t": t("Attendu : {expected}", expected='{stage_change, preset}: "real" | '
                                                '"plan"; soul_weapon, engraving: "real" | "off"')}, status=400)
-        if body.get("auto") == "real" and not AUTO_TAP_LEARNED:
-            return ports.respond({"error_t": t(AUTO_NOT_LEARNED)}, status=400)
         for name in SWITCHES:
             if body.get(name):
                 if switches[name] != body[name]:
@@ -482,7 +450,6 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
     api = {"farm": farm,
            "change_stage": lambda stage, mode="mpw18": run(mode, [("stage", lambda: change_stage(stage))]),
            "set_preset": lambda name, mode="mpw18": run(mode, [("preset", lambda: set_preset(name))]),
-           "ensure_auto": lambda mode="mpw18": run(mode, [("auto", ensure_auto)]),
            "read_controls": read_controls, "switches": lambda: dict(switches),
            "relaunched": relaunched, "ensure_soul_weapon": ensure_soul_weapon,
            "soul_weapon": lambda mode="mpw18": ensure_soul_weapon(mode),

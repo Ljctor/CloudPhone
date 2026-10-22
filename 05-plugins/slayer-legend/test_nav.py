@@ -137,12 +137,12 @@ class Graph(unittest.TestCase):
 
     def test_battle_controls(self):
         # The arrow's spot is on the AUTO tile once unfolded: tapped only
-        # once the controls read folded; AUTO only once it reads off.
+        # once the controls read folded; AUTO never (the user, 2026-10-22).
         self.assertIn("check first", nav.guard("battle", "preset_arrow", 0.975, 0.444))
         self.assertIsNone(nav.guard("battle", "preset_arrow", 0.975, 0.444, verified=True))
         self.assertIsNone(nav.guard("battle", "preset_badge", 0.965, 0.405))
-        self.assertIn("check first", nav.guard("battle", "auto", 0.93, 0.447))
-        self.assertIsNone(nav.guard("battle", "auto", 0.93, 0.447, verified=True))
+        self.assertIn("forbidden", nav.guard("battle", "auto", 0.93, 0.447))
+        self.assertIn("forbidden", nav.guard("battle", "auto", 0.93, 0.447, verified=True))
         self.assertIsNone(nav.guard("battle_settings", "preset", 0.66, 0.305))
         self.assertIsNone(nav.guard("battle_settings", "close", 0.09, 0.965))
 

@@ -3,7 +3,7 @@ stage change sequence against test_stage_change's scripted game, on a
 virtual clock, with step latencies (a capture, an adb tap, the game's
 screens taking time to show). The clock starts at the trigger (POST
 /mode, or the timer's end) and stops once the battle screen shows the
-target stage, its preset and AUTO on. No watchdog runs here: the timer's
+target stage, its preset and AUTO still on (never tapped). No watchdog runs here: the timer's
 end alone starts the switch back.
 Run: python3 -m unittest test_switch"""
 
@@ -169,7 +169,8 @@ def harness(game, scroll=None, saved=None):
 
 
 def there(game, stage, preset):
-    """The battle screen shows stage, preset (on the badge's state) and AUTO on."""
+    """The battle screen shows stage, preset (on the badge's state) and AUTO
+    still on (never tapped)."""
     s = game.snapshot()[2]
     return s["screen"] == "battle" and s["panel"] is None and s["stage"] == stage and s["preset"] == preset \
         and s["auto"]
@@ -203,7 +204,7 @@ class Switch(unittest.TestCase):
         self.assertEqual(state["state"], "farming", french(state["message_t"]))
         self.assertEqual(h.farmed[0][1], "mpw4")
         line = next(line for line in self.lines if line.startswith("switch "))
-        self.assertRegex(line, r"^switch mpw18→mpw4 in \d+ s \(stage \d+ s, preset \d+ s, auto \d+ s, soul_weapon \d+ s\), done$")
+        self.assertRegex(line, r"^switch mpw18→mpw4 in \d+ s \(stage \d+ s, preset \d+ s, soul_weapon \d+ s\), done$")
         self.assertEqual(len(game.alerts), 1, game.alerts)
         self.assertRegex(game.alerts[0], r"^Farming mpw4 ready in \d+ s$", "within budget: the time alone")
 
