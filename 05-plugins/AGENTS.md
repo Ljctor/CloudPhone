@@ -93,14 +93,27 @@ Rules:
     locked; otherwise one alert naming what is left):
     - Its title, then the weapon's name must read the target's; closed
       with its red X (bottom left).
-    - A padlock: only on a card whose fresh capture reads it open, before
-      any drag, once; a padlock read closed or not read is never tapped
-      (a tap would unlock it). Never an unlock.
-    - A drag: only once all 8 cards read locked, from a card read
-      unplaced (no E) onto cells read empty, in the card's own
-      orientation; afterwards those cells must form that piece, the card
-      read E and nothing else change, else it stops. Turning a piece or
-      taking one out of the grid is not learnt: alerted, never guessed.
+    - A padlock: the padlock in a card's top right corner, only on a
+      fresh capture reading it open (a tap on a closed one opens it);
+      then it must read closed. If that corner tap changes nothing: one
+      error alert, and the piece popup instead (a tap on the card's
+      middle, its padlock tapped only while it reads open, closed by a
+      tap above it, (0.5, 0.15)). Never an unlock; never left with a
+      piece unlocked: all 8 padlocks read closed on a fresh capture
+      before the screen is closed, else an error alert.
+    - Taking a piece out (a placed piece that is not the variant's, or
+      one holding a card that is not the best): a slow drag (800 ms) from
+      one of its cells to the inventory; its cells must read empty and
+      one card lose its E. It comes out unlocked: that card is locked
+      again at once.
+    - Placing a piece: a slow drag (1200 ms) from a card read locked and
+      unplaced onto empty cells; on its preview, the rotate button until
+      its shape is the target's, a drag of one of its cubes by the
+      offset left, the check only once the preview lies on the target
+      cells and the check reads valid (bright green), else the red X
+      cancels it; afterwards the cells must form that piece, the card
+      read E and its padlock closed.
+    - At most 24 moves per setup, 8 preview moves per piece.
     - Never Change, the gear or %.
   - Closed mine (mode "mine"): its floor row, the Area, 3 feathers,
     scrolling its floor list, and unticking "Repeat entry" (at most 3

@@ -23,8 +23,20 @@ None at the moment.
   never read a real tag (its two fixture tests were skipped). No supervised
   run up to Equip was recorded; the run's records were not collected. Fix:
   Equip is planned only once fixtures/sw_tag_equip.txt and
-  sw_tag_unequip.txt exist from real captures; until then the step alerts
-  « à équiper à la main ».
+  sw_tag_unequip.txt exist from real captures; until then the step raises
+  an error alert and does not equip.
+
+## First real runs of opened gates
+
+Each gate on a reading (`05-plugins/AGENTS.md`) has its first real run
+made with the user present, recorded here: date, readings, result.
+
+- Slayer Legend engraving lock and swap (`PADLOCK_LEARNED`,
+  `POPUP_LEARNED`, `PREVIEW_LEARNED`, opened 2026-10-22 on the captures
+  eg2–eg10): to run with the user present (Vision, Atk to Gold-balanced),
+  then recorded here.
+- Slayer Legend Equip tap (`TAG_LEARNED`): closed until the Equip tag is
+  captured.
 
 # Planned work
 

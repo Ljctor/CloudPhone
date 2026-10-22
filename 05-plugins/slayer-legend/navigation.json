@@ -1250,7 +1250,7 @@
   "soul_weapon_engraving": {
    "name": "Soul Weapon Engraving",
    "recognise": "black screen, 'Soul Weapon Engraving' (engraving_screen.title), the weapon's name, 5x5 grid, 8 pieces (cards) with a padlock each, Change x 8",
-   "source": "seen 2026-10-18, captured 2026-10-21",
+   "source": "seen 2026-10-18, captured 2026-10-21 and 2026-10-22",
    "moves": [
     {
      "id": "close",
@@ -1270,12 +1270,24 @@
       0.87,
       0.77
      ],
-     "label": "the padlock at the top right of a piece (engraving_screen.lock_point): before any drag",
-     "precondition": "the fresh capture read that piece's padlock open (locked False); one read closed or not read is never tapped (a tap unlocks a locked piece)"
+     "label": "the padlock in a card's top right corner (engraving_screen.lock_point, the glyph's middle): locks an unlocked piece",
+     "precondition": "the fresh capture reads that card's padlock open (a tap on a closed one opens it)"
+    },
+    {
+     "id": "piece",
+     "to": "soul_weapon_engraving_piece",
+     "area": [
+      0.15,
+      0.6,
+      0.87,
+      0.77
+     ],
+     "label": "a card's middle: opens its piece popup (only to lock it when the corner tap did nothing)",
+     "precondition": "the fresh capture reads that card's padlock open, no popup and no preview"
     },
     {
      "id": "drag_piece",
-     "to": "soul_weapon_engraving",
+     "to": "soul_weapon_engraving_preview",
      "area": [
       0.15,
       0.6,
@@ -1283,8 +1295,21 @@
       0.77
      ],
      "kind": "swipe",
-     "label": "drag a piece (from its card, engraving_screen.drag_point) onto empty cells of the grid, slowly",
-     "precondition": "the fresh capture read every piece locked, that piece's card not placed (no E) and the target cells empty"
+     "label": "a slow drag from a card onto the grid (engraving_screen.hold_point): shows the piece's preview",
+     "precondition": "the fresh capture reads every card locked, that card not placed and the target cells empty"
+    },
+    {
+     "id": "remove_piece",
+     "to": "soul_weapon_engraving",
+     "area": [
+      0.2,
+      0.23,
+      0.8,
+      0.51
+     ],
+     "kind": "swipe",
+     "label": "a slow drag from a placed piece's cell to the inventory (0.5, 0.68): takes it out, unlocked",
+     "precondition": "the fresh capture reads that cell a placed piece's; its card is locked again at once"
     },
     {
      "id": "settings",
@@ -1317,7 +1342,137 @@
       0.7,
       0.98
      ],
-     "label": "Change x 8",
+     "label": "Change x N",
+     "forbidden": true,
+     "reason": "re-rolls the engraving pieces"
+    }
+   ]
+  },
+  "soul_weapon_engraving_piece": {
+   "name": "Soul Weapon Engraving: a piece's popup",
+   "recognise": "brown popup y 0.40-0.78 over the dimmed screen (engraving_screen.popup): the card large with its padlock, Engraving Effect, Additional Options",
+   "source": "captured 2026-10-22 (eg2 locked, eg3 unlocked, eg4 locked again)",
+   "moves": [
+    {
+     "id": "padlock",
+     "to": "soul_weapon_engraving_piece",
+     "tap": [
+      0.595,
+      0.475
+     ],
+     "label": "the popup's padlock: toggles the piece's lock",
+     "precondition": "the fresh capture reads the popup's padlock open (a tap on a closed one opens it)"
+    },
+    {
+     "id": "close",
+     "to": "soul_weapon_engraving",
+     "tap": [
+      0.5,
+      0.15
+     ],
+     "label": "outside the popup, above it"
+    },
+    {
+     "id": "change",
+     "to": "soul_weapon_engraving_piece",
+     "area": [
+      0.3,
+      0.93,
+      0.7,
+      0.98
+     ],
+     "label": "Change x N",
+     "forbidden": true,
+     "reason": "re-rolls the engraving pieces"
+    }
+   ]
+  },
+  "soul_weapon_engraving_preview": {
+   "name": "Soul Weapon Engraving: a piece's preview",
+   "recognise": "a piece's cubes over the grid and a bar under it: red X cancel, rotate, check confirm (engraving_screen.bar)",
+   "source": "captured 2026-10-22 (eg7 as dropped, eg8 turned, eg9 moved and valid, eg10 placed)",
+   "moves": [
+    {
+     "id": "rotate",
+     "to": "soul_weapon_engraving_preview",
+     "area": [
+      0.1,
+      0.2,
+      0.9,
+      0.56
+     ],
+     "label": "the bar's rotate button: a quarter turn clockwise",
+     "precondition": "the fresh capture reads the bar there"
+    },
+    {
+     "id": "move",
+     "to": "soul_weapon_engraving_preview",
+     "area": [
+      0.1,
+      0.2,
+      0.9,
+      0.56
+     ],
+     "kind": "swipe",
+     "label": "a drag from one of the preview's cubes: moves it by that many cells",
+     "precondition": "the fresh capture reads a preview cube there"
+    },
+    {
+     "id": "confirm",
+     "to": "soul_weapon_engraving",
+     "area": [
+      0.1,
+      0.2,
+      0.9,
+      0.56
+     ],
+     "label": "the bar's check: places the piece",
+     "precondition": "the fresh capture reads the preview on the target cells and the check valid"
+    },
+    {
+     "id": "cancel",
+     "to": "soul_weapon_engraving",
+     "area": [
+      0.1,
+      0.2,
+      0.9,
+      0.56
+     ],
+     "label": "the bar's red X: drops the preview",
+     "precondition": "the fresh capture reads the bar there"
+    },
+    {
+     "id": "settings",
+     "to": "unknown",
+     "tap": [
+      0.87,
+      0.955
+     ],
+     "label": "gear",
+     "forbidden": true,
+     "reason": "the engraving's settings: not needed, never touched"
+    },
+    {
+     "id": "percent",
+     "to": "unknown",
+     "tap": [
+      0.83,
+      0.807
+     ],
+     "label": "%",
+     "forbidden": true,
+     "reason": "the engraving's stats: not needed, never touched"
+    },
+    {
+     "id": "change",
+     "to": "soul_weapon_engraving_preview",
+     "area": [
+      0.3,
+      0.93,
+      0.7,
+      0.98
+     ],
+     "label": "Change x N",
      "forbidden": true,
      "reason": "re-rolls the engraving pieces"
     }

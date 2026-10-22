@@ -36,6 +36,7 @@ nav = load("nav")
 es = load("engraving_screen")
 engraving_setup = load("features/engraving_setup")
 setup_rules = load("features/engraving_setup_rules")
+engraving_rules = load("features/engraving_rules")
 screens = load("screens")
 fixtures = load("test_fixtures")
 with open(os.path.join(HERE, "engravings.json"), encoding="utf-8") as f:
@@ -553,36 +554,50 @@ class Sequence(unittest.TestCase):
         self.assertIsNone(api["relaunched"]("mine"))
 
 
-# The engraving: Ambition's pattern, a variant of one vertical bar (no turn)
-# on column 1, the rest of the pattern left empty.
-BAR = [(0, 1), (1, 1), (2, 1), (3, 1)]
-ONE_BAR = {"name": "Bar", "pieces": [{"shape": "I", "rotation": 0, "cells": [list(c) for c in BAR]}]}
-TURNED_BAR = {"name": "Turned", "pieces": [{"shape": "I", "rotation": 1, "cells": [[1, 1], [1, 2], [1, 3], [1, 4]]}]}
-AMBITION_CELLS = {tuple(c) for c in next(e for e in TABLE["weapons"] if e["id"] == AMBITION)["cells"]}
 
 
-def card(index, shape, level, locked=True, placed=False):
-    return {"index": index, "shape": shape, "rotation": 0, "cells": [], "level": level, "locked": locked,
-            "placed": placed, "kind": {"I": "gold", "L": "atk"}[shape]}
+# The engraving, as the captures of 2026-10-22 show it (Vision filled as
+# Atk, four L placed in slots 2, 5, 6 and 8, all locked): a tap on a
+# card's padlock corner toggles it (or nothing, corner_works False); a tap
+# on its middle opens its popup, whose padlock toggles it; a piece dragged
+# out of the grid comes out unlocked; a card dragged onto the grid shows
+# its preview in its card orientation, HOLD_ROWS above the finger, turned
+# a quarter clockwise by rotate, moved by a drag of a cube, placed by
+# confirm only where it fits (valid).
+VISION_ID = 36
+VISION = next(e for e in TABLE["weapons"] if e["id"] == VISION_ID)
+VISION_VARIANTS = engraving_rules.variants(VISION, engraving_rules.any_orientation(TABLE))
+VISION_CELLS = {tuple(c) for c in VISION["cells"]}
+ATK_PIECES = {1: [(0, 1), (0, 2), (0, 3), (1, 1)], 4: [(0, 4), (1, 2), (1, 3), (1, 4)],
+              5: [(2, 2), (2, 3), (2, 4), (3, 2)], 7: [(3, 3), (4, 1), (4, 2), (4, 3)]}
+CARDS_22 = [("I", 39, "gold"), ("L", 39, "atk"), ("I", 35, "gold"), ("I", 36, "gold"),
+            ("L", 39, "atk"), ("L", 39, "atk"), ("I", 40, "gold"), ("L", 38, "atk")]
+
+
+def cell_at(point):
+    col = (point[0] - es.GRID_LEFT) / es.CELL_W - 0.5
+    row = (point[1] - es.GRID_TOP) / es.CELL_H - 0.5
+    return row, col
 
 
 class EngravingGame(Game):
-    """The scripted game with the engraving screen: the grid's cells and
-    pieces, the 8 cards; a padlock tap toggles it, a drag places the card's
-    piece (base orientation) centred where it is dropped."""
-
-    def __init__(self, cards, pieces=(), **state):
+    def __init__(self, pieces=None, **state):
         super().__init__(**state)
-        cells = {(r, c): ("empty" if (r, c) in AMBITION_CELLS else "none") for r in range(5) for c in range(5)}
-        for piece in pieces:
-            for cell in piece:
-                cells[cell] = "piece"
-        self.state["engraving"] = {"cells": cells, "pieces": [sorted(p) for p in pieces], "cards": cards}
-        self.state["drag_misses"] = False
+        pieces = ATK_PIECES if pieces is None else pieces
+        self.state["engraving"] = {
+            "pieces": {index: sorted(cells) for index, cells in pieces.items()},
+            "cards": [{"index": i, "shape": s, "level": lv, "kind": k, "locked": True, "placed": i in pieces}
+                      for i, (s, lv, k) in enumerate(CARDS_22)],
+            "popup": None, "preview": None}
+        self.state.setdefault("corner_works", True)
+        self.state.setdefault("popup_lock_works", True)
 
     def snapshot(self):
         width, height, state = super().snapshot()
         return width, height, copy.deepcopy(state)
+
+    def occupied(self):
+        return {cell for cells in self.state["engraving"]["pieces"].values() for cell in cells}
 
     def apply(self, screen, move, point, end=None):
         s, eng = self.state, self.state["engraving"]
@@ -592,21 +607,60 @@ class EngravingGame(Game):
             s["screen"] = "soul"
         elif move == "lock":
             index = next(i for i in range(8) if es.lock_point(i) == point)
-            eng["cards"][index]["locked"] = not eng["cards"][index]["locked"]
+            if s["corner_works"]:
+                eng["cards"][index]["locked"] = not eng["cards"][index]["locked"]
+        elif move == "piece":
+            eng["popup"] = next(i for i in range(8) if es.drag_point(i) == point)
+        elif screen == "soul_weapon_engraving_piece" and move == "padlock":
+            if s["popup_lock_works"]:
+                card = eng["cards"][eng["popup"]]
+                card["locked"] = not card["locked"]
+        elif screen == "soul_weapon_engraving_piece" and move == "close":
+            eng["popup"] = None
+        elif move == "remove_piece":
+            row, col = cell_at(point)
+            cell = (round(row), round(col))
+            index = next(i for i, cells in eng["pieces"].items() if cell in cells)
+            del eng["pieces"][index]
+            eng["cards"][index].update(placed=False, locked=False)
         elif move == "drag_piece":
             index = next(i for i in range(8) if es.drag_point(i) == point)
-            shape = TABLE["shapes"][eng["cards"][index]["shape"]]["cells"]
-            height, width = max(r for r, _ in shape) + 1, max(c for _, c in shape) + 1
-            row = (end[1] - es.GRID_TOP) / es.CELL_H - 0.5 - (height - 1) / 2 + (1 if s["drag_misses"] else 0)
-            col = (end[0] - es.GRID_LEFT) / es.CELL_W - 0.5 - (width - 1) / 2
-            cells = sorted((round(row) + r, round(col) + c) for r, c in shape)
-            if all(eng["cells"].get(cell) == "empty" for cell in cells):
-                for cell in cells:
-                    eng["cells"][cell] = "piece"
-                eng["pieces"].append(cells)
-                eng["cards"][index]["placed"] = True
+            base = setup_rules.normalised([tuple(c) for c in TABLE["shapes"][eng["cards"][index]["shape"]]["cells"]])
+            row, col = cell_at(end)
+            eng["preview"] = {"card": index, "turns": 0, "centre": (row - es.HOLD_ROWS, col), "base": base}
+            self.lay()
+        elif move == "rotate":
+            eng["preview"]["turns"] += 1
+            self.lay()
+        elif move == "move":
+            a, b = cell_at(point), cell_at(end)
+            dr, dc = round(b[0] - a[0]), round(b[1] - a[1])
+            eng["preview"]["cells"] = [(r + dr, c + dc) for r, c in eng["preview"]["cells"]]
+            r0, c0 = eng["preview"]["centre"]
+            eng["preview"]["centre"] = (r0 + dr, c0 + dc)
+        elif move == "confirm":
+            preview = eng["preview"]
+            if self.valid():
+                eng["pieces"][preview["card"]] = sorted(preview["cells"])
+                eng["cards"][preview["card"]]["placed"] = True
+                eng["preview"] = None
+        elif move == "cancel":
+            eng["preview"] = None
         else:
             super().apply(screen, move, point)
+
+    def lay(self):
+        """The preview's cells: its shape turned, centred where it is held."""
+        preview = self.state["engraving"]["preview"]
+        shape = setup_rules.turned(preview["base"], preview["turns"])
+        height, width = max(r for r, _ in shape) + 1, max(c for _, c in shape) + 1
+        top = round(preview["centre"][0] - (height - 1) / 2)
+        left = round(preview["centre"][1] - (width - 1) / 2)
+        preview["cells"] = [(r + top, c + left) for r, c in shape]
+
+    def valid(self):
+        cells = self.state["engraving"]["preview"]["cells"]
+        return all(cell in VISION_CELLS and cell not in self.occupied() for cell in cells)
 
     def ports(self):
         ports = super().ports()
@@ -623,96 +677,160 @@ class EngravingGame(Game):
         return ports
 
 
-def fake_engraving_screen():
+def fake_engraving_screen(game):
+    def eng(shot):
+        return shot[2]["engraving"]
+
     def on(shot):
         return shot[2]["screen"] == "engraving"
 
+    def plain(shot):
+        return on(shot) and eng(shot)["popup"] is None and eng(shot)["preview"] is None
+
+    def grid(shot, size):
+        if not plain(shot):
+            return None
+        e = eng(shot)
+        taken = {cell for cells in e["pieces"].values() for cell in cells}
+        cells = {(r, c): "piece" if (r, c) in taken else "empty" if (r, c) in VISION_CELLS else "none"
+                 for r in range(5) for c in range(5)}
+        return {"cells": cells, "pieces": sorted(sorted(cells) for cells in e["pieces"].values())}
+
+    def cards(shot, shapes):
+        out = []
+        for card in eng(shot)["cards"] if on(shot) else []:
+            if not plain(shot):
+                out.append({"index": card["index"], "shape": None, "level": None, "kind": None, "locked": None,
+                            "placed": None, "bright": None})
+                continue
+            lit = not card["locked"]
+            out.append({"index": card["index"], "shape": None if lit else card["shape"],
+                        "level": None if lit else card["level"], "kind": None if lit else card["kind"],
+                        "locked": card["locked"], "placed": card["placed"], "bright": lit})
+        return out
+
+    def popup_padlock(shot):
+        e = eng(shot)
+        if not on(shot) or e["popup"] is None:
+            return None
+        return "closed" if e["cards"][e["popup"]]["locked"] else "open"
+
+    def bar(shot):
+        if not on(shot) or eng(shot)["preview"] is None:
+            return None
+        cells = eng(shot)["preview"]["cells"]
+        valid = all(c in VISION_CELLS for c in cells) and not set(cells) & {
+            cell for cs in eng(shot)["pieces"].values() for cell in cs}
+        return {"cancel": (0.35, 0.35), "rotate": (0.44, 0.35), "confirm": (0.53, 0.35), "valid": valid}
+
+    def cubes(shot):
+        e = eng(shot)
+        out = {cell: "cube" for cells in e["pieces"].values() for cell in cells}
+        if e["preview"]:
+            for cell in e["preview"]["cells"]:
+                if -1 <= cell[0] <= 5 and -1 <= cell[1] <= 5:
+                    out.setdefault(cell, "cube" if cell in VISION_CELLS else "red")
+        return out
+
     return SimpleNamespace(
-        title=on, weapon=lambda shot, names, font: "Ambition" if on(shot) else None,
-        grid=lambda shot, size: ({"cells": shot[2]["engraving"]["cells"], "pieces": shot[2]["engraving"]["pieces"]}
-                                 if on(shot) else None),
-        cards=lambda shot, shapes: shot[2]["engraving"]["cards"] if on(shot) else [],
-        locked=lambda shot, index: shot[2]["engraving"]["cards"][index]["locked"] if on(shot) else None,
-        lock_point=es.lock_point, drag_point=es.drag_point, cell_centre=es.cell_centre)
+        title=on, weapon=lambda shot, names, font: "Vision" if on(shot) else None, grid=grid, cards=cards,
+        locked=lambda shot, index: cards(shot, None)[index]["locked"] if on(shot) else None,
+        popup=lambda shot: on(shot) and eng(shot)["popup"] is not None, popup_padlock=popup_padlock,
+        bar=bar, cubes=cubes, lock_point=es.lock_point, drag_point=es.drag_point, cell_centre=es.cell_centre,
+        hold_point=es.hold_point, INVENTORY_DROP=es.INVENTORY_DROP, POPUP_LOCK_TAP=es.POPUP_LOCK_TAP,
+        POPUP_CLOSE_TAP=es.POPUP_CLOSE_TAP, PADLOCK_LEARNED=True, POPUP_LEARNED=True, PREVIEW_LEARNED=True)
 
 
-def engraving_part(variant):
-    return {"setup": engraving_setup.engraving_setup, "screen": fake_engraving_screen(), "rules": setup_rules,
-            "variant": lambda weapon_id, name: variant if name == variant["name"] else None}
-
-
-def engrave(game, variant):
-    loadout = {"mpw18": {"stage": 920, "preset": None, "soul_weapon": {"id": AMBITION, "variant": variant["name"]}},
+def engrave(game, variant_name):
+    loadout = {"mpw18": {"stage": 920, "preset": None, "soul_weapon": {"id": VISION_ID, "variant": variant_name}},
                "mpw4": {"stage": 915, "preset": None, "soul_weapon": None}}
-    ports, api = build(game, loadout, engraving_part(variant))
+    part = {"setup": engraving_setup.engraving_setup, "screen": fake_engraving_screen(game), "rules": setup_rules,
+            "variant": lambda weapon_id, name: VISION_VARIANTS.get(name)}
+    ports, api = build(game, loadout, part)
     return outcome(asyncio.run(api["soul_weapon"]("mpw18"))), api
 
 
-CARDS_FREE = [card(0, "I", 39), card(1, "L", 39), card(2, "I", 35), card(3, "I", 40),
-              card(4, "L", 38), card(5, "L", 37), card(6, "I", 36), card(7, "L", 30)]
+def vision_game(**state):
+    return EngravingGame(equipped=VISION_ID, selected=VISION_ID, first_id=38, owned={VISION_ID}, **state)
+
+
+def engraving_moves(game):
+    return [m[1] for m in game.moves if m[0].startswith("soul_weapon_engraving")]
 
 
 class Engraving(unittest.TestCase):
-    def test_ready_as_it_is_nothing_touched(self):
-        cards = copy.deepcopy(CARDS_FREE)
-        cards[3]["placed"] = True
-        game = EngravingGame(cards, [BAR])
-        answer, api = engrave(game, ONE_BAR)
-        self.assertEqual(answer, ("done", ""))
-        self.assertIn(("soul_weapon", "engraving"), game.moves)
-        self.assertIn(("soul_weapon_engraving", "close"), game.moves)
-        self.assertFalse([m for m in game.moves if m[1] in ("lock", "drag_piece")])
-        self.assertEqual(game.alerts, [])
+    def assert_gold_balanced(self, game):
+        eng = game.state["engraving"]
+        want = sorted(sorted(map(tuple, p["cells"])) for p in VISION_VARIANTS["Gold-balanced"]["pieces"])
+        self.assertEqual(sorted(eng["pieces"].values()), want)
+        # The bars hold the I Lv40 and Lv39; the L the three Lv39 but one.
+        self.assertEqual(sorted(i for i in eng["pieces"] if CARDS_22[i][0] == "I"), [0, 6])
+        self.assertNotIn(7, eng["pieces"])
+        self.assertTrue(all(c["locked"] for c in eng["cards"]))
+        self.assertIsNone(eng["popup"])
+        self.assertIsNone(eng["preview"])
         self.assertEqual(game.state["screen"], "battle")
-        # Ready: cached, the next time nothing is read.
+
+    def test_ready_as_it_is_nothing_touched(self):
+        game = vision_game()
+        answer, api = engrave(game, "Atk")
+        self.assertEqual(answer, ("done", ""))
+        self.assertEqual(engraving_moves(game), ["close"])
+        self.assertEqual(game.alerts, [])
         captures = game.captures
         self.assertEqual(outcome(asyncio.run(api["soul_weapon"]("mpw18"))), ("done", ""))
         self.assertEqual(game.captures, captures)
 
-    def test_locks_first_then_the_highest_level_bar_dragged(self):
-        cards = copy.deepcopy(CARDS_FREE)
-        cards[5]["locked"] = False
-        game = EngravingGame(cards)
-        answer, api = engrave(game, ONE_BAR)
-        self.assertEqual(answer, ("done", ""))
-        engraving_moves = [m[1] for m in game.moves if m[0] == "soul_weapon_engraving"]
-        self.assertEqual(engraving_moves, ["lock", "drag_piece", "close"])
-        eng = game.state["engraving"]
-        self.assertEqual(eng["pieces"], [BAR])
-        self.assertTrue(eng["cards"][3]["placed"])  # I Lv40, not the Lv39
-        self.assertTrue(all(c["locked"] for c in eng["cards"]))
+    def test_atk_to_gold_balanced_swaps_relocks_and_places(self):
+        game = vision_game()
+        answer, _ = engrave(game, "Gold-balanced")
+        self.assertEqual(answer, ("done", ""), game.alerts)
+        self.assert_gold_balanced(game)
+        moves = engraving_moves(game)
+        self.assertIn("remove_piece", moves)
+        self.assertIn("rotate", moves)
+        self.assertIn("confirm", moves)
+        # Each removal is followed by its lock, before anything else.
+        for i, move in enumerate(moves):
+            if move == "remove_piece":
+                self.assertEqual(moves[i + 1], "lock")
+        self.assertNotIn("change", moves)
         self.assertEqual(len(game.alerts), 1)
-        self.assertIn("Soul Weapon Ambition (Bar) prête : 1 pièce(s) posée(s), 1 verrouillée(s)", game.alerts[0])
+        self.assertIn("ready", game.alerts[0])
 
-    def test_a_padlock_not_read_stops_before_any_drag(self):
-        cards = copy.deepcopy(CARDS_FREE)
-        cards[2]["locked"] = None
-        game = EngravingGame(cards)
-        answer, api = engrave(game, ONE_BAR)
-        self.assertEqual(answer[0], "failed")
-        self.assertIn("cadenas pas lu fermé : n°3", answer[1])
-        self.assertFalse([m for m in game.moves if m[1] in ("lock", "drag_piece")])
-        # Not ready: not cached, read again the next time.
-        captures = game.captures
-        asyncio.run(api["soul_weapon"]("mpw18"))
-        self.assertGreater(game.captures, captures)
+    def test_a_corner_tap_without_effect_goes_through_the_popup_with_an_error(self):
+        game = vision_game(corner_works=False)
+        answer, _ = engrave(game, "Gold-balanced")
+        self.assertEqual(answer, ("done", ""), game.alerts)
+        self.assert_gold_balanced(game)
+        self.assertIn("padlock", engraving_moves(game))
+        self.assertTrue(any("corner tap" in alert and "did nothing" in alert for alert in game.alerts))
 
-    def test_a_turned_piece_is_alerted_not_guessed(self):
-        game = EngravingGame(copy.deepcopy(CARDS_FREE))
-        answer, _ = engrave(game, TURNED_BAR)
+    def test_a_piece_that_stays_unlocked_is_an_error_never_silent(self):
+        game = vision_game(corner_works=False, popup_lock_works=False)
+        answer, _ = engrave(game, "Gold-balanced")
         self.assertEqual(answer[0], "failed")
-        self.assertIn("Gravure de Ambition (Turned) pas prête", answer[1])
-        self.assertIn("rotation pas apprise", answer[1])
-        self.assertNotIn(("soul_weapon_engraving", "drag_piece"), game.moves)
-
-    def test_a_drag_landing_elsewhere_stops(self):
-        game = EngravingGame(copy.deepcopy(CARDS_FREE))
-        game.state["drag_misses"] = True
-        answer, _ = engrave(game, ONE_BAR)
-        self.assertEqual(answer[0], "failed")
-        self.assertIn("n’a pas donné les cases attendues", answer[1])
-        self.assertEqual(game.moves.count(("soul_weapon_engraving", "drag_piece")), 1)
+        self.assertIn("unlocked", answer[1])
+        self.assertTrue(any("unlocked" in alert for alert in game.alerts))
+        self.assertIsNone(game.state["engraving"]["popup"])
         self.assertEqual(game.state["screen"], "battle")
+
+    def test_a_variant_change_of_the_running_mode_is_applied_not_cached(self):
+        game = vision_game()
+        answer, api = engrave(game, "Atk")
+        self.assertEqual(answer, ("done", ""))
+        loadout = {"stage": 920, "preset": None, "soul_weapon": {"id": VISION_ID, "variant": "Gold-balanced"}}
+        answer = asyncio.run(api["ensure_soul_weapon"]("mpw18", loadout))
+        self.assertEqual(outcome(answer), ("done", ""), game.alerts)
+        self.assert_gold_balanced(game)
+
+    def test_the_lower_l_of_2026_10_21_is_swapped(self):
+        pieces = {0: [(0, 1), (0, 2), (0, 3), (0, 4)], 6: [(1, 1), (1, 2), (1, 3), (1, 4)],
+                  4: [(2, 2), (2, 3), (2, 4), (3, 2)], 7: [(3, 3), (4, 1), (4, 2), (4, 3)]}
+        game = vision_game(pieces=pieces)
+        answer, _ = engrave(game, "Gold-balanced")
+        self.assertEqual(answer, ("done", ""), game.alerts)
+        self.assert_gold_balanced(game)
 
 
 if __name__ == "__main__":

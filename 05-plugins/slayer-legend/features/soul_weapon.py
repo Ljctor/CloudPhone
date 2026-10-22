@@ -28,7 +28,7 @@ is logged.
 The engraving (features/engraving_setup.py), once the target is equipped:
 its engraving screen (the card's big icon) is set up as the loadout's
 variant: every card locked first, the highest-level cards placed, all 8
-read locked at the end. Only then is the step done ("prête"); otherwise it
+read locked at the end. Only then is the step done ("ready"); otherwise it
 stops with one alert naming what is left. It may take longer than the
 60 s budget: then said in the log and in the ready notice. The cache is
 set only once the engraving read ready.
@@ -155,7 +155,7 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
             return shot, None, None
         pieces = engraving["variant"](entry["id"], variant)
         if pieces is None:
-            return shot, f"Gravure de {entry['name']} : variante {variant} inconnue", None
+            return shot, f"Engraving of {entry['name']}: variant {variant} unknown", None
         shot, done = await setup(shot, entry, variant, pieces, names, reader.CARD_FONT, table["shapes"])
         if not done["ok"]:
             return shot, engraving["rules"].alert(entry["name"], variant, done["problems"]), done
@@ -174,8 +174,8 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
             raise Stop(f"{target}: two weapons share this name, not equipped")
         cache = status["cache"]
         last_input = (ports.last_input() or {}).get("wall") if hasattr(ports, "last_input") else None
-        if cache and cache["id"] == target_id and rules.fresh_cache(cache, ports.clock.wall(), last_input,
-                                                                    status["relaunched"]):
+        if cache and cache["id"] == target_id and cache.get("variant") == variant \
+                and rules.fresh_cache(cache, ports.clock.wall(), last_input, status["relaunched"]):
             logging.info(f"Slayer Legend soul weapon: {target} equipped (last read), skipped in 0.0 s")
             status["last"] = {"result": "cached", "weapon": target, "seconds": 0.0}
             return "cached"
@@ -221,11 +221,11 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
         status["last"] = {"result": result, "weapon": target, "seconds": seconds, "engraving": mismatch}
         if mismatch:
             raise Stop(mismatch)
-        status["cache"] = {"id": target_id, "at": ports.clock.wall()}
-        if done and (done["locked"] or done["dragged"]):
-            await ports.notify(f"Soul Weapon {target} ({variant}) prête : {len(done['dragged'])} pièce(s) posée(s), "
-                               f"{len(done['locked'])} verrouillée(s), en {seconds} s"
-                               + (f" (plus que les {BUDGET} s prévues)" if over else ""))
+        status["cache"] = {"id": target_id, "variant": variant, "at": ports.clock.wall()}
+        if done and (done["locked"] or done["placed"] or done["removed"]):
+            await ports.notify(f"Soul Weapon {target} ({variant}) ready: {len(done['removed'])} removed, "
+                               f"{len(done['placed'])} placed, {len(done['locked'])} locked, in {seconds} s"
+                               + (f" (over the {BUDGET} s budget)" if over else ""))
         return result
 
     def relaunched():
