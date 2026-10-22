@@ -25,7 +25,7 @@ GET, POST, DELETE /lease               features/lease.py (ports.Lease)
 GET  /enabled, POST /enabled           features/power.py (the plugin's on/off switch)
 GET  /watchdog                         features/watchdog.py
 GET  /farming, POST /farming           features/stage_change.py (its real/plan switches; the soul
-                                       weapon's real/off, features/soul_weapon.py)
+                                       weapon's and the engraving's real/off, features/soul_weapon.py)
 GET  /templates                        templates.json as it is: {French template: English}, the
                                        English of every status text the plugin answers with
                                        ({template, params}, features/texts.py), for the page

@@ -34,7 +34,11 @@ made with the user present, recorded here: date, readings, result.
 - Slayer Legend engraving lock and swap (`PADLOCK_LEARNED`,
   `POPUP_LEARNED`, `PREVIEW_LEARNED`, opened 2026-10-22 on the captures
   eg2–eg10): to run with the user present (Vision, Atk to Gold-balanced),
-  then recorded here.
+  then recorded here. Until then the engraving switch (`POST /farming`
+  `{engraving}`) stays "off" (its default: no lock, removal, placing or
+  preview, an error alert "engraving not set up: first supervised run
+  pending", the weapon not ready); it goes to "real" only with the user
+  present, for that run.
 - Slayer Legend Equip tap (`TAG_LEARNED`): closed until the Equip tag is
   captured.
 

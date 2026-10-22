@@ -30,6 +30,9 @@ a fresh capture of that screen (engraving_screen.py reads it).
 - closed with the red X, back on Soul Weapon. Ready only when
   rules.check finds nothing left.
 
+Nothing at all while the engraving switch (switch()) is not "real": no
+gesture, one error log, and the setup not ready (rules.NOT_SET_UP).
+
 Never touched: Change, the gear, %. A bright (unlocked) card's drawing is
 not read: each slot keeps the shape and level read while it was locked.
 """
@@ -46,11 +49,12 @@ MOVE_MS = 800
 BUDGET = 60
 
 
-def engraving_setup(ports, screen, rules, helpers, wait_for, back_on):
+def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lambda: "off"):
     """screen: engraving_screen.py; rules: engraving_setup_rules.py;
     helpers: the soul weapon's (look, tap, front, Stop); wait_for(test,
     most): the soul weapon's polled wait; back_on(shot): the Soul Weapon
-    screen is shown (its title)."""
+    screen is shown (its title); switch(): the engraving switch, "real"
+    or "off"."""
     Stop = helpers.Stop
     # The gestures of the setup running (taps and drags).
     gestures = [0]
@@ -97,6 +101,10 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on):
         placed, seconds, gestures})."""
         since = ports.clock.monotonic()
         gestures[0] = 0
+        if switch() != "real":
+            ports.log("error", f"Engraving: {ports.english(ports.t(rules.NOT_SET_UP))}")
+            return shot, {"ok": False, "problems": [ports.t(rules.NOT_SET_UP)], "locked": [], "removed": [],
+                          "placed": [], "dragged": [], "seconds": 0.0, "gestures": 0}
         size = entry.get("grid")
         gold = rules.gold_variant(variant_name)
         known = {}

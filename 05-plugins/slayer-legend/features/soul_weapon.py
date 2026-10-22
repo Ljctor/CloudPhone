@@ -32,6 +32,14 @@ read locked at the end. Only then is the step done ("ready"); otherwise it
 stops with one alert naming what is left. It may take longer than the
 60 s budget: then said in the log and in the ready notice. The cache is
 set only once the engraving read ready.
+
+The engraving's own switch, engraving (state.json's "engraving"), is "off"
+by default: until a first run supervised with the user, no engraving
+gesture is made (not even the card's big icon). An engraving asked then
+stops the step with an error, « gravure pas mise en place : premier
+passage supervisé en attente » ("engraving not set up: first supervised
+run pending"), and the weapon is not ready. "real" only with the user
+present (POST /farming {engraving}).
 """
 
 
@@ -60,8 +68,10 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
     saved = ports.store.saved.get("soul_weapon") or {}
     status = {"direction": saved.get("direction") if saved.get("direction") in (1, -1) else None,
               "switch": "off" if saved.get("switch") == "off" else "real",
+              "engraving": "real" if ports.store.saved.get("engraving") == "real" else "off",
               "cache": None, "relaunched": None, "last": None}
     ports.store.register("soul_weapon", lambda: {"direction": status["direction"], "switch": status["switch"]})
+    ports.store.register("engraving", lambda: status["engraving"])
     Stop = helpers.Stop
 
     async def wait_for(test, most=None):
@@ -144,7 +154,8 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
 
     setup = None
     if engraving:
-        setup = engraving["setup"](ports, engraving["screen"], engraving["rules"], helpers, wait_for, reader.title)
+        setup = engraving["setup"](ports, engraving["screen"], engraving["rules"], helpers, wait_for, reader.title,
+                                   lambda: status["engraving"])
 
     async def engrave(shot, entry, variant):
         """On the Soul Weapon screen with the target equipped: its engraving
@@ -153,6 +164,9 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
         or None)."""
         if not (setup and variant and entry.get("grid")):
             return shot, None, None
+        if status["engraving"] != "real":
+            # No gesture: the caller logs it as an error and alerts.
+            return shot, ports.t(engraving["rules"].NOT_SET_UP), None
         pieces = engraving["variant"](entry["id"], variant)
         if pieces is None:
             return shot, ports.t("Gravure de {name} : variante {variant} inconnue", name=entry["name"], variant=variant), None
@@ -250,7 +264,17 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
             status["switch"] = value
             ports.store.save()
 
+    def set_engraving(value):
+        """"off" (the default: no engraving gesture) or "real" (only once
+        the first run is supervised with the user)."""
+        if value != status["engraving"]:
+            ports.log("normal", f"Soul weapon: engraving switched to {value}")
+            status["engraving"] = value
+            status["cache"] = None
+            ports.store.save()
+
     return {"ensure": ensure, "relaunched": relaunched, "forget": forget, "set_switch": set_switch,
-            "switch": lambda: status["switch"],
-            "state": lambda: {"switch": status["switch"], "direction": status["direction"], "last": status["last"],
+            "switch": lambda: status["switch"], "set_engraving": set_engraving,
+            "state": lambda: {"switch": status["switch"], "engraving": status["engraving"],
+                              "direction": status["direction"], "last": status["last"],
                               "cached": (status["cache"] or {}).get("id")}}

@@ -670,6 +670,8 @@ class EngravingGame(Game):
     def ports(self):
         ports = super().ports()
         game = self
+        # The engraving switch: "real" (the supervised run done) unless said.
+        ports.store.saved = {"engraving": game.state.get("engraving_switch", "real")}
 
         async def swipe(shot, screen, move, start, end, milliseconds, verified=False, seen=None):
             refusal = nav.guard(screen, move, start[0], start[1], "swipe", verified, seen)
@@ -846,6 +848,64 @@ class Engraving(unittest.TestCase):
         answer = asyncio.run(api["ensure_soul_weapon"]("mpw18", loadout))
         self.assertEqual(outcome(answer), ("done", ""), game.alerts)
         self.assert_gold_balanced(game)
+
+    def test_engraving_off_by_default_no_gesture_and_an_error(self):
+        game = vision_game(engraving_switch=None)
+        with self.assertLogs(level="INFO") as logs:
+            answer, api = engrave(game, "Gold-balanced")
+        self.assertEqual(answer, ("failed", "Soul Weapon : gravure pas mise en place : premier passage supervisé "
+                                            "en attente"))
+        self.assertEqual(engraving_moves(game), [])
+        self.assertNotIn(("soul_weapon", "engraving"), game.moves)
+        self.assertTrue(any("ERROR" in line and "engraving not set up: first supervised run pending" in line
+                            for line in logs.output))
+        # Not ready: read again next time, never cached.
+        self.assertEqual(asyncio.run(api["soul_weapon"]("mpw18"))["result"], "failed")
+        self.assertEqual(engraving_moves(game), [])
+        self.assertNotIn("ready", " ".join(game.alerts))
+        # The watchdog's relaunch: one alert, in English.
+        asyncio.run(api["relaunched"]("mpw18"))
+        self.assertEqual(len(game.alerts), 1)
+        self.assertIn("engraving not set up: first supervised run pending", game.alerts[0])
+        self.assertEqual(engraving_moves(game), [])
+
+    def test_engraving_off_the_setup_itself_makes_no_gesture(self):
+        game = vision_game()
+        ports = game.ports()
+        helpers = SimpleNamespace(look=None, tap=None, front=None, Stop=RuntimeError)
+        setup = engraving_setup.engraving_setup(ports, fake_engraving_screen(game), setup_rules, helpers,
+                                                None, None)
+        entry = next(e for e in TABLE["weapons"] if e["id"] == VISION_ID)
+        shot, done = asyncio.run(setup("shot", entry, "Atk", VISION_VARIANTS["Atk"], [], None, {}))
+        self.assertFalse(done["ok"])
+        self.assertEqual(game.moves, [])
+
+    def test_engraving_switch_through_post_farming(self):
+        game = vision_game(engraving_switch=None)
+        loadout = {"mpw18": {"stage": 920, "preset": None, "soul_weapon": {"id": VISION_ID, "variant": "Atk"}}}
+        part = {"setup": engraving_setup.engraving_setup, "screen": fake_engraving_screen(game), "rules": setup_rules,
+                "variant": lambda weapon_id, name: VISION_VARIANTS.get(name)}
+        ports = game.ports()
+        soul = {"feature": feature.soul_weapon, "reader": fake_reader(game), "rules": rules, "table": TABLE,
+                "loadout": lambda mode: loadout[mode], "engraving": part}
+        built = stage_change.stage_change(ports, fake_screens(), SimpleNamespace(regions=lambda table: []),
+                                          SimpleNamespace(), stage_rules, STAGES, soul)
+        post = next(h for m, p, h in built["routes"] if m == "POST")
+
+        class Request:
+            async def json(self):
+                return self.body
+
+        request = Request()
+        request.body = {"engraving": "on"}
+        self.assertEqual(asyncio.run(post(request))[0], 400)
+        self.assertEqual(ports.store.sections["engraving"](), "off")
+        request.body = {"engraving": "real"}
+        status, body = asyncio.run(post(request))
+        self.assertEqual((status, body["soul_weapon"]["engraving"]), (200, "real"))
+        self.assertEqual(ports.store.sections["engraving"](), "real")
+        self.assertEqual(outcome(asyncio.run(built["api"]["soul_weapon"]("mpw18"))), ("done", ""))
+        self.assertEqual(engraving_moves(game), ["close"])
 
     def test_the_lower_l_of_2026_10_21_is_swapped(self):
         pieces = {0: [(0, 1), (0, 2), (0, 3), (0, 4)], 6: [(1, 1), (1, 2), (1, 3), (1, 4)],

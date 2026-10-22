@@ -6,7 +6,8 @@ GET  /farming   {switches: {stage_change, preset, auto}, soul_weapon, last}
                 (last: {result, text_t, timings, mode}, text_t a status text)
 POST /farming   {stage_change, preset, auto}: each "real" or "plan" (a
                 field absent keeps its value); soul_weapon: "real" or
-                "off"; needs the page token
+                "off"; engraving: "off" or "real" (only with the user
+                present: features/soul_weapon.py); needs the page token
 
 Each repair has its switch, kept in state.json ("farming"), "plan" by
 default: then the plan is written to the log and nothing is tapped. Each
@@ -460,9 +461,10 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         except (ValueError, TypeError, AttributeError):
             body = None
         if not isinstance(body, dict) or any(body.get(k) not in (None, "real", "plan") for k in SWITCHES) \
-                or body.get("soul_weapon") not in (None, "real", "off"):
+                or body.get("soul_weapon") not in (None, "real", "off") \
+                or body.get("engraving") not in (None, "real", "off"):
             return ports.respond({"error_t": t("Attendu : {expected}", expected='{stage_change, preset, auto}: "real" | '
-                                               '"plan"; soul_weapon: "real" | "off"')}, status=400)
+                                               '"plan"; soul_weapon, engraving: "real" | "off"')}, status=400)
         if body.get("auto") == "real" and not AUTO_TAP_LEARNED:
             return ports.respond({"error_t": t(AUTO_NOT_LEARNED)}, status=400)
         for name in SWITCHES:
@@ -472,6 +474,8 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
                 switches[name] = body[name]
         if body.get("soul_weapon") and souls:
             souls["set_switch"](body["soul_weapon"])
+        if body.get("engraving") and souls:
+            souls["set_engraving"](body["engraving"])
         ports.store.save()
         return await handle_get(request)
 

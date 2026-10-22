@@ -35,6 +35,9 @@ GOLD = "gold"
 # this many preview moves (turns and shifts) for one placement.
 MOST_STEPS = 24
 MOST_PREVIEW = 8
+# The engraving switch "off" (the default, until a first run supervised
+# with the user): no engraving gesture, this error instead.
+NOT_SET_UP = "gravure pas mise en place : premier passage supervisé en attente"
 
 
 def normalised(cells):

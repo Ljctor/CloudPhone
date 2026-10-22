@@ -90,7 +90,11 @@ Rules:
   - Soul weapon engraving (right after the equip, the card's big icon;
     the step is done, the weapon « prête », only once the grid is the
     loadout's variant with the highest-level cards and all 8 cards read
-    locked; otherwise one alert naming what is left):
+    locked; otherwise one alert naming what is left). Only while its
+    switch `engraving` is "real", set only with the user present for the
+    first supervised run; "off" by default: not one engraving gesture, an
+    error alert "engraving not set up: first supervised run pending", the
+    weapon not ready:
     - Its title, then the weapon's name must read the target's; closed
       with its red X (bottom left).
     - A padlock: the padlock in a card's top right corner, only on a

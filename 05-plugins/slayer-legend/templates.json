@@ -108,6 +108,7 @@
   "fermeture du panneau du menu du bas": "closing the bottom menu's panel",
   "forme et icône en désaccord : n°{numbers}": "shape and icon disagree: #{numbers}",
   "glisser {shape} Lv.{level} (n°{number}) n’a pas donné les cases attendues": "dragging {shape} Lv.{level} (#{number}) did not give the expected cells",
+  "gravure pas mise en place : premier passage supervisé en attente": "engraving not set up: first supervised run pending",
   "grille illisible": "grid unreadable",
   "grille {size}x{size} pas encore calibrée": "{size}x{size} grid not calibrated yet",
   "holder : 1 à 40 lettres, chiffres, espaces, '.', '_' ou '-', pas un nom du plugin": "holder: 1 to 40 letters, digits, spaces, '.', '_' or '-', not one of the plugin's own names",
