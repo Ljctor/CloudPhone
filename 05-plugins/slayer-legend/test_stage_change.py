@@ -377,7 +377,7 @@ class Sequence(unittest.TestCase):
     def test_wrong_landing_stops(self):
         game = Game(stage=915, move_lands=916)
         answer = run(game, lambda api: api["farm"](914, "III", "mpw18"))
-        self.assertIn("vérification après Move", answer["text"])
+        self.assertIn("stage 914 non ouvert par le jeu", answer["text"])
         self.assertIn("916", answer["text"])
         # Stopped there: nothing after the Move.
         self.assertEqual(game.moves[-1], ("stage_select", "move"))

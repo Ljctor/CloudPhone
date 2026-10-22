@@ -706,7 +706,8 @@ def fake_engraving_screen(game):
             lit = not card["locked"]
             out.append({"index": card["index"], "shape": None if lit else card["shape"],
                         "level": None if lit else card["level"], "kind": None if lit else card["kind"],
-                        "locked": card["locked"], "placed": card["placed"], "bright": lit})
+                        "locked": None if card["index"] in game.state.get("padlock_unread", ()) else card["locked"],
+                        "placed": card["placed"], "bright": lit})
         return out
 
     def popup_padlock(shot):
@@ -814,6 +815,23 @@ class Engraving(unittest.TestCase):
         self.assertTrue(any("unlocked" in alert for alert in game.alerts))
         self.assertIsNone(game.state["engraving"]["popup"])
         self.assertEqual(game.state["screen"], "battle")
+
+    def test_an_unreadable_padlock_at_the_end_is_an_error_never_ready(self):
+        game = vision_game(padlock_unread={2})
+        answer, _ = engrave(game, "Atk")
+        self.assertEqual(answer[0], "failed")
+        self.assertIn("Engraving: #3 left unlocked (padlock unreadable)", game.alerts)
+        # Never tapped: a tap on a closed padlock opens it.
+        self.assertNotIn("lock", engraving_moves(game))
+        self.assertTrue(game.state["engraving"]["cards"][2]["locked"])
+
+    def test_the_engraving_step_is_timed_on_its_own(self):
+        game = vision_game()
+        with self.assertLogs(level="INFO") as logs:
+            answer, _ = engrave(game, "Gold-balanced")
+        self.assertEqual(answer, ("done", ""), game.alerts)
+        self.assertTrue(any("engraving step took" in line and "gestures)" in line for line in logs.output))
+        self.assertRegex(game.alerts[0], r"\(engraving [\d.]+ s, [1-9]\d* gestures\)")
 
     def test_a_variant_change_of_the_running_mode_is_applied_not_cached(self):
         game = vision_game()

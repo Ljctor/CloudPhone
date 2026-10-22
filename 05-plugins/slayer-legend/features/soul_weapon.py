@@ -210,7 +210,11 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
         if memory["direction"] in (1, -1) and memory["direction"] != status["direction"]:
             status["direction"] = memory["direction"]
             ports.store.save()
+        began = ports.clock.monotonic()
         shot, mismatch, done = await engrave(shot, entry, variant)
+        engraved = round(ports.clock.monotonic() - began, 1)
+        if done:
+            logging.info(f"Slayer Legend soul weapon: engraving step took {engraved} s ({done['gestures']} gestures)")
         await close_screen(shot)
         seconds = round(ports.clock.monotonic() - since, 1)
         over = seconds > BUDGET
@@ -224,7 +228,8 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
         status["cache"] = {"id": target_id, "variant": variant, "at": ports.clock.wall()}
         if done and (done["locked"] or done["placed"] or done["removed"]):
             await ports.notify(f"Soul Weapon {target} ({variant}) ready: {len(done['removed'])} removed, "
-                               f"{len(done['placed'])} placed, {len(done['locked'])} locked, in {seconds} s"
+                               f"{len(done['placed'])} placed, {len(done['locked'])} locked, in {seconds} s "
+                               f"(engraving {engraved} s, {done['gestures']} gestures)"
                                + (f" (over the {BUDGET} s budget)" if over else ""))
         return result
 

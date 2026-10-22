@@ -213,7 +213,9 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
                 shot, seen = await settle(select.battle_stage, names, accept=lambda v: v is not None,
                                           timeout=MOVE_SETTLE)
                 if seen != target:
-                    raise Stop(f"vérification après Move (lu : {seen or 'rien'})")
+                    logging.info(f"Slayer Legend stage change: stage {target} not opened by the game "
+                                 f"(read after Move: {seen or 'nothing'})")
+                    raise Stop(f"stage {target} non ouvert par le jeu (lu après Move : {seen or 'rien'})")
                 return
             if step[0] == "arrow":
                 await tap(shot, "stage_select", step[1], select.ARROW_TAPS[step[1]])

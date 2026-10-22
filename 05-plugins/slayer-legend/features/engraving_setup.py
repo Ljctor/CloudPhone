@@ -24,7 +24,8 @@ a fresh capture of that screen (engraving_screen.py reads it).
     rules.MOST_PREVIEW moves); else its cancel. Afterwards the cells must
     form that piece, the card read E and its padlock closed (else locked).
 - before closing: a fresh capture must read all 8 padlocks closed; a card
-  still open is locked; one that stays open is an error alert, never left
+  still open is locked; one that stays open, or whose padlock stays
+  unreadable (never tapped), is an error alert and a problem, never left
   silently;
 - closed with the red X, back on Soul Weapon. Ready only when
   rules.check finds nothing left.
@@ -52,6 +53,16 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on):
     most): the soul weapon's polled wait; back_on(shot): the Soul Weapon
     screen is shown (its title)."""
     Stop = helpers.Stop
+    # The gestures of the setup running (taps and drags).
+    gestures = [0]
+
+    async def tap(*args, **kwargs):
+        gestures[0] += 1
+        await helpers.tap(*args, **kwargs)
+
+    async def swipe(*args, **kwargs):
+        gestures[0] += 1
+        await ports.swipe(*args, **kwargs)
 
     def read(shot, size, shapes):
         return {"grid": screen.grid(shot, size), "cards": screen.cards(shot, shapes)}
@@ -84,8 +95,9 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on):
 
     async def setup(shot, entry, variant_name, variant, names, card_font, shapes):
         """(shot back on Soul Weapon, {ok, problems, locked, removed,
-        placed, seconds})."""
+        placed, seconds, gestures})."""
         since = ports.clock.monotonic()
+        gestures[0] = 0
         size = entry.get("grid")
         gold = rules.gold_variant(variant_name)
         known = {}
@@ -110,7 +122,7 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on):
             if reading["cards"][index]["locked"] is not False:
                 return reading["cards"][index]["locked"] is True
             if not done["corner_failed"]:
-                await helpers.tap(shot, "soul_weapon_engraving", "lock", screen.lock_point(index), verified=True)
+                await tap(shot, "soul_weapon_engraving", "lock", screen.lock_point(index), verified=True)
                 shot, closed = await wait_for(lambda s: screen.locked(s, index) is True, 2.0)
                 if closed:
                     done["locked"].append(index)
@@ -123,14 +135,14 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on):
                 state = await ports.analyse(screen.locked, shot, index)
                 if state is not False:
                     return state is True
-                await helpers.tap(shot, "soul_weapon_engraving", "piece", screen.drag_point(index), verified=True)
+                await tap(shot, "soul_weapon_engraving", "piece", screen.drag_point(index), verified=True)
             shot, state = await wait_for(screen.popup_padlock)
             if state == "open":
-                await helpers.tap(shot, "soul_weapon_engraving_piece", "padlock", screen.POPUP_LOCK_TAP,
+                await tap(shot, "soul_weapon_engraving_piece", "padlock", screen.POPUP_LOCK_TAP,
                                   verified=True)
                 shot, state = await wait_for(lambda s: screen.popup_padlock(s) == "closed" and "closed")
             if await ports.analyse(screen.popup, shot):
-                await helpers.tap(shot, "soul_weapon_engraving_piece", "close", screen.POPUP_CLOSE_TAP)
+                await tap(shot, "soul_weapon_engraving_piece", "close", screen.POPUP_CLOSE_TAP)
                 await wait_for(lambda s: not screen.popup(s))
             shot = await helpers.look()
             if await ports.analyse(screen.locked, shot, index) is True:
@@ -145,7 +157,7 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on):
                 return False
             start = screen.cell_centre(*cells[0])
             await helpers.front()
-            await ports.swipe(shot, "soul_weapon_engraving", "remove_piece", start, screen.INVENTORY_DROP,
+            await swipe(shot, "soul_weapon_engraving", "remove_piece", start, screen.INVENTORY_DROP,
                               REMOVE_MS, verified=True)
             shot, after = await steady(size, shapes)
             freed = [c["index"] for c, b in zip(after["cards"], before["cards"]) if b["placed"] and not c["placed"]]
@@ -171,7 +183,7 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on):
             base = rules.normalised([tuple(c) for c in shapes[card["shape"]]["cells"]])
             target = screen.hold_point(cells)
             await helpers.front()
-            await ports.swipe(shot, "soul_weapon_engraving", "drag_piece", screen.drag_point(index), target,
+            await swipe(shot, "soul_weapon_engraving", "drag_piece", screen.drag_point(index), target,
                               DRAG_MS, verified=True)
             turns = 0
             for _ in range(rules.MOST_PREVIEW):
@@ -182,16 +194,16 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on):
                 now = await ports.analyse(screen.cubes, shot)
                 step = rules.preview_step(under, set(now), found["valid"], base, turns, cells)
                 if step[0] == "rotate":
-                    await helpers.tap(shot, "soul_weapon_engraving_preview", "rotate", found["rotate"], verified=True)
+                    await tap(shot, "soul_weapon_engraving_preview", "rotate", found["rotate"], verified=True)
                     turns += 1
                     await ports.clock.sleep(0.3)
                 elif step[0] == "move":
                     await helpers.front()
-                    await ports.swipe(shot, "soul_weapon_engraving_preview", "move", screen.cell_centre(*step[1]),
+                    await swipe(shot, "soul_weapon_engraving_preview", "move", screen.cell_centre(*step[1]),
                                       screen.cell_centre(*step[2]), MOVE_MS, verified=True)
                     await ports.clock.sleep(0.3)
                 elif step[0] == "confirm":
-                    await helpers.tap(shot, "soul_weapon_engraving_preview", "confirm", found["confirm"],
+                    await tap(shot, "soul_weapon_engraving_preview", "confirm", found["confirm"],
                                       verified=True)
                     shot, after = await steady(size, shapes)
                     if after["grid"] is None or sorted(cells) not in [sorted(map(tuple, p))
@@ -207,12 +219,12 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on):
                     return True
                 else:
                     break
-            await helpers.tap(shot, "soul_weapon_engraving_preview", "cancel", found["cancel"], verified=True)
+            await tap(shot, "soul_weapon_engraving_preview", "cancel", found["cancel"], verified=True)
             await wait_for(lambda s: not screen.bar(s))
             problems.append(f"placing #{index + 1} cancelled ({step[1] if step[0] == 'cancel' else 'too many moves'})")
             return False
 
-        await helpers.tap(shot, "soul_weapon", "engraving", ENGRAVING_TAP)
+        await tap(shot, "soul_weapon", "engraving", ENGRAVING_TAP)
         shot, opened = await wait_for(screen.title)
         if not opened:
             raise Stop("engraving screen not opened")
@@ -250,9 +262,14 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on):
                     problems.append(f"not done in {rules.MOST_STEPS} moves")
             # Never left with a piece unlocked: all 8 read closed first.
             shot, reading = await steady(size, shapes)
+            # A padlock unreadable is not closed: lock() reads it again and
+            # never taps it.
             for card in reading["cards"]:
-                if card["locked"] is False and not await lock(card["index"]):
-                    await error(f"#{card['index'] + 1} left unlocked")
+                if card["locked"] is not True and not await lock(card["index"]):
+                    left = f"#{card['index'] + 1} left unlocked" + (" (padlock unreadable)"
+                                                                     if card["locked"] is None else "")
+                    problems.append(left)
+                    await error(left)
             shot, reading = await steady(size, shapes)
             if size == 5 and named == entry["name"]:
                 problems = problems + [p for p in rules.check(reading["grid"], remember(reading["cards"]), variant,
@@ -264,12 +281,12 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on):
             shot = await helpers.look()
             found = await ports.analyse(screen.bar, shot)
             if found:
-                await helpers.tap(shot, "soul_weapon_engraving_preview", "cancel", found["cancel"], verified=True)
+                await tap(shot, "soul_weapon_engraving_preview", "cancel", found["cancel"], verified=True)
                 shot, _ = await wait_for(lambda s: not screen.bar(s))
             if await ports.analyse(screen.popup, shot):
-                await helpers.tap(shot, "soul_weapon_engraving_piece", "close", screen.POPUP_CLOSE_TAP)
+                await tap(shot, "soul_weapon_engraving_piece", "close", screen.POPUP_CLOSE_TAP)
                 shot, _ = await wait_for(lambda s: not screen.popup(s))
-            await helpers.tap(shot, "soul_weapon_engraving", "close", ENGRAVING_CLOSE_TAP)
+            await tap(shot, "soul_weapon_engraving", "close", ENGRAVING_CLOSE_TAP)
         shot, back = await wait_for(back_on)
         if not back:
             raise Stop("back from the engraving to Soul Weapon")
@@ -279,6 +296,6 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on):
                      f"{len(done['removed'])} removed, {len(done['placed'])} placed")
         return shot, {"ok": not problems, "problems": problems, "locked": done["locked"],
                       "removed": done["removed"], "placed": done["placed"], "dragged": done["placed"],
-                      "seconds": seconds}
+                      "seconds": seconds, "gestures": gestures[0]}
 
     return setup
