@@ -394,9 +394,33 @@ fn post_with_action_token_from(cp: &CloudPhone, path: &str, token: &str, origin:
     })
 }
 
+/// The plugin with the game running, in front (the fake's app option).
+fn with_the_game_in_front() -> CloudPhone {
+    let app = json!({"package": "com.gear2.growslayer", "activity": "com.google.firebase.MessagingUnityPlayerActivity",
+        "state": "running", "picture": [[0.36, 0.012, 0.42, 0.036, [40, 200, 60]], [0.0, 0.972, 1.0, 0.998, [225, 225, 225]]]});
+    CloudPhone::start_with(json!({"plugins": [SLAYER_LEGEND], "options": {"app": app}}))
+}
+
+#[test]
+fn slayer_legends_switch_is_not_held_by_an_input_with_the_game_away() {
+    // No game: the launcher has the focus, so a touch is not playing.
+    let cp = with(json!([SLAYER_LEGEND]));
+    let mode = "api/v1/plugins/slayer-legend/mode";
+    assert_eq!(cp.post_json("api/v1/notify", &json!({"enabled": true})).status(), 200);
+    assert_eq!(cp.post_json("api/v1/input", &json!({})).status(), 200);
+    assert_eq!(cp.post_json(mode, &json!({"mode": "mpw4", "stage4": 31})).status(), 200);
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_secs(8) {
+        let answer = cp.get_json(mode);
+        assert!(answer["hold"].is_null(), "no hold with the game away: {answer}");
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    assert!(!cp.fake().ntfy_posts().iter().any(|p| p["text"].as_str().is_some_and(|t| t.contains("en attente"))));
+}
+
 #[test]
 fn slayer_legends_switch_on_hold_while_the_user_plays_alerts_once_with_one_time_buttons() {
-    let cp = with(json!([SLAYER_LEGEND]));
+    let cp = with_the_game_in_front();
     let (mode, hold) = ("api/v1/plugins/slayer-legend/mode", "api/v1/plugins/slayer-legend/mode/hold");
     assert_eq!(cp.post_json("api/v1/notify", &json!({"enabled": true})).status(), 200);
     assert_eq!(cp.post_json(hold, &json!({"action": "resume"})).status(), 409, "nothing on hold");

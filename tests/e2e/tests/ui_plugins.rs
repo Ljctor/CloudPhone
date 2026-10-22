@@ -570,7 +570,10 @@ fn slayer_legends_switch_is_first_and_turns_the_plugin_off_in_the_gateway() {
 
 #[test]
 fn slayer_legends_switch_on_hold_shows_in_the_state_row_with_free_play_and_resume() {
-    let cp = CloudPhone::start_with(json!({"plugins": [SLAYER_LEGEND]}));
+    // The game in front: an input there is playing (on the launcher it is not).
+    let app = json!({"package": "com.gear2.growslayer", "activity": "com.google.firebase.MessagingUnityPlayerActivity",
+        "state": "running", "picture": [[0.36, 0.012, 0.42, 0.036, [40, 200, 60]], [0.0, 0.972, 1.0, 0.998, [225, 225, 225]]]});
+    let cp = CloudPhone::start_with(json!({"plugins": [SLAYER_LEGEND], "options": {"app": app}}));
     let mode = "api/v1/plugins/slayer-legend/mode";
     // The user plays: the switch to mpw4 is on hold.
     assert_eq!(cp.post_json("api/v1/input", &json!({})).status(), 200);
