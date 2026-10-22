@@ -9,11 +9,12 @@ English is chosen and falls back to French without one. So:
 - every French literal (an accented letter, or a French word) outside the
   English tables is a key of one: part 04's EN for part 04, part 04's EN
   or one of this plugin's ENGLISH tables for the plugin;
-- no table entry is orphaned: each key is a literal of its sources, or for
-  the plugin a template of templates.json (the gateway's texts, sent as
-  {template, params});
-- templates.json, when there, gives each template an English text with
-  the same {placeholders} and no French;
+- no table entry is orphaned: each key is a literal of its sources, or a
+  template the gateway sends as {template, params}: for the plugin one of
+  templates.json, for part 04 one of TEMPLATES in its gateway's
+  core/texts.py (GET /api/v1/templates);
+- templates.json and TEMPLATES, when there, give each template an English
+  text with the same {placeholders} and no French;
 - an entry's English has the same {placeholders} as its French.
 
 Log records are English already (written with english(), or by the
@@ -22,6 +23,7 @@ server): their literals are keys like any other.
 Not installed on the server (install.sh skips test_*.py).
 """
 
+import ast
 import glob
 import json
 import os
@@ -31,6 +33,8 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 PAGE = os.path.join(HERE, "..", "..", "04-cloud-phone-app", "src", "overlay", "js", "example", "src")
 TEMPLATES = os.path.join(HERE, "templates.json")
+GATEWAY_TEXTS = os.path.join(HERE, "..", "..", "04-cloud-phone-app", "src", "overlay", "gateway", "src",
+                             "videobridge_gateway", "core", "texts.py")
 
 ACCENTS = re.compile(r"[àâäçéèêëîïôöùûüÿœæÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŸŒÆ«»]")
 # French words that are no English words.
@@ -144,6 +148,18 @@ def sources(paths, start):
     return texts, tables
 
 
+def gateway_templates():
+    """TEMPLATES of part 04's core/texts.py ({French: English}, a literal
+    dict), or None without the file."""
+    if not os.path.exists(GATEWAY_TEXTS):
+        return None
+    for node in ast.walk(ast.parse(read(GATEWAY_TEXTS))):
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target] if isinstance(node, ast.AnnAssign) else []
+        if any(isinstance(t, ast.Name) and t.id == "TEMPLATES" for t in targets):
+            return ast.literal_eval(node.value)
+    raise AssertionError("no TEMPLATES in " + GATEWAY_TEXTS)
+
+
 class PageTexts(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -154,6 +170,7 @@ class PageTexts(unittest.TestCase):
         if os.path.exists(TEMPLATES):
             with open(TEMPLATES, encoding="utf-8") as f:
                 cls.templates = json.load(f)
+        cls.gateway_templates = gateway_templates()
 
     def test_the_sources_are_found(self):
         self.assertIn("Mode et farming", self.plugin_en)
@@ -172,15 +189,15 @@ class PageTexts(unittest.TestCase):
         self.assertEqual(missing, [], "French texts with no English entry")
 
     def test_no_english_entry_of_the_page_is_orphaned(self):
-        used = {text for found in self.page.values() for text in found}
-        self.assertEqual(sorted(set(self.page_en) - used), [], "entries no source uses")
+        used = {text for found in self.page.values() for text in found} | set(self.gateway_templates or {})
+        self.assertEqual(sorted(set(self.page_en) - used), [], "entries neither a literal nor a template")
 
     def test_no_english_entry_of_the_plugin_is_orphaned(self):
         used = {text for found in self.plugin.values() for text in found} | set(self.templates or {})
         self.assertEqual(sorted(set(self.plugin_en) - used), [], "entries neither a literal nor a template")
 
     def test_english_entries_keep_their_placeholders_and_have_no_french(self):
-        for table in (self.page_en, self.plugin_en, self.templates or {}):
+        for table in (self.page_en, self.plugin_en, self.templates or {}, self.gateway_templates or {}):
             for source, english in table.items():
                 with self.subTest(source=source):
                     self.assertIsInstance(english, str)

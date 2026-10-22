@@ -1,6 +1,6 @@
-import { tr } from './i18n';
+import { loadTemplates, tr } from './i18n';
 import { usePlugins } from './plugins';
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Emulator, logger } from '../../src';
 import { PAGE_CSS, styles } from './styles';
 import { postFetch, postHeaders } from './api';
@@ -42,6 +42,11 @@ function App() {
   // The gateway serves this page: same origin, no CORS.
   const gateway = window.location.host;
   const gatewayUrl = `${window.location.protocol}//${gateway}`;
+  // The gateway's templates' English, then a render that uses it.
+  const [, setTemplates] = useState(0);
+  useEffect(() => {
+    loadTemplates(gatewayUrl).then(() => setTemplates((n) => n + 1));
+  }, [gatewayUrl]);
   const display = useAndroidDisplay(gatewayUrl);
   const screen = useFittedScreen(display, barFolded, settings.barDocked);
   const stats = useStreamStats(deviceRef, gatewayUrl);

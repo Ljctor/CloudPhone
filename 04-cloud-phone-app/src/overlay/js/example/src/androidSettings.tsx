@@ -88,10 +88,11 @@ export function EmulatorSettings({ gatewayUrl, settings, refresh, rowStyle, labe
       });
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
-        setError(body.error ?? tr('Erreur {status}', { status: response.status }));
+        // A refusal as {template, params} (see GET /api/v1/templates).
+        setError(body.error_t ?? { template: 'Erreur {status}', params: { status: response.status } });
       }
     } catch {
-      setError(tr('Gateway injoignable'));
+      setError('Gateway injoignable');
     }
     refresh();
   };
@@ -128,7 +129,7 @@ export function EmulatorSettings({ gatewayUrl, settings, refresh, rowStyle, labe
           : tr('Android redémarre…')}</div>
       )}
       {request.state === 'failed' && <div style={styles.infoWarning}>{tr('Échec : {message}', { message: request.message })}</div>}
-      {error && <div style={styles.infoWarning}>{error}</div>}
+      {error && <div style={styles.infoWarning}>{tr(error)}</div>}
     </>
   );
 }

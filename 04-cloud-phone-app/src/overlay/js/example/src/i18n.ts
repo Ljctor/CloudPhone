@@ -178,6 +178,18 @@ const EN = {
   'Échec : {message}': 'Failed: {message}',
   'Gateway injoignable': 'Gateway unreachable',
   'Erreur {status}': 'Error {status}',
+  // The gateway's refusals of a settings change ({template, params}; GET
+  // /api/v1/templates gives the same).
+  'Un changement est déjà en cours': 'A change is already under way',
+  'Attendez {seconds} s avant le prochain changement': 'Wait {seconds} s before the next change',
+  'Les changements de réglages d’Android sont désactivés': 'Android settings changes are turned off',
+  'renderer, cores et memoryMb sont requis': 'renderer, cores and memoryMb are required',
+  'width, height et density vont ensemble': 'width, height and density go together',
+  'renderer doit être l’un de {choices}': 'renderer must be one of {choices}',
+  'cores doit être entre 1 et {high}': 'cores must be between 1 and {high}',
+  'memoryMb doit être un multiple de 512 entre 2048 et {high}': 'memoryMb must be a multiple of 512 between 2048 and {high}',
+  '{key} doit être entre {low} et {high}': '{key} must be between {low} and {high}',
+  'width et height doivent être pairs': 'width and height must be even',
   'Cela prend une à deux minutes. Les applications ouvertes se ferment ; les données sont conservées.':
     'This takes one to two minutes. Open apps close; data is kept.',
   // Status messages
@@ -209,10 +221,22 @@ const EN = {
   'L’image peut ralentir.': 'The image may slow down.',
 };
 
+// The gateway's texts sent as {template, params} (a refused settings
+// change), with their English: GET /api/v1/templates, { French: English }.
+// Without it they show in French. Resolves once added.
+export async function loadTemplates(gatewayUrl) {
+  try {
+    const response = await fetch(`${gatewayUrl}/api/v1/templates`, { cache: 'no-store' });
+    if (response.ok) addTranslations(await response.json());
+  } catch {
+    // Not served (an older gateway): French.
+  }
+}
+
 // Plugins bring their own English texts.
 export function addTranslations(english) {
   for (const [french, text] of Object.entries(english ?? {})) {
-    if (typeof french === 'string' && typeof text === 'string' && !(french in EN)) EN[french] = text;
+    if (typeof text === 'string' && !(french in EN)) EN[french] = text;
   }
 }
 
