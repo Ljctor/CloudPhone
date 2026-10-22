@@ -376,10 +376,22 @@ fn slayer_legends_lease_needs_the_page_token_and_only_its_holder_releases_it() {
     assert_eq!(cp.get_json(path)["lease"], Value::Null);
 }
 
-/// POST with a phone alert's one-time action token, without the page token.
+/// POST with a phone alert's one-time action token, without the page token
+/// and, as ntfy's http action sends it, without an Origin header.
 fn post_with_action_token(cp: &CloudPhone, path: &str, token: &str, body: &Value) -> u16 {
-    let (url, token, body) = (cp.url(path), token.to_string(), body.clone());
-    off_runtime(move || client().post(url).header("X-CloudPhone-Action", token).json(&body).send().unwrap().status().as_u16())
+    post_with_action_token_from(cp, path, token, None, body)
+}
+
+/// The same, with an Origin header when origin is given.
+fn post_with_action_token_from(cp: &CloudPhone, path: &str, token: &str, origin: Option<&str>, body: &Value) -> u16 {
+    let (url, token, body, origin) = (cp.url(path), token.to_string(), body.clone(), origin.map(String::from));
+    off_runtime(move || {
+        let mut request = client().post(url).header("X-CloudPhone-Action", token).json(&body);
+        if let Some(origin) = origin {
+            request = request.header("Origin", origin);
+        }
+        request.send().unwrap().status().as_u16()
+    })
 }
 
 #[test]
@@ -418,8 +430,13 @@ fn slayer_legends_switch_on_hold_while_the_user_plays_alerts_once_with_one_time_
     let token = actions.split("headers.X-CloudPhone-Action='").nth(1).unwrap().split('\'').next().unwrap().to_string();
     assert_eq!(post_with_action_token(&cp, hold, "not-a-token", &json!({"action": "resume"})), 403);
     assert_eq!(post_with_action_token(&cp, mode, &token, &json!({"mode": "free"})), 403, "only its own path");
-    // « Reprendre maintenant » from the phone: the switch runs now, once.
-    assert_eq!(post_with_action_token(&cp, hold, &token, &json!({"action": "resume", "hold": id})), 200);
+    // A foreign page's POST is refused, even with the token, which it does not spend.
+    let body = json!({"action": "resume", "hold": id});
+    assert_eq!(post_with_action_token_from(&cp, hold, &token, Some("https://example.org"), &body), 403, "foreign Origin");
+    assert_eq!(cp.get_json(mode)["hold"]["id"], id, "still on hold");
+    // « Reprendre maintenant » from the phone (ntfy sends no Origin): the
+    // switch runs now, once.
+    assert_eq!(post_with_action_token(&cp, hold, &token, &body), 200, "no Origin, a valid token");
     assert_eq!(post_with_action_token(&cp, hold, &token, &json!({"action": "resume", "hold": id})), 403, "spent");
     let resumed = wait_for("the switch resumed", Duration::from_secs(20), || {
         let answer = cp.try_get_json(mode)?;
