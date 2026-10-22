@@ -124,18 +124,23 @@ export default function modeFeature(api, { known, watchdog, stage }) {
     api.refresh();
   };
   // Every mpw18 and mpw4 stage: the player may choose one beyond the
-  // stage last seen on the screen.
+  // stage last seen on the screen (marked « jamais atteint »: the switch
+  // tries it, and fails cleanly if the game does not open it).
   const loadStages = async () => {
     farm.stages = await api.get('/stages').catch(() => null);
     api.refresh();
   };
-  const stageChoices = (mpw) => [
-    { value: '', label: api.tr('— choisir —') },
-    ...(farm.stages?.[`mpw${mpw}`] ?? []).map((stage) => ({
-      value: String(stage.number),
-      label: `${DOTS[stage.colour] ?? '⚪'} mpw${mpw} · ${stage.number}`,
-    })),
-  ];
+  const stageChoices = (mpw) => {
+    const highest = farm.stages?.highest ?? farm.answer?.highest;
+    return [
+      { value: '', label: api.tr('— choisir —') },
+      ...(farm.stages?.[`mpw${mpw}`] ?? []).map((stage) => ({
+        value: String(stage.number),
+        label: `${DOTS[stage.colour] ?? '⚪'} mpw${mpw} · ${stage.number}`
+          + (highest && stage.number > highest ? ` · ${api.tr('jamais atteint')}` : ''),
+      })),
+    ];
+  };
   api.get('/mode').catch(() => null).then((answer) => {
     // After a gateway restart it knows nothing: send this browser's options.
     if (answer && !answer.configured) {

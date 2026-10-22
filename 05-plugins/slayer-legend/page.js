@@ -58,6 +58,7 @@ const ENGLISH = {
   'Stage mpw18': 'mpw18 stage',
   'Stage mpw4': 'mpw4 stage',
   '— choisir —': '— choose —',
+  'jamais atteint': 'never reached',
   'État': 'State',
   'Zone à farmer': 'Area to farm',
   'Temps restant': 'Time left',

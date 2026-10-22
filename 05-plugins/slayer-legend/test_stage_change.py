@@ -299,10 +299,18 @@ class Sequence(unittest.TestCase):
         # Only the unfolds that read the badge and AUTO.
         self.assertEqual(set(game.moves), {("battle", "preset_arrow")})
 
-    def test_past_the_highest_stage_is_refused(self):
+    def test_past_the_highest_stage_is_tried(self):
+        # The gateway may never have seen a stage the game has unlocked.
         game = Game(stage=915)
-        answer = run(game, lambda api: api["farm"](940, "III", "mpw18", 930))
+        answer = run(game, lambda api: api["farm"](925, "III", "mpw18", 920))
+        self.assertEqual(answer["result"], "done", answer["text"])
+        self.assertEqual(game.state["stage"], 925)
+
+    def test_a_stage_outside_the_known_regions_is_refused(self):
+        game = Game(stage=915)
+        answer = run(game, lambda api: api["farm"](5, "III", "mpw18", 930))
         self.assertEqual(answer["result"], "failed")
+        self.assertIn("hors des régions connues", answer["text"])
         self.assertEqual(game.moves, [])
 
     def test_plan_by_default_taps_nothing(self):

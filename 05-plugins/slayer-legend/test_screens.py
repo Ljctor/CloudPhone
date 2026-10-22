@@ -166,5 +166,32 @@ class ScreenPanel(unittest.TestCase):
         self.assertIsNone(self.answer("menu", (0.24, "skill"))["panel"])
 
 
+class StageList(unittest.TestCase):
+    """GET /stages lists every stage, those past the highest seen too: the
+    page marks them « jamais atteint »."""
+
+    def test_every_stage_with_the_highest_seen(self):
+        import asyncio
+        import json
+        import types
+        feature = load("features/screen")
+        rules = load("features/screen_rules")
+        with open(os.path.join(HERE, "stages.json")) as f:
+            table = json.load(f)
+        fake_ports = types.SimpleNamespace(
+            respond=lambda value: value,
+            store=types.SimpleNamespace(saved={"highest": 920}, register=lambda *a: None, save=lambda: None))
+        values = types.SimpleNamespace(number_or_none=lambda value, top: value)
+        part = feature.screen(fake_ports, None, None, rules, values, table)
+        handler = dict((path, h) for method, path, h in part["routes"])["/stages"]
+        answer = asyncio.run(handler(types.SimpleNamespace(query={})))
+        self.assertEqual(answer["highest"], 920)
+        for mpw in (18, 4):
+            listed = [stage["number"] for stage in answer[f"mpw{mpw}"]]
+            self.assertEqual(listed, [n for n in range(len(table["stages"]), 0, -1)
+                                      if table["stages"][n - 1][1] == mpw])
+            self.assertTrue(any(n > 920 for n in listed), mpw)
+
+
 if __name__ == "__main__":
     unittest.main()

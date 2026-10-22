@@ -368,10 +368,13 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
 
     async def farm(stage, preset, mode, highest=None, force=False):
         """Farming stage with preset (None: kept as it is), AUTO on, then the
-        loadout's soul weapon; never a stage past highest (the highest seen
-        farmed, None: unknown). force: see run."""
+        loadout's soul weapon. A stage past highest (the highest seen
+        farmed, None: unknown) is tried too: the gateway may never have
+        seen a stage the game has unlocked. Only a region the stage change
+        cannot read is refused (change_stage), and a stage the game does
+        not open fails at the check after Move. force: see run."""
         if highest and stage > highest:
-            return {"result": "failed", "text": f"stage {stage} au-delà du plus haut vu farmé ({highest})"}
+            logging.info(f"Slayer Legend stage change: stage {stage} past the highest seen farmed ({highest}), tried")
         steps = [("stage", lambda: change_stage(stage))]
         if preset:
             steps.append(("preset", lambda: set_preset(preset)))

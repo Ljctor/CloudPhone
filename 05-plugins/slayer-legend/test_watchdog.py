@@ -721,7 +721,7 @@ class GoldTrigger(unittest.TestCase):
             self.assertEqual(self.looks(6, "on", viewers=viewers), alone)
         self.assertEqual(alone[0], [1, 2])
 
-    def test_the_stage_repair_never_goes_past_the_highest_seen(self):
+    def test_the_stage_repair_passes_the_highest_seen(self):
         # Another stage read on battle: farm() gets mode's highest, as mode.set_stage does.
         self.looks(8, "on", stage=940)
         stage, _, mode, highest = self.farmed[0]

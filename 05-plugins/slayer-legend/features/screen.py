@@ -4,7 +4,8 @@ mode can choose from.
 GET /screen[?known=N]   {screen, stage, panel}, from a screenshot at most every 2 s;
                         panel: the bottom tab whose panel is open on the
                         battle screen (screens.TABS' names), else None
-GET /stages[?known=N]   {highest, mpw18, mpw4}
+GET /stages[?known=N]   {highest, mpw18, mpw4}: every mpw18 and mpw4 stage,
+                        those past highest too (the page marks them)
 
 Read-only: it never touches the game. The highest stage seen farmed is
 kept in state.json ("highest"). What the answers say is in screen_rules.py.
@@ -73,14 +74,14 @@ def screen(ports, screens, stage, rules, values, table):
         return ports.respond(cache["value"])
 
     async def handle_stages(request):
-        """The mpw18 and mpw4 stages up to the highest one seen farmed (N:
-        the highest the page saw), all of them when none is known."""
+        """Every mpw18 and mpw4 stage, and the highest one seen farmed (N:
+        the highest the page saw): the stage change may reach one past it."""
         try:
             note_highest(int(request.query.get("known") or 0) or None)
         except ValueError:
             pass
         number = highest["number"]
-        return ports.respond({"highest": number, "mpw18": rules.stage_list(table, 18, number),
-                              "mpw4": rules.stage_list(table, 4, number)})
+        return ports.respond({"highest": number, "mpw18": rules.stage_list(table, 18, None),
+                              "mpw4": rules.stage_list(table, 4, None)})
 
     return {"routes": [("GET", "/screen", handle_screen), ("GET", "/stages", handle_stages)]}
