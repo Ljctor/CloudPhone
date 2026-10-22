@@ -43,7 +43,9 @@ CARD_YS = (632 / 1040, 723 / 1040)
 CARD_W, CARD_H = 69 / 480, 69 / 1040
 # The padlock's tap (its centre, from the card's top left) and the card's
 # drag start (the middle of its drawing).
-LOCK_DX, LOCK_DY = 61 / 480, 9 / 1040
+# The padlock glyph spans x 56-64 and y 1-12 from the card's top left (its
+# shackle above, its body y 7-12): the tap aims at its middle.
+LOCK_DX, LOCK_DY = 60 / 480, 7 / 1040
 DRAG_DX, DRAG_DY = 34 / 480, 32 / 1040
 
 # Title shapes ("Soul Weapon" in the popup's title font, soul_weapon.py's).
@@ -350,15 +352,31 @@ def level(shot, index):
     return value
 
 
+def bright(shot, index):
+    """The card is drawn bright (its piece unlocked; a locked card is
+    dimmed): at least 20 pixels of its drawing at 200 or more."""
+    x0, y0 = _card_px(shot, index)
+    return sum(1 for x in range(x0 + 14, x0 + 50) for y in range(y0 + 15, y0 + 56)
+               if max(_pixel(shot, x, y)) >= 200) >= 20
+
+
 def locked(shot, index):
-    """The card's padlock reads locked (True): its white pixels within 4 of
-    that place's locked padlock; None otherwise (open, or not read: an open
-    padlock is not captured yet, so nothing is told apart from it)."""
+    """The card's padlock: True (closed: its white pixels within 4 of that
+    place's closed padlock), False (open: no white in it, a grey open
+    shackle, the card bright, as eg6's), None otherwise (not read). Only
+    meaningful with no popup and no preview over the screen."""
     x0, y0 = _card_px(shot, index)
     seen = ["".join("#" if min(_pixel(shot, x, y)) >= 200 else "." for x in range(x0 + 52, x0 + 68))
             for y in range(y0 + 1, y0 + 14)]
     differ = sum(a != b for ra, rb in zip(seen, LOCKED[index]) for a, b in zip(ra, rb))
-    return True if differ <= 4 else None
+    if differ <= 4:
+        return True
+    box = [_pixel(shot, x, y) for x in range(x0 + 50, x0 + 68) for y in range(y0, y0 + 14)]
+    white = sum(1 for p in box if min(p) >= 200)
+    grey = sum(1 for p in box if 90 <= min(p) < 190)
+    if white == 0 and grey >= 40 and bright(shot, index):
+        return False
+    return None
 
 
 def placed(shot, index):
@@ -391,12 +409,143 @@ KINDS = {"I": "gold", "L": "atk"}
 
 
 def cards(shot, shapes):
-    """The 8 cards: [{shape, rotation, cells, level, locked, placed, kind}]."""
+    """The 8 cards: [{index, shape, rotation, cells, level, locked, placed,
+    kind, bright}]. A bright (unlocked) card's drawing, level and icon are
+    not calibrated: None (the sequence knows it from before it was
+    unlocked). Under the piece popup nothing of the cards is read."""
+    if popup(shot):
+        return [{"index": index, "shape": None, "rotation": None, "cells": None, "level": None, "locked": None,
+                 "placed": None, "kind": None, "bright": None} for index in range(8)]
     out = []
     for index in range(8):
-        cells = _drawing(shot, index)
+        lit = bright(shot, index)
+        cells = None if lit else _drawing(shot, index)
         found = shape_of(cells, shapes) if cells else None
         out.append({"index": index, "shape": found[0] if found else None, "rotation": found[1] if found else None,
-                    "cells": cells, "level": level(shot, index), "locked": locked(shot, index),
-                    "placed": placed(shot, index), "kind": kind(shot, index)})
+                    "cells": cells, "level": None if lit else level(shot, index), "locked": locked(shot, index),
+                    "placed": placed(shot, index), "kind": None if lit else kind(shot, index), "bright": lit})
     return out
+
+
+# -- The piece popup (a tap on a card's middle): brown, y 0.40-0.78, the
+# card large with its padlock, Engraving Effect, Additional Options. Closed
+# by a tap outside it, above (POPUP_CLOSE_TAP). Calibrated on eg2 (locked)
+# and eg3 (unlocked by a tap on its padlock), 2026-10-22.
+POPUP_BROWN = (68, 51, 35)
+POPUP_POINTS = ((100 / 480, 600 / 1040), (240 / 480, 640 / 1040), (380 / 480, 700 / 1040))
+POPUP_LOCK_TAP = (0.595, 0.475)
+POPUP_LOCK_BOX = (276, 482, 297, 505)
+POPUP_CLOSE_TAP = (0.5, 0.15)
+POPUP_OPTION_AREA = (0.2, 0.71, 0.65, 0.755)
+
+
+def popup(shot):
+    """The piece popup is open: its brown at three places."""
+    return all(all(abs(a - b) <= 8 for a, b in zip(_px(shot, fx, fy), POPUP_BROWN)) for fx, fy in POPUP_POINTS)
+
+
+def popup_padlock(shot):
+    """The popup's padlock: "closed" (white), "open" (grey, no white: eg3),
+    None (no popup, or neither)."""
+    if not popup(shot):
+        return None
+    width, height, _ = shot
+    sx, sy = width / WIDTH, height / HEIGHT
+    left, top, right, bottom = POPUP_LOCK_BOX
+    box = [_pixel(shot, int(x * sx), int(y * sy)) for x in range(left, right) for y in range(top, bottom)]
+    white = sum(1 for p in box if min(p) >= 200)
+    grey = sum(1 for p in box if 90 <= min(p) < 190)
+    if white >= 80:
+        return "closed"
+    if white <= 3 and grey >= 80:
+        return "open"
+    return None
+
+
+def popup_gold(shot):
+    """The popup's Additional Options read "Monster Gold …" (the pixel
+    font reads its "Gold")."""
+    if not popup(shot):
+        return False
+    return any("Gold" in text.split() for text, _, _ in font.read(shot, POPUP_OPTION_AREA))
+
+
+# -- The preview of a piece being placed (a slow drag from a card onto the
+# grid): its cubes over the grid in the card's orientation, the cubes
+# outside the shape tinted red, and a bar under it: cancel (red X), rotate
+# (a quarter turn clockwise, in place), confirm (a check, bright green when
+# the spot is valid, grey-green when not). A swipe from one of its cubes
+# moves it by that many cells. Calibrated on eg7 (invalid), eg8 (turned)
+# and eg9 (moved, valid), 2026-10-22.
+BAR_AREA = (60, 200, 420, 600)
+BAR_STEP = 45  # px from the cancel's middle to rotate, and again to confirm
+# Where the finger holds the piece: its cells' middle sits this many cells
+# above the finger (eg7: dropped at row 0.69, its middle on row 0).
+HOLD_ROWS = 0.7
+
+
+def _red(p):
+    return p[0] > 200 and p[1] < 60 and p[2] < 60
+
+
+def bar(shot):
+    """{cancel, rotate, confirm: (x, y) fractions, valid: True, False or
+    None} of the preview's bar, None without one (no red cancel)."""
+    width, height, _ = shot
+    sx, sy = width / WIDTH, height / HEIGHT
+    left, top, right, bottom = BAR_AREA
+    red = [(x, y) for x in range(int(left * sx), int(right * sx)) for y in range(int(top * sy), int(bottom * sy))
+           if _red(_pixel(shot, x, y))]
+    if len(red) < 150:
+        return None
+    cx, cy = sum(x for x, _ in red) / len(red), sum(y for _, y in red) / len(red)
+    if max(x for x, _ in red) - min(x for x, _ in red) > 40 * sx:
+        return None
+    step = BAR_STEP * sx
+    tick = [_pixel(shot, int(cx + 2 * step + dx), int(cy + dy)) for dx in range(-16, 17) for dy in range(-14, 15)]
+    lit = sum(1 for p in tick if p[1] > 180 and p[0] < 170 and p[2] < 90)
+    dim = sum(1 for p in tick if p[1] > 90 and p[1] > p[0] + 25 and p[1] > p[2] + 40)
+    valid = True if lit >= 100 else False if dim >= 100 and lit < 20 else None
+    return {"cancel": (cx / width, cy / height), "rotate": ((cx + step) / width, cy / height),
+            "confirm": ((cx + 2 * step) / width, cy / height), "valid": valid}
+
+
+def cubes(shot):
+    """{(row, col): "cube" or "red"} of the cells holding a cube (placed or
+    previewed), rows and cols -1 to 5 (the preview may stick out of the
+    grid): a cube is blue on at least 25 of 81 samples (one half hidden by
+    the bar still counts), a red one pink and blue on at least 8 each."""
+    width, height, _ = shot
+    out = {}
+    for row in range(-1, 6):
+        for col in range(-1, 6):
+            cx, cy = cell_centre(row, col)
+            x0, y0 = int(cx * width), int(cy * height)
+            samples = [_pixel(shot, x0 + dx, y0 + dy) for dx in range(-12, 13, 3) for dy in range(-12, 13, 3)
+                       if 0 <= x0 + dx < width and 0 <= y0 + dy < height]
+            blue = sum(1 for r, g, b in samples if b > 150 and b > r + 60)
+            pink = sum(1 for r, g, b in samples if r > 150 and b > 120 and r > g + 30)
+            if pink >= 8 and blue >= 8:
+                out[(row, col)] = "red"
+            elif blue >= 25:
+                out[(row, col)] = "cube"
+    return out
+
+
+def hold_point(cells):
+    """Where to drop a card so that its preview lands on cells (in the
+    card's orientation): their middle, HOLD_ROWS lower."""
+    rows = [r for r, _ in cells]
+    cols = [c for _, c in cells]
+    x, _ = cell_centre(0, (min(cols) + max(cols)) / 2)
+    _, y = cell_centre((min(rows) + max(rows)) / 2 + HOLD_ROWS, 0)
+    return x, y
+
+
+INVENTORY_DROP = (0.5, 0.68)
+
+# The gates (05-plugins/AGENTS.md, test_gates.py): each reading has real
+# captures of every state it tells apart.
+PADLOCK_LEARNED = True    # eg_cards_unlocked (open), eg_cards_relocked (closed)
+POPUP_LEARNED = True      # eg_popup_unlocked, eg_popup_locked; no popup: eg_cards_relocked
+PREVIEW_LEARNED = True    # eg_preview_base, eg_preview_turned (invalid), eg_preview_valid

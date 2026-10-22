@@ -96,5 +96,86 @@ class Screen(unittest.TestCase):
                 self.assertTrue(left < x < left + 69 / 480 and top < y < top + 69 / 1040)
 
 
+# Captures of 2026-10-22 (Vision): eg6 a piece just dragged out (its card
+# bright, padlock open), eg10 all locked again; eg2 and eg3 the piece popup
+# locked then unlocked; eg7, eg8, eg9 a preview (as dropped, turned,
+# moved).
+class Padlocks(unittest.TestCase):
+    def test_a_card_unlocked_by_its_removal(self):
+        cards = es.cards(fixtures.screen("eg_cards_unlocked"), TABLE["shapes"])
+        self.assertEqual([c["locked"] for c in cards], [True, False] + [True] * 6)
+        self.assertEqual([c["bright"] for c in cards], [False, True] + [False] * 6)
+        self.assertFalse(cards[1]["placed"])
+        # A bright card's drawing is not read (not calibrated).
+        self.assertIsNone(cards[1]["shape"])
+        self.assertEqual(cards[0]["shape"], "I")
+
+    def test_all_locked_again(self):
+        cards = es.cards(fixtures.screen("eg_cards_relocked"), TABLE["shapes"])
+        self.assertEqual([c["locked"] for c in cards], [True] * 8)
+        self.assertEqual([c["placed"] for c in cards], [False, True, False, False, True, True, False, True])
+        self.assertEqual([c["level"] for c in cards], LEVELS)
+
+    def test_the_popup(self):
+        locked, unlocked = fixtures.screen("eg_popup_locked"), fixtures.screen("eg_popup_unlocked")
+        self.assertTrue(es.popup(locked) and es.popup(unlocked))
+        self.assertEqual(es.popup_padlock(locked), "closed")
+        self.assertEqual(es.popup_padlock(unlocked), "open")
+        self.assertTrue(es.popup_gold(locked))
+        # Nothing of the cards is read under it.
+        self.assertTrue(all(c["locked"] is None for c in es.cards(unlocked, TABLE["shapes"])))
+        for other in (fixtures.screen("eg_cards_relocked"), shot(), fixtures.screen("eg_preview_valid")):
+            self.assertFalse(es.popup(other))
+            self.assertIsNone(es.popup_padlock(other))
+
+
+class Preview(unittest.TestCase):
+    def test_as_dropped_invalid(self):
+        screen = fixtures.screen("eg_preview_base")
+        found = es.bar(screen)
+        self.assertFalse(found["valid"])
+        self.assertAlmostEqual(found["cancel"][0], 0.348, places=2)
+        self.assertAlmostEqual(found["confirm"][0] - found["rotate"][0], found["rotate"][0] - found["cancel"][0])
+        before = es.cubes(fixtures.screen("eg_grid_removed"))
+        new = sorted(cell for cell in es.cubes(screen) if cell not in before)
+        # The L in its card orientation, one cube above the grid, its foot
+        # over a placed cube (hidden).
+        self.assertEqual(new, [(-1, 1), (0, 1), (1, 1)])
+
+    def test_turned(self):
+        screen = fixtures.screen("eg_preview_turned")
+        self.assertFalse(es.bar(screen)["valid"])
+        before = es.cubes(fixtures.screen("eg_grid_removed"))
+        found = es.cubes(screen)
+        self.assertEqual(sorted(cell for cell in found if cell not in before), [(0, 0), (0, 1), (0, 2), (1, 0)])
+        self.assertEqual(sorted(cell for cell, kind in found.items() if kind == "red"), [(0, 0), (1, 0)])
+
+    def test_moved_valid(self):
+        screen = fixtures.screen("eg_preview_valid")
+        found = es.bar(screen)
+        self.assertTrue(found["valid"])
+        before = es.cubes(fixtures.screen("eg_grid_removed"))
+        self.assertEqual(sorted(cell for cell in es.cubes(screen) if cell not in before),
+                         [(0, 1), (0, 2), (0, 3), (1, 1)])
+
+    def test_no_bar_without_a_preview(self):
+        for name in ("eg_grid_removed", "eg_grid_atk", "eg_popup_locked", "eg_cards_relocked"):
+            self.assertIsNone(es.bar(fixtures.screen(name)))
+
+    def test_the_grid_before_and_after(self):
+        atk = es.grid(fixtures.screen("eg_grid_atk"), 5)
+        self.assertEqual(sorted(atk["pieces"]), [[(0, 1), (0, 2), (0, 3), (1, 1)], [(0, 4), (1, 2), (1, 3), (1, 4)],
+                                                 [(2, 2), (2, 3), (2, 4), (3, 2)], [(3, 3), (4, 1), (4, 2), (4, 3)]])
+        removed = es.grid(fixtures.screen("eg_grid_removed"), 5)
+        self.assertEqual([removed["cells"][cell] for cell in [(0, 1), (0, 2), (0, 3), (1, 1)]], ["empty"] * 4)
+        self.assertEqual(len(removed["pieces"]), 3)
+
+    def test_hold_point(self):
+        # eg7: dropped at (0.44, 0.30), the L's cells rows -1 to 1, cols 1-2.
+        x, y = es.hold_point([(-1, 1), (0, 1), (1, 1), (1, 2)])
+        self.assertAlmostEqual(x, 0.44, places=2)
+        self.assertAlmostEqual(y, 0.30, places=2)
+
+
 if __name__ == "__main__":
     unittest.main()

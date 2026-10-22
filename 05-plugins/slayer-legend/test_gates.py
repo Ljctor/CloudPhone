@@ -29,9 +29,15 @@ GATES = [
     ("soul_weapon", "TAG_LEARNED", ["sw_tag_equip", "sw_tag_unequip"], "test_soul_weapon"),
     ("soul_weapon", "BADGE_TELLS", ["sw_badge_red", "sw_badge_grey", "sw_badge_owned_grey"], "test_soul_weapon"),
     ("features/stage_change", "AUTO_TAP_LEARNED", ["controls_iii_auto_on", "controls_auto_off"], "test_stage_change"),
-    ("features/engraving_setup_rules", "ROTATION_LEARNED", ["eg_preview_invalid", "eg_preview_valid"],
+    ("features/engraving_setup_rules", "ROTATION_LEARNED", ["eg_preview_base", "eg_preview_turned", "eg_preview_valid"],
      "test_engraving_screen"),
-    ("features/engraving_setup_rules", "REMOVAL_LEARNED", ["eg_card_open", "eg_card_closed"], "test_engraving_screen"),
+    ("features/engraving_setup_rules", "REMOVAL_LEARNED", ["eg_cards_unlocked", "eg_cards_relocked", "eg_grid_removed"],
+     "test_engraving_screen"),
+    ("engraving_screen", "PADLOCK_LEARNED", ["eg_cards_unlocked", "eg_cards_relocked"], "test_engraving_screen"),
+    ("engraving_screen", "POPUP_LEARNED", ["eg_popup_locked", "eg_popup_unlocked", "eg_cards_relocked"],
+     "test_engraving_screen"),
+    ("engraving_screen", "PREVIEW_LEARNED", ["eg_preview_base", "eg_preview_turned", "eg_preview_valid",
+                                             "eg_grid_removed"], "test_engraving_screen"),
 ]
 
 
