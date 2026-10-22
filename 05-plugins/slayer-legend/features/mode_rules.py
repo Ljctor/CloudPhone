@@ -107,8 +107,8 @@ NUMBERS = ("stage18", "stage4", "highest", "floor", "area")
 
 def request(body, stored=None, default=DEFAULT):
     """POST /mode's {mode, until, stage18, stage4, highest, floor, area}:
-    ((mode, until, numbers, given), None) or (None, the error, in French:
-    the page shows it). A number absent or null keeps its stored value
+    ((mode, until, numbers, given), None) or (None, the error, a status
+    text: the page shows it). A number absent or null keeps its stored value
     (stored: the numbers as they are, e.g. after a gateway restart a
     browser that does not know one). given: whether the body has until (a
     null one clears the timer; an absent one keeps it, see timer_for). The
@@ -119,16 +119,16 @@ def request(body, stored=None, default=DEFAULT):
         until = float(body["until"]) if body.get("until") is not None else None
         numbers = {key: int(body.get(key) or 0) or None for key in NUMBERS}
     except (ValueError, TypeError, AttributeError):
-        return None, "Expected {mode, until, stage18, stage4, highest, floor, area}"
+        return None, t("Attendu : {expected}", expected="{mode, until, stage18, stage4, highest, floor, area}")
     if mode not in MODES:
-        return None, f"mode: one of {', '.join(MODES)}"
+        return None, t("{field} : un de {choices}", field="mode", choices=", ".join(MODES))
     numbers = {key: value if value is not None else (stored or {}).get(key) for key, value in numbers.items()}
     # A mode is chosen only once configured (the page greys it out until then).
     if mode == "mpw4" and not numbers["stage4"]:
-        return None, "Farming mpw4 : choisis d’abord son stage"
+        return None, t("Farming mpw4 : choisis d’abord son stage")
     if mode == "mine" and not (numbers["floor"] and 1 <= numbers["floor"] <= 9999
                                and numbers["area"] and 1 <= numbers["area"] <= 5):
-        return None, "Mine fermée : choisis d’abord l’étage (1 à 9999) et la zone (1 à 5)"
+        return None, t("Mine fermée : choisis d’abord l’étage (1 à 9999) et la zone (1 à 5)")
     if mode == (body.get("default") if body.get("default") in DEFAULTS else default):
         until = None
     return (mode, until, numbers, given), None
@@ -136,15 +136,15 @@ def request(body, stored=None, default=DEFAULT):
 
 def default_request(body, numbers, current):
     """POST /mode's default (absent: current kept): (default, None) or
-    (None, the error, in French). mpw4 only once its stage is chosen, as
+    (None, the error, a status text). mpw4 only once its stage is chosen, as
     its radio button."""
     default = body.get("default") if isinstance(body, dict) else None
     if default is None:
         return current, None
     if default not in DEFAULTS:
-        return None, f"default: one of {', '.join(DEFAULTS)}"
+        return None, t("{field} : un de {choices}", field="default", choices=", ".join(DEFAULTS))
     if default == "mpw4" and not numbers.get("stage4"):
-        return None, "Farming mpw4 : choisis d’abord son stage"
+        return None, t("Farming mpw4 : choisis d’abord son stage")
     return default, None
 
 
@@ -266,19 +266,20 @@ def hold_message(name, left, applied=False):
 def hold_request(body, hold, last):
     """POST /mode/hold {action: "free" | "resume"[, hold: id]}: (action,
     None) to do it, ("again", None) when it was already done for that hold
-    (idempotent: nothing more to do), or (None, (status, error)): 400 a bad
+    (idempotent: nothing more to do), or (None, (status, error, a status
+    text)): 400 a bad
     body, 409 nothing on hold (or another hold than the one named). hold:
     the hold now ({id, action}) or None; last: the hold that ended last
     ({id, action}) or None."""
     action = body.get("action") if isinstance(body, dict) else None
     if action not in HOLD_ACTIONS:
-        return None, (400, "Expected {action: \"free\" | \"resume\"}")
+        return None, (400, t("Attendu : {expected}", expected='{action: "free" | "resume"}'))
     named = body.get("hold")
     if hold and (named is None or named == hold["id"]):
         return ("again" if hold.get("action") == action else action), None
     if last and last.get("action") == action and (named is None or named == last["id"]):
         return "again", None
-    return None, (409, "Aucun passage de mode en attente")
+    return None, (409, t("Aucun passage de mode en attente"))
 
 
 REASONS = {"mine done": "Mine done", "mine stopped": "Mine stopped", "timer": "Timer ended",

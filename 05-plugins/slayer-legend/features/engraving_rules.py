@@ -36,6 +36,11 @@ class UnknownWeapon(KeyError):
         return self.args[0]
 
 
+def t(template, **params):
+    """A status text (features/texts.py)."""
+    return {"template": template, "params": params}
+
+
 def normal(cells):
     """The cells moved so their bounding box starts at [0, 0], sorted."""
     cells = [tuple(cell) for cell in cells]
@@ -489,25 +494,27 @@ PRESETS = ("I", "II", "III", "IV", "V")
 
 
 def soul_weapon(chosen, table, rotate=False):
-    """{id, variant} checked: (it, None) or (None, the error in French).
+    """{id, variant} checked: (it, None) or (None, the error, a status text).
     The variant is one of the weapon's (variants())."""
     try:
         weapon_id, name = chosen["id"], chosen["variant"]
     except (KeyError, TypeError):
-        return None, "Arme : attendu {id, variant}"
+        return None, t("Arme : attendu {expected}", expected="{id, variant}")
     if not isinstance(weapon_id, int) or isinstance(weapon_id, bool):
-        return None, "id : un nombre entier"
+        return None, t("id : un nombre entier")
     entry = weapon_by_id(weapon_id, table)
     if entry is None:
-        return None, f"Arme inconnue : id {weapon_id}"
+        return None, t("Arme inconnue : id {id}", id=weapon_id)
     if not entry.get("grid"):
-        return None, f"{entry['name']} n’a pas de gravure"
+        return None, t("{name} n’a pas de gravure", name=entry["name"])
     names = variants(entry, rotate)
     if name not in names:
-        return None, f"Variante inconnue pour {entry['name']} : {name} (au choix : {', '.join(names)})"
+        return None, t("Variante inconnue pour {name} : {variant} (au choix : {choices})", name=entry["name"],
+                       variant=name, choices=", ".join(names))
     result = check(entry["cells"], [piece["cells"] for piece in names[name]["pieces"]])
     if result["outside"] or result["overlap"]:
-        return None, f"La variante {name} de {entry['name']} sort de la grille ou se chevauche"
+        return None, t("La variante {variant} de {name} sort de la grille ou se chevauche", variant=name,
+                       name=entry["name"])
     return {"id": weapon_id, "variant": name}, None
 
 
@@ -527,24 +534,24 @@ def stage_or_none(value):
 
 def loadout(body, table, rotate=False, stored=None):
     """POST /loadout's {mode, stage, preset, soul_weapon: {id, variant}}:
-    ((mode, {stage, preset, soul_weapon}), None) or (None, the error in
-    French). mode: mpw18 or mpw4; stage: the stage farmed, 1 to 99999;
+    ((mode, {stage, preset, soul_weapon}), None) or (None, the error, a
+    status text). mode: mpw18 or mpw4; stage: the stage farmed, 1 to 99999;
     preset: the Battle settings preset, I to V; soul_weapon: the weapon and
     its engraving variant. A field absent keeps its stored value (stored:
     that mode's loadout as it is); a null one clears it."""
     if not isinstance(body, dict):
-        return None, "Attendu : {mode, stage, preset, soul_weapon: {id, variant}}"
+        return None, t("Attendu : {expected}", expected="{mode, stage, preset, soul_weapon: {id, variant}}")
     mode = body.get("mode")
     if mode not in MODES:
-        return None, f"mode : {' ou '.join(MODES)}"
+        return None, t("{field} : un de {choices}", field="mode", choices=", ".join(MODES))
     part = dict(empty_loadout(), **(stored or {}))
     if "stage" in body:
         if body["stage"] is not None and stage_or_none(body["stage"]) is None:
-            return None, f"Stage : un nombre de 1 à {TOP_STAGE}"
+            return None, t("Stage : un nombre de 1 à {top}", top=TOP_STAGE)
         part["stage"] = body["stage"]
     if "preset" in body:
         if body["preset"] is not None and body["preset"] not in PRESETS:
-            return None, f"Préréglage de combat : {', '.join(PRESETS)}"
+            return None, t("Préréglage de combat : un de {choices}", choices=", ".join(PRESETS))
         part["preset"] = body["preset"]
     if "soul_weapon" in body:
         chosen = body["soul_weapon"]

@@ -19,6 +19,7 @@ from aiohttp import web
 from ..adapters import host_files
 from ..core import display
 from ..core.display import json_int
+from ..core.texts import english, t
 from ..logs import log
 
 # Set by gateway_server's main; empty paths disable the feature.
@@ -33,15 +34,24 @@ def status():
     return display.parse_status(host_files.exists(REQUEST), host_files.read_file(STATUS, 256))
 
 
+def refusal(error, status, shown):
+    """The answer refusing a change: {error_t} (a status text, core/texts.py)
+    when the page shows it (shown: the emulator settings' dialog), else
+    {error} in English (the screen size's API)."""
+    return web.json_response({"error_t": error} if shown else {"error": english(error)}, status=status)
+
+
 def change_request(refused):
     """A screen size or settings request the gateway refuses (invalid,
-    disabled, one already running, too soon) is a warning record."""
+    disabled, one already running, too soon) is a warning record, in
+    English."""
     def wrap(handler):
         async def handle(request):
             response = await handler(request)
             if response.status >= 400:
                 try:
-                    error = json.loads(response.text).get("error", "")
+                    body = json.loads(response.text)
+                    error = english(body["error_t"]) if "error_t" in body else body.get("error", "")
                 except (TypeError, ValueError, AttributeError):
                     error = str(response.status)
                 log("warning", "gateway", refused, error=error)
@@ -50,17 +60,18 @@ def change_request(refused):
     return wrap
 
 
-def change_refused(other, other_files):
+def change_refused(other, other_files, shown=False):
     """The 409 or 429 answer when a change is running or the last one was
-    too recent, else None and the new change counts from now. other is the
-    settings' status, other_files their request and status paths: a change
-    restarts the gateway with the emulator, so the files keep its time."""
+    too recent (refusal(), shown: the page shows it), else None and the new
+    change counts from now. other is the settings' status, other_files
+    their request and status paths: a change restarts the gateway with the
+    emulator, so the files keep its time."""
     if display.busy(status(), other):
-        return web.json_response({"error": "A change is already in progress"}, status=409)
+        return refusal(t("Un changement est déjà en cours"), 409, shown)
     times = [host_files.mtime(path) for path in (REQUEST, STATUS, *other_files)]
     wait = display.wait_seconds(time.time(), display.last_change(LAST_CHANGE["time"], times))
     if wait is not None:
-        return web.json_response({"error": f"Wait {wait} s before the next change"}, status=429)
+        return refusal(t("Attendez {seconds} s avant le prochain changement", seconds=wait), 429, shown)
     LAST_CHANGE["time"] = time.time()
     return None
 
@@ -99,7 +110,7 @@ def set_display(settings_status, settings_files, requested):
             return web.json_response({"error": "width, height and density are required"}, status=400)
         error = display.size_error(wanted)
         if error:
-            return web.json_response({"error": error}, status=400)
+            return refusal(error, 400, False)
         refused = change_refused(settings_status(), settings_files())
         if refused is not None:
             return refused

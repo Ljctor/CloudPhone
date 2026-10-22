@@ -133,7 +133,10 @@ fn a_second_change_while_one_is_pending_is_refused_with_409() {
     assert_eq!(cp.get_json("api/v1/emulator-settings")["request"], json!({"state": "pending"}));
     let again = cp.post_json("api/v1/emulator-settings", &body);
     assert_eq!(again.status(), 409, "{:?}", again.text());
-    assert_eq!(again.json().unwrap()["error"], "A change is already in progress");
+    assert_eq!(again.json().unwrap()["error_t"], json!({"template": "Un changement est déjà en cours", "params": {}}),
+               "a status text the page shows");
+    let templates = cp.get_json("api/v1/templates");
+    assert_eq!(templates["Un changement est déjà en cours"], "A change is already in progress", "{templates}");
     let size = cp.post_json("api/v1/display", &json!({"width": 360, "height": 780, "density": 160}));
     assert_eq!(size.status(), 409, "a screen size change is refused too: {:?}", size.text());
 }

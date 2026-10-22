@@ -2,7 +2,7 @@
 or as the watchdog's relaunch (api: start(holder, user)). It never
 kills the game: Android brings a running one to the front.
 
-GET  /launch   {state, message} of the last launch
+GET  /launch   {state, message_t} of the last launch (message_t: a status text)
 POST /launch   starts one (409 while one runs)
 
 What it presses and when is in launch_rules.py; every press goes through
@@ -18,6 +18,9 @@ its Confirm; anything else there is one alert, for the user.
 
 import asyncio
 
+# A launch that ends in one of these is an error record (what was seen, and why).
+FAILED = ("blocked", "failed")
+
 
 def launch(ports, screens, rules):
     t = ports.t
@@ -28,7 +31,8 @@ def launch(ports, screens, rules):
         status["state"], status["message"] = state, message
         # The watchdog's relaunch is one record of the watchdog's own.
         if not status["quiet"]:
-            ports.log("normal", f"Launch: {state} {ports.english(message)}".rstrip())
+            ports.log("error" if state in FAILED else "normal",
+                      f"Launch: {state}" + (f" ({ports.english(message)})" if message else ""))
 
     async def steps():
         report("starting", t("Ouverture du jeu"))
@@ -58,7 +62,7 @@ def launch(ports, screens, rules):
             move, memory = rules.step(screen, memory, ports.clock.monotonic())
             if move == "close_crash":
                 if not await ports.close_crash(shot):
-                    report("blocked", t("Fenêtre « l’application s’arrête » : bouton introuvable, ferme-la à la main"))
+                    report("blocked", t("Fenêtre « l’application s’arrête » : bouton « Fermer l’appli » introuvable par uiautomator"))
                     return
                 report("starting", t("Fenêtre « l’application s’arrête » fermée, réouverture du jeu"))
                 await ports.clock.sleep(rules.AFTER_CRASH)
@@ -66,7 +70,7 @@ def launch(ports, screens, rules):
                     report("failed", t("Android ne répond pas"))
                     return
             elif move == "blocked_crash":
-                report("blocked", t("Le jeu plante encore : relance-le à la main"))
+                report("blocked", t("Le jeu plante encore après {tries} fermetures de sa fenêtre d’erreur", tries=rules.CRASH_TRIES))
                 return
             elif move == "confirm":
                 await ports.tap(shot, "save_notice", "confirm", screens.CONFIRM_TAP)
@@ -77,7 +81,7 @@ def launch(ports, screens, rules):
                 memory["last_tap"] = ports.clock.monotonic()
                 report("loading", t("Sortie du mode économie d’énergie"))
             elif move == "blocked_saver":
-                report("blocked", t("Le mode économie d’énergie ne se ferme pas : touche son bouton à la main"))
+                report("blocked", t("Le mode économie d’énergie ne se ferme pas après {tries} appuis", tries=rules.SAVER_TRIES))
                 return
             elif move == "start":
                 await ports.tap(shot, "title", "start", screens.START_TAP)
@@ -93,16 +97,17 @@ def launch(ports, screens, rules):
                 report("loading", t("Compte Google choisi"))
             elif move in ("blocked_sign_in", "blocked_chooser"):
                 if move == "blocked_sign_in":
-                    report("blocked", t("reconnexion Google impossible : à faire à la main"))
-                    await ports.notify("Google sign-in impossible: to do by hand")
+                    report("blocked", t("Reconnexion Google échouée : l’écran de connexion est toujours là "
+                                        "{seconds} s après « Sign in with Google »", seconds=rules.SIGN_IN_WAIT))
+                    await ports.notify(f"Google sign-in failed: the sign-in screen is still there "
+                                       f"{rules.SIGN_IN_WAIT} s after Sign in with Google")
                 else:
-                    report("blocked", t("reconnexion Google : {count} comptes proposés au lieu d’un, à faire à la main",
+                    report("blocked", t("Reconnexion Google échouée : le sélecteur propose {count} comptes au lieu d’un",
                                         count=chooser["count"]))
-                    await ports.notify(f"Google sign-in: {chooser['count']} accounts offered instead of one, "
-                                       "to do by hand")
+                    await ports.notify(f"Google sign-in failed: the chooser listed {chooser['count']} accounts")
                 return
             elif move == "blocked_other":
-                report("blocked", t("Écran inattendu : termine le lancement à la main"))
+                report("blocked", t("Lancement arrêté : écran inattendu (lu : {screen}), pas encore catalogué", screen=screen))
                 return
         report("blocked", t("Le jeu n’a pas atteint l’écran de combat en 3 minutes"))
 
@@ -124,8 +129,7 @@ def launch(ports, screens, rules):
             report("failed", t("Erreur : {error}", error=f"{e!r}"[:200]))
 
     async def handle_state(request):
-        return ports.respond({"state": status["state"], "message": ports.french(status["message"]),
-                              "message_t": status["message"]})
+        return ports.respond({"state": status["state"], "message_t": status["message"]})
 
     def running():
         task = status["task"]
@@ -140,7 +144,7 @@ def launch(ports, screens, rules):
 
     async def handle_launch(request):
         if not start():
-            return ports.respond({"error": "A launch is already running"}, status=409)
+            return ports.respond({"error_t": t("Un lancement est déjà en cours")}, status=409)
         ports.log("normal", f"Launch requested by {request.remote}")
         return ports.respond({"state": "starting"}, status=202)
 

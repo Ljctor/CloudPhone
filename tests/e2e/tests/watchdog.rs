@@ -51,7 +51,7 @@ fn has_record(cp: &CloudPhone, level: &str, text: &str, notify: bool) -> bool {
 fn wait_ok(cp: &CloudPhone, timeout: Duration) {
     wait_for("the watchdog to say OK", timeout, || {
         let state = cp.try_get_json("api/v1/plugins/slayer-legend/watchdog")?;
-        (state["text"] == "OK" && state["symptom"].is_null()).then_some(())
+        (state["status"]["template"] == "OK" && state["symptom"].is_null()).then_some(())
     });
 }
 
@@ -114,7 +114,7 @@ fn a_game_not_responding_gets_wait_once_then_an_alert_and_is_never_killed() {
     wait_ok(&cp, Duration::from_secs(40));
     cp.fake().control(json!({"app": {"state": "anr"}}));
     wait_for("the alert", Duration::from_secs(40), || {
-        has_record(&cp, "warning", "Farming mpw18: the game is not responding (Android's window), \"Wait\" had no effect: to do by hand", true)
+        has_record(&cp, "error", "Farming mpw18: the game is not responding (Android's window): Wait tapped with no effect", true)
             .then_some(())
     });
     std::thread::sleep(Duration::from_secs(16));
@@ -232,7 +232,7 @@ fn a_chooser_with_two_accounts_is_for_the_user_and_never_tapped() {
         (launch["state"] == "blocked").then_some(launch)
     });
     let launch = cp.get_json("api/v1/plugins/slayer-legend/launch");
-    assert_eq!(launch["message"], "reconnexion Google : 2 comptes proposés au lieu d’un, à faire à la main", "{launch}");
+    assert_eq!(launch["message_t"]["template"], "Reconnexion Google échouée : le sélecteur propose {count} comptes au lieu d’un", "{launch}");
     let taps = taps(&cp);
     assert_eq!(taps.len(), 1, "Google's button only: {taps:?}");
     never_killed(&cp);

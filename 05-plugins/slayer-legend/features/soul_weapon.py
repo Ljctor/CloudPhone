@@ -171,7 +171,7 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
             raise Stop("arme {id} inconnue", id=target_id)
         target = entry["name"]
         if rules.shared(target, table):
-            raise Stop("{weapon} : deux armes portent ce nom, équipement non fait", weapon=target)
+            raise Stop("{weapon} : deux armes portent ce nom, le nom lu ne suffit pas à choisir", weapon=target)
         cache = status["cache"]
         last_input = (ports.last_input() or {}).get("wall") if hasattr(ports, "last_input") else None
         if cache and cache["id"] == target_id and cache.get("variant") == variant \

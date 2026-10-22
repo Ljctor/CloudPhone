@@ -100,7 +100,7 @@ def engraving(ports, rules):
         except ValueError:
             entry = None
         if entry is None:
-            return ports.respond({"error": f"Arme inconnue : id {asked}"}, status=404)
+            return ports.respond({"error_t": ports.t("Arme inconnue : id {id}", id=asked)}, status=404)
         return ports.respond(detail(entry))
 
     def state():
@@ -124,7 +124,7 @@ def engraving(ports, rules):
         mode = body.get("mode") if isinstance(body, dict) else None
         asked, error = rules.loadout(body, table, rotate, loadouts.get(mode) if isinstance(mode, str) else None)
         if error:
-            return ports.respond({"error": error}, status=400)
+            return ports.respond({"error_t": error}, status=400)
         mode, part = asked
         before = dict(loadouts[mode])
         loadouts[mode] = part

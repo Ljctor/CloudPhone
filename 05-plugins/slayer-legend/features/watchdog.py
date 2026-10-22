@@ -5,9 +5,10 @@ alerts and repairs: mpw18 and mpw4 farming each with its own loadout
 the mine feature's: the game away (rules.mine_away) is relaunched, then
 the mine re-entered by the mine feature (reenter); free play, nothing.
 
-GET /watchdog   {mode, status: {template, params}, text, line: {template,
-                 params}, symptom, paused, counters, waiting, lease,
-                 repairing, profile}
+GET /watchdog   {mode, status: {template, params}, line: {template,
+                 params}, symptom, paused_t, counters, waiting, lease,
+                 repairing, profile} (status, line, paused_t: status
+                 texts, see texts.py; paused_t null unless paused)
 POST /watchdog/retry   {kind}: « Réessayer », that repair's backoff starts
                  over (needs the page token)
 
@@ -362,10 +363,10 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
     def state():
         held = ports.lease.state()
         wall = ports.clock.wall()
-        return {"mode": status["mode"], "status": status["text"], "text": ports.french(status["text"]),
-                "line": line(),
+        return {"mode": status["mode"], "status": status["text"], "line": line(),
                 "waiting": sorted(kind for kind, kept in memory["backoff"].items() if kept["next"] > wall),
-                "symptom": status["symptom"], "paused": status["paused"], "repairing": status["repairing"],
+                "symptom": status["symptom"], "paused_t": status["text"] if status["paused"] else None,
+                "repairing": status["repairing"],
                 "counters": rules.counters(memory, wall), "lease": held,
                 "profile": profile()}
 
@@ -380,7 +381,8 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             body = None
         kind = body.get("kind") if isinstance(body, dict) else None
         if kind not in rules.REPAIR_NAMES:
-            return ports.respond({"error": f"Expected {{kind}}: one of {', '.join(rules.REPAIR_NAMES)}"}, status=400)
+            return ports.respond({"error_t": ports.t("{field} : un de {choices}", field="kind",
+                                                     choices=", ".join(rules.REPAIR_NAMES))}, status=400)
         memory = rules.retry(memory, kind)
         ports.store.save()
         say("normal", "Retry now: {repair}", {"repair": rules.REPAIR_NAMES[kind]})

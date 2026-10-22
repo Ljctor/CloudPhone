@@ -81,13 +81,14 @@ def trace(ports, screens, graphs):
 
     async def handle_tap(request):
         if recorded["graph"] is None:
-            return ports.respond({"error": "No data directory: nothing is recorded"}, status=503)
+            return ports.respond({"error_t": ports.t("Pas de dossier de données : rien n’est enregistré")}, status=503)
         try:
             tap = graphs.parse_tap(await request.json())
         except ValueError:
             tap = None
         if tap is None:
-            return ports.respond({"error": "Expected {x, y, kind: tap|long|swipe[, end: {x, y}]}, fractions 0-1"},
+            return ports.respond({"error_t": ports.t("Attendu : {expected}, fractions de 0 à 1",
+                                                     expected="{x, y, kind: tap|long|swipe[, end: {x, y}]}")},
                                  status=400)
         if recorded["lock"] is None:
             recorded["lock"] = asyncio.Lock()

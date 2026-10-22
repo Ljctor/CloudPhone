@@ -12,6 +12,10 @@ import unittest
 from types import SimpleNamespace
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+_spec = importlib.util.spec_from_file_location("engraving_test_texts", os.path.join(HERE, "features", "texts.py"))
+texts = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(texts)
+french = texts.french
 
 
 def load(name):
@@ -591,7 +595,7 @@ class Routes(unittest.TestCase):
             self.assertEqual(call("POST", "/loadout", Request(body)).status, 200)
             refused = call("POST", "/loadout", Request({"mode": "mpw4", "soul_weapon": {"id": 32, "variant": "Atk"}}))
             self.assertEqual(refused.status, 400)
-            self.assertIn("Variante inconnue", refused.body["error"])
+            self.assertIn("Variante inconnue", french(refused.body["error_t"]))
             self.assertEqual(call("POST", "/loadout", Request(ValueError("not JSON"))).status, 400)
             self.assertEqual(call("POST", "/loadout", Request({"mode": ["mpw18"]})).status, 400)
             # The mode's stages are the loadouts': POST /mode sets them,

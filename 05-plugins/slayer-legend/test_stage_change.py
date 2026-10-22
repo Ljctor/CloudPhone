@@ -464,7 +464,7 @@ class Switches(unittest.TestCase):
         self.assertEqual(refused[0], 400)
         # The AUTO tap is not learned: auto stays plan, nothing else changes.
         self.assertEqual(not_learned[0], 400)
-        self.assertIn("AUTO n’est pas encore appris", not_learned[1]["error"])
+        self.assertIn("AUTO n’est pas encore appris", french(not_learned[1]["error_t"]))
         self.assertEqual(ports.store.sections["farming"](), {"switches": changed})
 
     def test_a_real_auto_kept_reads_as_plan_until_learned(self):
@@ -544,7 +544,7 @@ class Mode(unittest.TestCase):
     def test_enter_farms_with_the_loadout(self):
         calls, state, alerts = self.enter([done()])
         self.assertEqual(calls, [(931, "III", "mpw4")])
-        self.assertEqual(state["state"], "farming", state["message"])
+        self.assertEqual(state["state"], "farming", french(state["message_t"]))
         self.assertEqual(alerts, ["Farming mpw4 ready in 0 s"])
 
     def test_failure_is_tried_again_within_the_budget_then_one_alert(self):
@@ -560,7 +560,7 @@ class Mode(unittest.TestCase):
         failed = {"result": "failed", "text": "écran inattendu"}
         calls, state, alerts = self.enter([failed, done()])
         self.assertEqual(len(calls), 2)
-        self.assertEqual(state["state"], "farming", state["message"])
+        self.assertEqual(state["state"], "farming", french(state["message_t"]))
         self.assertEqual(alerts, ["Farming mpw4 ready in 2 s"], "no failure alert, the retry's time in")
 
     def test_retry_backoff(self):
@@ -571,8 +571,8 @@ class Mode(unittest.TestCase):
     def test_the_watchdog_confirms_a_failed_mode(self):
         failed = {"result": "failed", "text": "écran inattendu"}
         calls, state, alerts = self.enter([failed] * 8, confirm="mpw4")
-        self.assertEqual(state["state"], "farming", state["message"])
-        self.assertIn("931", state["message"])
+        self.assertEqual(state["state"], "farming", french(state["message_t"]))
+        self.assertIn("931", french(state["message_t"]))
 
     def test_a_confirmation_for_another_mode_changes_nothing(self):
         failed = {"result": "failed", "text": "écran inattendu"}
@@ -599,13 +599,13 @@ class Mode(unittest.TestCase):
         # mpw4 gave up after LEASE_WAIT (one alert); its timer then ended:
         # back to mpw18, which farms.
         self.assertEqual([mode for _, _, mode in calls], ["mpw4"] * held + ["mpw18"])
-        self.assertIn("lease still taken after 30 min (lease held by mine), to do by hand", alerts[0])
+        self.assertIn("failed: lease still taken after 30 min (lease held by mine)", alerts[0])
         self.assertEqual(len([a for a in alerts if "lease" in a]), 1)
 
     def test_plan_is_said_not_alerted(self):
         calls, state, alerts = self.enter([{"result": "plan", "text": "stage 915 → 931"}])
         self.assertEqual(state["state"], "plan")
-        self.assertIn("plan seul", state["message"])
+        self.assertIn("plan seul", french(state["message_t"]))
         self.assertEqual(alerts, [])
 
 

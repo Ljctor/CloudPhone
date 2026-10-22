@@ -47,6 +47,7 @@ from .core import settings as settings_rules
 from .core.session import bearer
 from .core import metrics as host_metrics
 from .core import alerts as alert_rules
+from .core import texts
 from .adapters import adb, host_files, systemd
 from .adapters.host_files import read_file
 
@@ -676,6 +677,7 @@ def init_app(videobridge_token, plugins_dir="", plugin_data=""):
     app.router.add_get("/api/v1/state", handle_state)
     app.router.add_get("/api/v1/events", events.get_events(adb_output))
     app.router.add_get("/api/v1/logs", handle_logs)
+    app.router.add_get("/api/v1/templates", lambda request: web.json_response(texts.TEMPLATES))
     app.router.add_get("/api/v1/notify", notify.get_notify)
     app.router.add_post("/api/v1/notify", notify.set_notify)
     app.router.add_post("/api/v1/notify/test", notify.test_notify)

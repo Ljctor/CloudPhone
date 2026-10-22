@@ -134,6 +134,8 @@ fn a_second_change_within_two_minutes_is_refused_with_429() {
     // The same limit covers Android settings.
     let settings = cp.post_json("api/v1/emulator-settings", &json!({"renderer": "lavapipe", "cores": 1, "memoryMb": 4096}));
     assert_eq!(settings.status(), 429, "{:?}", settings.text());
+    let refused = settings.json().unwrap();
+    assert_eq!(refused["error_t"]["template"], "Attendez {seconds} s avant le prochain changement", "{refused}");
 }
 
 /// docs/DEVELOPMENT.md: "one change per 2 minutes (429 otherwise)". A

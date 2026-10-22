@@ -18,7 +18,8 @@ def power(ports):
         except (ValueError, TypeError, AttributeError):
             body = None
         if not isinstance(body, dict) or not isinstance(body.get("enabled"), bool):
-            return ports.respond({"error": "Expected {enabled: true or false}"}, status=400)
+            return ports.respond({"error_t": ports.t("Attendu : {expected}", expected="{enabled: true | false}")},
+                                 status=400)
         ports.set_enabled(body["enabled"])
         return ports.respond({"enabled": ports.enabled()})
 

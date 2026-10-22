@@ -146,11 +146,11 @@ SYMPTOMS = {
     "not_running": "le jeu ne tourne pas",
     "away": "une autre application est au premier plan : {window}",
     "crash": "le jeu a planté (fenêtre d’erreur d’Android)",
-    "anr": "le jeu ne répond pas (fenêtre d’Android), « Attendre » sans effet : à faire à la main",
+    "anr": "le jeu ne répond pas (fenêtre d’Android) : « Attendre » touché sans effet",
     "start_screen": "le jeu est revenu à son écran titre",
     "sign_in": "le jeu demande de se reconnecter (Sign in with Google)",
     "after_mode_screen": "écran inconnu après la fin du mode (connecté sur un autre appareil, ou choix de "
-                         "sauvegarde) : à faire à la main",
+                         "sauvegarde) : pas encore catalogué",
     "menu": "un menu du jeu est ouvert depuis plus d’une minute sans l’utilisateur",
     "wrong_stage": "mauvais stage, pas le {stage}",
     "wrong_battle_settings": "mauvais préréglage de combat : pas le {preset}",
@@ -194,7 +194,7 @@ QUIET_AFTER_ALERT = 30 * 60
 # Delays (seconds) whose first reach is a phone alert.
 ESCALATE = (480, 1800)
 KINDS = tuple(REPAIR_NAMES)
-ERRORS = ("adb_missing",)
+ERRORS = ("adb_missing", "anr", "after_mode_screen")
 # Repairs that are never plan-only.
 ALWAYS_REAL = ("relaunch", "mine_relaunch", "back_to_battle")
 

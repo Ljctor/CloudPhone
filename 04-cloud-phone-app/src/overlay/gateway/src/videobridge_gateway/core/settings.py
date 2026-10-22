@@ -7,6 +7,8 @@ core/display.py). No I/O: the host's figures, the status file's text and
 the emulator's command line come in.
 """
 
+from .texts import t
+
 RENDERERS = ("lavapipe", "swiftshader", "swangle", "software")
 # Older names of the same renderers, still accepted by the emulator.
 LEGACY_RENDERERS = {"swiftshader_indirect": "swiftshader", "swangle_indirect": "swangle"}
@@ -23,14 +25,14 @@ def limits(cpus, meminfo):
 
 
 def request_error(renderer, cores, memory, limits):
-    """The error for renderer, cores and memory (MiB) out of limits, else
-    None."""
+    """The error for renderer, cores and memory (MiB) out of limits (a
+    status text, core/texts.py), else None."""
     if renderer not in RENDERERS:
-        return f"renderer must be one of {', '.join(RENDERERS)}"
+        return t("renderer doit être l’un de {choices}", choices=", ".join(RENDERERS))
     if not 1 <= cores <= limits["maxCores"]:
-        return f"cores must be between 1 and {limits['maxCores']}"
+        return t("cores doit être entre 1 et {high}", high=limits["maxCores"])
     if not 2048 <= memory <= limits["maxMemoryMb"] or memory % 512:
-        return f"memoryMb must be a multiple of 512 between 2048 and {limits['maxMemoryMb']}"
+        return t("memoryMb doit être un multiple de 512 entre 2048 et {high}", high=limits["maxMemoryMb"])
     return None
 
 

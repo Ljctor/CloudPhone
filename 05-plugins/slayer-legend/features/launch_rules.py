@@ -11,7 +11,8 @@ holds "Press here to finish Power Saving Mode" (leave_saver, at most
 SAVER_TRIES times), each only when the screen shows it. The sign-in
 screen still there SIGN_IN_WAIT after the tap (blocked_sign_in), a chooser
 with no account or several (blocked_chooser) and any other screen that
-stays (blocked_other) are for the user.
+stays (blocked_other) stop the launch with an error that says what was
+seen.
 """
 
 # The whole launch gives up after this long (seconds).

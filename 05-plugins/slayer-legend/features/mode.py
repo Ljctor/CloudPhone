@@ -2,8 +2,8 @@
 farming mpw4, free play or the Closed Mine; back to mpw18 when the timer
 ends (the mine ends its last entry first).
 
-GET  /mode         {mode, default, until, stage18, stage4, highest, configured, state, message, setup, gold,
-                    mine}
+GET  /mode         {mode, default, until, stage18, stage4, highest, configured, state, message_t, setup, gold,
+                    mine} (message_t: a status text, texts.py)
                    setup: true while the mode is being set up (its switch,
                    waiting for the lease or tried again), for the overlay
 POST /mode         {mode, default, until, stage18, stage4, highest, floor, area}: a number
@@ -83,13 +83,13 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
     def report(state, message):
         """The mode's state and its message (a status text)."""
         if (status["state"], status["message"]) != (state, message):
-            ports.log("normal", f"Mode {status['mode']}: {state}" + (f" ({ports.english(message)})" if message else ""))
+            ports.log("error" if state == "failed" else "normal",
+                      f"Mode {status['mode']}: {state}" + (f" ({ports.english(message)})" if message else ""))
         status["state"], status["message"] = state, message
         ports.store.save()
 
     def state():
         answer = {key: status[key] for key in ("mode", "default", "until", "highest", "configured", "state")}
-        answer["message"] = ports.french(status["message"])
         answer["message_t"] = status["message"]
         answer.update(stages())
         answer["setup"] = status["state"] in ("moving", "waiting")
@@ -197,10 +197,9 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
                         # The plugin off: it waits for as long, no alert.
                         since = ports.clock.monotonic()
                     if ports.clock.monotonic() - since >= rules.LEASE_WAIT:
-                        report("failed", t("{switch} : bail toujours pris après 30 min ({why}), à faire à la main",
-                                           switch=moving, why=e.t))
-                        await ports.notify(f"Switch to stage {number} ({name}): lease still taken after 30 min ({e}), "
-                                           "to do by hand")
+                        report("failed", t("{switch} : bail toujours pris après 30 min ({why})", switch=moving, why=e.t))
+                        await ports.notify(f"Switch to stage {number} ({name}) failed: lease still taken after 30 min "
+                                           f"({e})")
                         return False
                     if e.t["template"] == rules.USER_PLAYING:
                         force = False
@@ -366,11 +365,11 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         asked, error = rules.request(body, {**stages(), "highest": status["highest"],
                                             "floor": mine["floor"], "area": mine["area"]}, status["default"])
         if error:
-            return ports.respond({"error": error}, status=400)
+            return ports.respond({"error_t": error}, status=400)
         name, until, numbers, given = asked
         default, error = rules.default_request(body, numbers, status["default"])
         if error:
-            return ports.respond({"error": error}, status=400)
+            return ports.respond({"error_t": error}, status=400)
         before = status["mode"]
         changed = name != before
         if default != status["default"]:
@@ -396,7 +395,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         try:
             add = float((await request.json()).get("add"))
         except (ValueError, TypeError, AttributeError):
-            return ports.respond({"error": "Expected {add: minutes}"}, status=400)
+            return ports.respond({"error_t": t("Attendu : {expected}", expected="{add: minutes}")}, status=400)
         status["until"] = timer.moved(status["until"], add, ports.clock.wall())
         if status["mode"] == "mine":
             mines["set_until"](status["until"])
@@ -424,7 +423,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
             body = None
         action, error = rules.hold_request(body, status["hold"], status["last_hold"])
         if error:
-            return ports.respond({"error": error[1]}, status=error[0])
+            return ports.respond({"error_t": error[1]}, status=error[0])
         if action == "free":
             hold = status["hold"]
             ports.log("normal", f"Mode {hold['mode']}: on hold, free play asked")

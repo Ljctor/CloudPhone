@@ -3,7 +3,9 @@
     GET  /api/v1/emulator-settings    what Android runs with, the allowed
                                       choices, the last request's state
     POST /api/v1/emulator-settings {renderer, cores, memoryMb[, width,
-                                    height, density]}
+                                    height, density]}: 202, or a refusal
+                                    {error_t} (a status text the page
+                                    shows, core/texts.py)
 
 A request is a line written to REQUEST, which the root-path unit
 cloudphone-settings applies, reporting in STATUS (see core/settings.py for
@@ -18,6 +20,7 @@ from aiohttp import web
 from ..adapters import host_files
 from ..core import settings
 from ..core.display import LIMITS as DISPLAY_LIMITS, json_int, size_error
+from ..core.texts import t
 from ..logs import log
 from . import display
 
@@ -59,17 +62,17 @@ def set_settings(meminfo, requested):
     @display.change_request("Android settings change refused: {error}")
     async def handle(request):
         if not REQUEST:
-            return web.json_response({"error": "Emulator settings changes are disabled"}, status=403)
+            return display.refusal(t("Les changements de réglages d’Android sont désactivés"), 403, True)
         try:
             data = await request.json()
             renderer, cores, memory = data["renderer"], json_int(data["cores"]), json_int(data["memoryMb"])
             if not isinstance(renderer, str):
                 raise TypeError("renderer is not a string")
         except (ValueError, KeyError, TypeError):
-            return web.json_response({"error": "renderer, cores and memoryMb are required"}, status=400)
+            return display.refusal(t("renderer, cores et memoryMb sont requis"), 400, True)
         error = settings.request_error(renderer, cores, memory, settings.limits(os.cpu_count() or 1, meminfo()))
         if error:
-            return web.json_response({"error": error}, status=400)
+            return display.refusal(error, 400, True)
         size = ""
         given = [key for key in DISPLAY_LIMITS if data.get(key) is not None]
         if given:
@@ -78,12 +81,12 @@ def set_settings(meminfo, requested):
                     raise ValueError
                 wanted = {key: json_int(data[key]) for key in DISPLAY_LIMITS}
             except (ValueError, TypeError):
-                return web.json_response({"error": "width, height and density go together"}, status=400)
+                return display.refusal(t("width, height et density vont ensemble"), 400, True)
             error = size_error(wanted)
             if error:
-                return web.json_response({"error": error}, status=400)
+                return display.refusal(error, 400, True)
             size = f" {wanted['width']} {wanted['height']} {wanted['density']}"
-        refused = display.change_refused(status(), files())
+        refused = display.change_refused(status(), files(), shown=True)
         if refused is not None:
             return refused
         host_files.write_request(REQUEST, f"{renderer} {cores} {memory}{size}\n")

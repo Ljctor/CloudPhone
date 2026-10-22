@@ -3,6 +3,7 @@ AUTO on: the moves the mode feature makes when a farming mode starts, and
 the watchdog's repairs.
 
 GET  /farming   {switches: {stage_change, preset, auto}, soul_weapon, last}
+                (last: {result, text_t, timings, mode}, text_t a status text)
 POST /farming   {stage_change, preset, auto}: each "real" or "plan" (a
                 field absent keeps its value); soul_weapon: "real" or
                 "off"; needs the page token
@@ -450,8 +451,6 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
 
     async def handle_get(request):
         last = status["last"]
-        if last:
-            last = {**last, "text": ports.french(last.get("text_t"))}
         return ports.respond({"switches": dict(switches), "last": last,
                               "soul_weapon": souls["state"]() if souls else None})
 
@@ -462,10 +461,10 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
             body = None
         if not isinstance(body, dict) or any(body.get(k) not in (None, "real", "plan") for k in SWITCHES) \
                 or body.get("soul_weapon") not in (None, "real", "off"):
-            return ports.respond({"error": "Expected {stage_change, preset, auto}: \"real\" or \"plan\"; "
-                                           "soul_weapon: \"real\" or \"off\""}, status=400)
+            return ports.respond({"error_t": t("Attendu : {expected}", expected='{stage_change, preset, auto}: "real" | '
+                                               '"plan"; soul_weapon: "real" | "off"')}, status=400)
         if body.get("auto") == "real" and not AUTO_TAP_LEARNED:
-            return ports.respond({"error": AUTO_NOT_LEARNED}, status=400)
+            return ports.respond({"error_t": t(AUTO_NOT_LEARNED)}, status=400)
         for name in SWITCHES:
             if body.get(name):
                 if switches[name] != body[name]:

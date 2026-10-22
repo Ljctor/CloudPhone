@@ -292,6 +292,6 @@ fn a_refused_request_shows_the_servers_reason() {
         }
         click_apply(&page).await;
         page.wait_js("the refusal", Duration::from_secs(10),
-            "const d = document.querySelector('[role=dialog]'); return !!d && d.innerText.includes('A change is already in progress')", vec![]).await;
+            "const d = document.querySelector('[role=dialog]'); return !!d && d.innerText.includes('Un changement est déjà en cours')", vec![]).await;
     });
 }

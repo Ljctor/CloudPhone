@@ -144,7 +144,8 @@ Android keeps running. Reload the page (the index is never cached).
 | `POST /api/v1/notify` | `{enabled[, newTopic]}`: turns them on or off; the first time (or with `newTopic`) the gateway draws a random topic `cloudphone-<24 hex>`, kept with the setting in `/var/lib/cloudphone/notify.json` (mode 600). While on, the gateway alerts every minute on Android's new events (crash, ANR, app stopped while noticeable, Android or emulator restart) and plugins send theirs with `context.notify`. Messages go through the public ntfy.sh service: anyone who knows the topic can read them, so they carry nothing private |
 | `POST /api/v1/notify/test` | one test alert; 502 when ntfy.sh did not take it |
 | `GET /api/v1/emulator-settings` | renderer, cores and memory from the running emulator's command line, the configured screen (`display`), limits (`renderers`, `maxCores`, `maxMemoryMb`), state of the last request |
-| `POST /api/v1/emulator-settings` `{renderer, cores, memoryMb[, width, height, density]}` | what the page's Apply sends: change all of them with one restart of Android |
+| `POST /api/v1/emulator-settings` `{renderer, cores, memoryMb[, width, height, density]}` | what the page's Apply sends: change all of them with one restart of Android. A refusal is `{error_t: {template, params}}`, a French template the page translates (`core/texts.py`) |
+| `GET /api/v1/templates` | `{French template: English}` for the gateway's `error_t` texts (`core/texts.py`), for the page's translations |
 | `GET /api/v1/display` | running and configured screen size, last change request, limits |
 | `POST /api/v1/display` `{width, height, density}` | screen size only (reboots Android); kept for API clients, the page no longer calls it |
 | `POST /api/v1/viewers/disconnect-others` `{viewer}` | close the other viewers' sessions |

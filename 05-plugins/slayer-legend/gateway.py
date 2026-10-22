@@ -30,6 +30,10 @@ GET  /templates                        templates.json as it is: {French template
                                        English of every status text the plugin answers with
                                        ({template, params}, features/texts.py), for the page
 
+A refused request answers {error_t}, a status text; a status the page
+shows is {..._t} (message_t, text_t), never a French sentence. Records
+and phone alerts are English.
+
 The mode and its timer, the mine's floor, area, timer and on/off, each
 farming mode's loadout (its stage, Battle settings preset, soul weapon
 and engraving), the highest stage seen farmed and the watchdog's repairs

@@ -14,6 +14,7 @@ import unittest
 from types import SimpleNamespace
 
 import test_stage_change as base
+from test_stage_change import french
 
 mode_feature = base.mode_feature
 mode_rules = base.mode_rules
@@ -199,7 +200,7 @@ class Switch(unittest.TestCase):
             return game.now - start, (await h.state())[1]
         took, state = asyncio.run(go())
         self.assertLessEqual(took, mode_rules.SWITCH_BUDGET, self.lines)
-        self.assertEqual(state["state"], "farming", state["message"])
+        self.assertEqual(state["state"], "farming", french(state["message_t"]))
         self.assertEqual(h.farmed[0][1], "mpw4")
         line = next(line for line in self.lines if line.startswith("switch "))
         self.assertRegex(line, r"^switch mpw18→mpw4 in \d+ s \(stage \d+ s, preset \d+ s, auto \d+ s, soul_weapon \d+ s\), done$")
@@ -255,7 +256,7 @@ class Switch(unittest.TestCase):
             return (await h.state())[1]
         state = asyncio.run(go())
         self.assertEqual((state["mode"], state["until"], state["state"]), ("free", None, "free"))
-        self.assertEqual(state["message"], "Jeu libre : rien n’est touché")
+        self.assertEqual(french(state["message_t"]), "Jeu libre : rien n’est touché")
         self.assertEqual(len(h.farmed), 1)
         self.assertIn("Timer ended: back to free play", game.alerts)
 
@@ -265,7 +266,7 @@ class Switch(unittest.TestCase):
         h.stages["mpw4"] = None
         answer = asyncio.run(h.post({"mode": "mpw18", "default": "mpw4"}))
         self.assertEqual(answer[0], 400)
-        self.assertIn("stage", answer[1]["error"])
+        self.assertIn("stage", french(answer[1]["error_t"]))
 
     def test_over_budget_it_completes_logs_and_alerts_the_slowest_step(self):
         game = SlowGame(stage=905, preset="IV")
@@ -339,7 +340,7 @@ class Switch(unittest.TestCase):
         seen = self.on_hold(game, harness(game), 30, stop_playing)
         during = seen["during"]
         self.assertEqual((during["state"], during["setup"], during["hold"]["mode"]), ("waiting", True, "mpw4"))
-        self.assertEqual(during["message"], "Passage au farming mpw4 en attente : tu joues · nouvel essai dans 60 s")
+        self.assertEqual(french(during["message_t"]), "Passage au farming mpw4 en attente : tu joues · nouvel essai dans 60 s")
         self.assertEqual(len(game.alerts), 2, game.alerts)
         self.assertEqual(game.alerts[0], "Switch to farming mpw4 on hold: you are playing. Next try in 60 s.")
         self.assertRegex(game.alerts[1], r"^Farming mpw4 ready in \d+ s \(including 1[67]\d s waiting: you were playing\)$")
@@ -423,7 +424,7 @@ class Switch(unittest.TestCase):
         took, state = asyncio.run(go())
         self.assertLessEqual(took, mode_rules.SWITCH_BUDGET)
         self.assertTrue(there(game, 925, "V"))
-        self.assertEqual(state["state"], "farming", state["message"])
+        self.assertEqual(state["state"], "farming", french(state["message_t"]))
         line = next(l for l in self.lines if l.startswith("loadout "))
         self.assertRegex(line, r"^loadout mpw4 changed → applied in \d+ s \(.*\), done$")
         self.assertRegex(game.alerts[-1], r"^Loadout mpw4 applied in \d+ s$")

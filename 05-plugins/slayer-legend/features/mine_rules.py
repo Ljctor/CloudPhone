@@ -55,21 +55,26 @@ WATCH_SECONDS = 15 * 60
 WATCH_EVERY = 30
 
 
+def t(template, **params):
+    """A status text (features/texts.py)."""
+    return {"template": template, "params": params}
+
+
 def fresh():
     return {"scroll": scroll.fresh(), "gold_seen": 0.0, "last_hold": 0.0, "failures": 0, "untick_failures": 0}
 
 
 def request(body):
     """POST /mine's {enabled, floor, area, until}: ((enabled, floor, area,
-    until), None) or (None, the error)."""
+    until), None) or (None, the error, a status text)."""
     try:
         enabled = bool(body.get("enabled"))
         floor, area = int(body.get("floor") or 0), int(body.get("area") or 0)
         until = float(body["until"]) if body.get("until") is not None else None
     except (ValueError, TypeError, AttributeError):
-        return None, "Expected {enabled, floor, area, until}"
+        return None, t("Attendu : {expected}", expected="{enabled, floor, area, until}")
     if enabled and not valid(floor, area):
-        return None, "floor 1-9999, area 1-5"
+        return None, t("étage de 1 à 9999, zone de 1 à 5")
     return (enabled, floor, area, until), None
 
 

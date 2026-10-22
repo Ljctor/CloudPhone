@@ -7,6 +7,8 @@ applied. No I/O: the status file's text, the request's values and the
 times come in, decisions come out.
 """
 
+from .texts import t
+
 LIMITS = {"width": (240, 1440), "height": (320, 3200), "density": (80, 640)}
 CHANGE_INTERVAL = 120.0
 BUSY = ("pending", "applying")
@@ -21,12 +23,12 @@ def json_int(value):
 
 def size_error(wanted):
     """The error for a {width, height, density} out of LIMITS or with an odd
-    side, else None."""
+    side (a status text, core/texts.py), else None."""
     for key, (low, high) in LIMITS.items():
         if not low <= wanted[key] <= high:
-            return f"{key} must be between {low} and {high}"
+            return t("{key} doit être entre {low} et {high}", key=key, low=low, high=high)
     if wanted["width"] % 2 or wanted["height"] % 2:
-        return "width and height must be even"
+        return t("width et height doivent être pairs")
     return None
 
 

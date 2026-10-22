@@ -37,6 +37,7 @@ def load_feature(name):
 LOG = load_feature("ports").python_log("slayer-legend")
 EXCEPTION = load_feature("ports").exception_log(LOG)
 TEXTS = load_feature("ports").text_ports()
+french = TEXTS["french"]
 
 
 class Request:
@@ -321,7 +322,7 @@ class Lease(MineTest):
         self.assertEqual(len(game.taps), 3, game.taps)
         self.assertGreaterEqual(game.taps[0][0], 44 + 60, game.taps)
         waiting = [body for t, p, body in answers if t == 80][0]
-        self.assertEqual((waiting["state"], waiting["message"]), ("waiting", "En attente : l’utilisateur joue"))
+        self.assertEqual((waiting["state"], french(waiting["message_t"])), ("waiting", "En attente : l’utilisateur joue"))
         self.assertEqual(self.last(answers, "/mine")["state"], "farming")
 
     def test_an_outside_holder_defers_it_until_released(self):
@@ -332,8 +333,8 @@ class Lease(MineTest):
         self.assertTrue(game.taps and game.taps[0][0] >= 100, game.taps)
         self.assertEqual(len(game.taps), 3)
         at_80 = {p: body for t, p, body in answers if t == 80}
-        self.assertEqual(at_80["/mine"]["message"], "En attente : bail tenu par agent")
-        self.assertEqual(at_80["/lease"]["error"], "not your lease")
+        self.assertEqual(french(at_80["/mine"]["message_t"]), "En attente : bail tenu par agent")
+        self.assertEqual(french(at_80["/lease"]["error_t"]), "pas ton bail")
         self.assertEqual([body for t, p, body in answers if t == 100 and p == "/lease"][-1], {"lease": None})
 
     def test_the_plugin_off_taps_nothing_until_it_is_back_on(self):
@@ -342,7 +343,7 @@ class Lease(MineTest):
             (0, [mine(), off]), (80, [GET_MINE, ("GET", "/enabled", None)]), (100, [on]), (250, [GET_MINE])], 250)
         self.assertTrue(game.taps and game.taps[0][0] >= 100, game.taps)
         at_80 = {p: body for t, p, body in answers if t == 80}
-        self.assertEqual(at_80["/mine"]["message"], "Plugin désactivé")
+        self.assertEqual(french(at_80["/mine"]["message_t"]), "Plugin désactivé")
         self.assertEqual(at_80["/enabled"], {"enabled": False})
         self.assertEqual(self.last(answers, "/mine")["state"], "farming")
 
@@ -420,7 +421,7 @@ class Lease(MineTest):
                      {"holder": "agent", "reason": "x", "seconds": 0}, {"holder": "", "reason": "x", "seconds": 9},
                      None):
             _, answers = self.play({"fight": dict(FIGHT_GOLD)}, "fight", [(0, [("POST", "/lease", body)])], 1)
-            self.assertIn("error", answers[0][2], body)
+            self.assertIn("error_t", answers[0][2], body)
 
     def test_a_lease_expires_with_a_warning_and_is_renewed_by_its_holder(self):
         take = ("POST", "/lease", {"holder": "agent", "reason": "réglages", "seconds": 60})
@@ -539,14 +540,14 @@ class WayBackIn(unittest.TestCase):
         self.assertEqual(answer["result"], "uncalibrated")
         self.assertEqual(game["taps"], [])
         self.assertEqual((state["enabled"], state["state"]), (False, "entry_failed"))
-        self.assertIn("pas encore reconnus", state["message"])
+        self.assertIn("pas encore reconnus", french(state["message_t"]))
         self.assertEqual(game["alerts"], [], "the mode's back to default alerts, once")
 
     def test_no_feather_ends_the_mine_before_the_feathers_tap(self):
         answer, state, game = self.run_reenter(feathers=0)
         self.assertEqual(answer["result"], "no_feather")
         self.assertNotIn(("mine_feathers", "feathers"), game["taps"])
-        self.assertEqual((state["enabled"], state["state"], state["message"]), (False, "no_feather", "plus de plume"))
+        self.assertEqual((state["enabled"], state["state"], french(state["message_t"])), (False, "no_feather", "plus de plume"))
         self.assertEqual(game["alerts"], [])
 
     def test_a_screen_that_does_not_show_is_tried_again_then_the_mine_ends(self):

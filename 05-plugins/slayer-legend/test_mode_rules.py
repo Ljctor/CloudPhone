@@ -25,7 +25,7 @@ class Request(unittest.TestCase):
     def test_mpw4_needs_its_stage(self):
         asked, error = rules.request({"mode": "mpw4"})
         self.assertIsNone(asked)
-        self.assertEqual(error, "Farming mpw4 : choisis d’abord son stage")
+        self.assertEqual(error, rules.t("Farming mpw4 : choisis d’abord son stage"))
         asked, error = rules.request({"mode": "mpw4", "stage4": 31})
         self.assertIsNone(error)
         self.assertEqual((asked[0], asked[2]["stage4"]), ("mpw4", 31))
@@ -35,7 +35,7 @@ class Request(unittest.TestCase):
                      {"mode": "mine", "floor": 12, "area": 6}, {"mode": "mine", "floor": 10000, "area": 3}):
             asked, error = rules.request(body)
             self.assertIsNone(asked, body)
-            self.assertTrue(error.startswith("Mine fermée : choisis d’abord"), (body, error))
+            self.assertTrue(error["template"].startswith("Mine fermée : choisis d’abord"), (body, error))
         asked, error = rules.request({"mode": "mine", "floor": 12, "area": 3})
         self.assertIsNone(error)
         self.assertEqual(asked[0], "mine")
@@ -62,7 +62,7 @@ class DefaultMode(unittest.TestCase):
         self.assertIsNotNone(rules.default_request({"default": "nope"}, {}, "mpw18")[1])
 
     def test_mpw4_only_once_configured(self):
-        self.assertIn("stage", rules.default_request({"default": "mpw4"}, {"stage4": None}, "mpw18")[1])
+        self.assertIn("stage", rules.default_request({"default": "mpw4"}, {"stage4": None}, "mpw18")[1]["template"])
         self.assertEqual(rules.default_request({"default": "mpw4"}, {"stage4": 925}, "mpw18"), ("mpw4", None))
 
     def test_the_default_has_no_timer_the_others_have(self):

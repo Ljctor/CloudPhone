@@ -288,7 +288,8 @@ fn slayer_legends_timed_modes_start_with_30_minutes() {
 #[test]
 fn slayer_legend_refuses_a_mode_not_configured_yet() {
     // mpw4 without its stage, the mine without its floor or area: 400 with
-    // the reason in French, and the mode stays as it was.
+    // the reason as a status text (its French template), and the mode stays
+    // as it was.
     let cp = with(json!([SLAYER_LEGEND]));
     for (body, reason) in [
         (json!({"mode": "mpw4"}), "Farming mpw4 : choisis d’abord son stage"),
@@ -297,7 +298,7 @@ fn slayer_legend_refuses_a_mode_not_configured_yet() {
     ] {
         let refused = cp.post_json("api/v1/plugins/slayer-legend/mode", &body);
         assert_eq!(refused.status(), 400, "{body}");
-        assert_eq!(refused.json().unwrap(), json!({"error": reason}), "{body}");
+        assert_eq!(refused.json().unwrap(), json!({"error_t": {"template": reason, "params": {}}}), "{body}");
         assert_eq!(cp.get_json("api/v1/plugins/slayer-legend/mode")["mode"], "mpw18", "{body}");
     }
 }
@@ -380,7 +381,7 @@ fn slayer_legends_lease_needs_the_page_token_and_only_its_holder_releases_it() {
     assert!((599.0..=601.0).contains(&ttl), "{lease}");
     let other = cp.post_json(path, &json!({"holder": "someone", "reason": "x", "seconds": 60}));
     assert_eq!(other.status(), 409, "another holder waits");
-    assert_eq!(other.json().unwrap()["error"], "bail tenu par agent");
+    assert_eq!(other.json().unwrap()["error_t"], json!({"template": "bail tenu par {holder}", "params": {"holder": "agent"}}));
     assert_eq!(delete_lease(&cp, "agent", false), 403, "DELETE without the token");
     assert_eq!(delete_lease(&cp, "someone", true), 404, "not its lease");
     assert_eq!(cp.get_json(path)["lease"]["holder"], "agent");

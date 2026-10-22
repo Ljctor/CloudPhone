@@ -212,7 +212,7 @@ class SignInLaunch(unittest.TestCase):
         self.assertEqual(taps, [("sign_in", "google")])
         self.assertEqual(state["state"], "blocked")
         self.assertEqual(len(alerts), 1)
-        self.assertIn("Google sign-in impossible: to do by hand", alerts[0])
+        self.assertIn("Google sign-in failed: the sign-in screen is still there", alerts[0])
 
     def test_several_accounts_is_one_alert_and_no_tap(self):
         taps, alerts, state = launched(["sign_in", "chooser:2"])

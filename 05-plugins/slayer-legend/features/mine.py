@@ -1,7 +1,7 @@
 """Farms the Closed Mine from the gateway, so it goes on with the page
 closed.
 
-GET  /mine         {enabled, floor, area, until, gold, state, message}
+GET  /mine         {enabled, floor, area, until, gold, state, message_t}
 POST /mine         {enabled, floor, area, until}
 POST /mine/timer   {add: minutes}: moves the end of farming (may be negative)
 
@@ -40,7 +40,8 @@ def mine(ports, screens, readers, rules, timer, values):
     def report(state, message=None):
         """The mine's state and its message (a status text, or None)."""
         if (status["state"], status["message"]) != (state, message):
-            ports.log("normal", f"Mine: {state} {ports.english(message)}".rstrip())
+            ports.log("error" if state in ("blocked", "failed") else "normal",
+                      f"Mine: {state}" + (f" ({ports.english(message)})" if message else ""))
         status["state"], status["message"] = state, message
         ports.store.save()
 
@@ -256,7 +257,7 @@ def mine(ports, screens, readers, rules, timer, values):
             memory, give_up = rules.untick_failed(memory)
             if give_up:
                 await finish("blocked", t("{reason}, mais « Repeat entry » ne se décoche pas après {tries} essais : "
-                                          "décoche-le à la main", reason=reason, tries=rules.MAX_UNTICK_FAILURES))
+                                          "sa case se lit toujours cochée", reason=reason, tries=rules.MAX_UNTICK_FAILURES))
                 return "blocked"
             report("blocked", t("{reason}, mais « Repeat entry » ne se décoche pas : nouvel essai", reason=reason))
             return "retry"
@@ -319,7 +320,8 @@ def mine(ports, screens, readers, rules, timer, values):
                 elif move == "wait_no_gold":
                     report("waiting", t("Parchemin doré pas vu depuis 5 minutes : pas de relance"))
                 elif move == "finish_failures":
-                    await finish("blocked", t("La relance a échoué 3 fois : relance la mine à la main"))
+                    await finish("blocked", t("La relance de la mine a échoué {tries} fois de suite : pas de combat vu "
+                                                "après la relance", tries=rules.MAX_FAILURES))
                     return
                 elif move == "relaunch":
                     shot = await look_again()
@@ -432,7 +434,7 @@ def mine(ports, screens, readers, rules, timer, values):
                 return
         ports.log("warning", f"Mine: fight still not seen after {rules.WATCH_SECONDS // 60} more minutes")
         await alert(f"Mine: fight still not seen after {(rules.STOP_SECONDS + rules.WATCH_SECONDS) // 60} "
-                    "minutes, Repeat entry may still be ticked: check it by hand")
+                    "minutes: Repeat entry may still be ticked")
 
     def cancel_stopper():
         """The user starts the mine: no stop pass any more."""
@@ -442,7 +444,6 @@ def mine(ports, screens, readers, rules, timer, values):
 
     def state():
         answer = {key: status[key] for key in ("enabled", "floor", "area", "until", "gold", "state")}
-        answer["message"] = ports.french(status["message"])
         answer["message_t"] = status["message"]
         return answer
 
@@ -486,7 +487,7 @@ def mine(ports, screens, readers, rules, timer, values):
             body = None
         asked, error = rules.request(body)
         if error:
-            return ports.respond({"error": error}, status=400)
+            return ports.respond({"error_t": error}, status=400)
         enabled, floor, area, until = asked
         status.update(floor=floor or None, area=area or None, until=until)
         if enabled and not status["enabled"]:
@@ -502,7 +503,7 @@ def mine(ports, screens, readers, rules, timer, values):
         try:
             add = float((await request.json()).get("add"))
         except (ValueError, TypeError, AttributeError):
-            return ports.respond({"error": "Expected {add: minutes}"}, status=400)
+            return ports.respond({"error_t": t("Attendu : {expected}", expected="{add: minutes}")}, status=400)
         status["until"] = timer.moved(status["until"], add, ports.clock.wall())
         ports.store.save()
         return ports.respond(state())
