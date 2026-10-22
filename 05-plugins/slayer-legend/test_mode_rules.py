@@ -18,6 +18,7 @@ def load(name):
 
 
 rules = load("features/mode_rules")
+texts = load("features/texts")
 
 
 class Request(unittest.TestCase):
@@ -94,14 +95,14 @@ class MineEnds(unittest.TestCase):
 
     def test_one_alert_naming_the_default(self):
         self.assertEqual(rules.back_text("mine no feather", "mpw18", 920),
-                         "Mine fermée arrêtée : plus de plume, retour au farming mpw18 (stage 920)")
+                         "Closed Mine stopped: no feather left, back to farming mpw18 (stage 920)")
         self.assertEqual(rules.back_text("mine no feather", "free"),
-                         "Mine fermée arrêtée : plus de plume, retour au jeu libre")
+                         "Closed Mine stopped: no feather left, back to free play")
         self.assertEqual(rules.back_text("mine entry", "mpw4", 925,
-                                         "retour dans la mine impossible (écran Dungeon pas vu)"),
-                         "Mine fermée arrêtée : retour dans la mine impossible (écran Dungeon pas vu), "
-                         "retour au farming mpw4 (stage 925)")
-        self.assertEqual(rules.back_text("timer", "mpw18", 920), "Minuteur écoulé : retour au farming mpw18 (stage 920)")
+                                         "no way back into the mine (Dungeon screen not seen)"),
+                         "Closed Mine stopped: no way back into the mine (Dungeon screen not seen), "
+                         "back to farming mpw4 (stage 925)")
+        self.assertEqual(rules.back_text("timer", "mpw18", 920), "Timer ended: back to farming mpw18 (stage 920)")
 
 
 class Timer(unittest.TestCase):
@@ -170,8 +171,8 @@ class FreePlayWarning(unittest.TestCase):
         self.assertFalse(rules.warn_due("free", None, None, 9_950))
 
     def test_the_text(self):
-        self.assertEqual(rules.WARNING, "Le Cloud Phone reprend la main dans 2 min, "
-                                        "prolonge le jeu libre si tu joues encore")
+        self.assertEqual(rules.WARNING, "The Cloud Phone takes over in 2 min: extend free play if you are still "
+                                        "playing")
 
 
 class Hold(unittest.TestCase):
@@ -179,20 +180,24 @@ class Hold(unittest.TestCase):
 
     def test_the_alert_and_the_state_row(self):
         self.assertEqual(rules.hold_alert("mpw18", 59.6),
-                         "Passage au farming mpw18 en attente : tu joues. Nouvel essai dans 60 s.")
+                         "Switch to farming mpw18 on hold: you are playing. Next try in 60 s.")
         self.assertEqual(rules.hold_alert("mpw4", 12, applied=True),
-                         "Configuration mpw4 en attente : tu joues. Nouvel essai dans 12 s.")
-        self.assertEqual(rules.hold_message("mpw18", 42),
+                         "Loadout mpw4 on hold: you are playing. Next try in 12 s.")
+        self.assertEqual(texts.french(rules.hold_message("mpw18", 42)),
                          "Passage au farming mpw18 en attente : tu joues · nouvel essai dans 42 s")
-        self.assertEqual(rules.hold_message("mpw18", 0.2), "Passage au farming mpw18 en attente : tu joues · "
-                                                           "nouvel essai dans 1 s", "never « dans 0 s »")
+        self.assertEqual(texts.french(rules.hold_message("mpw4", 42, applied=True)),
+                         "Configuration mpw4 en attente : tu joues · nouvel essai dans 42 s")
+        self.assertEqual(texts.english(rules.hold_message("mpw18", 42)),
+                         "Switch to farming mpw18 on hold: you are playing · next try in 42 s")
+        self.assertEqual(texts.french(rules.hold_message("mpw18", 0.2)), "Passage au farming mpw18 en attente : "
+                         "tu joues · nouvel essai dans 1 s", "never « dans 0 s »")
 
     def test_the_ready_text_says_the_hold_apart(self):
         self.assertEqual(rules.ready_text("mpw18", 95, held=60.2),
-                         "Farming mpw18 prêt en 95 s (dont 60 s d’attente : tu jouais)")
-        self.assertEqual(rules.ready_text("mpw18", 34, held=0.3), "Farming mpw18 prêt en 34 s")
+                         "Farming mpw18 ready in 95 s (including 60 s waiting: you were playing)")
+        self.assertEqual(rules.ready_text("mpw18", 34, held=0.3), "Farming mpw18 ready in 34 s")
         self.assertEqual(rules.ready_text("mpw4", 80, applied=True, alert="X", held=50),
-                         "Configuration mpw4 appliquée en 80 s (dont 50 s d’attente : tu jouais) ; X")
+                         "Loadout mpw4 applied in 80 s (including 50 s waiting: you were playing); X")
 
     def test_free_or_resume_while_on_hold(self):
         hold = {"id": "a1", "action": None}
@@ -220,8 +225,8 @@ class Hold(unittest.TestCase):
         self.assertIsNone(rules.hold_buttons("a1", None), "an older gateway: no buttons")
         buttons = rules.hold_buttons("a1", "tok")
         self.assertEqual([(b["label"], b["body"]) for b in buttons],
-                         [("Passer en jeu libre", {"action": "free", "hold": "a1"}),
-                          ("Reprendre maintenant", {"action": "resume", "hold": "a1"})])
+                         [("Switch to free play", {"action": "free", "hold": "a1"}),
+                          ("Resume now", {"action": "resume", "hold": "a1"})])
         self.assertEqual({(b["path"], b["token"]) for b in buttons}, {("/mode/hold", "tok")})
 
     def test_a_bad_body(self):
@@ -253,7 +258,7 @@ class Pause(unittest.TestCase):
         self.assertEqual(self.lease.pause_left(), 0)
 
     def test_resumed_now_it_is_taken_within_the_minute(self):
-        self.assertEqual(self.lease.take("stage_change", "farm mpw18", 60), rules.USER_PLAYING)
+        self.assertEqual(self.lease.take("stage_change", "farm mpw18", 60)["template"], rules.USER_PLAYING)
         self.assertIsNone(self.lease.take("stage_change", "farm mpw18", 60, pause=False))
         self.lease.check("stage_change")
 
@@ -263,7 +268,7 @@ class Pause(unittest.TestCase):
         self.assertIsNone(self.lease.take("stage_change", "farm mpw18", 60))
         self.lease.release("stage_change")
         self.lease.saw_focus(True)
-        self.assertEqual(self.lease.take("stage_change", "farm mpw18", 60), rules.USER_PLAYING)
+        self.assertEqual(self.lease.take("stage_change", "farm mpw18", 60)["template"], rules.USER_PLAYING)
 
     def test_an_input_after_it_still_stops_the_sequence(self):
         self.lease.take("stage_change", "farm mpw18", 60, pause=False)

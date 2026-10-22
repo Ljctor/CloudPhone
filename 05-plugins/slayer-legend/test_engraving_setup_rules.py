@@ -21,6 +21,7 @@ def load(name):
 
 
 rules = load("features/engraving_setup_rules")
+texts = load("features/texts")
 engraving_rules = load("features/engraving_rules")
 es = load("engraving_screen")
 fixtures = load("test_fixtures")
@@ -120,20 +121,23 @@ class NextStep(unittest.TestCase):
         self.assertEqual(step(filled(grid, second[1]), cards, probed=[first[1], second[1]]), ("done",))
 
     def test_failures(self):
-        self.assertEqual(step(None, ATK_CARDS), ("fail", "grid unreadable"))
+        self.assertEqual(step(None, ATK_CARDS), ("fail", texts.t("grille illisible")))
         self.assertEqual(step(ATK_GRID, changed(ATK_CARDS, c3={"locked": None}))[0], "fail")
-        self.assertIn("unreadable", step(ATK_GRID, changed(ATK_CARDS, c3={"shape": None}))[1])
-        self.assertIn("missing", step(ATK_GRID, changed(ATK_CARDS, c0={"shape": "L"}, c2={"shape": "L"},
-                                                        c3={"shape": "L"}, c6={"shape": "L"}))[1])
+        self.assertIn("illisible", texts.french(step(ATK_GRID, changed(ATK_CARDS, c3={"shape": None}))[1]))
+        self.assertIn("il manque", texts.french(step(ATK_GRID, changed(ATK_CARDS, c0={"shape": "L"}, c2={"shape": "L"},
+                                                                       c3={"shape": "L"}, c6={"shape": "L"}))[1]))
 
     def test_done_and_check(self):
         self.assertEqual(step(ATK_GRID, ATK_CARDS, ATK, gold=False), ("done",))
         self.assertEqual(rules.check(ATK_GRID, ATK_CARDS, ATK, VISION["cells"], "Vision", "Atk"), [])
         problems = rules.check(ATK_GRID, ATK_CARDS, GOLD, VISION["cells"], "Vision", "Gold-balanced", gold=True)
-        self.assertIn("the pieces placed are not Gold-balanced's", problems)
-        self.assertIn("not read locked: #2", rules.check(ATK_GRID, changed(ATK_CARDS, c1={"locked": False}), ATK,
-                                                          VISION["cells"], "Vision", "Atk"))
-        self.assertTrue(rules.alert("Vision", "Atk", ["a", "b"]).startswith("Engraving of Vision (Atk) not ready"))
+        self.assertIn("les pièces posées ne sont pas celles de Gold-balanced", [texts.french(p) for p in problems])
+        self.assertIn("pas lue(s) verrouillée(s) : n°2",
+                      [texts.french(p) for p in rules.check(ATK_GRID, changed(ATK_CARDS, c1={"locked": False}), ATK,
+                                                            VISION["cells"], "Vision", "Atk")])
+        alert = rules.alert("Vision", "Atk", [texts.t("grille illisible"), texts.t("une pièce illisible")])
+        self.assertEqual(texts.french(alert), "Gravure de Vision (Atk) pas prête : grille illisible ; une pièce illisible")
+        self.assertTrue(texts.english(alert).startswith("Engraving of Vision (Atk) not ready"))
 
 
 # The preview on the captures of 2026-10-22: the L taken out of
@@ -159,7 +163,7 @@ class PreviewStep(unittest.TestCase):
     def test_on_its_cells_and_valid_it_is_confirmed(self):
         now, valid = self.preview("eg_preview_valid")
         self.assertEqual(rules.preview_step(REMOVED, now, valid, L_BASE, 1, TARGET), ("confirm",))
-        self.assertEqual(rules.preview_step(REMOVED, now, False, L_BASE, 1, TARGET), ("cancel", "spot read invalid"))
+        self.assertEqual(rules.preview_step(REMOVED, now, False, L_BASE, 1, TARGET), ("cancel", texts.t("emplacement lu invalide")))
 
     def test_cancelled_when_lost(self):
         self.assertEqual(rules.preview_step(REMOVED, REMOVED, None, L_BASE, 0, TARGET)[0], "cancel")

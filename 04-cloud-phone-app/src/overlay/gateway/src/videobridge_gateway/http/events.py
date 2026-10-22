@@ -115,9 +115,9 @@ async def log_start(expected):
     """The gateway's start, and an emulator restart just before it: the
     gateway restarts to follow the emulator, so the previous gateway's
     records of a crash are only in the journal."""
-    log("normal", "gateway", "Le gateway a démarré", notify=True)
+    log("normal", "gateway", "Gateway started", notify=True)
     unit = await read_unit_start()
     if unit and time.time() - unit["time"] < 180 and unit.get("reason") and not expected():
-        log("error", "emulator", "Android a redémarré après un arrêt anormal ({result}, {restarts} redémarrages "
-            "automatiques). S’il ne revient pas d’ici deux minutes, relancez-le sur le serveur.",
+        log("error", "emulator", "Android restarted after an abnormal stop ({result}, {restarts} automatic "
+            "restarts). If it is not back within two minutes, restart it on the server.",
             notify=True, result=unit["reason"], restarts=unit.get("restarts") or 0)

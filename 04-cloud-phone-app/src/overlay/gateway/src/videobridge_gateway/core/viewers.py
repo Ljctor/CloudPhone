@@ -46,8 +46,8 @@ class Viewers:
             return None
         others = len({other for other in self.sessions.values() if other != viewer})
         if others:
-            return "normal", "Un autre appareil s’est connecté ({n} en tout)", {"n": others + 1, "viewer": viewer}, True
-        return "normal", "Un appareil s’est connecté", {}, False
+            return "normal", "Another device connected ({n} in all)", {"n": others + 1, "viewer": viewer}, True
+        return "normal", "A device connected", {}, False
 
     def closed(self, session):
         self.sessions.pop(session, None)
@@ -60,9 +60,9 @@ class Viewers:
         self.seen[viewer] = now - BACK_SECONDS
         remaining = len(set(self.sessions.values()))
         if remaining:
-            return ("normal", "Un autre appareil s’est déconnecté ({n} encore connectés)",
+            return ("normal", "Another device disconnected ({n} still connected)",
                     {"n": remaining, "viewer": viewer}, True)
-        return "normal", "Plus aucun appareil connecté", {}, False
+        return "normal", "No device connected any more", {}, False
 
     def kick_others(self, viewer, now):
         """The sessions to close so that only this viewer stays (their
@@ -72,5 +72,5 @@ class Viewers:
         for session in others:
             if self.sessions[session]:
                 self.kicked[self.sessions[session]] = now
-        return others, ("warning", "Un appareil a déconnecté les autres ({n})",
+        return others, ("warning", "A device disconnected the others ({n})",
                         {"n": len(others), "viewer": viewer}, True)

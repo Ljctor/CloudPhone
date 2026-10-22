@@ -7,7 +7,7 @@ of the gateway, so what it may do to the game is all here.
 - analyse(fn, *args): fn(*args) in a worker thread (pixel work).
 - tap, hold, swipe, taps: the only ways to touch the game. Each names the
   screen recognised and the move wanted, and goes through the navigation
-  guard (nav.py, navigation.json) first: refused (RuntimeError) unless it
+  guard (nav.py, navigation.json) first: refused (Refused, a RuntimeError) unless it
   is an allowed move of that screen landing where the move is; verified
   says the caller checked the move's precondition. taps sends several taps
   back to back in one adb call (controls that fold away within 2 s), all
@@ -63,6 +63,11 @@ of the gateway, so what it may do to the game is all here.
 - store: the state kept across gateway restarts (state.json, see State).
 - data_path(name): a file in the plugin's data directory, or None.
 - respond(value, status=200): a JSON answer.
+- t(template, **params): a status text ({template, params}, French, for
+  the page to translate), is_t(value): one; english(text), french(text):
+  its words filled (texts.py). fill(template, params): an English template
+  filled, its status-text parameters in English. The log and the phone
+  alerts are English.
 - log(level, text, notify=False, **params): one record of the gateway's
   log, its source the plugin's id (context.log; Python logging tagged so
   on an older gateway): level "normal", "warning" or "error", notify also a
@@ -73,6 +78,7 @@ of the gateway, so what it may do to the game is all here.
 import asyncio
 import contextlib
 import contextvars
+import importlib.util
 import json
 import logging
 import os
@@ -92,6 +98,18 @@ NODE = re.compile(r"<node\b[^>]*>")
 TEXT = re.compile(r'\btext="([^"]*)"')
 EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 BOUNDS = re.compile(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"')
+
+
+def _sibling(name):
+    spec = importlib.util.spec_from_file_location(f"cloudphone_plugin_slayer_legend_features_{name}",
+                                                  os.path.join(os.path.dirname(os.path.abspath(__file__)), f"{name}.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+# The status texts ({template, params}) and their English (texts.py).
+texts = _sibling("texts")
 LEVELS = {"normal": logging.INFO, "warning": logging.WARNING, "error": logging.ERROR}
 
 
@@ -103,6 +121,12 @@ def python_log(source):
         logging.getLogger(f"cloudphone.{source}").log(
             LEVELS[level], text.format(**params) if params else text, extra={"source": source, "notify": notify})
     return log
+
+
+def text_ports():
+    """The ports' texts: t, is_t, english, french, fill (texts.py)."""
+    return {"t": texts.t, "is_t": texts.is_t, "english": texts.english, "french": texts.french,
+            "fill": lambda text, params: texts.fill(text, params, texts.english)}
 
 
 def exception_log(log):
@@ -269,11 +293,29 @@ HOLDER = contextvars.ContextVar("slayer_legend_lease_holder", default=None)
 # The plugin's own holders of the lease: refused while the plugin is off.
 PLUGIN_HOLDERS = ("launch", "mine", "watchdog", "mode", "stage_change")
 OFF = "plugin désactivé"
+HELD = "bail tenu par {holder}"
+PLAYING = "l’utilisateur joue"
+NO_LEASE = "pas de bail"
+
+
+class Refused(RuntimeError):
+    """A move the navigation guard refused. t: a status text, the guard's
+    reason (English) as its data; its str, the English."""
+
+    def __init__(self, refusal):
+        self.t = texts.t("action refusée par le garde-fou : {refusal}", refusal=refusal)
+        super().__init__(texts.english(self.t))
 
 
 class Busy(RuntimeError):
     """A tapping sequence that may not run now: another holder has the
-    lease, the user plays, or the lease expired. Its text is French."""
+    lease, the user plays, or the lease expired. t: why, a status text
+    ({template, params}: OFF, HELD, PLAYING, NO_LEASE); its str, the
+    English."""
+
+    def __init__(self, why, /, **params):
+        self.t = why if texts.is_t(why) else texts.t(why, **params)
+        super().__init__(texts.english(self.t))
 
 
 class Lease:
@@ -334,15 +376,15 @@ class Lease:
 
     def take(self, holder, reason, seconds, user=False, pause=True):
         """None once holder has it (taken or renewed until now + seconds),
-        or why not, in French."""
+        or why not (a status text, see Busy)."""
         seconds = min(float(seconds), LEASE_MAX)
         if holder in PLUGIN_HOLDERS and not self.enabled():
-            return OFF
+            return texts.t(OFF)
         held = self.current()
         if held and held["holder"] != holder:
-            return f"bail tenu par {held['holder']}"
+            return texts.t(HELD, holder=held["holder"])
         if not user and pause and self.playing():
-            return "l’utilisateur joue"
+            return texts.t(PLAYING)
         now = self.clock.wall()
         self.held = {"holder": holder, "reason": reason, "since": held["since"] if held else now,
                      "until": now + seconds, "user": user, "mark": self.clock.monotonic()}
@@ -363,11 +405,11 @@ class Lease:
         the user has not played since it was taken (or it was the user's)."""
         held = self.current()
         if not held or held["holder"] != holder or holder is None:
-            raise Busy(f"bail tenu par {held['holder']}" if held else "pas de bail")
+            raise Busy(HELD, holder=held["holder"]) if held else Busy(NO_LEASE)
         if holder in PLUGIN_HOLDERS and not self.enabled():
             raise Busy(OFF)
         if not held["user"] and self.input_since(held["mark"]):
-            raise Busy("l’utilisateur joue")
+            raise Busy(PLAYING)
 
     def state(self):
         held = self.current()
@@ -388,7 +430,7 @@ def build(context, nav):
         refusal = nav.guard(screen, move, point[0], point[1], kind, verified, seen)
         if refusal:
             log("error", f"Action refused: {refusal}")
-            raise RuntimeError(f"Action refusée par le garde-fou : {refusal}")
+            raise Refused(refusal)
 
     clock = SimpleNamespace(wall=time.time, monotonic=time.monotonic, sleep=asyncio.sleep)
     # Older gateways do not say when the user plays.
@@ -497,7 +539,7 @@ def build(context, nav):
         refusal = nav.guard(screen, move, point[0] / width, point[1] / height, verified=True)
         if refusal:
             log("error", f"Action refused: {refusal}")
-            raise RuntimeError(f"Action refusée par le garde-fou : {refusal}")
+            raise Refused(refusal)
         await adb("shell", "input", "tap", str(point[0]), str(point[1]))
         return True
 
@@ -562,8 +604,9 @@ def build(context, nav):
 
     return SimpleNamespace(
         capture=context.screenshot, analyse=context.analyse,
-        tap=tap, taps=taps, hold=hold, swipe=swipe, lease=lease, leased=leased, Busy=Busy, last_input=last_input,
-        user_input=user_input, pause_left=lease.pause_left,
+        tap=tap, taps=taps, hold=hold, swipe=swipe, lease=lease, leased=leased, Busy=Busy, Refused=Refused,
+        last_input=last_input, user_input=user_input, **text_ports(),
+        pause_left=lease.pause_left,
         viewers=viewers,
         focused=focused, focus=focus, running=running, start_game=start_game, dialog=dialog, crashed=crashed, close_crash=close_crash, wait_anr=wait_anr,
         account_chooser=account_chooser, choose_account=choose_account,

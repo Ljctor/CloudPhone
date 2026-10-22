@@ -204,7 +204,7 @@ class Switch(unittest.TestCase):
         line = next(line for line in self.lines if line.startswith("switch "))
         self.assertRegex(line, r"^switch mpw18→mpw4 in \d+ s \(stage \d+ s, preset \d+ s, auto \d+ s, soul_weapon \d+ s\), done$")
         self.assertEqual(len(game.alerts), 1, game.alerts)
-        self.assertRegex(game.alerts[0], r"^Farming mpw4 prêt en \d+ s$", "within budget: the time alone")
+        self.assertRegex(game.alerts[0], r"^Farming mpw4 ready in \d+ s$", "within budget: the time alone")
 
     def test_the_timers_end_switches_back_on_time_without_a_watchdog(self):
         game = SlowGame(stage=905, preset="IV")
@@ -241,7 +241,7 @@ class Switch(unittest.TestCase):
             return (await h.state())[1]
         state = asyncio.run(go())
         self.assertEqual((state["mode"], state["default"], state["until"]), ("mpw4", "mpw4", None))
-        self.assertIn("Minuteur écoulé : retour au farming mpw4 (stage 925)", game.alerts)
+        self.assertIn("Timer ended: back to farming mpw4 (stage 925)", game.alerts)
 
     def test_free_play_as_the_default_touches_nothing_at_the_end(self):
         game = SlowGame(stage=905, preset="IV")
@@ -251,13 +251,13 @@ class Switch(unittest.TestCase):
             await h.post({"mode": "mpw4", "stage4": 925, "default": "free",
                           "until": h.ports.clock.wall() + 120})
             await h.clock.until(lambda: there(game, 925, "II") and len(h.farmed) == 1, 300)
-            await h.clock.until(lambda: "Minuteur écoulé : retour au jeu libre" in game.alerts, 900)
+            await h.clock.until(lambda: "Timer ended: back to free play" in game.alerts, 900)
             return (await h.state())[1]
         state = asyncio.run(go())
         self.assertEqual((state["mode"], state["until"], state["state"]), ("free", None, "free"))
         self.assertEqual(state["message"], "Jeu libre : rien n’est touché")
         self.assertEqual(len(h.farmed), 1)
-        self.assertIn("Minuteur écoulé : retour au jeu libre", game.alerts)
+        self.assertIn("Timer ended: back to free play", game.alerts)
 
     def test_mpw4_as_the_default_needs_its_stage(self):
         game = SlowGame(stage=905, preset="IV")
@@ -283,8 +283,8 @@ class Switch(unittest.TestCase):
         self.assertEqual(state["state"], "farming", "it still completes")
         self.assertTrue(there(game, 925, "II"))
         self.assertEqual(len(game.alerts), 1, game.alerts)
-        self.assertRegex(game.alerts[0], r"^Farming mpw4 prêt en \d+ s ; Passage mpw18 → mpw4 en \d+ s \(plus de 60 s\) : "
-                                         r"étape la plus lente : changement de stage \(\d+ s\)$")
+        self.assertRegex(game.alerts[0], r"^Farming mpw4 ready in \d+ s; Switch mpw18 → mpw4 in \d+ s \(over 60 s\): "
+                                         r"slowest step: stage change \(\d+ s\)$")
 
     def test_the_users_minute_is_waited_apart_and_never_counted(self):
         # The user played just before: the lease is refused for 40 s.
@@ -306,9 +306,9 @@ class Switch(unittest.TestCase):
         # The hold said once; the time since the choice, the user's wait
         # included and said apart; no over-budget alert.
         self.assertEqual(len(game.alerts), 2, game.alerts)
-        self.assertEqual(game.alerts[0], "Passage au farming mpw4 en attente : tu joues. Nouvel essai dans 60 s.")
-        self.assertRegex(game.alerts[1], r"^Farming mpw4 prêt en \d+ s \(dont 4\d s d’attente : tu jouais\)$")
-        self.assertGreaterEqual(int(game.alerts[1].split(" en ")[1].split(" ")[0]), 40)
+        self.assertEqual(game.alerts[0], "Switch to farming mpw4 on hold: you are playing. Next try in 60 s.")
+        self.assertRegex(game.alerts[1], r"^Farming mpw4 ready in \d+ s \(including 4\d s waiting: you were playing\)$")
+        self.assertGreaterEqual(int(game.alerts[1].split(" in ")[1].split(" ")[0]), 40)
         self.assertTrue(there(game, 925, "II"))
 
     def on_hold(self, game, h, at, then, free=False):
@@ -341,8 +341,8 @@ class Switch(unittest.TestCase):
         self.assertEqual((during["state"], during["setup"], during["hold"]["mode"]), ("waiting", True, "mpw4"))
         self.assertEqual(during["message"], "Passage au farming mpw4 en attente : tu joues · nouvel essai dans 60 s")
         self.assertEqual(len(game.alerts), 2, game.alerts)
-        self.assertEqual(game.alerts[0], "Passage au farming mpw4 en attente : tu joues. Nouvel essai dans 60 s.")
-        self.assertRegex(game.alerts[1], r"^Farming mpw4 prêt en \d+ s \(dont 1[67]\d s d’attente : tu jouais\)$")
+        self.assertEqual(game.alerts[0], "Switch to farming mpw4 on hold: you are playing. Next try in 60 s.")
+        self.assertRegex(game.alerts[1], r"^Farming mpw4 ready in \d+ s \(including 1[67]\d s waiting: you were playing\)$")
         self.assertEqual((seen["after"]["state"], seen["after"]["hold"]), ("farming", None))
 
     def test_resume_now_runs_the_switch_while_the_user_plays(self):
@@ -354,7 +354,7 @@ class Switch(unittest.TestCase):
         self.assertEqual(seen["answers"][0][0], 200)
         self.assertTrue(there(game, 925, "II"))
         self.assertEqual(seen["after"]["state"], "farming")
-        self.assertRegex(game.alerts[-1], r"^Farming mpw4 prêt en \d+ s \(dont 1\d s d’attente : tu jouais\)$")
+        self.assertRegex(game.alerts[-1], r"^Farming mpw4 ready in \d+ s \(including 1\d s waiting: you were playing\)$")
         self.assertEqual(len(game.alerts), 2, game.alerts)
 
     def test_free_play_instead_touches_nothing(self):
@@ -374,7 +374,7 @@ class Switch(unittest.TestCase):
         self.assertEqual((after["mode"], after["state"], after["hold"]), ("free", "free", None))
         self.assertIsNotNone(after["until"], "free play is timed, as its radio button")
         self.assertEqual(game.moves, [], "nothing tapped")
-        self.assertEqual(game.alerts, ["Passage au farming mpw4 en attente : tu joues. Nouvel essai dans 60 s."])
+        self.assertEqual(game.alerts, ["Switch to farming mpw4 on hold: you are playing. Next try in 60 s."])
 
     def test_the_hold_alert_has_two_buttons_with_a_one_time_token_revoked_after(self):
         game = SlowGame(stage=905, preset="IV", busy="l’utilisateur joue")
@@ -396,9 +396,9 @@ class Switch(unittest.TestCase):
         self.assertEqual(issued, [("/mode/hold", mode_rules.HOLD_TOKEN_SECONDS)])
         hold_id = seen["answers"][1]["id"]
         self.assertEqual(sent[0], [
-            {"label": "Passer en jeu libre", "path": "/mode/hold", "body": {"action": "free", "hold": hold_id},
+            {"label": "Switch to free play", "path": "/mode/hold", "body": {"action": "free", "hold": hold_id},
              "token": "tok1"},
-            {"label": "Reprendre maintenant", "path": "/mode/hold", "body": {"action": "resume", "hold": hold_id},
+            {"label": "Resume now", "path": "/mode/hold", "body": {"action": "resume", "hold": hold_id},
              "token": "tok1"}])
         self.assertEqual(sent[1:], [None], "the ready notification has no buttons")
         self.assertEqual(revoked, ["tok1"], "the hold over: its buttons no longer work")
@@ -426,7 +426,7 @@ class Switch(unittest.TestCase):
         self.assertEqual(state["state"], "farming", state["message"])
         line = next(l for l in self.lines if l.startswith("loadout "))
         self.assertRegex(line, r"^loadout mpw4 changed → applied in \d+ s \(.*\), done$")
-        self.assertRegex(game.alerts[-1], r"^Configuration mpw4 appliquée en \d+ s$")
+        self.assertRegex(game.alerts[-1], r"^Loadout mpw4 applied in \d+ s$")
         self.assertEqual(len(h.farmed), 2, "the switch's own path, farm()")
 
     def test_a_soul_weapon_change_runs_its_step_alone(self):
@@ -442,7 +442,7 @@ class Switch(unittest.TestCase):
         asyncio.run(go())
         self.assertEqual([(mode, part) for _, mode, part in h.souls], [("mpw4", weapon)])
         self.assertEqual(len(h.farmed), 1, "no farm() for the soul weapon alone")
-        self.assertEqual(game.alerts[-1], "Configuration mpw4 appliquée en 5 s")
+        self.assertEqual(game.alerts[-1], "Loadout mpw4 applied in 5 s")
 
     def test_a_change_of_another_mode_or_the_same_values_does_nothing(self):
         game = SlowGame(stage=905, preset="IV")
@@ -483,19 +483,18 @@ class Switch(unittest.TestCase):
         line, alert = mode_rules.switch_report("mpw18", "mpw18", 21.2, {"preset": 4.0}, applied=True)
         self.assertEqual((line, alert), ("loadout mpw18 changed → applied in 21 s (preset 4 s)", None))
         _, alert = mode_rules.switch_report("mpw18", "mpw18", 75, {"stage": 70}, applied=True)
-        self.assertTrue(alert.startswith("Configuration mpw18 appliquée en 75 s (plus de 60 s)"), alert)
+        self.assertTrue(alert.startswith("Loadout mpw18 applied in 75 s (over 60 s)"), alert)
 
     def test_the_ready_text(self):
-        self.assertEqual(mode_rules.ready_text("mpw18", 34.4), "Farming mpw18 prêt en 34 s")
-        self.assertEqual(mode_rules.ready_text("mpw18", 21.0, applied=True), "Configuration mpw18 appliquée en 21 s")
+        self.assertEqual(mode_rules.ready_text("mpw18", 34.4), "Farming mpw18 ready in 34 s")
+        self.assertEqual(mode_rules.ready_text("mpw18", 21.0, applied=True), "Loadout mpw18 applied in 21 s")
 
     def test_the_budget_report(self):
         line, alert = mode_rules.switch_report("mpw4", "mpw18", 38.2, {"stage": 24.0, "preset": 4.4, "auto": 6.0})
         self.assertEqual(line, "switch mpw4→mpw18 in 38 s (stage 24 s, preset 4 s, auto 6 s)")
         self.assertIsNone(alert)
         _, alert = mode_rules.switch_report("mpw4", "mpw18", 75, {"stage": 50, "preset": 4, "auto": 6})
-        self.assertEqual(alert, "Passage mpw4 → mpw18 en 75 s (plus de 60 s) : étape la plus lente : "
-                                "changement de stage (50 s)")
+        self.assertEqual(alert, "Switch mpw4 → mpw18 in 75 s (over 60 s): slowest step: stage change (50 s)")
         # The lease's wait (the user's minute, another holder) is said, never counted.
         line, alert = mode_rules.switch_report("mpw4", "mpw18", 20, {"stage": 10, "preset": 4, "auto": 6}, 55)
         self.assertEqual(line, "switch mpw4→mpw18 in 20 s (stage 10 s, preset 4 s, auto 6 s) "
@@ -512,7 +511,7 @@ class Switch(unittest.TestCase):
 class GoldScrollInMpw4(unittest.TestCase):
     """mpw4 farming looks for the gold scroll whether it is the default
     mode (« Mode par défaut ») or a timed one."""
-    GONE = "Farming mpw4 : plus de parchemin doré"
+    GONE = "Farming mpw4: no more gold scroll"
 
     def missing(self):
         """The real record and debounce, the scroll never seen in battle."""
@@ -550,7 +549,7 @@ class GoldScrollInMpw4(unittest.TestCase):
                           "until": h.ports.clock.wall() + 60})
         state = self.alerted(h, game, start, limit=900)
         self.assertEqual((state["mode"], state["until"], state["gold"]), ("mpw4", None, False))
-        self.assertIn("Minuteur écoulé : retour au farming mpw4 (stage 925)", game.alerts)
+        self.assertIn("Timer ended: back to farming mpw4 (stage 925)", game.alerts)
 
     def test_after_a_gateway_restart_as_the_default_mode(self):
         game = SlowGame(stage=925, preset="II")

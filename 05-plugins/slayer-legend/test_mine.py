@@ -36,6 +36,7 @@ def load_feature(name):
 
 LOG = load_feature("ports").python_log("slayer-legend")
 EXCEPTION = load_feature("ports").exception_log(LOG)
+TEXTS = load_feature("ports").text_ports()
 
 
 class Request:
@@ -235,9 +236,9 @@ class Untick(MineTest):
         repeat_taps = [t for t, point in game.taps if point == REPEAT]
         self.assertEqual(len(repeat_taps), 3, game.taps)
         self.assertEqual(len(game.taps), 3, "nothing else is tapped")
-        blocked = [text for _, text in game.alerts if "ne se décoche pas" in text]
+        blocked = [text for _, text in game.alerts if "does not untick" in text]
         self.assertEqual(len(blocked), 1, game.alerts)
-        self.assertIn("après 3 essais", blocked[0])
+        self.assertIn("after 3 tries", blocked[0])
         self.assertIn(reason, blocked[0])
         state = self.last(answers, "/mine")
         self.assertEqual((state["enabled"], state["state"]), (False, "blocked"))
@@ -245,14 +246,14 @@ class Untick(MineTest):
     def test_gold_scroll_gone(self):
         scenes = {"fight": {"fight": True, "repeat": True, "gold_scroll": False}}
         game, answers = self.play(scenes, "fight", [(0, [mine()]), (300, [GET_MINE]), (600, [GET_MINE])], 600)
-        self.check_blocked(game, answers, "Plus de parchemin doré")
-        self.assertEqual([text for _, text in game.alerts if text.startswith("Plus de parchemin doré (")],
-                         ["Plus de parchemin doré (étage 5, zone 2)"])
+        self.check_blocked(game, answers, "No more gold scroll")
+        self.assertEqual([text for _, text in game.alerts if text.startswith("No more gold scroll (")],
+                         ["No more gold scroll (floor 5, area 2)"])
 
     def test_timer_ends(self):
         scenes = {"fight": dict(FIGHT_GOLD)}
         game, answers = self.play(scenes, "fight", [(0, [mine(until=EPOCH + 30)]), (300, [GET_MINE])], 400)
-        self.check_blocked(game, answers, "Durée écoulée")
+        self.check_blocked(game, answers, "Time is up")
 
     def test_third_try_takes(self):
         scenes = {"fight": {"fight": True, "repeat": True, "gold_scroll": False, "after": (35, "fight2")},
@@ -260,7 +261,7 @@ class Untick(MineTest):
                   "unticked": {"fight": True, "repeat": False}}
         game, answers = self.play(scenes, "fight", [(0, [mine()]), (200, [GET_MINE])], 300)
         self.assertEqual(len(game.taps), 3)
-        self.assertEqual([text for _, text in game.alerts if "ne se décoche pas" in text], [])
+        self.assertEqual([text for _, text in game.alerts if "does not untick" in text], [])
         state = self.last(answers, "/mine")
         self.assertEqual((state["enabled"], state["state"]), (False, "stopped"))
 
@@ -382,7 +383,7 @@ class Lease(MineTest):
             with self.assertRaises(ports.Busy) as refused:
                 async with ports.leased("stage_change", "farm mpw4", 60):
                     pass
-            self.assertEqual(str(refused.exception), "l’utilisateur joue")
+            self.assertEqual(str(refused.exception), "the user is playing")
             async with ports.leased("stage_change", "farm mpw4", 60, pause=False):
                 pass
             return await ports.user_input()
@@ -393,7 +394,7 @@ class Lease(MineTest):
         game = Game({"fight": dict(FIGHT_GOLD)}, "fight")
         ports = load_feature("ports").build(game.context(), load_feature("../nav"))
         ports.set_enabled(False)
-        self.assertEqual(ports.lease.take("watchdog", "x", 60), "plugin désactivé")
+        self.assertEqual(ports.lease.take("watchdog", "x", 60), {"template": "plugin désactivé", "params": {}})
         self.assertIsNone(ports.lease.take("agent", "x", 60, user=True), "an outside holder still may")
         ports.lease.release("agent")
         ports.set_enabled(True)
@@ -447,8 +448,8 @@ class OutOfFeathers(MineTest):
         state = self.last(answers, "/mine")
         self.assertEqual((state["enabled"], state["state"]), (False, "no_feather"))
         self.assertEqual(self.last(answers, "/mode")["mode"], "mpw18")
-        texts = [text for _, text in game.alerts if "plume" in text or "Mine" in text]
-        self.assertEqual(texts, ["Mine fermée arrêtée : plus de plume, retour au farming mpw18 (stage 920)"])
+        texts = [text for _, text in game.alerts if "feather" in text or "Mine" in text]
+        self.assertEqual(texts, ["Closed Mine stopped: no feather left, back to farming mpw18 (stage 920)"])
 
 
 class WayBackIn(unittest.TestCase):
@@ -518,7 +519,7 @@ class WayBackIn(unittest.TestCase):
             capture=capture, analyse=analyse, tap=tap, focused=focused, leased=leased, Busy=Busy, notify=notify,
             clock=SimpleNamespace(sleep=sleep, monotonic=lambda: game["now"], wall=lambda: EPOCH + game["now"]),
             store=SimpleNamespace(saved={}, register=lambda *a: None, save=lambda: None),
-            spawn=lambda coroutine: coroutine.close(), log=LOG, exception=EXCEPTION)
+            spawn=lambda coroutine: coroutine.close(), log=LOG, exception=EXCEPTION, **TEXTS)
         values = SimpleNamespace(time_or_none=lambda v: v, number_or_none=lambda v, top: v)
         part = feature.mine(ports, screens, readers, feature_rules, None, values)
         part["api"]["start"](5, 2, None)
@@ -527,7 +528,7 @@ class WayBackIn(unittest.TestCase):
 
     def test_back_in_the_mine(self):
         answer, state, game = self.run_reenter()
-        self.assertEqual(answer, {"result": "done", "text": ""})
+        self.assertEqual(answer, {"result": "done", "text_t": None})
         self.assertEqual([move for _, move in game["taps"]],
                          ["menu_adventure", "dungeon", "closed_mine", "floor", "area", "feathers"])
         self.assertEqual((state["enabled"], game["screen"]), (True, "fight"))
@@ -550,7 +551,8 @@ class WayBackIn(unittest.TestCase):
 
     def test_a_screen_that_does_not_show_is_tried_again_then_the_mine_ends(self):
         answer, state, game = self.run_reenter(dead_end="adventure_map")
-        self.assertEqual(answer, {"result": "failed", "text": "écran Dungeon pas vu"})
+        self.assertEqual(answer, {"result": "failed", "text_t": {"template": "écran {name} pas vu",
+                                                                 "params": {"name": "Dungeon"}}})
         # Tried again within the minute, but the game is left on Adventure:
         # no other tap anywhere (each try needs the battle screen first).
         self.assertEqual(game["taps"], [("battle", "menu_adventure"), ("adventure_map", "dungeon")])
@@ -568,7 +570,7 @@ class FreePlayWarning(MineTest):
     """Free play warns once 2 minutes before its end, again once the timer
     was moved later; the mode feature's watch, through the gateway."""
 
-    WARNING = "Le Cloud Phone reprend la main dans 2 min, prolonge le jeu libre si tu joues encore"
+    WARNING = "The Cloud Phone takes over in 2 min: extend free play if you are still playing"
 
     def test_once_then_again_after_a_longer_timer(self):
         scenes = {"fight": dict(FIGHT_GOLD)}
@@ -579,8 +581,8 @@ class FreePlayWarning(MineTest):
         self.assertEqual(len(warnings), 2, game.alerts)
         self.assertTrue(480 <= warnings[0] <= 490, warnings)
         self.assertTrue(780 <= warnings[1] <= 790, warnings)
-        self.assertEqual([text for _, text in game.alerts if text.startswith("Minuteur écoulé")],
-                         ["Minuteur écoulé : retour au farming mpw18"])
+        self.assertEqual([text for _, text in game.alerts if text.startswith("Timer ended")],
+                         ["Timer ended: back to farming mpw18"])
         self.assertEqual(game.taps, [], "free play touches nothing")
 
 

@@ -60,9 +60,9 @@ screen (Power Saving Mode needs none).
   screen) is one warning alert (an error one for adb), never repeated
   until the game has been well RECOVERED_AFTER looks in a row, or
   RECOVERY_FLOOR seconds when a repair was made since the problem began;
-  then one normal "rétabli". A new alert of the same family (its repair,
+  then one normal "recovered". A new alert of the same family (its repair,
   or the symptom without one) within QUIET_AFTER_ALERT of the last one
-  notified is a warning record without phone alert, and no « rétabli »
+  notified is a warning record without phone alert, and no "recovered"
   follows it; the backoff's escalations are always notified. A game menu inside its grace, or a look with no
   capture, changes nothing.
 - A repair needs its symptom REPAIR_AFTER looks in a row (the same look
@@ -82,23 +82,33 @@ screen (Power Saving Mode needs none).
   used, RECOVERY_FLOOR at least; a user input keeps it; the page's
   « Réessayer maintenant » clears it (retry). Its alerts: the first
   failure, the delay first reaching 8 minutes, then 30 (ESCALATE), then
-  silence until « rétabli ». The next attempt's time is kept across
+  silence until "recovered". The next attempt's time is kept across
   gateway restarts (persisted()).
 - The relaunch and the way back to battle always tap for real. The stage
   change, the preset and the loadout can be plan-only (until their screens
   are mapped and the user approves them): then the plan is said once per
   symptom.
 - While another holder has the lease, the repair is deferred, said at
-  normal level once per holder ("réparation différée : bail tenu par X").
+  normal level once per holder ("Repair deferred: lease held by X").
 
 The stage check reads the stage's name whole (region and numeral,
 stage_select.py) when the stage change feature is there; else only the
 numeral ending it, so that another region's stage with the same numeral
 passes, and the status says "OK (numéral III)".
 
-Texts are French templates with their parameters ({stage}, {holder}...),
-for the page to translate (tr).
+The status and the line are status texts, {template, params} (t(),
+features/texts.py): a French template for the page to translate, whose
+parameters are data or such texts (the mode's and the repairs' names,
+the symptom). The records are the log's and the phone alerts', English:
+an English template with its parameters, or a status text said in English
+by the feature (texts.english).
 """
+
+
+def t(template, **params):
+    """A status text (features/texts.py)."""
+    return {"template": template, "params": params}
+
 
 # Seconds between two looks; a capture this old is new enough.
 EVERY = 15
@@ -108,7 +118,7 @@ PAUSE_AFTER_INPUT = 60
 # A game menu open this long (seconds) with no user input is a symptom.
 MENU_GRACE = 60
 ALERT_AFTER = 2
-# Good looks in a row (battle or Power Saving Mode) before "rétabli".
+# Good looks in a row (battle or Power Saving Mode) before "recovered".
 RECOVERED_AFTER = 4
 # Another screen may be a stage transition or a loading screen: 60 s.
 ALERT_AFTER_OTHER = 4
@@ -122,7 +132,7 @@ AWAY_AFTER = 2
 # Google's windows in front are the sign-in path, not another app.
 GMS = "com.google.android.gms"
 # The modes the watchdog checks, by the name its texts give them.
-MODE_NAMES = {"mpw18": "Farming mpw18", "mpw4": "Farming mpw4", "mine": "Mine fermée"}
+MODE_NAMES = {"mpw18": t("Farming mpw18"), "mpw4": t("Farming mpw4"), "mine": t("Mine fermée")}
 # The mine: the game gone or away this many looks (2 minutes) is its alert.
 MINE_AWAY_LOOKS = 8
 # Looks seen at the gateway's start before any repair.
@@ -169,10 +179,10 @@ REPAIRS = {
     # The relaunch, then the mine's own way back in (features/mine.py reenter).
     "mine_away": "mine_relaunch",
 }
-REPAIR_NAMES = {"relaunch": "relance du jeu", "mine_relaunch": "relance du jeu et retour dans la mine",
-                "back_to_battle": "retour au combat",
-                "stage_change": "changement de stage", "select_preset": "choix du préréglage de combat",
-                "loadout": "rééquipement", "auto_on": "remise en marche d’AUTO"}
+REPAIR_NAMES = {"relaunch": t("relance du jeu"), "mine_relaunch": t("relance du jeu et retour dans la mine"),
+                "back_to_battle": t("retour au combat"),
+                "stage_change": t("changement de stage"), "select_preset": t("choix du préréglage de combat"),
+                "loadout": t("rééquipement"), "auto_on": t("remise en marche d’AUTO")}
 # Seconds without attempt of a kind after its nth failure (DELAYS[n],
 # the last one for any later), each ±JITTER of it.
 DELAYS = (0, 60, 120, 240, 480, 960, 1800)
@@ -369,12 +379,15 @@ def _mine(seen, away, memory):
 
 
 def status(text, params, mode="mpw18"):
-    """The status row's template and parameters: "{mode} : OK (numéral
-    III)" with mode's MODE_NAMES name, or the symptom."""
-    return "{mode} : " + text, {**params, "mode": MODE_NAMES.get(mode, mode)}
+    """The status row: "{mode} : {what}", with mode's MODE_NAMES name and
+    what judge said (text and params: "OK (numéral {numeral})", a
+    symptom), a status text."""
+    return t("{mode} : {what}", mode=MODE_NAMES.get(mode, mode), what=t(text, **params))
 
 
 def record(level, text, params=None, notify=False):
+    """A record: text an English template filled with params (each a
+    value or a status text, said in English), or a status text."""
     return ("record", level, text, params or {}, notify)
 
 
@@ -401,13 +414,13 @@ def failure(memory, kind, wall, jitter=0.0, mode="mpw18"):
     named = {**values, "mode": MODE_NAMES.get(mode, mode)}
     reached = next((d for d in ESCALATE if base >= d and d not in said), None)
     if failures == 1:
-        action = record("warning", "Réparation sans effet : {repair}, prochain essai dans {minutes} min", values,
+        action = record("warning", "Repair without effect: {repair}, next attempt in {minutes} min", values,
                         notify=True)
     elif reached is not None:
-        action = record("warning", "{mode} : {repair} toujours en échec, prochaine tentative dans "
-                                   "{minutes} min", named, notify=True)
+        action = record("warning", "{mode}: {repair} still failing, next attempt in {minutes} min", named,
+                        notify=True)
     else:
-        action = record("normal", "Réparation sans effet : {repair}, prochain essai dans {minutes} min", values)
+        action = record("normal", "Repair without effect: {repair}, next attempt in {minutes} min", values)
     if reached is not None:
         said.append(reached)
     memory = {**memory, "backoff": {**memory["backoff"], kind: {
@@ -467,7 +480,7 @@ def decide(memory, symptom, text, params, context, wall):
 
     The problem's alert is said once until the game has been well
     RECOVERED_AFTER looks in a row (battle or Power Saving Mode); then
-    once "rétabli". A good look in between (the battle screen between two
+    once "recovered". A good look in between (the battle screen between two
     pop-ups) resets the bad looks in a row, nothing else."""
     actions = []
     if symptom in ("unknown", "pending"):
@@ -478,16 +491,16 @@ def decide(memory, symptom, text, params, context, wall):
     verifying, memory["verifying"] = memory["verifying"], None
     if symptom is None:
         if verifying:
-            actions.append(record("normal", "Réparation réussie : {repair}", {"repair": REPAIR_NAMES[verifying]}))
+            actions.append(record("normal", "Repair done: {repair}", {"repair": REPAIR_NAMES[verifying]}))
         if memory["good_since"] is None:
             memory["good_since"] = wall
         memory = recovered(memory, wall)
         memory.update(streak=0, since_repair=0, symptom=None, good=memory["good"] + 1)
-        # After a repair, only a durable recovery is "rétabli".
+        # After a repair, only a durable recovery is "recovered".
         if memory["good"] >= RECOVERED_AFTER and (not memory["repaired"]
                                                   or wall - memory["good_since"] >= RECOVERY_FLOOR):
             if memory["alerted"] and memory["alert_notified"]:
-                actions.append(record("normal", "{mode} : rétabli", {"mode": named}, notify=True))
+                actions.append(record("normal", "{mode}: recovered", {"mode": named}, notify=True))
             memory.update(alerted=False, alert_notified=False, repaired=False, watch={}, planned=None,
                           deferred=None)
         return memory, actions
@@ -503,7 +516,7 @@ def decide(memory, symptom, text, params, context, wall):
             actions += said
         else:
             # It took; something else is wrong now (a pop-up after a relaunch).
-            actions.append(record("normal", "Réparation réussie : {repair}", {"repair": REPAIR_NAMES[verifying]}))
+            actions.append(record("normal", "Repair done: {repair}", {"repair": REPAIR_NAMES[verifying]}))
     same = symptom == memory["symptom"] or (repair is not None and repair == REPAIRS.get(memory["symptom"]))
     memory["streak"] = memory["streak"] + 1 if same else 1
     memory["since_repair"] = memory["since_repair"] + 1 if same else 1
@@ -517,8 +530,8 @@ def decide(memory, symptom, text, params, context, wall):
         memory["alert_notified"] = not quiet
         if not quiet:
             memory["notified"] = {**memory["notified"], family: wall}
-        actions.append(record("error" if symptom in ERRORS else "warning", "{mode} : " + text,
-                              {**params, "mode": named}, notify=not quiet))
+        actions.append(record("error" if symptom in ERRORS else "warning", status(text, params, mode),
+                              notify=not quiet))
     if (repair is None or memory["since_repair"] < REPAIR_AFTER or memory["looks"] <= OBSERVE_FIRST
             or repair not in context.get("available", ())
             or memory["watch"].get(repair, 0) > wall
@@ -528,7 +541,7 @@ def decide(memory, symptom, text, params, context, wall):
     if holder:
         if memory["deferred"] != holder:
             memory["deferred"] = holder
-            actions.append(record("normal", "Réparation différée : bail tenu par {holder}", {"holder": holder}))
+            actions.append(record("normal", "Repair deferred: lease held by {holder}", {"holder": holder}))
         return memory, actions
     memory["deferred"] = None
     if repair not in ALWAYS_REAL and not context.get("act", {}).get(repair):
@@ -539,7 +552,7 @@ def decide(memory, symptom, text, params, context, wall):
     memory["verifying"] = repair
     memory["repaired"] = True
     memory["since_repair"] = 0
-    actions.append(record("normal", "Réparation : {repair}", {"repair": REPAIR_NAMES[repair]}))
+    actions.append(record("normal", "Repair: {repair}", {"repair": REPAIR_NAMES[repair]}))
     actions.append(("repair", repair))
     return memory, actions
 
@@ -552,7 +565,7 @@ def decide(memory, symptom, text, params, context, wall):
 GOLD_FULL = 290
 GOLD_FRESH = 30
 GOLD_ZEROS = 2
-GOLD_ALERT = "gold/s à 0 mais AUTO actif"
+GOLD_ALERT = "gold/s at 0 but AUTO on"
 
 
 def gold_fresh():
@@ -586,7 +599,7 @@ def gold_alert(kept, auto):
 
 def counters(memory, wall):
     """The state details' counters; next_attempt: each kind backing off,
-    {repair (its French name), failures, next (Unix time of its next
+    {repair (its name, a status text), failures, next (Unix time of its next
     attempt allowed)}."""
     return {"looks": memory["looks"], "bad_in_a_row": memory["streak"], "alerts": memory["alerts"],
             "next_attempt": {kind: {"repair": REPAIR_NAMES[kind], "failures": state["failures"],

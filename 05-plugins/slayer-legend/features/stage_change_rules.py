@@ -20,20 +20,25 @@ def region_of(stage):
     return (stage - 1) // PER_REGION
 
 
+def t(template, **params):
+    """A status text (features/texts.py)."""
+    return {"template": template, "params": params}
+
+
 def plan(view, target):
     """The next move towards farming target: ("move", y) taps the target's
     own Move button; ("arrow", "next_region" or "previous_region");
-    ("scroll", "down" or "up"); ("fail", why in French)."""
+    ("scroll", "down" or "up"); ("fail", why: a status text)."""
     if not view["popup"]:
-        return ("fail", "Select Region n’est pas ouvert")
+        return ("fail", t("Select Region n’est pas ouvert"))
     if view["region"] is None:
-        return ("fail", "nom de la région illisible")
+        return ("fail", t("nom de la région illisible"))
     wanted = region_of(target)
     if view["region"] != wanted:
         return ("arrow", "next_region" if view["region"] < wanted else "previous_region")
     rows = [row for row in view["rows"] if row["stage"] is not None]
     if any(region_of(row["stage"]) != wanted for row in rows):
-        return ("fail", "les lignes ne sont pas de la région lue")
+        return ("fail", t("les lignes ne sont pas de la région lue"))
     for row in rows:
         if row["stage"] == target:
             if row["move"] is not None:
@@ -41,12 +46,12 @@ def plan(view, target):
             # Cut by the edge of the list: scroll it into view.
             return ("scroll", "down" if row is rows[-1] else "up")
     if not rows:
-        return ("fail", "aucune ligne de stage lue")
+        return ("fail", t("aucune ligne de stage lue"))
     if target > rows[-1]["stage"]:
         return ("scroll", "down")
     if target < rows[0]["stage"]:
         return ("scroll", "up")
-    return ("fail", f"stage {target} absent de la liste")
+    return ("fail", t("stage {stage} absent de la liste", stage=target))
 
 
 def progressed(before, after):

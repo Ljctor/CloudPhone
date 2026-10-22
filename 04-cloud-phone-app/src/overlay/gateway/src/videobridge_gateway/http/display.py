@@ -88,7 +88,7 @@ def set_display(settings_status, settings_files, requested):
     root service to change Android's screen size, which reboots Android
     (data is kept). settings_status() and settings_files() are the other
     kind's, for the shared limit; requested() is called once it is written."""
-    @change_request("Changement de résolution refusé : {error}")
+    @change_request("Screen size change refused: {error}")
     async def handle(request):
         if not REQUEST:
             return web.json_response({"error": "Screen size changes are disabled"}, status=403)
@@ -105,7 +105,7 @@ def set_display(settings_status, settings_files, requested):
             return refused
         host_files.write_request(REQUEST, f"{wanted['width']} {wanted['height']} {wanted['density']}\n")
         requested()
-        log("normal", "gateway", "Changement de résolution demandé : Android va redémarrer en {size}",
+        log("normal", "gateway", "Screen size change requested: Android restarts at {size}",
             notify=True, size=f"{wanted['width']}×{wanted['height']}")
         return web.json_response({"status": "pending"}, status=202)
     return handle

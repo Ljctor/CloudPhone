@@ -466,7 +466,7 @@ fn slayer_legends_backoff_wait_shows_in_the_state_row_with_retry() {
         let p = phone.clone();
         let records = blocking(move || p.get_json("api/v1/logs"));
         assert!(records["records"].as_array().unwrap().iter()
-            .any(|r| r["text"] == "Réessayer maintenant : relance du jeu"), "{records}");
+            .any(|r| r["text"] == "Retry now: game relaunch"), "{records}");
     });
 }
 
@@ -530,7 +530,7 @@ fn slayer_legends_debug_section_is_last_folded_and_holds_the_developer_rows_and_
             "const p = [...document.querySelectorAll('[role=dialog] details')].find(d => d.querySelector(':scope > summary').innerText.trim() === 'Debug & développement'); \
              const r = p ? [...p.querySelectorAll('[data-level]')].map(e => e.innerText) : []; \
              return r.some(t => t.includes('Lease taken by agent')) ? r : null", vec![]).await;
-        assert!(!log.as_array().unwrap().iter().any(|t| t.as_str().unwrap().contains("Le gateway a démarré")),
+        assert!(!log.as_array().unwrap().iter().any(|t| t.as_str().unwrap().contains("Gateway started")),
             "only the plugin's records: {log}");
     });
 }

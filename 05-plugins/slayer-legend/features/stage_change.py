@@ -22,12 +22,12 @@ Each step looks first (a fresh screenshot), makes one guarded move
 (ports, nav.py) and looks again for what it expects (settle: fresh
 captures every POLL seconds until it shows, at most SETTLE seconds,
 MOVE_SETTLE for a stage to load; no fixed long sleep: a mode switch has
-60 s); anything else stops the whole sequence with the step that failed,
-in French, for one alert by the caller. Nothing is tried twice. farm()'s
+60 s); anything else stops the whole sequence with the step that failed
+(a status text, features/texts.py), for one alert by the caller. Nothing is tried twice. farm()'s
 answer gives each step's seconds (timings: stage, preset, auto).
 
 - Stage: closes the bottom panel open, only when its tab reads lit (else
-  "écran inattendu"), opens the stage map (Select Region), goes to the
+  « écran inattendu »), opens the stage map (Select Region), goes to the
   target's region with the banner's arrows (the banner must read one region
   each time, else it stops) and to its row by scrolling
   (stage_change_rules.plan, at most MOST_MOVES), taps Move on the row whose
@@ -49,14 +49,14 @@ during it stops it at the next tap.
   mode's loadout's soul weapon equipped (features/soul_weapon.py). Its
   switch, soul_weapon, is "real" by default (the user's choice: no plan
   mode), "off" an emergency stop; kept in state.json ("soul_weapon").
-  Its failure is the sequence's, "Soul Weapon: <step>" (logged as an error) (stage, preset and
+  Its failure is the sequence's, « Soul Weapon : <step> » (logged as an error) (stage, preset and
   AUTO are done by then). After a watchdog relaunch (relaunched(mode)) it
   runs alone, with one alert if it fails.
 
 api: farm(stage, preset, mode) runs the four; change_stage, set_preset,
 ensure_auto, ensure_soul_weapon(mode, loadout=None) alone (the last for a
 loadout change of the active mode); each answers {result: "done", "plan"
-or "failed", text}. read_controls() for the watchdog: {preset, auto} read
+or "failed", text_t: why or the plan, a status text, or None}. read_controls() for the watchdog: {preset, auto} read
 on one unfold, or None. relaunched(mode) for the watchdog's relaunch.
 """
 
@@ -89,12 +89,34 @@ SWITCHES = ("stage_change", "preset", "auto")
 AUTO_TAP_LEARNED = False
 
 
-class Stop(Exception):
-    """The sequence stops: the step that failed, in French."""
+def t(template, **params):
+    """A status text (features/texts.py)."""
+    return {"template": template, "params": params}
 
 
-class Plan(Exception):
-    """A plan-only step: what it would do, in French."""
+class Said(Exception):
+    """t: a status text, given whole or as a template and its params."""
+
+    def __init__(self, text, /, **params):
+        self.t = text if isinstance(text, dict) else t(text, **params)
+        super().__init__(self.t["template"])
+
+
+class Stop(Said):
+    """The sequence stops: t, the step that failed."""
+
+
+class Plan(Said):
+    """A plan-only step: t, what it would do."""
+
+
+def joined(texts):
+    """Status texts one after the other, « a ; b »; None for none."""
+    if not texts:
+        return None
+    if len(texts) == 1:
+        return texts[0]
+    return t("{first} ; {then}", first=texts[0], then=joined(texts[1:]))
 
 
 AUTO_NOT_LEARNED = "Le bouton AUTO n’est pas encore appris (pas de capture AUTO arrêté) : « auto » reste en plan"
@@ -179,10 +201,10 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
             return shot
         tab = seen if isinstance(seen, tuple) else None
         if tab is None:
-            raise Stop(f"écran inattendu (ni le combat, ni un panneau du menu du bas reconnu ; lu : "
-                       f"{await ports.analyse(screens.classify, shot)})")
+            raise Stop("écran inattendu (ni le combat, ni un panneau du menu du bas reconnu ; lu : {screen})",
+                       screen=await ports.analyse(screens.classify, shot))
         if not may_tap:
-            raise Plan(f"fermer le panneau ({tab[1]})")
+            raise Plan("fermer le panneau ({panel})", panel=tab[1])
         await tap(shot, tab[1], "close", (tab[0], screens.TAB_TAP_Y))
         shot, plain = await settle(screens.plain_battle)
         if not plain:
@@ -191,14 +213,14 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
 
     async def change_stage(target):
         if not rules.supported(target, names):
-            raise Stop(f"stage {target} hors des régions connues")
+            raise Stop("stage {stage} hors des régions connues", stage=target)
         shot = await to_battle(real("stage_change"))
         seen = await ports.analyse(select.battle_stage, shot, names)
         if seen == target:
             return
         if not real("stage_change"):
-            raise Plan(f"stage {seen or 'illisible'} → {target} : Select Region, région "
-                       f"{names[rules.region_of(target)]}, Move sur la ligne lue comme {target}")
+            raise Plan("stage {seen} → {stage} : Select Region, région {region}, Move sur la ligne lue comme {stage}",
+                       seen=seen or t("illisible"), stage=target, region=names[rules.region_of(target)])
         await tap(shot, "battle", "stage_select", select.STAGE_MAP_TAP)
         shot, view = await settle(select.view, names, accept=lambda v: v["popup"] and v["rows"], stable=True)
         if not view["popup"]:
@@ -206,15 +228,16 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         for _ in range(rules.MOST_MOVES):
             step = rules.plan(view, target)
             if step[0] == "fail":
-                raise Stop(f"Select Region : {step[1]}")
+                raise Stop("Select Region : {why}", why=step[1])
             if step[0] == "move":
                 await tap(shot, "stage_select", "move", (select.MOVE_TAP_X, step[1]), verified=True)
                 shot, seen = await settle(select.battle_stage, names, accept=lambda v: v is not None,
                                           timeout=MOVE_SETTLE)
                 if seen != target:
-                    logging.info(f"Slayer Legend stage change: stage {target} not opened by the game "
-                                 f"(read after Move: {seen or 'nothing'})")
-                    raise Stop(f"stage {target} non ouvert par le jeu (lu après Move : {seen or 'rien'})")
+                    ports.log("normal", f"Stage change: stage {target} not opened by the game "
+                              f"(read after Move: {seen or 'nothing'})")
+                    raise Stop("stage {stage} non ouvert par le jeu (lu après Move : {seen})", stage=target,
+                               seen=seen or t("rien"))
                 return
             if step[0] == "arrow":
                 await tap(shot, "stage_select", step[1], select.ARROW_TAPS[step[1]])
@@ -228,9 +251,10 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
             if step[0] == "arrow" and after["region"] != view["region"] + (1 if step[1] == "next_region" else -1):
                 raise Stop("Select Region : la bannière ne lit pas la région suivante")
             if not rules.progressed(view, after):
-                raise Stop(f"Select Region : {'flèche' if step[0] == 'arrow' else 'défilement'} sans effet")
+                raise Stop("Select Region : flèche sans effet" if step[0] == "arrow"
+                           else "Select Region : défilement sans effet")
             view = after
-        raise Stop(f"Select Region : stage {target} pas atteint en {rules.MOST_MOVES} gestes")
+        raise Stop("Select Region : stage {stage} pas atteint en {moves} gestes", stage=target, moves=rules.MOST_MOVES)
 
     async def unfold(shot, then=None, verified=()):
         """From the battle screen (shot): taps then (move, point) on the
@@ -269,7 +293,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
 
     async def set_preset(name):
         if not real("preset"):
-            raise Plan(f"préréglage de combat {name} : badge, Battle settings, {name}, fermer")
+            raise Plan("préréglage de combat {preset} : badge, Battle settings, {preset}, fermer", preset=name)
         first, second = await controls_look()
         if await badge_of(first, second) == name:
             return
@@ -281,11 +305,12 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
             await tap(shot, "battle_settings", "preset", controls.preset_tap(name))
             shot, chosen = await settle(controls.selected, accept=lambda v: v == name)
             if chosen != name:
-                raise Stop(f"choix du preset {name} dans Battle settings (lu : {chosen or 'rien'})")
+                raise Stop("choix du preset {preset} dans Battle settings (lu : {seen})", preset=name,
+                           seen=chosen or t("rien"))
         await tap(shot, "battle_settings", "close", SETTINGS_CLOSE)
         await settle(screens.plain_battle)
         if await badge_of(*await controls_look()) != name:
-            raise Stop(f"vérification du preset {name} sur le badge")
+            raise Stop("vérification du preset {preset} sur le badge", preset=name)
 
     async def auto_state():
         """"on", "off" or None (cannot tell) on the next two looks."""
@@ -322,19 +347,19 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
                     try:
                         await step()
                     except Plan as e:
-                        plans.append(str(e))
-                        ports.log("normal", f"Stage change, plan only: {e}")
+                        plans.append(e.t)
+                        ports.log("normal", f"Stage change, plan only: {ports.english(e.t)}")
                     finally:
                         timings[name] = round(ports.clock.monotonic() - began, 1)
             except Stop as e:
-                answer = {"result": "failed", "text": str(e)}
+                answer = {"result": "failed", "text_t": e.t}
             except ports.Busy:
                 raise
-            except RuntimeError as e:  # a move the navigation guard refused
+            except RuntimeError as e:  # a move the navigation guard refused (ports.Refused)
                 ports.log("error", f"Stage change: {e}")
-                answer = {"result": "failed", "text": str(e)}
+                answer = {"result": "failed", "text_t": getattr(e, "t", None) or t("Erreur : {error}", error=f"{e!r}"[:200])}
             else:
-                answer = {"result": "plan" if plans else "done", "text": " ; ".join(plans)}
+                answer = {"result": "plan" if plans else "done", "text_t": joined(plans)}
         answer["timings"] = timings
         status["last"] = {**answer, "mode": mode}
         return answer
@@ -356,8 +381,8 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         try:
             await souls["ensure"](chosen["id"], chosen.get("variant"))
         except Stop as e:
-            ports.log("error", f"Soul weapon: {e}")
-            raise Stop(f"Soul Weapon: {e}") from None
+            ports.log("error", f"Soul weapon: {ports.english(e.t)}")
+            raise Stop("Soul Weapon : {why}", why=e.t) from None
 
     async def ensure_soul_weapon(mode, loadout=None, force=False):
         """The soul weapon step alone, under the lease (e.g. the active
@@ -398,7 +423,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
                     return
                 await ports.clock.sleep(RELAUNCH_RETRY)
         if answer["result"] == "failed":
-            await ports.notify(f"Après la relance du jeu ({mode}) : {answer['text']}"[:200])
+            await ports.notify(f"After the game's relaunch ({mode}): {ports.english(answer['text_t'])}")
 
     def relaunched(mode):
         """For the watchdog, once its relaunch brought the game back."""
@@ -416,7 +441,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         if not (real("preset") or real("auto")):
             return None
         try:
-            async with ports.leased(HOLDER, "lecture du préréglage et d’AUTO", 30):
+            async with ports.leased(HOLDER, "reading the preset and AUTO", 30):
                 first, second = await controls_look()
                 return {"preset": await badge_of(first, second),
                         "auto": await ports.analyse(controls.auto, first, second)}
@@ -424,7 +449,10 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
             return None
 
     async def handle_get(request):
-        return ports.respond({"switches": dict(switches), "last": status["last"],
+        last = status["last"]
+        if last:
+            last = {**last, "text": ports.french(last.get("text_t"))}
+        return ports.respond({"switches": dict(switches), "last": last,
                               "soul_weapon": souls["state"]() if souls else None})
 
     async def handle_post(request):

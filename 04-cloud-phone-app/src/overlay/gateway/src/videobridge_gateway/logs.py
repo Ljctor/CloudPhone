@@ -1,12 +1,15 @@
 """The gateway's log: one stream of records, two outputs.
 
-Every record is {time (Unix seconds), level, source, text[, notify]}:
+Every record is {time (Unix seconds), level, source, text[, notify][,
+params]}, its text in English whatever the page's language (the page shows
+it as it is):
 
 - level: "normal", "warning" or "error" (Python's DEBUG is never shown,
   INFO is normal, WARNING warning, ERROR and CRITICAL error);
 - source: "gateway", "emulator", "adb", a plugin's id (its context.log,
   plugins.py), or "page" on the page's side;
-- notify: the page also shows the record as a toast.
+- notify: the page also shows the record as a toast;
+- params: the values its text was filled with, as data (log()).
 
 Records go to journald with PRIORITY 6, 4 or 3 and SYSLOG_IDENTIFIER
 cloudphone-gateway, so that `journalctl -t cloudphone-gateway -p warning`
@@ -58,13 +61,13 @@ def level_of(levelno):
     return "normal"
 
 
-def _remember(level, source, text, notify, at, extra=None):
+def _remember(level, source, text, notify, at, params=None):
     with _lock:
         record = {"id": _state["next"], "time": round(at, 3), "level": level, "source": source, "text": text}
         if notify:
             record["notify"] = True
-        if extra:
-            record.update(extra)
+        if params:
+            record["params"] = params
         _state["next"] += 1
         RECORDS.append(record)
 
@@ -138,7 +141,7 @@ class GatewayHandler(logging.Handler):
             if _repeated(level, source, text, record.created):
                 return
             _remember(level, source, text.split("\nTraceback", 1)[0][:2000], notify, record.created,
-                      getattr(record, "fields", None))
+                      getattr(record, "params", None))
             if self.journal and self._send(record, level, source, notify, text):
                 return
             self._write(record, level, source, text)
@@ -191,20 +194,19 @@ def setup():
 
 def log(level, source, text, notify=False, **params):
     """One record. level: "normal", "warning" or "error". The text is in
-    French, the page's language; with params it is a template ("{app} a
-    planté") that the record carries with its params, so that the page can
-    translate it, and is filled for the journal."""
+    English, whatever the page's language (the page shows it as it is);
+    with params it is a template ("{app} crashed") filled with them, the
+    record keeping them as data (a viewer's id: the page that connected
+    knows it is itself)."""
     levelno = {"normal": logging.INFO, "warning": logging.WARNING, "error": logging.ERROR}[level]
-    fields = {"template": text, "params": params} if params else None
     logging.getLogger("cloudphone").log(levelno, text.format(**params) if params else text, stacklevel=2,
-                                        extra={"source": source, "notify": notify, "fields": fields})
+                                        extra={"source": source, "notify": notify, "params": params or None})
 
 
 def remember(level, source, text, at, **params):
     """A record for the page only (not the journal): events from before
     this gateway started, found when it first reads Android's logs."""
-    fields = {"template": text, "params": params} if params else None
-    _remember(level, source, text.format(**params) if params else text, False, at, fields)
+    _remember(level, source, text.format(**params) if params else text, False, at, params or None)
 
 
 # adb's reachability, from the calls the gateway makes anyway (keys,
@@ -218,11 +220,11 @@ def adb_reached(reached, error_text=""):
     record."""
     if reached:
         if ADB["offline"]:
-            log("normal", "adb", "adb joint de nouveau Android")
+            log("normal", "adb", "adb reaches Android again")
         ADB["offline"] = False
     elif reached is False:
         if not ADB["offline"]:
-            log("error", "adb", "adb ne joint plus Android ({reason}). Si Android ne redémarre pas, "
-                "relancez-le sur le serveur (systemctl restart cloudphone-emulator).",
+            log("error", "adb", "adb no longer reaches Android ({reason}). If Android does not restart, "
+                "restart it on the server (systemctl restart cloudphone-emulator).",
                 notify=True, reason=(error_text or "").strip()[:120] or "?")
         ADB["offline"] = True

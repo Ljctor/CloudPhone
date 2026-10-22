@@ -52,7 +52,7 @@ def lease(ports):
             return ports.respond({"error": error}, status=400)
         why = ports.lease.take(*wanted, user=True)
         if why:
-            return ports.respond({"error": why, "lease": ports.lease.state()}, status=409)
+            return ports.respond({"error": ports.french(why), "lease": ports.lease.state()}, status=409)
         return ports.respond({"lease": ports.lease.state()})
 
     async def handle_delete(request):

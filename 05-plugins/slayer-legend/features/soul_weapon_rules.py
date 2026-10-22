@@ -89,14 +89,20 @@ def scrolled(memory):
     return memory
 
 
+def t(template, **params):
+    """A status text (features/texts.py)."""
+    return {"template": template, "params": params}
+
+
 def plan(view, target, memory, names, tag_learned=False):
     """The next move toward the target (a name of names, the game's order)
-    being equipped; Equip only with tag_learned."""
+    being equipped; Equip only with tag_learned; ("fail", why: a status
+    text)."""
     if not view.get("open"):
-        return ("fail", "écran Soul Weapon pas reconnu")
+        return ("fail", t("écran Soul Weapon pas reconnu"))
     goal = place(target, names)
     if goal is None:
-        return ("fail", f"weapon {target} unknown or its name shared, not equipped")
+        return ("fail", t("arme {weapon} inconnue ou de nom partagé : équipement non fait", weapon=target))
     rows = view.get("rows") or []
     row = selected_row(view)
     name = view.get("selected")
@@ -108,20 +114,20 @@ def plan(view, target, memory, names, tag_learned=False):
             # the selection): another cell read first, then back to it.
             return ("select", len(rows) // 2)
         if view.get("owned") == 0:
-            return ("fail", f"{target} pas possédée (Owned : 0)")
+            return ("fail", t("{weapon} pas possédée (Owned : 0)", weapon=target))
         if view.get("owned") is None:
-            return ("fail", f"{target} : « Owned » illisible")
+            return ("fail", t("{weapon} : « Owned » illisible", weapon=target))
         if not tag_learned:
-            return ("fail", f"{target}: Equip tag not calibrated, not equipped")
+            return ("fail", t("{weapon} : étiquette Equip pas calibrée, équipement non fait", weapon=target))
         if view.get("tag") == "Equip" and view.get("tag_box"):
             return ("equip",)
-        return ("fail", f"{target} : étiquette Equip / Unequip illisible")
+        return ("fail", t("{weapon} : étiquette Equip / Unequip illisible", weapon=target))
     if not rows:
-        return ("fail", "liste des armes illisible")
+        return ("fail", t("liste des armes illisible"))
     if memory.get("direction") == "unknown":
-        return ("fail", "la liste ne suit pas l’ordre des armes")
+        return ("fail", t("la liste ne suit pas l’ordre des armes"))
     if row is not None and name is None:
-        return ("fail", "nom de l’arme sélectionnée illisible")
+        return ("fail", t("nom de l’arme sélectionnée illisible"))
     if row is None:
         # The selection is out of view (or none): pick one cell to read.
         return ("select", len(rows) // 2)

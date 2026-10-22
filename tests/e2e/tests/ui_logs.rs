@@ -41,7 +41,7 @@ fn a_notify_record_is_a_toast_over_the_screen_that_goes_by_itself() {
         // Another device connects: a normal record with notify.
         let other = phone.clone();
         let viewer = blocking(move || Viewer::open(&other, &viewer_id("toast")));
-        let toast = wait_toast(&page, "Un autre appareil s’est connecté").await;
+        let toast = wait_toast(&page, "Another device connected").await;
         assert_eq!(toast["level"], "normal");
         assert_eq!(toast["colour"], WHITE, "normal records in the theme's foreground: {toast}");
         // Over the screen, not over the toolbar.
@@ -53,7 +53,7 @@ fn a_notify_record_is_a_toast_over_the_screen_that_goes_by_itself() {
         assert!(bottom <= bar["y"].as_f64().unwrap() || stack["x"].as_f64().unwrap() + stack["w"].as_f64().unwrap() <= bar["x"].as_f64().unwrap() + 0.5,
             "not over the toolbar: {stack} {bar}");
         page.wait_js("the normal toast to go by itself", Duration::from_secs(12),
-            "return ![...document.querySelectorAll('[data-toast]')].some(t => t.innerText.includes('Un autre appareil s’est connecté'))", vec![]).await;
+            "return ![...document.querySelectorAll('[data-toast]')].some(t => t.innerText.includes('Another device connected'))", vec![]).await;
         blocking(move || viewer.close());
     });
 }
@@ -71,15 +71,15 @@ fn an_error_toast_stays_once_until_closed() {
                 assert_eq!(other.post_json("api/v1/emulator/key", &json!({"key": "GoHome"})).status(), 500);
             }
         });
-        let toast = wait_toast(&page, "adb ne joint plus Android").await;
+        let toast = wait_toast(&page, "adb no longer reaches Android").await;
         assert_eq!(toast["level"], "error");
         assert_eq!(toast["colour"], RED, "{toast}");
         page.sleep(Duration::from_secs(10)).await;
-        let shown: Vec<Value> = toasts(&page).await.into_iter().filter(|t| t["text"].as_str().unwrap().contains("adb ne joint plus")).collect();
+        let shown: Vec<Value> = toasts(&page).await.into_iter().filter(|t| t["text"].as_str().unwrap().contains("adb no longer reaches")).collect();
         assert_eq!(shown.len(), 1, "an error stays, once: {shown:?}");
-        close_toast(&page, "adb ne joint plus Android").await;
+        close_toast(&page, "adb no longer reaches Android").await;
         page.wait_js("the toast closed", Duration::from_secs(5),
-            "return ![...document.querySelectorAll('[data-toast]')].some(t => t.innerText.includes('adb ne joint plus'))", vec![]).await;
+            "return ![...document.querySelectorAll('[data-toast]')].some(t => t.innerText.includes('adb no longer reaches'))", vec![]).await;
     });
 }
 

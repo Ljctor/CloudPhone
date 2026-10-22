@@ -30,15 +30,17 @@ import asyncio
 
 def mine(ports, screens, readers, rules, timer, values):
     """readers: mine.py (the mine's screens off a screenshot)."""
+    t = ports.t
     status = {"enabled": False, "floor": None, "area": None, "until": None, "gold": None,
-              "state": "off", "message": "", "task": None, "stopper": None, "entering": False,
+              "state": "off", "message": None, "task": None, "stopper": None, "entering": False,
               "no_feather": False}
     ports.store.register("mine", lambda: {key: status[key] for key in ("enabled", "floor", "area", "until",
                                                                         "state")})
 
-    def report(state, message):
+    def report(state, message=None):
+        """The mine's state and its message (a status text, or None)."""
         if (status["state"], status["message"]) != (state, message):
-            ports.log("normal", f"Mine: {state} {message}")
+            ports.log("normal", f"Mine: {state} {ports.english(message)}".rstrip())
         status["state"], status["message"] = state, message
         ports.store.save()
 
@@ -54,7 +56,7 @@ def mine(ports, screens, readers, rules, timer, values):
             async with ports.leased("mine", reason, rules.LEASE_SECONDS):
                 return await sequence()
         except ports.Busy as e:
-            report("waiting", f"En attente : {e}")
+            report("waiting", t("En attente : {why}", why=e.t))
             return None
 
     async def hold_saver(shot):
@@ -88,7 +90,7 @@ def mine(ports, screens, readers, rules, timer, values):
             if not shot or not await ports.analyse(readers.floor_list, shot):
                 return False
         else:
-            report("blocked", f"Étage {floor} introuvable dans la liste")
+            report("blocked", t("Étage {floor} introuvable dans la liste", floor=floor))
             return False
         shot = await step(shot, "mine_list", "floor", (0.5, row))
         if not shot or not await ports.analyse(readers.area_popup, shot):
@@ -113,7 +115,8 @@ def mine(ports, screens, readers, rules, timer, values):
 
     def ended(state, message):
         """The mine ends with no alert of its own (out of feathers, no way
-        back in): the mode's back to default says it, once."""
+        back in): the mode's back to default says it, once. message: a
+        status text."""
         status["enabled"] = False
         report(state, message)
 
@@ -131,74 +134,76 @@ def mine(ports, screens, readers, rules, timer, values):
 
     async def way_in():
         """From the battle screen to the mine's fight: "done", "no_feather",
-        or the step that did not show (French)."""
+        or the step that did not show (a status text)."""
         shot = await poll(screens.plain_battle, rules.ENTRY_SETTLE)
         if not shot:
-            return "écran de combat pas vu"
+            return t("écran de combat pas vu")
         for screen, move, point, read, name in (
                 ("battle", "menu_adventure", readers.ADVENTURE_TAP, readers.adventure_open, "Adventure"),
                 ("adventure_map", "dungeon", readers.DUNGEON_TAP, readers.dungeon_open, "Dungeon"),
-                ("dungeon_map", "closed_mine", readers.CLOSED_MINE_TAP, readers.floor_list, "liste des étages")):
+                ("dungeon_map", "closed_mine", readers.CLOSED_MINE_TAP, readers.floor_list, t("liste des étages"))):
             if not await ports.focused():
-                return "le jeu n’est plus au premier plan"
+                return t("le jeu n’est plus au premier plan")
             await ports.tap(shot, screen, move, point)
             shot = await poll(read, rules.ENTRY_SETTLE)
             if not shot:
-                return f"écran {name} pas vu"
+                return t("écran {name} pas vu", name=name)
         if await relaunch(shot):
             return "done"
-        return "no_feather" if status["no_feather"] else "étage, zone ou plumes"
+        return "no_feather" if status["no_feather"] else t("étage, zone ou plumes")
 
     async def reenter():
         """After the watchdog's relaunch: the way back in, tried again within
         rules.ENTRY_BUDGET; then (or out of feathers, or not calibrated) the
         mine ends. {result: "done", "no_feather", "failed" or
-        "uncalibrated", text}."""
+        "uncalibrated", text_t (a status text, or None)}."""
         if not status["enabled"]:
-            return {"result": "failed", "text": "la mine ne farme plus"}
+            return {"result": "failed", "text_t": t("la mine ne farme plus")}
         if readers.adventure_open is None or readers.dungeon_open is None:
-            text = "écrans Adventure et Dungeon pas encore reconnus"
-            ended("entry_failed", f"retour dans la mine impossible ({text})")
-            return {"result": "uncalibrated", "text": text}
+            text = t("écrans Adventure et Dungeon pas encore reconnus")
+            ended("entry_failed", t("retour dans la mine impossible ({why})", why=text))
+            return {"result": "uncalibrated", "text_t": text}
         status.update(entering=True, no_feather=False)
-        report("relaunching", f"Retour dans la mine : étage {status['floor']}, zone {status['area']}")
+        report("relaunching", t("Retour dans la mine : étage {floor}, zone {area}", floor=status["floor"],
+                                area=status["area"]))
         began, failures, first = ports.clock.monotonic(), 0, None
         try:
             while True:
-                why = await leased("Retour dans la mine", way_in)
+                why = await leased("Back into the mine", way_in)
                 if why == "done":
-                    report("farming", "Mine relancée après un redémarrage du jeu")
-                    return {"result": "done", "text": ""}
+                    report("farming", t("Mine relancée après un redémarrage du jeu"))
+                    return {"result": "done", "text_t": None}
                 if why == "no_feather":
-                    ended("no_feather", "plus de plume")
-                    return {"result": "no_feather", "text": "plus de plume"}
+                    ended("no_feather", t("plus de plume"))
+                    return {"result": "no_feather", "text_t": t("plus de plume")}
                 failures += 1
                 # The first try's step names the cause: a later one may
                 # start where it stopped (not the battle screen).
                 first = first or why
                 delay = rules.entry_retry(failures, ports.clock.monotonic() - began)
                 if delay is None:
-                    text = first or "bail toujours pris"
-                    ended("entry_failed", f"retour dans la mine impossible ({text})")
-                    return {"result": "failed", "text": text}
-                ports.log("normal", f"Mine: way back in stopped ({why}), again in {delay} s")
+                    text = first or t("bail toujours pris")
+                    ended("entry_failed", t("retour dans la mine impossible ({why})", why=text))
+                    return {"result": "failed", "text_t": text}
+                ports.log("normal", f"Mine: way back in stopped ({ports.english(why)}), again in {delay} s")
                 await ports.clock.sleep(delay)
         finally:
             status["entering"] = False
 
     def stopped(reason):
+        """reason: a status text."""
         status["enabled"] = False
-        report("stopped", f"{reason} : « Repeat entry » décoché, la mine s’arrête après cette entrée")
+        report("stopped", t("{reason} : « Repeat entry » décoché, la mine s’arrête après cette entrée", reason=reason))
 
     async def untick(shot, reason):
         """The stop pass's untick: True once it is unticked and farming is
         off; None when it may not tap now; else blocked, with an alert."""
-        done = await leased("Décocher « Repeat entry »", lambda: unticked(shot))
+        done = await leased("Untick Repeat entry", lambda: unticked(shot))
         if done is None:
             return None
         if not done:
-            report("blocked", f"{reason}, mais « Repeat entry » ne se décoche pas")
-            await alert(status["message"])
+            report("blocked", t("{reason}, mais « Repeat entry » ne se décoche pas", reason=reason))
+            await alert(ports.fill("Mine: {reason}, but Repeat entry does not untick", {"reason": reason}))
             return False
         stopped(reason)
         return True
@@ -219,7 +224,7 @@ def mine(ports, screens, readers, rules, timer, values):
         # by end(), or in its last alert) never takes another look.
         me = asyncio.current_task()
         memory = rules.fresh()
-        place = f"étage {status['floor']}, zone {status['area']}"
+        place = t("étage {floor}, zone {area}", floor=status["floor"], area=status["area"])
 
         async def look_again():
             """Before a tap: a screenshot taken now, or None unless it shows
@@ -230,9 +235,10 @@ def mine(ports, screens, readers, rules, timer, values):
             return None
 
         async def finish(state, message):
+            """message: a status text, said in English in the alert."""
             status["enabled"] = False
             report(state, message)
-            await alert(f"Mine arrêtée ({place}) : {message}")
+            await alert(ports.fill("Mine stopped ({place}): {why}", {"place": place, "why": message}))
 
         async def untick_or_retry(shot, reason):
             """The farming loop's untick: "unticked" (farming is off),
@@ -241,7 +247,7 @@ def mine(ports, screens, readers, rules, timer, values):
             that did not take, "blocked" (farming is off, one alert, no more
             taps)."""
             nonlocal memory
-            done = await leased("Décocher « Repeat entry »", lambda: unticked(shot))
+            done = await leased("Untick Repeat entry", lambda: unticked(shot))
             if done is None:
                 return "retry"
             if done:
@@ -249,10 +255,10 @@ def mine(ports, screens, readers, rules, timer, values):
                 return "unticked"
             memory, give_up = rules.untick_failed(memory)
             if give_up:
-                await finish("blocked", f"{reason}, mais « Repeat entry » ne se décoche pas après "
-                             f"{rules.MAX_UNTICK_FAILURES} essais : décoche-le à la main")
+                await finish("blocked", t("{reason}, mais « Repeat entry » ne se décoche pas après {tries} essais : "
+                                          "décoche-le à la main", reason=reason, tries=rules.MAX_UNTICK_FAILURES))
                 return "blocked"
-            report("blocked", f"{reason}, mais « Repeat entry » ne se décoche pas : nouvel essai")
+            report("blocked", t("{reason}, mais « Repeat entry » ne se décoche pas : nouvel essai", reason=reason))
             return "retry"
 
         try:
@@ -261,14 +267,14 @@ def mine(ports, screens, readers, rules, timer, values):
                 if status["task"] is not me:
                     return
                 if not ports.enabled():
-                    report("waiting", "Plugin désactivé")
+                    report("waiting", t("Plugin désactivé"))
                     continue
                 if status["entering"]:
                     # The way back in runs (reenter, under the lease).
                     continue
                 if not await ports.focused():
                     # The watchdog's (rules mine_away): its relaunch, then reenter().
-                    report("waiting", "Le jeu n’est pas au premier plan")
+                    report("waiting", t("Le jeu n’est pas au premier plan"))
                     continue
                 shot = await ports.capture(max_age=rules.SECONDS)
                 if not shot:
@@ -278,64 +284,66 @@ def mine(ports, screens, readers, rules, timer, values):
                     facts, memory, ports.clock.monotonic(), ports.clock.wall(), status["until"])
                 if move == "leave_saver":
                     shot = await look_again()
-                    if shot and await leased("Sortie du mode économie d’énergie", lambda: hold_saver(shot)):
+                    if shot and await leased("Leave Power Saving Mode", lambda: hold_saver(shot)):
                         memory["last_hold"] = ports.clock.monotonic()
                 elif move == "stop_timer":
                     shot = await look_again()
-                    result = await untick_or_retry(shot, "Durée écoulée") if shot else "retry"
+                    result = await untick_or_retry(shot, t("Durée écoulée")) if shot else "retry"
                     if result == "unticked":
-                        await alert(f"Durée écoulée ({place}) : « Repeat entry » décoché, la mine s’arrête après "
-                                    "cette entrée")
+                        await alert(ports.fill("Time is up ({place}): Repeat entry unticked, the mine stops after "
+                                               "this entry", {"place": place}))
                     if result != "retry":
                         return
                 elif move == "gold":
-                    report("farming", "Combat en cours, parchemin doré actif")
+                    report("farming", t("Combat en cours, parchemin doré actif"))
                 elif move in ("warn_no_gold", "stop_no_gold"):
                     timed = move == "warn_no_gold"
                     if gone:
-                        await alert(f"Plus de parchemin doré ({place})"
-                                    + (" : la mine continue jusqu’à la fin du minuteur" if timed else ""))
+                        await alert(ports.fill("No more gold scroll ({place})"
+                                               + (": the mine goes on until the timer ends" if timed else ""),
+                                               {"place": place}))
                     if timed:
-                        report("farming", "Combat en cours, sans parchemin doré")
+                        report("farming", t("Combat en cours, sans parchemin doré"))
                         continue
                     shot = await look_again()
-                    if shot and await untick_or_retry(shot, "Plus de parchemin doré") != "retry":
+                    if shot and await untick_or_retry(shot, t("Plus de parchemin doré")) != "retry":
                         return
                 elif move == "other":
-                    report("waiting", "Écran autre que la mine : rien à faire")
+                    report("waiting", t("Écran autre que la mine : rien à faire"))
                 elif move == "finish_timer":
-                    await finish("stopped", "Durée écoulée : pas de relance")
+                    await finish("stopped", t("Durée écoulée : pas de relance"))
                     return
                 elif move == "finish_no_gold":
-                    await finish("stopped", "Parchemin doré pas vu depuis 5 minutes : pas de relance")
+                    await finish("stopped", t("Parchemin doré pas vu depuis 5 minutes : pas de relance"))
                     return
                 elif move == "wait_no_gold":
-                    report("waiting", "Parchemin doré pas vu depuis 5 minutes : pas de relance")
+                    report("waiting", t("Parchemin doré pas vu depuis 5 minutes : pas de relance"))
                 elif move == "finish_failures":
-                    await finish("blocked", "La relance a échoué 3 fois : relance la mine à la main")
+                    await finish("blocked", t("La relance a échoué 3 fois : relance la mine à la main"))
                     return
                 elif move == "relaunch":
                     shot = await look_again()
                     if not shot:
                         continue
-                    report("relaunching", f"Relance : étage {status['floor']}, zone {status['area']}")
-                    ok = await leased("Relance de la mine", lambda: relaunch(shot))
+                    report("relaunching", t("Relance : étage {floor}, zone {area}", floor=status["floor"],
+                                            area=status["area"]))
+                    ok = await leased("Mine relaunch", lambda: relaunch(shot))
                     if ok is None:
                         continue
                     if not ok and status["no_feather"]:
-                        ended("no_feather", "plus de plume")
+                        ended("no_feather", t("plus de plume"))
                         return
                     if not ok and status["state"] == "blocked":
                         await finish("blocked", status["message"])
                         return
                     memory = rules.relaunched(memory, ok)
                     if ok:
-                        report("farming", "Mine relancée")
+                        report("farming", t("Mine relancée"))
         except asyncio.CancelledError:
             raise
         except Exception as e:
             ports.exception("Mine failed")
-            await finish("failed", f"Erreur : {e!r}"[:200])
+            await finish("failed", t("Erreur : {error}", error=f"{e!r}"[:200]))
 
     def stop_facts(shot):
         return screens.classify(shot), mine_facts(shot)
@@ -350,8 +358,8 @@ def mine(ports, screens, readers, rules, timer, values):
         restarted), it ends at once: nothing to untick. Without seeing the
         fight for rules.STOP_SECONDS it is "blocked" (alert), then watches
         for rules.WATCH_SECONDS more (watch_after_blocked)."""
-        reason = "Durée écoulée pendant un redémarrage du gateway"
-        report("stopping", "Durée écoulée pendant un redémarrage : décoche « Repeat entry »")
+        reason = t("Durée écoulée pendant un redémarrage du gateway")
+        report("stopping", t("Durée écoulée pendant un redémarrage : décoche « Repeat entry »"))
         deadline = ports.clock.monotonic() + rules.STOP_SECONDS
         last_hold = 0.0
         looks = 0
@@ -364,7 +372,7 @@ def mine(ports, screens, readers, rules, timer, values):
                 gone = await ports.running() is False
                 why = rules.stop_pass_ended(gone, False if gone else await ports.focused())
                 if why:
-                    report("stopped", f"{reason} : le jeu n’est plus en combat, rien à décocher")
+                    report("stopped", t("{reason} : le jeu n’est plus en combat, rien à décocher", reason=reason))
                     ports.log("normal", f"Mine: timer ended during a restart, game {why}: nothing to untick")
                     return
                 shot = await ports.capture(max_age=0)
@@ -373,12 +381,12 @@ def mine(ports, screens, readers, rules, timer, values):
                 screen, facts = await ports.analyse(stop_facts, shot)
                 move = rules.stop_look(screen, facts, last_hold, ports.clock.monotonic())
                 if move == "restarted":
-                    report("stopped", f"{reason} : le jeu a redémarré, rien à décocher")
+                    report("stopped", t("{reason} : le jeu a redémarré, rien à décocher", reason=reason))
                     ports.log("normal", f"Mine: timer ended during a restart, game on its {screen} "
                               "screen: nothing to untick")
                     return
                 if move == "leave_saver":
-                    if await leased("Sortie du mode économie d’énergie", lambda: hold_saver(shot)):
+                    if await leased("Leave Power Saving Mode", lambda: hold_saver(shot)):
                         last_hold = ports.clock.monotonic()
                 elif move == "untick":
                     done = await untick(shot, reason)
@@ -387,17 +395,18 @@ def mine(ports, screens, readers, rules, timer, values):
                     if done:
                         ports.log("normal", "Mine: timer ended during a restart, Repeat entry unticked")
                     return
-            report("blocked", "Durée écoulée pendant un redémarrage, combat de la mine pas vu en "
-                   f"{rules.STOP_SECONDS // 60} minutes : « Repeat entry » est peut-être encore coché")
+            report("blocked", t("Durée écoulée pendant un redémarrage, combat de la mine pas vu en {minutes} minutes : "
+                                "« Repeat entry » est peut-être encore coché", minutes=rules.STOP_SECONDS // 60))
             ports.log("warning", "Mine: timer ended during a restart, fight not seen: "
                       "Repeat entry may still be ticked")
-            await alert(status["message"])
+            await alert(f"Mine: time ran out during a restart, the mine's fight not seen in {rules.STOP_SECONDS // 60} "
+                        "minutes: Repeat entry may still be ticked")
             await watch_after_blocked(reason)
         except asyncio.CancelledError:
             raise
         except Exception as e:
             ports.exception("Mine stop failed")
-            report("failed", f"Erreur : {e!r}"[:200])
+            report("failed", t("Erreur : {error}", error=f"{e!r}"[:200]))
 
     async def watch_after_blocked(reason):
         """After a stop pass gave up: one look every rules.WATCH_EVERY with
@@ -422,8 +431,8 @@ def mine(ports, screens, readers, rules, timer, values):
                     ports.log("normal", "Mine: fight seen after giving up, Repeat entry unticked")
                 return
         ports.log("warning", f"Mine: fight still not seen after {rules.WATCH_SECONDS // 60} more minutes")
-        await alert(f"Mine : combat toujours pas vu après {(rules.STOP_SECONDS + rules.WATCH_SECONDS) // 60} "
-                    "minutes, « Repeat entry » est peut-être encore coché : vérifie à la main")
+        await alert(f"Mine: fight still not seen after {(rules.STOP_SECONDS + rules.WATCH_SECONDS) // 60} "
+                    "minutes, Repeat entry may still be ticked: check it by hand")
 
     def cancel_stopper():
         """The user starts the mine: no stop pass any more."""
@@ -432,13 +441,16 @@ def mine(ports, screens, readers, rules, timer, values):
             stopper.cancel()
 
     def state():
-        return {key: status[key] for key in ("enabled", "floor", "area", "until", "gold", "state", "message")}
+        answer = {key: status[key] for key in ("enabled", "floor", "area", "until", "gold", "state")}
+        answer["message"] = ports.french(status["message"])
+        answer["message_t"] = status["message"]
+        return answer
 
     def begin():
         cancel_stopper()
         status["enabled"] = True
         status["gold"] = None
-        report("waiting", "Surveillance de la mine")
+        report("waiting", t("Surveillance de la mine"))
         # A fresh loop, even when the last one has not ended yet: begin()
         # only runs with farming off, so that one is ending (cancelled by
         # end() in the same tick, or in its last alert) and would not farm.
@@ -449,7 +461,7 @@ def mine(ports, screens, readers, rules, timer, values):
         task = status["task"]
         if task is not None and not task.done():
             task.cancel()
-        report("off", "")
+        report("off")
 
     def start(floor, area, until):
         """The mode's mine: farms floor and area until then."""
@@ -501,7 +513,7 @@ def mine(ports, screens, readers, rules, timer, values):
         if status["state"] == "stopping":
             status["stopper"] = ports.spawn(stop_after_restart())
         if status["enabled"]:
-            report("waiting", "Surveillance de la mine (reprise après un redémarrage du gateway)")
+            report("waiting", t("Surveillance de la mine (reprise après un redémarrage du gateway)"))
             status["task"] = ports.spawn(farm())
 
     saved = ports.store.saved.get("mine") or {}

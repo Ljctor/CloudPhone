@@ -138,16 +138,16 @@ def event_record(event, expected):
     reason = event.get("reason") or ""
     kind = event["kind"]
     if kind == "crash":
-        return ("error", "{app} a planté ({reason}). Relancez l’appli ; si elle replante, "
-                "regardez la mémoire d’Android (Informations → Serveur).", {"app": app, "reason": reason or "?"})
+        return ("error", "{app} crashed ({reason}). Restart the app; if it crashes again, "
+                "check Android's memory (Information → Server).", {"app": app, "reason": reason or "?"})
     if kind == "anr":
-        return "warning", "{app} ne répondait plus (ANR)", {"app": app}
+        return "warning", "{app} was not responding (ANR)", {"app": app}
     if kind == "killed":
-        return "warning", "{app} arrêté par Android ({reason})", {"app": app, "reason": reason or "?"}
+        return "warning", "{app} stopped by Android ({reason})", {"app": app, "reason": reason or "?"}
     if kind == "low_memory":
-        return "warning", "Mémoire d’Android insuffisante", {}
+        return "warning", "Android is low on memory", {}
     # android_boot: expected after a change the page asked for.
     if expected:
-        return "normal", "Android a redémarré", {}
-    return ("error", "Android a redémarré sans qu’on le demande. Si cela se répète, regardez la mémoire "
-            "d’Android (Informations → Serveur) et journalctl -u cloudphone-emulator sur le serveur.", {})
+        return "normal", "Android restarted", {}
+    return ("error", "Android restarted without being asked to. If it happens again, check Android's memory "
+            "(Information → Server) and journalctl -u cloudphone-emulator on the server.", {})

@@ -213,8 +213,8 @@ One stream of records, two outputs. A record is
 
 ```json
 {"time": 1792360000.12, "level": "error", "source": "emulator",
- "text": "Android a planté (exit-code) : redémarrage automatique. S’il ne revient pas d’ici deux minutes, relancez-le sur le serveur.",
- "notify": true, "template": "Android a planté ({result}) : …", "params": {"result": "exit-code"}}
+ "text": "Android crashed (exit-code): automatic restart. If it is not back within two minutes, restart it on the server.",
+ "notify": true, "params": {"result": "exit-code"}}
 ```
 
 - `level`: `normal`, `warning` or `error`; nothing below normal is kept or
@@ -222,12 +222,16 @@ One stream of records, two outputs. A record is
   go nowhere). Python's INFO is normal, WARNING warning, ERROR and above
   error.
 - `source`: `gateway`, `emulator` (the unit, Android's boot and its apps),
-  `adb`, or `page` for the page's own records.
+  `adb`, a plugin's id (its `context.log`, `plugins.py`), or `page` for the
+  page's own records.
 - `notify` (only when true): the page also shows the record as a toast.
-- `template` and `params` (gateway records with parameters): the French
-  text with `{name}` placeholders, so the page translates it with `tr()`;
-  `text` is it filled in. Events the user sees are in French, the page's
-  language; technical lines stay in English.
+- `params` (records with parameters): the values `text` was filled with,
+  as data (a viewer's id tells the page that connected it is itself).
+- `text` is in English, whatever the page's language, and the page shows
+  it as it is (no translation): the gateway's and the plugins' records,
+  and the phone alerts, which are the same records with `notify`. The
+  statuses a page shows elsewhere (a plugin's state, an error in an
+  answer) are French templates the page translates instead.
 - Every error says what to do next, in one sentence after the event (the
   wording of `diagnose()`'s banners where there is one).
 - The same text from the same source within 30 s is dropped.

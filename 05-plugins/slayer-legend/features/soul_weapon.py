@@ -105,7 +105,7 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
             await helpers.tap(shot, "equipment_accessories", "weapon", WEAPON_TAB_TAP)
             shot, tab = await wait_for(lambda s: reader.tab(s) == "weapon" and "weapon")
         if tab != "weapon":
-            raise Stop(f"onglet Weapon de l’équipement pas actif (lu : {tab or 'rien'})")
+            raise Stop("onglet Weapon de l’équipement pas actif (lu : {seen})", seen=tab or ports.t("rien"))
         await helpers.tap(shot, "equipment_weapon", "soul_weapon", SOUL_WEAPON_TAP)
         shot, opened = await wait_for(lambda s: reader.title(s) or reader.weapon_detail(s))
         if opened and not reader.title(shot):
@@ -149,12 +149,13 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
     async def engrave(shot, entry, variant):
         """On the Soul Weapon screen with the target equipped: its engraving
         set up as the variant. (shot back on Soul Weapon, the alert's text
-        or None when ready or not asked, the setup's answer or None)."""
+        (a status text) or None when ready or not asked, the setup's answer
+        or None)."""
         if not (setup and variant and entry.get("grid")):
             return shot, None, None
         pieces = engraving["variant"](entry["id"], variant)
         if pieces is None:
-            return shot, f"Engraving of {entry['name']}: variant {variant} unknown", None
+            return shot, ports.t("Gravure de {name} : variante {variant} inconnue", name=entry["name"], variant=variant), None
         shot, done = await setup(shot, entry, variant, pieces, names, reader.CARD_FONT, table["shapes"])
         if not done["ok"]:
             return shot, engraving["rules"].alert(entry["name"], variant, done["problems"]), done
@@ -163,14 +164,14 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
     async def ensure(target_id, variant=None):
         """The weapon target_id equipped and its engraving set up as variant:
         "cached", "equipped" (it already was) or "done" (Equip tapped); else
-        Stop with the step, in French (an engraving not ready: its alert)."""
+        Stop with the step (an engraving not ready: its alert)."""
         since = ports.clock.monotonic()
         entry = by_id.get(target_id)
         if entry is None:
-            raise Stop(f"arme {target_id} inconnue")
+            raise Stop("arme {id} inconnue", id=target_id)
         target = entry["name"]
         if rules.shared(target, table):
-            raise Stop(f"{target}: two weapons share this name, not equipped")
+            raise Stop("{weapon} : deux armes portent ce nom, équipement non fait", weapon=target)
         cache = status["cache"]
         last_input = (ports.last_input() or {}).get("wall") if hasattr(ports, "last_input") else None
         if cache and cache["id"] == target_id and cache.get("variant") == variant \
@@ -191,19 +192,20 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
             if step[0] == "fail":
                 raise Stop(step[1])
             if moves >= rules.MOST_MOVES:
-                raise Stop(f"{target} pas atteinte en {rules.MOST_MOVES} gestes")
+                raise Stop("{weapon} pas atteinte en {moves} gestes", weapon=target, moves=rules.MOST_MOVES)
             moves += 1
             await move(shot, view, step, target)
             if step[0] == "scroll":
                 memory = rules.scrolled(memory)
             shot, after = await settled(view)
             if after is None:
-                raise Stop({"select": "choix dans la liste", "scroll": "défilement de la liste",
-                            "equip": "Equip"}[step[0]] + " sans effet")
+                raise Stop({"select": "choix dans la liste sans effet", "scroll": "défilement de la liste sans effet",
+                            "equip": "Equip sans effet"}[step[0]])
             if step[0] == "equip":
                 if after["selected"] != target or after["tag"] != "Unequip":
-                    raise Stop(f"vérification après Equip (lu : {after['selected'] or 'nom illisible'}, "
-                               f"{after['tag'] or 'étiquette illisible'})")
+                    raise Stop("vérification après Equip (lu : {name}, {tag})",
+                               name=after["selected"] or ports.t("nom illisible"),
+                               tag=after["tag"] or ports.t("étiquette illisible"))
                 result = "done"
             view = after
         if memory["direction"] in (1, -1) and memory["direction"] != status["direction"]:
@@ -221,7 +223,7 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
                   f"Soul weapon: {target} {result} in {seconds} s, {moves} moves"
                   + (f", engraving {'not ready' if mismatch else 'ready'} in {done['seconds']} s" if done else "")
                   + (f" (over the {BUDGET} s budget)" if over else ""))
-        status["last"] = {"result": result, "weapon": target, "seconds": seconds, "engraving": mismatch}
+        status["last"] = {"result": result, "weapon": target, "seconds": seconds, "engraving_t": mismatch}
         if mismatch:
             raise Stop(mismatch)
         status["cache"] = {"id": target_id, "variant": variant, "at": ports.clock.wall()}

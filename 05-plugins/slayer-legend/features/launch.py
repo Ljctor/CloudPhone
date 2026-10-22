@@ -20,18 +20,20 @@ import asyncio
 
 
 def launch(ports, screens, rules):
-    status = {"state": "idle", "message": "", "task": None, "quiet": False}
+    t = ports.t
+    status = {"state": "idle", "message": None, "task": None, "quiet": False}
 
-    def report(state, message=""):
+    def report(state, message=None):
+        """The launch's state and its message (a status text, or None)."""
         status["state"], status["message"] = state, message
         # The watchdog's relaunch is one record of the watchdog's own.
         if not status["quiet"]:
-            ports.log("normal", f"Launch: {state} {message}".rstrip())
+            ports.log("normal", f"Launch: {state} {ports.english(message)}".rstrip())
 
     async def steps():
-        report("starting", "Ouverture du jeu")
+        report("starting", t("Ouverture du jeu"))
         if not await ports.start_game():
-            report("failed", "Android ne répond pas")
+            report("failed", t("Android ne répond pas"))
             return
         deadline = ports.clock.monotonic() + rules.DEADLINE
         memory = rules.fresh()
@@ -51,74 +53,79 @@ def launch(ports, screens, rules):
             else:
                 screen = await ports.analyse(screens.classify, shot)
             if screen in ("battle", "menu") and await ports.focused():
-                report("done", "Le jeu est sur l’écran de combat")
+                report("done", t("Le jeu est sur l’écran de combat"))
                 return
             move, memory = rules.step(screen, memory, ports.clock.monotonic())
             if move == "close_crash":
                 if not await ports.close_crash(shot):
-                    report("blocked", "Fenêtre « l’application s’arrête » : bouton introuvable, ferme-la à la main")
+                    report("blocked", t("Fenêtre « l’application s’arrête » : bouton introuvable, ferme-la à la main"))
                     return
-                report("starting", "Fenêtre « l’application s’arrête » fermée, réouverture du jeu")
+                report("starting", t("Fenêtre « l’application s’arrête » fermée, réouverture du jeu"))
                 await ports.clock.sleep(rules.AFTER_CRASH)
                 if not await ports.start_game():
-                    report("failed", "Android ne répond pas")
+                    report("failed", t("Android ne répond pas"))
                     return
             elif move == "blocked_crash":
-                report("blocked", "Le jeu plante encore : relance-le à la main")
+                report("blocked", t("Le jeu plante encore : relance-le à la main"))
                 return
             elif move == "confirm":
                 await ports.tap(shot, "save_notice", "confirm", screens.CONFIRM_TAP)
-                report("loading", "Dernière sauvegarde confirmée, chargement")
+                report("loading", t("Dernière sauvegarde confirmée, chargement"))
                 await ports.clock.sleep(rules.AFTER_CONFIRM)
             elif move == "leave_saver":
                 await ports.hold(shot, "saver", "leave", screens.SAVER_TAP, screens.SAVER_HOLD_MS)
                 memory["last_tap"] = ports.clock.monotonic()
-                report("loading", "Sortie du mode économie d’énergie")
+                report("loading", t("Sortie du mode économie d’énergie"))
             elif move == "blocked_saver":
-                report("blocked", "Le mode économie d’énergie ne se ferme pas : touche son bouton à la main")
+                report("blocked", t("Le mode économie d’énergie ne se ferme pas : touche son bouton à la main"))
                 return
             elif move == "start":
                 await ports.tap(shot, "title", "start", screens.START_TAP)
                 memory["last_tap"] = ports.clock.monotonic()
-                report("starting", "Écran titre touché, connexion")
+                report("starting", t("Écran titre touché, connexion"))
             elif move == "sign_in":
                 await ports.tap(shot, "sign_in", "google", screens.SIGN_IN_GOOGLE_TAP)
                 memory["last_tap"] = ports.clock.monotonic()
-                report("starting", "« Sign in with Google » touché")
+                report("starting", t("« Sign in with Google » touché"))
             elif move == "choose_account":
                 await ports.choose_account(shot, chooser["point"])
                 memory["last_tap"] = ports.clock.monotonic()
-                report("loading", "Compte Google choisi")
+                report("loading", t("Compte Google choisi"))
             elif move in ("blocked_sign_in", "blocked_chooser"):
-                text = ("reconnexion Google impossible : à faire à la main" if move == "blocked_sign_in" else
-                        f"reconnexion Google : {chooser['count']} comptes proposés au lieu d’un, à faire à la main")
-                report("blocked", text)
-                await ports.notify(text)
+                if move == "blocked_sign_in":
+                    report("blocked", t("reconnexion Google impossible : à faire à la main"))
+                    await ports.notify("Google sign-in impossible: to do by hand")
+                else:
+                    report("blocked", t("reconnexion Google : {count} comptes proposés au lieu d’un, à faire à la main",
+                                        count=chooser["count"]))
+                    await ports.notify(f"Google sign-in: {chooser['count']} accounts offered instead of one, "
+                                       "to do by hand")
                 return
             elif move == "blocked_other":
-                report("blocked", "Écran inattendu : termine le lancement à la main")
+                report("blocked", t("Écran inattendu : termine le lancement à la main"))
                 return
-        report("blocked", "Le jeu n’a pas atteint l’écran de combat en 3 minutes")
+        report("blocked", t("Le jeu n’a pas atteint l’écran de combat en 3 minutes"))
 
     async def run(holder="launch", user=True):
         """The launch under the shared lease: holder "launch" on the user's
         press (user: a user input does not stop it)."""
         status["quiet"] = holder == "watchdog"
         try:
-            async with ports.leased(holder, "Lancement du jeu", rules.DEADLINE + 60, user=user):
+            async with ports.leased(holder, "Game launch", rules.DEADLINE + 60, user=user):
                 await steps()
         except ports.Busy as e:
             # Not a failure of the launch: the lease or the user (the
             # watchdog does not count it).
-            report("deferred", f"Lancement différé : {e}")
+            report("deferred", t("Lancement différé : {why}", why=e.t))
         except asyncio.CancelledError:
             raise
         except Exception as e:
             ports.exception("Launch failed")
-            report("failed", f"Erreur : {e!r}"[:200])
+            report("failed", t("Erreur : {error}", error=f"{e!r}"[:200]))
 
     async def handle_state(request):
-        return ports.respond({"state": status["state"], "message": status["message"]})
+        return ports.respond({"state": status["state"], "message": ports.french(status["message"]),
+                              "message_t": status["message"]})
 
     def running():
         task = status["task"]

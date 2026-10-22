@@ -448,15 +448,15 @@ fn slayer_legends_switch_on_hold_while_the_user_plays_alerts_once_with_one_time_
     assert!((40..=60).contains(&left), "{held}");
     // One alert, with the real delay and its two buttons.
     let alert = wait_for("the hold's alert", Duration::from_secs(10), || {
-        cp.fake().ntfy_posts().into_iter().find(|p| p["text"].as_str().is_some_and(|t| t.contains("en attente")))
+        cp.fake().ntfy_posts().into_iter().find(|p| p["text"].as_str().is_some_and(|t| t.contains("on hold")))
     });
     let text = alert["text"].as_str().unwrap().to_string();
-    assert!(text.starts_with("Passage au farming mpw4 en attente : tu joues. Nouvel essai dans ") && text.ends_with(" s."), "{text}");
+    assert!(text.starts_with("Switch to farming mpw4 on hold: you are playing. Next try in ") && text.ends_with(" s."), "{text}");
     let actions = alert["headers"]["Actions"].as_str().unwrap().to_string();
     let buttons: Vec<&str> = actions.split("; ").collect();
     assert_eq!(buttons.len(), 2, "{actions}");
-    assert!(buttons[0].starts_with("http, 'Passer en jeu libre', 'http://"), "{actions}");
-    assert!(buttons[1].starts_with("http, 'Reprendre maintenant', 'http://"), "{actions}");
+    assert!(buttons[0].starts_with("http, 'Switch to free play', 'http://"), "{actions}");
+    assert!(buttons[1].starts_with("http, 'Resume now', 'http://"), "{actions}");
     let id = held["hold"]["id"].as_str().unwrap();
     for (button, action) in buttons.iter().zip(["free", "resume"]) {
         assert!(button.contains("/api/v1/plugins/slayer-legend/mode/hold', method='POST', "), "{button}");
@@ -484,6 +484,6 @@ fn slayer_legends_switch_on_hold_while_the_user_plays_alerts_once_with_one_time_
     assert_eq!(cp.post_json(hold, &json!({"action": "free"})).status(), 409);
     assert_eq!(cp.post_json(hold, &json!({"action": "later"})).status(), 400);
     let alerts: Vec<Value> = cp.fake().ntfy_posts().into_iter()
-        .filter(|p| p["text"].as_str().is_some_and(|t| t.contains("en attente"))).collect();
+        .filter(|p| p["text"].as_str().is_some_and(|t| t.contains("on hold"))).collect();
     assert_eq!(alerts.len(), 1, "one alert: {alerts:?}");
 }

@@ -178,6 +178,8 @@ class Ports:
         return asyncio.get_running_loop().create_task(coroutine)
 
     respond = staticmethod(lambda body, status=200: body)
+    log = staticmethod(ports_module.python_log("slayer-legend"))
+    exception = staticmethod(ports_module.exception_log(log))
 
 
 def launched(looks):
@@ -195,6 +197,10 @@ def launched(looks):
     return fake.taps, fake.alerts, built["api"]["state"]()
 
 
+for name, value in ports_module.text_ports().items():
+    setattr(Ports, name, staticmethod(value))
+
+
 class SignInLaunch(unittest.TestCase):
     def test_google_then_the_one_account_then_confirm_then_battle(self):
         taps, alerts, state = launched(["sign_in", "chooser:1", "other", "save", "battle"])
@@ -206,13 +212,13 @@ class SignInLaunch(unittest.TestCase):
         self.assertEqual(taps, [("sign_in", "google")])
         self.assertEqual(state["state"], "blocked")
         self.assertEqual(len(alerts), 1)
-        self.assertIn("reconnexion Google impossible : à faire à la main", alerts[0])
+        self.assertIn("Google sign-in impossible: to do by hand", alerts[0])
 
     def test_several_accounts_is_one_alert_and_no_tap(self):
         taps, alerts, state = launched(["sign_in", "chooser:2"])
         self.assertEqual(taps, [("sign_in", "google")])
         self.assertEqual((len(alerts), state["state"]), (1, "blocked"))
-        self.assertIn("2 comptes", alerts[0])
+        self.assertIn("2 accounts", alerts[0])
 
     def test_no_account_listed_is_one_alert_and_no_tap(self):
         taps, alerts, _ = launched(["sign_in", "chooser:0"])

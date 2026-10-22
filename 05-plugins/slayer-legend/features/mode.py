@@ -24,24 +24,24 @@ wakes on it), within rules.SWITCH_BUDGET seconds; a switch that stops is
 tried again on its own with a backoff (rules.retry_after) while within
 that budget, and only then alerts once; a mode left failed is farming
 again once the watchdog sees it farm (api confirm); once set up, one
-notification says how long it took since the mode was chosen (« Farming
-mpw18 prêt en 34 s »), the slowest step named when over the budget. A
+notification says how long it took since the mode was chosen ("Farming
+mpw18 ready in 34 s"), the slowest step named when over the budget. A
 change of the running farming mode's loadout (engraving's on_change:
 stage, preset, soul weapon) runs the same path at once (loadout_changed),
 the soul weapon alone by its step alone (the stage change feature's
-ensure_soul_weapon), notified « Configuration mpw18 appliquée en 21 s ».
+ensure_soul_weapon), notified "Loadout mpw18 applied in 21 s".
 Each switch is one log line with its steps' seconds. While the user
 played in the last minute with the game in front (the lease refused:
 rules.USER_PLAYING; an input elsewhere, the game not running, is not
 playing: the switch goes on), the
 switch is on hold: one alert says so with the delay before its next try
-(« Passage au farming mpw18 en attente : tu joues. Nouvel essai dans 60
-s. »), once per switch however long the wait; GET /mode's hold gives it
+("Switch to farming mpw18 on hold: you are playing. Next try in 60
+s."), once per switch however long the wait; GET /mode's hold gives it
 ({id, mode, left}) for the page's two buttons, POST /mode/hold their
 answer: « free » chooses free play, « resume » runs the switch now; with
 no answer it goes on by itself once the minute is over. The ready
-notification says the hold apart (« prêt en 95 s (dont 60 s d’attente :
-tu jouais) »). While
+notification says the hold apart ("ready in 95 s (including 60 s waiting:
+you were playing)"). While
 farming mpw4 it looks for the
 gold scroll every 30 s on the battle screen (gold: true, false once missing
 for 2 looks, null unknown) and alerts once when it goes, then once when it
@@ -65,8 +65,9 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
     scroll: gold_scroll.py; loadouts: the engraving feature's api (loadout,
     stage, set_stage, adopt_stage), which holds the mpw18 and mpw4 stages
     and presets; farming: the stage change feature's api (farm)."""
+    t = ports.t
     status = {"mode": rules.DEFAULT, "default": rules.DEFAULT, "until": None, "highest": None,
-              "configured": False, "state": "idle", "message": "", "task": None,
+              "configured": False, "state": "idle", "message": None, "task": None,
               "scroll": scroll.fresh(), "gold_look": None, "warned": None, "change": None,
               "switch": None, "switch_at": None,
               # hold: the switch on hold while the user plays ({id, mode,
@@ -80,14 +81,16 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         return {"stage18": loadouts["stage"]("mpw18"), "stage4": loadouts["stage"]("mpw4")}
 
     def report(state, message):
+        """The mode's state and its message (a status text)."""
         if (status["state"], status["message"]) != (state, message):
-            ports.log("normal", f"Mode {status['mode']}: {state} {message}")
+            ports.log("normal", f"Mode {status['mode']}: {state}" + (f" ({ports.english(message)})" if message else ""))
         status["state"], status["message"] = state, message
         ports.store.save()
 
     def state():
-        answer = {key: status[key] for key in ("mode", "default", "until", "highest", "configured", "state",
-                                               "message")}
+        answer = {key: status[key] for key in ("mode", "default", "until", "highest", "configured", "state")}
+        answer["message"] = ports.french(status["message"])
+        answer["message_t"] = status["message"]
         answer.update(stages())
         answer["setup"] = status["state"] in ("moving", "waiting")
         hold = status["hold"]
@@ -170,7 +173,8 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         coroutine function: the soul weapon step alone, taking force)."""
         name = f"mpw{mpw}"
         preset = loadouts["loadout"](name).get("preset")
-        report("moving", f"Passage au stage {number} ({name})")
+        moving = t("Passage au stage {number} ({name})", number=number, name=name)
+        report("moving", moving)
         since = status["switch_at"] if status["switch_at"] is not None else ports.clock.monotonic()
         waited, held, failures = 0.0, 0.0, 0
         # force: resumed at the user's request, the user's minute is not
@@ -183,7 +187,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
                 if hold and hold["owner"] is me and hold["action"] == "resume":
                     force = True
                     end_hold("resume")
-                    report("moving", f"Passage au stage {number} ({name}) : repris à ta demande")
+                    report("moving", t("{switch} : repris à ta demande", switch=moving))
                 try:
                     forced = {"force": True} if force else {}
                     answer = await (step(**forced) if step
@@ -193,18 +197,19 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
                         # The plugin off: it waits for as long, no alert.
                         since = ports.clock.monotonic()
                     if ports.clock.monotonic() - since >= rules.LEASE_WAIT:
-                        text = f"Passage au stage {number} ({name}) : bail toujours pris après 30 min ({e}), à faire à la main"
-                        report("failed", text[:200])
-                        await ports.notify(text)
+                        report("failed", t("{switch} : bail toujours pris après 30 min ({why}), à faire à la main",
+                                           switch=moving, why=e.t))
+                        await ports.notify(f"Switch to stage {number} ({name}): lease still taken after 30 min ({e}), "
+                                           "to do by hand")
                         return False
-                    if str(e) == rules.USER_PLAYING:
+                    if e.t["template"] == rules.USER_PLAYING:
                         force = False
                         left = await on_hold(name, applied, me, alerted)
                         alerted = True
                         await pause(min(rules.BUSY_RETRY, left))
                         held += ports.clock.monotonic() - began
                     else:
-                        report("waiting", f"Passage au stage {number} ({name}) en attente : {e}")
+                        report("waiting", t("{switch} en attente : {why}", switch=moving, why=e.t))
                         await ports.clock.sleep(rules.BUSY_RETRY)
                     waited += ports.clock.monotonic() - began
                     continue
@@ -216,9 +221,10 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
                 delay = rules.retry_after(failures, ports.clock.monotonic() - since - waited)
                 if delay is None:
                     break
-                ports.log("normal", f"Mode {name}: switch stopped ({answer['text']}), "
+                ports.log("normal", f"Mode {name}: switch stopped ({ports.english(answer['text_t'])}), "
                           f"attempt {failures + 1} in {delay} s")
-                report("moving", f"Passage au stage {number} ({name}) : nouvel essai dans {delay} s ({answer['text']})"[:200])
+                report("moving", t("{switch} : nouvel essai dans {delay} s ({why})", switch=moving, delay=delay,
+                                   why=answer["text_t"]))
                 await ports.clock.sleep(delay)
         finally:
             if status["hold"] and status["hold"]["owner"] is me:
@@ -227,18 +233,19 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         if answer["result"] == "done":
             await ports.notify(rules.ready_text(name, ports.clock.monotonic() - since, applied, alert, held))
         if answer["result"] == "failed":
-            text = f"Passage au stage {number} ({name}) arrêté : {answer['text']}"
-            report("failed", text[:200])
-            await ports.notify(text)
+            report("failed", t("{switch} arrêté : {why}", switch=moving, why=answer["text_t"]))
+            await ports.notify(f"Switch to stage {number} ({name}) stopped: {ports.english(answer['text_t'])}")
             return False
         if answer["result"] == "plan":
-            report("plan", f"Passage au stage {number} ({name}), plan seul : {answer['text']}"[:200])
+            report("plan", t("{switch}, plan seul : {plan}", switch=moving, plan=answer["text_t"]))
             return False
         report("farming", farming_text(name, number, preset))
         return True
 
     def farming_text(name, number, preset):
-        return f"Farming {name} au stage {number}" + (f", preset {preset}" if preset else "")
+        if preset:
+            return t("Farming {name} au stage {number}, preset {preset}", name=name, number=number, preset=preset)
+        return t("Farming {name} au stage {number}", name=name, number=number)
 
     def confirm(name):
         """The watchdog saw mode name farm as its loadout says (a look, or
@@ -261,11 +268,11 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         if move[0] == "stage":
             status["change"] = ports.spawn(set_stage(move[1], move[2]))
         elif move[0] == "choose":
-            report("idle", f"Farming mpw{move[1]} : choisis le stage")
+            report("idle", t("Farming {name} : choisis le stage", name=f"mpw{move[1]}"))
         elif move[0] == "free":
             report("free", free_text())
         else:
-            report("mine", "Mine")
+            report("mine", t("Mine"))
 
     def loadout_changed(name, before, after):
         """The engraving feature's on_change: a change of the running
@@ -283,7 +290,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
             change.cancel()
         status["change"] = None
         if not after.get("stage"):
-            report("idle", f"Farming {name} : choisis le stage")
+            report("idle", t("Farming {name} : choisis le stage", name=name))
             return
         step = None
         if fields == {"soul_weapon"} and "ensure_soul_weapon" in farming:
@@ -291,8 +298,8 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         status["change"] = ports.spawn(set_stage(after["stage"], int(name[3:]), applied=True, step=step))
 
     def free_text():
-        return ("Jeu libre : rien n’est touché jusqu’à la fin du minuteur" if status["until"]
-                else "Jeu libre : rien n’est touché")
+        return (t("Jeu libre : rien n’est touché jusqu’à la fin du minuteur") if status["until"]
+                else t("Jeu libre : rien n’est touché"))
 
     async def back_to_default(why):
         """A timed mode ended (why: rules.due's): back to the default mode
@@ -300,7 +307,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         before, default = status["mode"], status["default"]
         status.update(mode=default, until=None)
         stage = loadouts["stage"](default) if default in ("mpw18", "mpw4") else None
-        detail = mines["state"]().get("message", "")
+        detail = ports.english(mines["state"]().get("message_t"))
         await ports.notify(rules.back_text(why, default, stage, detail))
         await enter(default, before)
 
@@ -316,8 +323,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         status["scroll"], news = scroll.look(status["scroll"], await ports.analyse(gold_facts, shot))
         if news:
             ports.log("normal", f"Mode mpw4: gold scroll {news}")
-            await ports.notify("Farming mpw4 : " + ("plus de parchemin doré" if news == "gone"
-                                                    else "parchemin doré rétabli"))
+            await ports.notify("Farming mpw4: " + ("no more gold scroll" if news == "gone" else "gold scroll back"))
 
     async def watch():
         """Ends a timed mode: back to the default mode once its time is up
@@ -341,7 +347,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
             raise
         except Exception as e:
             ports.exception("Mode failed")
-            report("failed", f"Erreur : {e!r}"[:200])
+            report("failed", t("Erreur : {error}", error=f"{e!r}"[:200]))
 
     def watch_if_timed():
         task = status["task"]
@@ -436,7 +442,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         """At the gateway's start: the timed mode state.json kept goes on."""
         if rules.watched(status["mode"], status["default"]):
             report(*{"free": ("free", free_text()),
-                     "mine": ("mine", "Mine")}.get(status["mode"], ("idle", f"Farming {status['mode']}")))
+                     "mine": ("mine", t("Mine"))}.get(status["mode"], ("idle", t("Farming {name}", name=status["mode"]))))
             status["task"] = ports.spawn(watch())
 
     saved = ports.store.saved.get("mode") or {}

@@ -4,14 +4,24 @@ The default mode (the user's « Mode par défaut »: "mpw18", farming a
 stage with 18 monsters per wave, unless set to "mpw4" or "free") has no
 timer; the others ("mpw4", "free": nothing is touched, "mine": the
 Closed Mine) run until a time, then it goes back to it.
+
+The State row's texts are status texts ({template, params}, t(): French
+templates the page translates, features/texts.py); the phone alerts and
+the log are English.
 """
+
+
+def t(template, **params):
+    """A status text (features/texts.py)."""
+    return {"template": template, "params": params}
+
 
 MODES = ("mpw18", "mpw4", "free", "mine")
 DEFAULT = "mpw18"
 # What the default mode may be (never the mine: it ends by itself).
 DEFAULTS = ("mpw18", "mpw4", "free")
-# « retour … » once a timed mode ends, per default mode.
-BACK_TO = {"mpw18": "retour au farming mpw18", "mpw4": "retour au farming mpw4", "free": "retour au jeu libre"}
+# "back to ..." once a timed mode ends, per default mode (its alert).
+BACK_TO = {"mpw18": "back to farming mpw18", "mpw4": "back to farming mpw4", "free": "back to free play"}
 # A timed mode chosen without an end time runs this long.
 TIMED_MINUTES = 30
 # Seconds between two checks of a timed mode.
@@ -37,7 +47,7 @@ GOLD_EVERY = 30
 # Free play: one phone alert this long (seconds) before its end, so that a
 # user still playing can extend it.
 WARN_BEFORE = 2 * 60
-WARNING = "Le Cloud Phone reprend la main dans 2 min, prolonge le jeu libre si tu joues encore"
+WARNING = "The Cloud Phone takes over in 2 min: extend free play if you are still playing"
 
 
 def next_look(until, now):
@@ -48,8 +58,7 @@ def next_look(until, now):
     return max(0.2, until - now + 0.1)
 
 
-STEP_NAMES = {"stage": "changement de stage", "preset": "préréglage", "auto": "AUTO",
-              "soul_weapon": "Soul Weapon"}
+STEP_NAMES = {"stage": "stage change", "preset": "preset", "auto": "AUTO", "soul_weapon": "Soul Weapon"}
 # A farming mode's loadout fields whose change is applied at once.
 LOADOUT_FIELDS = ("stage", "preset", "soul_weapon")
 
@@ -63,7 +72,7 @@ def switch_report(before, after, seconds, timings, waited=0.0, applied=False):
     """(log line, alert or None) of one mode switch: before → after in
     seconds of the plugin's own time (farm()'s run), timings {step:
     seconds} (farm()'s), waited: seconds waiting for the lease before it,
-    said apart and never counted; the alert (French) when the plugin's
+    said apart and never counted; the alert (English) when the plugin's
     time is over SWITCH_BUDGET, naming the slowest step. applied: the
     running mode's loadout changed (after: the mode), not a switch."""
     steps = ", ".join(f"{name} {round(value)} s" for name, value in timings.items())
@@ -74,10 +83,10 @@ def switch_report(before, after, seconds, timings, waited=0.0, applied=False):
     if seconds <= SWITCH_BUDGET:
         return line, None
     slowest = max(timings, key=timings.get) if timings else None
-    why = (f" : étape la plus lente : {STEP_NAMES.get(slowest, slowest)} ({round(timings[slowest])} s)"
+    why = (f": slowest step: {STEP_NAMES.get(slowest, slowest)} ({round(timings[slowest])} s)"
            if slowest else "")
-    what = f"Configuration {after} appliquée" if applied else f"Passage {before} → {after}"
-    return line, f"{what} en {round(seconds)} s (plus de {SWITCH_BUDGET} s){why}"
+    what = f"Loadout {after} applied" if applied else f"Switch {before} → {after}"
+    return line, f"{what} in {round(seconds)} s (over {SWITCH_BUDGET} s){why}"
 
 
 def warn_due(mode, until, warned, now):
@@ -213,11 +222,11 @@ def ready_text(name, seconds, applied=False, alert=None, held=0.0):
     since it was chosen (applied: since its loadout changed), the lease's
     wait included; held: the part of it on hold while the user played,
     said apart; alert: the over-budget one, after it."""
-    text = (f"Configuration {name} appliquée en {round(seconds)} s" if applied
-            else f"Farming {name} prêt en {round(seconds)} s")
+    text = (f"Loadout {name} applied in {round(seconds)} s" if applied
+            else f"Farming {name} ready in {round(seconds)} s")
     if round(held):
-        text += f" (dont {round(held)} s d’attente : tu jouais)"
-    return f"{text} ; {alert}" if alert else text
+        text += f" (including {round(held)} s waiting: you were playing)"
+    return f"{text}; {alert}" if alert else text
 
 
 # The lease's refusal while the user played in the last minute (ports.Lease):
@@ -227,7 +236,7 @@ HOLD_ACTIONS = ("free", "resume")
 # The hold alert's buttons: their one-time token works this long at most
 # (seconds), and not after the hold.
 HOLD_TOKEN_SECONDS = 10 * 60
-HOLD_BUTTONS = (("Passer en jeu libre", "free"), ("Reprendre maintenant", "resume"))
+HOLD_BUTTONS = (("Switch to free play", "free"), ("Resume now", "resume"))
 
 
 def hold_buttons(hold_id, token):
@@ -240,20 +249,18 @@ def hold_buttons(hold_id, token):
             for label, action in HOLD_BUTTONS]
 
 
-def hold_what(name, applied=False):
-    """« Passage au farming mpw18 », or « Configuration mpw18 » (applied)."""
-    return f"Configuration {name}" if applied else f"Passage au farming {name}"
-
-
 def hold_alert(name, left, applied=False):
     """The one alert when a switch is put on hold because the user plays:
     left, the seconds before its next try."""
-    return f"{hold_what(name, applied)} en attente : tu joues. Nouvel essai dans {max(1, round(left))} s."
+    what = f"Loadout {name}" if applied else f"Switch to farming {name}"
+    return f"{what} on hold: you are playing. Next try in {max(1, round(left))} s."
 
 
 def hold_message(name, left, applied=False):
-    """The État row's text while on hold."""
-    return f"{hold_what(name, applied)} en attente : tu joues · nouvel essai dans {max(1, round(left))} s"
+    """The État row's text while on hold (a status text): « Passage au
+    farming mpw18 », or « Configuration mpw18 » (applied), en attente."""
+    what = t("Configuration {name}", name=name) if applied else t("Passage au farming {name}", name=name)
+    return t("{what} en attente : tu joues · nouvel essai dans {seconds} s", what=what, seconds=max(1, round(left)))
 
 
 def hold_request(body, hold, last):
@@ -274,15 +281,16 @@ def hold_request(body, hold, last):
     return None, (409, "Aucun passage de mode en attente")
 
 
-REASONS = {"mine done": "Mine terminée", "mine stopped": "Mine arrêtée", "timer": "Minuteur écoulé",
-           "mine no feather": "Mine fermée arrêtée : plus de plume",
-           "mine entry": "Mine fermée arrêtée : {detail}"}
+REASONS = {"mine done": "Mine done", "mine stopped": "Mine stopped", "timer": "Timer ended",
+           "mine no feather": "Closed Mine stopped: no feather left",
+           "mine entry": "Closed Mine stopped: {detail}"}
 
 
 def back_text(why, default, stage=None, detail=""):
     """The one alert once a timed mode ends: why (due's), back to the
-    default mode (its stage, if a farming one). The mine's own ends say
-    « Mine fermée arrêtée : plus de plume, retour au farming mpw18 »."""
-    reason = REASONS[why].format(detail=detail)
+    default mode (its stage, if a farming one); detail: the mine's message,
+    in English. The mine's own ends say "Closed Mine stopped: no feather
+    left, back to farming mpw18"."""
+    reason = REASONS[why].replace("{detail}", detail)
     back = BACK_TO[default] + (f" (stage {stage})" if stage else "")
-    return f"{reason}, {back}" if why in ("mine no feather", "mine entry") else f"{reason} : {back}"
+    return f"{reason}, {back}" if why in ("mine no feather", "mine entry") else f"{reason}: {back}"

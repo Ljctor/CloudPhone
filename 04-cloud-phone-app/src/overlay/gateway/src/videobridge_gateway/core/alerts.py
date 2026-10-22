@@ -118,13 +118,13 @@ def public_url(host, port):
     return f"http://{host}:{port}"
 
 
-# Android's events worth an alert, and their sentence.
+# Android's events worth an alert, and their sentence (English).
 SENTENCES = {
-    "crash": "{app} a planté",
-    "anr": "{app} ne répond plus",
-    "killed": "Android a arrêté {app}",
-    "emulator_start": "L’émulateur a redémarré",
-    "android_boot": "Android a redémarré",
+    "crash": "{app} crashed",
+    "anr": "{app} is not responding",
+    "killed": "Android stopped {app}",
+    "emulator_start": "The emulator restarted",
+    "android_boot": "Android restarted",
 }
 
 
@@ -156,5 +156,5 @@ def new_events(events, seen, kinds=SENTENCES):
 
 
 def sentence(event):
-    return SENTENCES[event["kind"]].format(app=event.get("app") or "Une appli") + (
+    return SENTENCES[event["kind"]].format(app=event.get("app") or "An app") + (
         f" ({event['reason']})" if event.get("reason") and event["kind"] in ("crash", "anr") else "")

@@ -33,7 +33,7 @@ fn records_have_one_shape_and_a_cursor_gives_only_new_ones() {
     let body = first.json().unwrap();
     let cursor = body["cursor"].as_str().expect("a cursor").to_string();
     let all = body["records"].as_array().unwrap().clone();
-    let start = all.iter().find(|r| r["text"] == "Le gateway a démarré").expect("the gateway's start");
+    let start = all.iter().find(|r| r["text"] == "Gateway started").expect("the gateway's start");
     assert_eq!((start["level"].as_str(), start["source"].as_str(), &start["notify"]), (Some("normal"), Some("gateway"), &json!(true)));
     for record in &all {
         assert!(record["time"].as_f64().is_some(), "{record}");
@@ -65,18 +65,18 @@ fn the_log_is_refused_to_other_sites() {
 fn an_emulator_crash_is_an_error_record_saying_what_to_do_with_notify() {
     let cp = CloudPhone::start_with(json!({"options": {"crash_seconds": 30}}));
     cp.fake().action("crash");
-    let record = wait_record(&cp, "error", "emulator", "Android a planté", SOON);
+    let record = wait_record(&cp, "error", "emulator", "Android crashed", SOON);
     assert_eq!(record["notify"], true, "{record}");
-    assert!(record["text"].as_str().unwrap().contains("relancez-le sur le serveur"), "says what to do: {record}");
-    assert_eq!(record["template"].as_str().map(|t| t.contains("{result}")), Some(true), "translatable: {record}");
+    assert!(record["text"].as_str().unwrap().contains("restart it on the server"), "says what to do: {record}");
+    assert!(record.get("template").is_none(), "English, never translated: {record}");
 }
 
 #[test]
 fn an_emulator_that_stops_on_an_error_is_an_error_record() {
     let cp = CloudPhone::start();
     cp.fake().control(json!({"unit": {"active": "failed", "sub": "failed", "result": "exit-code"}}));
-    let record = wait_record(&cp, "error", "emulator", "Android s’est arrêté sur une erreur (exit-code)", SOON);
-    assert!(record["text"].as_str().unwrap().contains("il faut le relancer sur le serveur"), "{record}");
+    let record = wait_record(&cp, "error", "emulator", "Android stopped on an error (exit-code)", SOON);
+    assert!(record["text"].as_str().unwrap().contains("It does not restart by itself: restart it on the server"), "{record}");
     assert_eq!(record["notify"], true);
 }
 
@@ -84,17 +84,17 @@ fn an_emulator_that_stops_on_an_error_is_an_error_record() {
 fn adb_offline_is_an_error_record_and_its_return_a_normal_one() {
     let cp = CloudPhone::start_with(json!({"options": {"adb_fails": true}}));
     assert_eq!(cp.post_json("api/v1/emulator/key", &json!({"key": "GoHome"})).status(), 500);
-    let record = wait_record(&cp, "error", "adb", "adb ne joint plus Android", SOON);
+    let record = wait_record(&cp, "error", "adb", "adb no longer reaches Android", SOON);
     assert_eq!(record["notify"], true, "{record}");
     assert!(record["text"].as_str().unwrap().contains("not found"), "adb's reason: {record}");
-    assert!(record["text"].as_str().unwrap().contains("relancez-le sur le serveur"), "{record}");
+    assert!(record["text"].as_str().unwrap().contains("restart it on the server"), "{record}");
     // Said once while it lasts.
     assert_eq!(cp.post_json("api/v1/emulator/key", &json!({"key": "GoHome"})).status(), 500);
     let offline = records(&cp).iter().filter(|r| r["source"] == "adb" && r["level"] == "error").count();
     assert_eq!(offline, 1);
     cp.fake().control(json!({"adb_fails": false}));
     assert_eq!(cp.post_json("api/v1/emulator/key", &json!({"key": "GoHome"})).status(), 200);
-    wait_record(&cp, "normal", "adb", "adb joint de nouveau Android", SOON);
+    wait_record(&cp, "normal", "adb", "adb reaches Android again", SOON);
 }
 
 #[test]
@@ -113,16 +113,16 @@ fn a_key_adb_never_answers_is_an_error_within_its_timeout() {
 fn a_bad_screen_size_request_is_a_warning_and_a_failed_one_an_error() {
     let cp = CloudPhone::start();
     assert_eq!(cp.post_json("api/v1/display", &json!({"width": "360", "height": 780, "density": 160})).status(), 400);
-    let refused = wait_record(&cp, "warning", "gateway", "Changement de résolution refusé", SOON);
+    let refused = wait_record(&cp, "warning", "gateway", "Screen size change refused", SOON);
     assert!(refused["text"].as_str().unwrap().contains("width, height and density are required"), "{refused}");
     assert!(refused["notify"].is_null(), "a refused request is not a toast: {refused}");
 
     cp.fake().control(json!({"fail_next": {"display": "set-resolution.sh: no space left"}}));
     assert_eq!(cp.post_json("api/v1/display", &json!({"width": 360, "height": 780, "density": 160})).status(), 202);
-    let asked = wait_record(&cp, "normal", "gateway", "Changement de résolution demandé", SOON);
+    let asked = wait_record(&cp, "normal", "gateway", "Screen size change requested", SOON);
     assert_eq!(asked["notify"], true, "a requested reboot is a toast: {asked}");
     assert_eq!(asked["params"]["size"], "360×780");
-    let failed = wait_record(&cp, "error", "gateway", "Échec du changement de résolution", SOON);
+    let failed = wait_record(&cp, "error", "gateway", "Screen size change failed", SOON);
     assert_eq!(failed["notify"], true);
     let text = failed["text"].as_str().unwrap();
     assert!(text.contains("no space left") && text.contains("journalctl -u cloudphone-display"), "{failed}");
@@ -138,7 +138,7 @@ fn an_applied_settings_change_restarts_android_with_normal_records() {
     // the change applied and nothing as an error.
     cp.wait_new_token(&token, Duration::from_secs(30));
     cp.wait_for_android(Duration::from_secs(30));
-    let done = wait_record(&cp, "normal", "gateway", "Changement des réglages d’Android appliqué", SOON);
+    let done = wait_record(&cp, "normal", "gateway", "Android settings change applied", SOON);
     assert_eq!(done["notify"], true);
     std::thread::sleep(Duration::from_secs(4));
     let errors: Vec<Value> = records(&cp).into_iter().filter(|r| r["level"] == "error").collect();
@@ -152,11 +152,11 @@ fn another_viewer_coming_and_going_are_notify_records() {
     cp.wait_viewers("one viewer", Duration::from_secs(10), |n| n == 1);
     let second_id = viewer_id("second");
     let second = Viewer::open(&cp, &second_id);
-    let came = wait_record(&cp, "normal", "gateway", "Un autre appareil s’est connecté", SOON);
+    let came = wait_record(&cp, "normal", "gateway", "Another device connected", SOON);
     assert_eq!(came["notify"], true);
     assert_eq!(came["params"]["viewer"], second_id.as_str(), "the page that connected can tell it is itself");
     second.close();
-    let left = wait_record(&cp, "normal", "gateway", "Un autre appareil s’est déconnecté", SOON);
+    let left = wait_record(&cp, "normal", "gateway", "Another device disconnected", SOON);
     assert_eq!(left["notify"], true);
     drop(first);
 }
@@ -168,7 +168,7 @@ fn disconnecting_the_others_is_a_warning_with_notify() {
     cp.wait_viewers("the other viewer", Duration::from_secs(10), |n| n == 1);
     let me = viewer_id("me");
     assert_eq!(cp.post_json("api/v1/viewers/disconnect-others", &json!({"viewer": me})).status(), 200);
-    let record = wait_record(&cp, "warning", "gateway", "Un appareil a déconnecté les autres (1)", SOON);
+    let record = wait_record(&cp, "warning", "gateway", "A device disconnected the others (1)", SOON);
     assert_eq!(record["notify"], true);
 }
 
@@ -180,5 +180,5 @@ fn a_restarted_gateway_answers_an_old_cursor_with_its_own_records() {
     cp.fake().action("restart_gateway");
     cp.wait_new_token(&token, SOON);
     let after = cp.get_json(&format!("api/v1/logs?since={cursor}"));
-    assert!(after["records"].as_array().unwrap().iter().any(|r| r["text"] == "Le gateway a démarré"), "{after}");
+    assert!(after["records"].as_array().unwrap().iter().any(|r| r["text"] == "Gateway started"), "{after}");
 }

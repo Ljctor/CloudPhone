@@ -80,7 +80,7 @@ fn an_adb_that_cannot_start_empties_android_metrics_and_says_adb_is_offline() {
     assert!(state["metrics"]["host"]["cpu"].is_number(), "the rest still there: {state}");
     let offline = wait_for("the adb offline record", Duration::from_secs(20), || {
         cp.get_json("api/v1/logs")["records"].as_array()?.iter()
-            .find(|r| r["level"] == "error" && r["source"] == "adb" && r["text"].as_str().unwrap_or("").contains("adb ne joint plus Android"))
+            .find(|r| r["level"] == "error" && r["source"] == "adb" && r["text"].as_str().unwrap_or("").contains("adb no longer reaches Android"))
             .cloned()
     });
     assert_eq!(offline["notify"], true, "{offline}");

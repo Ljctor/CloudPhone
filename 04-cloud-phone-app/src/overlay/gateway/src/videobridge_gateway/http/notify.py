@@ -84,5 +84,5 @@ async def test_notify(request):
     """POST /api/v1/notify/test: one test alert."""
     if not STATE["topic"]:
         return web.json_response({"error": "No topic yet: turn alerts on first"}, status=409)
-    sent = await send("Test : les alertes du Cloud Phone arrivent bien", force=True)
+    sent = await send("Test: the Cloud Phone's alerts arrive", force=True)
     return web.json_response({"sent": sent}, status=200 if sent else 502)

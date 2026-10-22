@@ -307,8 +307,8 @@ class Pieces(unittest.TestCase):
 
     def test_missing_alert(self):
         text = rules.missing_alert("Ambition", "Crit", {"I": 1, "L": 1}, TABLE["shapes"])
-        self.assertEqual(text, "Gravure de Ambition (Crit) : il manque 1 × Line (I), 1 × L-Shape (L). "
-                               "Rien n’a été placé.")
+        self.assertEqual(text, "Engraving of Ambition (Crit): missing 1 × Line (I), 1 × L-Shape (L). "
+                               "Nothing was placed.")
 
 
 PER_PIECE = {"rotation": rules.PER_PIECE}
@@ -443,8 +443,8 @@ class Oriented(unittest.TestCase):
 
     def test_missing_alert(self):
         text = rules.missing_alert("Ambition", "Crit", {"I:1": 1, "L:2": 2}, TABLE["shapes"])
-        self.assertEqual(text, "Gravure de Ambition (Crit) : il manque 1 × Line (I, orientation 1), "
-                               "2 × L-Shape (L, orientation 2). Rien n’a été placé.")
+        self.assertEqual(text, "Engraving of Ambition (Crit): missing 1 × Line (I, orientation 1), "
+                               "2 × L-Shape (L, orientation 2). Nothing was placed.")
 
 
 class Solve(unittest.TestCase):

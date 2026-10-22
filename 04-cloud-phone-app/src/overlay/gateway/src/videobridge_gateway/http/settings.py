@@ -56,7 +56,7 @@ def set_settings(meminfo, requested):
     to change them, which restarts Android once (data is kept). The screen
     size is optional and all three of its values come together.
     requested() is called once the request is written."""
-    @display.change_request("Changement des réglages d’Android refusé : {error}")
+    @display.change_request("Android settings change refused: {error}")
     async def handle(request):
         if not REQUEST:
             return web.json_response({"error": "Emulator settings changes are disabled"}, status=403)
@@ -88,7 +88,7 @@ def set_settings(meminfo, requested):
             return refused
         host_files.write_request(REQUEST, f"{renderer} {cores} {memory}{size}\n")
         requested()
-        log("normal", "gateway", "Changement des réglages d’Android demandé ({settings}) : Android va redémarrer",
+        log("normal", "gateway", "Android settings change requested ({settings}): Android restarts",
             notify=True, settings=f"{renderer}, {cores} × CPU, {memory} MiB"
             + (f", {wanted['width']}×{wanted['height']}" if size else ""))
         return web.json_response({"status": "pending"}, status=202)

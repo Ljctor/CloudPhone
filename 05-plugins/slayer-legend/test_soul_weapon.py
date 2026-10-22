@@ -30,6 +30,8 @@ def load(name):
 reader = load("soul_weapon")
 LOG = load("features/ports").python_log("slayer-legend")
 EXCEPTION = load("features/ports").exception_log(LOG)
+TEXTS = load("features/ports").text_ports()
+french = TEXTS["french"]
 rules = load("features/soul_weapon_rules")
 feature = load("features/soul_weapon")
 stage_change = load("features/stage_change")
@@ -175,21 +177,21 @@ class Plan(unittest.TestCase):
         v = view("Ambition", 2, tag="Equip")
         step = rules.plan(v, "Ambition", rules.observe(rules.fresh_memory(None), v, ORDER), ORDER)
         self.assertEqual(step[0], "fail")
-        self.assertIn("tag not calibrated", step[1])
-        self.assertIn("not equipped", step[1])
+        self.assertIn("étiquette Equip pas calibrée", french(step[1]))
+        self.assertIn("équipement non fait", french(step[1]))
         # Done, select and scroll do not need it.
         v = view("Ambition", 2, tag="Unequip")
         self.assertEqual(rules.plan(v, "Ambition", rules.observe(rules.fresh_memory(None), v, ORDER), ORDER),
                          ("done",))
 
     def test_failures(self):
-        self.assertIn("Owned : 0", self.plan(view("Ambition", 2, owned=0, tag="Equip"))[1])
-        self.assertIn("illisible", self.plan(view("Ambition", 2, owned=None, tag="Equip"))[1])
-        self.assertIn("étiquette", self.plan(view("Ambition", 2))[1])
-        self.assertIn("pas reconnu", self.plan(view(opened=False))[1])
-        self.assertIn("name shared", self.plan(view("Grand", 0), target="Silence")[1])
-        self.assertIn("illisible", self.plan(view(None, 1))[1])
-        self.assertIn("liste", self.plan(view("Grand", None, count=0))[1])
+        self.assertIn("Owned : 0", french(self.plan(view("Ambition", 2, owned=0, tag="Equip"))[1]))
+        self.assertIn("illisible", french(self.plan(view("Ambition", 2, owned=None, tag="Equip"))[1]))
+        self.assertIn("étiquette", french(self.plan(view("Ambition", 2))[1]))
+        self.assertIn("pas reconnu", french(self.plan(view(opened=False))[1]))
+        self.assertIn("partagé", french(self.plan(view("Grand", 0), target="Silence")[1]))
+        self.assertIn("illisible", french(self.plan(view(None, 1))[1]))
+        self.assertIn("liste", french(self.plan(view("Grand", None, count=0))[1]))
 
     def test_select_and_scroll(self):
         # The selection out of view: the middle cell, to read one.
@@ -216,7 +218,7 @@ class Plan(unittest.TestCase):
         memory = rules.observe(rules.fresh_memory(), view("Grand", 0), ORDER)
         memory = rules.observe(memory, view("Wild", 1), ORDER)
         self.assertEqual(memory["direction"], "unknown")
-        self.assertIn("ordre", rules.plan(view("Wild", 1), "Ambition", memory, ORDER)[1])
+        self.assertIn("ordre", french(rules.plan(view("Wild", 1), "Ambition", memory, ORDER)[1]))
 
     def test_progress(self):
         self.assertFalse(rules.progressed(view("Grand", 0), view("Grand", 0)))
@@ -349,7 +351,7 @@ class Game:
                                                                      monotonic=lambda: game.now),
                                leased=leased, Busy=Busy, store=store, last_input=lambda: None, spawn=spawn,
                                tasks=tasks, respond=lambda value, status=200: (status, value), log=LOG,
-                               exception=EXCEPTION)
+                               exception=EXCEPTION, **TEXTS)
 
 
 def fake_reader(game):
@@ -405,7 +407,7 @@ def build(game, loadout=None, engraving=None):
 
 def outcome(answer):
     """(result, text) of a run (its timings left out)."""
-    return answer["result"], answer["text"]
+    return answer["result"], french(answer["text_t"])
 
 
 def equip(game, mode="mpw18", api=None):
@@ -474,7 +476,7 @@ class Sequence(unittest.TestCase):
         game = Game(detail_instead=True)
         answer, _ = equip(game, "mpw4")
         self.assertEqual(answer["result"], "failed")
-        self.assertIn("fiche d’une arme", answer["text"])
+        self.assertIn("fiche d’une arme", french(answer["text_t"]))
         self.assertIn(("weapon_detail", "close"), game.moves)
         self.assertNotIn(("weapon_detail", "equip"), game.moves)
 
@@ -489,15 +491,15 @@ class Sequence(unittest.TestCase):
         game = Game(owned={AMBITION})
         answer, _ = equip(game, "mpw4")
         self.assertEqual(answer["result"], "failed")
-        self.assertIn("Soul Weapon", answer["text"])
-        self.assertIn("Owned : 0", answer["text"])
+        self.assertIn("Soul Weapon", french(answer["text_t"]))
+        self.assertIn("Owned : 0", french(answer["text_t"]))
         self.assertNotIn(("soul_weapon", "equip"), game.moves)
 
     def test_equip_gate_closed_one_error_alert(self):
         game = Game(selected=AMBITION, tag_learned=False)
         answer, _ = equip(game, "mpw4")
         self.assertEqual(answer["result"], "failed")
-        self.assertIn("Equip tag not calibrated, not equipped", answer["text"])
+        self.assertIn("étiquette Equip pas calibrée, équipement non fait", french(answer["text_t"]))
         self.assertNotIn(("soul_weapon", "equip"), game.moves)
         # Selecting and scrolling still ran.
         self.assertIn(("soul_weapon", "select"), game.moves)
@@ -514,7 +516,7 @@ class Sequence(unittest.TestCase):
         game = Game(selected=AMBITION, equip_fails=True)
         answer, _ = equip(game, "mpw4")
         self.assertEqual(answer["result"], "failed")
-        self.assertIn("Equip sans effet", answer["text"])
+        self.assertIn("Equip sans effet", french(answer["text_t"]))
         self.assertEqual(game.moves.count(("soul_weapon", "equip")), 1)
 
     def test_no_weapon_chosen(self):
@@ -553,7 +555,7 @@ class Sequence(unittest.TestCase):
         task = api["relaunched"]("mpw4")
         asyncio.run(task)
         self.assertEqual(len(game.alerts), 1)
-        self.assertIn("Après la relance", game.alerts[0])
+        self.assertIn("After the game's relaunch", game.alerts[0])
         self.assertIsNone(api["relaunched"]("mine"))
 
 
@@ -814,7 +816,7 @@ class Engraving(unittest.TestCase):
         game = vision_game(corner_works=False, popup_lock_works=False)
         answer, _ = engrave(game, "Gold-balanced")
         self.assertEqual(answer[0], "failed")
-        self.assertIn("unlocked", answer[1])
+        self.assertIn("déverrouillée", answer[1])
         self.assertTrue(any("unlocked" in alert for alert in game.alerts))
         self.assertIsNone(game.state["engraving"]["popup"])
         self.assertEqual(game.state["screen"], "battle")

@@ -26,6 +26,9 @@ GET  /enabled, POST /enabled           features/power.py (the plugin's on/off sw
 GET  /watchdog                         features/watchdog.py
 GET  /farming, POST /farming           features/stage_change.py (its real/plan switches; the soul
                                        weapon's real/off, features/soul_weapon.py)
+GET  /templates                        templates.json as it is: {French template: English}, the
+                                       English of every status text the plugin answers with
+                                       ({template, params}, features/texts.py), for the page
 
 The mode and its timer, the mine's floor, area, timer and on/off, each
 farming mode's loadout (its stage, Battle settings preset, soul weapon
@@ -95,6 +98,13 @@ def setup(context):
     # Every feature registered its part of state.json: an old highest.json
     # becomes state.json now.
     ports.store.flush()
+    with open(os.path.join(context.directory, "templates.json"), encoding="utf-8") as f:
+        templates = json.load(f)
+
+    async def handle_templates(request):
+        return context.json(templates)
+
+    features.append({"routes": [("GET", "/templates", handle_templates)]})
     for part in features:
         context.app.on_startup.extend(part.get("startup", []))
         for method, path, handler in part["routes"]:

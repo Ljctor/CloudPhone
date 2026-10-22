@@ -297,32 +297,32 @@ def unit_record(unit):
     """The record for the emulator unit's new state, or None."""
     active, sub = unit["active"], unit["sub"]
     if active == "failed":
-        return ("error", "Android s’est arrêté sur une erreur ({result}). Il ne redémarre pas tout seul : "
-                "il faut le relancer sur le serveur.", {"result": unit.get("result", "?")})
+        return ("error", "Android stopped on an error ({result}). It does not restart by itself: "
+                "restart it on the server.", {"result": unit.get("result", "?")})
     if active == "activating" and sub == "auto-restart":
-        return ("error", "Android a planté ({result}) : redémarrage automatique. S’il ne revient pas d’ici "
-                "deux minutes, relancez-le sur le serveur.", {"result": unit.get("result", "?")})
+        return ("error", "Android crashed ({result}): automatic restart. If it is not back within two minutes, "
+                "restart it on the server.", {"result": unit.get("result", "?")})
     if active in ("inactive", "deactivating"):
         if change_expected():
-            return "normal", "Android s’arrête pour appliquer le changement", {}
-        return "error", "Android est arrêté. Il faut le démarrer sur le serveur.", {}
+            return "normal", "Android stops to apply the change", {}
+        return "error", "Android is stopped. Start it on the server.", {}
     if active == "active":
-        return "normal", "Le service Android a démarré", {}
+        return "normal", "The Android service started", {}
     return None
 
 
 def change_status_record(kind, status):
     """The record for a screen size or settings request's new status."""
-    what = "de résolution" if kind == "display" else "des réglages d’Android"
+    what = "Screen size change" if kind == "display" else "Android settings change"
     state = status.get("state")
     if state == "applying":
-        return "normal", f"Changement {what} : Android redémarre…", {}, False
+        return "normal", f"{what}: Android restarts…", {}, False
     if state == "done":
-        return "normal", f"Changement {what} appliqué", {}, True
+        return "normal", f"{what} applied", {}, True
     if state == "failed":
         unit = "cloudphone-display" if kind == "display" else "cloudphone-settings"
-        return ("error", f"Échec du changement {what} : {{message}}. Réessayez ; si cela échoue encore, "
-                f"lisez journalctl -u {unit} sur le serveur.", {"message": status.get("message") or "?"}, True)
+        return ("error", f"{what} failed: {{message}}. Try again; if it fails again, "
+                f"read journalctl -u {unit} on the server.", {"message": status.get("message") or "?"}, True)
     return None
 
 
@@ -348,8 +348,8 @@ def check_health(unit, booted, display_status, settings_status):
                   and unit["restarts"] > before["restarts"] and not changed)
         if missed:
             # Restarted between two looks.
-            log("error", "emulator", "Android a planté et a été relancé automatiquement. S’il ne revient pas "
-                "d’ici deux minutes, relancez-le sur le serveur.", notify=True)
+            log("error", "emulator", "Android crashed and was restarted automatically. If it is not back "
+                "within two minutes, restart it on the server.", notify=True)
         elif changed:
             record = unit_record(unit)
             # At the gateway's start only what is wrong is worth a record.
@@ -359,7 +359,7 @@ def check_health(unit, booted, display_status, settings_status):
         HEALTH["unit"] = unit
     if booted != HEALTH["booted"]:
         if booted is True and HEALTH["booted"] in (False, None):
-            log("normal", "emulator", "Android a démarré", notify=True)
+            log("normal", "emulator", "Android started", notify=True)
         elif booted is False:
             HEALTH["booting_since"] = now
         HEALTH["booted"] = booted
@@ -368,14 +368,14 @@ def check_health(unit, booted, display_status, settings_status):
     if booted is False and not HEALTH["slow_boot"] and HEALTH["booting_since"] \
             and now - HEALTH["booting_since"] > SLOW_BOOT_SECONDS:
         HEALTH["slow_boot"] = True
-        log("warning", "emulator", "Android met longtemps à démarrer (plus de {minutes} minutes)",
+        log("warning", "emulator", "Android is slow to start (over {minutes} minutes)",
             minutes=SLOW_BOOT_SECONDS // 60)
     # gRPC silent while the unit runs: after a few looks, an error.
     if booted is None and unit and unit["active"] == "active" and not first:
         HEALTH["lost"] += 1
         if HEALTH["lost"] == 4:
-            log("error", "emulator", "Le serveur ne joint plus Android (gRPC). S’il ne revient pas d’ici une "
-                "minute, relancez Android sur le serveur.", notify=True)
+            log("error", "emulator", "The server no longer reaches Android (gRPC). If it is not back within a "
+                "minute, restart Android on the server.", notify=True)
     for kind, status, path in (("display", display_status, display.STATUS), ("settings", settings_status, settings.STATUS)):
         key = (status.get("state"), status.get("message"), status.get("width"))
         before = HEALTH[kind]
@@ -479,7 +479,7 @@ async def watch_discovery_file():
         except OSError:
             others = []
         if others:
-            log("warning", "gateway", "L’émulateur a redémarré : le gateway redémarre pour le suivre",
+            log("warning", "gateway", "The emulator restarted: the gateway restarts to follow it",
                 notify=True)
             logging.shutdown()
             os._exit(75)

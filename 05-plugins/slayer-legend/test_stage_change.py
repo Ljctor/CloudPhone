@@ -26,6 +26,15 @@ def load(name):
 rules = load("features/stage_change_rules")
 LOG = load("features/ports").python_log("slayer-legend")
 EXCEPTION = load("features/ports").exception_log(LOG)
+PORTS = load("features/ports")
+TEXTS = PORTS.text_ports()
+french = TEXTS["french"]
+
+
+def busy(text):
+    """ports.Busy for its French text ("bail tenu par mine")."""
+    holder = text.partition("bail tenu par ")[2]
+    return PORTS.Busy(PORTS.HELD, holder=holder) if holder else PORTS.Busy(text)
 feature = load("features/stage_change")
 mode_feature = load("features/mode")
 mode_rules = load("features/mode_rules")
@@ -57,11 +66,11 @@ class Plan(unittest.TestCase):
 
     def test_failures(self):
         self.assertEqual(rules.plan(view(None, [], popup=False), 920)[0], "fail")
-        self.assertIn("région", rules.plan(view(None, [913]), 920)[1])
-        self.assertIn("aucune", rules.plan(view(GIANT, []), 920)[1])
-        self.assertIn("absent", rules.plan(view(GIANT, [913, 915]), 914)[1])
+        self.assertIn("région", french(rules.plan(view(None, [913]), 920)[1]))
+        self.assertIn("aucune", french(rules.plan(view(GIANT, []), 920)[1]))
+        self.assertIn("absent", french(rules.plan(view(GIANT, [913, 915]), 914)[1]))
         # Rows of another region than the banner's: not trusted.
-        self.assertIn("région lue", rules.plan(view(GIANT, [921, 922]), 920)[1])
+        self.assertIn("région lue", french(rules.plan(view(GIANT, [921, 922]), 920)[1]))
 
     def test_progress_and_support(self):
         self.assertFalse(rules.progressed(view(GIANT, [918, 919, 920]), view(GIANT, [918, 919, 920])))
@@ -143,14 +152,13 @@ class Game:
     def ports(self, switches="real"):
         game = self
 
-        class Busy(RuntimeError):
-            pass
+        Busy = PORTS.Busy
 
         @contextlib.asynccontextmanager
         async def leased(holder, reason, seconds, user=False, pause=True):
             # pause=False: the user's minute is not waited for.
             if game.state["busy"] and (pause or game.state["busy"] != "l’utilisateur joue"):
-                raise Busy(game.state["busy"])
+                raise busy(game.state["busy"])
             game.leases.append((holder, reason))
             yield
 
@@ -206,7 +214,7 @@ class Game:
                                                                      monotonic=lambda: game.now),
                                leased=leased, Busy=Busy, pause_left=lambda: game.state.get("pause_left", 60),
                                store=store, enabled=lambda: True, respond=lambda value, status=200: (status, value),
-                               log=LOG, exception=EXCEPTION)
+                               log=LOG, exception=EXCEPTION, **TEXTS)
 
 
 def readers(game):
@@ -259,11 +267,13 @@ def readers(game):
 
 
 def run(game, call, switches="real"):
-    """The api call's answer; its step timings kept in game.timings."""
+    """The api call's answer, its text_t as text (French); its step
+    timings kept in game.timings."""
     part = feature.stage_change(game.ports(switches), *readers(game), rules, TABLE)
     answer = asyncio.run(call(part["api"]))
     if isinstance(answer, dict):
         game.timings = answer.pop("timings", None)
+        answer["text"] = french(answer.pop("text_t"))
     return answer
 
 
@@ -481,7 +491,8 @@ class Store:
 
 class Mode(unittest.TestCase):
     def enter(self, answers, confirm=None):
-        """answers: what farm does each time: an answer, or Busy's text."""
+        """answers: what farm does each time: an answer ({result, text}:
+        its text a template), or Busy's text."""
         game = Game()
         calls = []
         answers = list(answers)
@@ -490,8 +501,8 @@ class Mode(unittest.TestCase):
             calls.append((stage, preset, mode))
             answer = answers.pop(0)
             if isinstance(answer, str):
-                raise ports.Busy(answer)
-            return answer
+                raise busy(answer)
+            return {"result": answer["result"], "text_t": answer["text"] and {"template": answer["text"], "params": {}}}
 
         ports = game.ports()
 
@@ -534,7 +545,7 @@ class Mode(unittest.TestCase):
         calls, state, alerts = self.enter([done()])
         self.assertEqual(calls, [(931, "III", "mpw4")])
         self.assertEqual(state["state"], "farming", state["message"])
-        self.assertEqual(alerts, ["Farming mpw4 prêt en 0 s"])
+        self.assertEqual(alerts, ["Farming mpw4 ready in 0 s"])
 
     def test_failure_is_tried_again_within_the_budget_then_one_alert(self):
         failed = {"result": "failed", "text": "ouverture de Select Region"}
@@ -543,14 +554,14 @@ class Mode(unittest.TestCase):
         self.assertEqual(len(calls), 6)
         self.assertEqual(state["state"], "failed")
         self.assertEqual(len(alerts), 1)
-        self.assertIn("ouverture de Select Region", alerts[0])
+        self.assertIn("opening Select Region", alerts[0])
 
     def test_a_failure_then_a_success_farms_without_alert(self):
         failed = {"result": "failed", "text": "écran inattendu"}
         calls, state, alerts = self.enter([failed, done()])
         self.assertEqual(len(calls), 2)
         self.assertEqual(state["state"], "farming", state["message"])
-        self.assertEqual(alerts, ["Farming mpw4 prêt en 2 s"], "no failure alert, the retry's time in")
+        self.assertEqual(alerts, ["Farming mpw4 ready in 2 s"], "no failure alert, the retry's time in")
 
     def test_retry_backoff(self):
         self.assertEqual([mode_rules.retry_after(n, 0) for n in (1, 2, 3, 4, 5)], [2, 4, 8, 16, 16])
@@ -573,14 +584,14 @@ class Mode(unittest.TestCase):
         self.assertEqual(len(calls), 2)
         self.assertEqual(state["state"], "farming")
         self.assertIsNone(state["hold"], "the hold is over")
-        self.assertEqual(alerts[0], "Passage au farming mpw4 en attente : tu joues. Nouvel essai dans 60 s.")
+        self.assertEqual(alerts[0], "Switch to farming mpw4 on hold: you are playing. Next try in 60 s.")
         # The fake's sleeps all move one clock: the hold's time is all of it.
-        self.assertRegex(alerts[1], r"^Farming mpw4 prêt en (\d+) s \(dont \1 s d’attente : tu jouais\)$")
+        self.assertRegex(alerts[1], r"^Farming mpw4 ready in (\d+) s \(including \1 s waiting: you were playing\)$")
         self.assertEqual(len(alerts), 2)
 
     def test_another_holder_is_waited_for_without_a_hold(self):
         calls, state, alerts = self.enter(["bail tenu par mine", done()])
-        self.assertEqual(alerts, ["Farming mpw4 prêt en 2 s"])
+        self.assertEqual(alerts, ["Farming mpw4 ready in 2 s"])
 
     def test_the_lease_waited_for_30_min_at_most_then_one_alert(self):
         held = 1 + mode_rules.LEASE_WAIT // mode_rules.BUSY_RETRY
@@ -588,8 +599,8 @@ class Mode(unittest.TestCase):
         # mpw4 gave up after LEASE_WAIT (one alert); its timer then ended:
         # back to mpw18, which farms.
         self.assertEqual([mode for _, _, mode in calls], ["mpw4"] * held + ["mpw18"])
-        self.assertIn("bail toujours pris après 30 min (bail tenu par mine), à faire à la main", alerts[0])
-        self.assertEqual(len([a for a in alerts if "bail" in a]), 1)
+        self.assertIn("lease still taken after 30 min (lease held by mine), to do by hand", alerts[0])
+        self.assertEqual(len([a for a in alerts if "lease" in a]), 1)
 
     def test_plan_is_said_not_alerted(self):
         calls, state, alerts = self.enter([{"result": "plan", "text": "stage 915 → 931"}])

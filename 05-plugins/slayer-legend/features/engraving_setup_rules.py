@@ -24,6 +24,8 @@ their card when a piece is taken out or placed.
   it, move it, confirm it when it lies on its cells and the check reads
   valid, or cancel.
 - check(): what is still not right, for the one alert.
+Every reason and problem is a status text ({template, params},
+features/texts.py): a fixed French template, its English in templates.json.
 """
 
 # The shapes' stats as the cards' icons tell them are not the shapes': the
@@ -83,12 +85,27 @@ def choose(cards, variant, gold=False):
     return out
 
 
+def t(template, **params):
+    """A status text (features/texts.py)."""
+    return {"template": template, "params": params}
+
+
+def joined(texts, template="{first} ; {then}"):
+    """Status texts one after the other, « a ; b » (or with the template
+    "{first}, {then}", « a, b »); None for none."""
+    if not texts:
+        return None
+    if len(texts) == 1:
+        return texts[0]
+    return t(template, first=texts[0], then=joined(texts[1:], template))
+
+
 def _numbers(indices):
-    return ", ".join(f"#{index + 1}" for index in indices)
+    return ", ".join(str(index + 1) for index in indices)
 
 
 def _named(card):
-    return f"{card['shape']} Lv.{card['level']} (#{card['index'] + 1})"
+    return t("{shape} Lv.{level} (n°{number})", shape=card["shape"], level=card["level"], number=card["index"] + 1)
 
 
 def _cells(piece):
@@ -99,20 +116,21 @@ def next_step(grid, cards, variant, shapes, gold=False, probed=()):
     """The next move (see the module's docstring). probed: the cells of the
     pieces already taken out to find a card not chosen."""
     if grid is None:
-        return ("fail", "grid unreadable")
+        return ("fail", t("grille illisible"))
     opened = [card["index"] for card in cards if card["locked"] is False]
     if opened:
         return ("lock", opened[0])
     unsure = [card["index"] for card in cards if card["locked"] is None]
     if unsure:
-        return ("fail", f"padlock unreadable: {_numbers(unsure)}")
+        return ("fail", t("cadenas illisible : n°{numbers}", numbers=_numbers(unsure)))
     unread = [card["index"] for card in cards if card["shape"] is None or card["level"] is None]
     if unread:
-        return ("fail", f"piece unreadable: {_numbers(unread)}")
+        return ("fail", t("pièce(s) illisible(s) : n°{numbers}", numbers=_numbers(unread)))
     chosen = choose(cards, variant, gold)
     for shape, count in needed(variant).items():
         if len(chosen.get(shape, [])) < count:
-            return ("fail", f"{count - len(chosen.get(shape, []))} piece(s) {shape} missing in the inventory")
+            return ("fail", t("il manque {count} pièce(s) {shape} dans l’inventaire",
+                                count=count - len(chosen.get(shape, [])), shape=shape))
     targets = [_cells(piece["cells"]) for piece in variant["pieces"]]
     for piece in grid["pieces"]:
         if _cells(piece) not in targets:
@@ -134,12 +152,12 @@ def next_step(grid, cards, variant, shapes, gold=False, probed=()):
         for piece in grid["pieces"]:
             if shape_name(piece, shapes) == shape and _cells(piece) not in done:
                 return ("remove", _cells(piece))
-        return ("fail", f"{_named(by_index[extra[0]])} placed but not found in the grid")
+        return ("fail", t("{piece} posée mais pas trouvée dans la grille", piece=_named(by_index[extra[0]])))
     if missing:
-        return ("fail", f"no free place for {_named(by_index[missing[0]])}")
+        return ("fail", t("pas de place libre pour {piece}", piece=_named(by_index[missing[0]])))
     have = sorted(_cells(piece) for piece in grid["pieces"])
     if have != sorted(targets):
-        return ("fail", "the grid is not the variant's")
+        return ("fail", t("la grille n’est pas celle de la variante"))
     return ("done",)
 
 
@@ -169,13 +187,13 @@ def preview_step(before, now, valid, base, turns, target):
     hidden = set(before) | {(r, c) for r in range(-3, 9) for c in range(-3, 9) if not (-1 <= r <= 5 and -1 <= c <= 5)}
     shape = turned(base, turns)
     if not visible:
-        return ("cancel", "preview not seen")
+        return ("cancel", t("aperçu pas vu"))
     if shape != normalised(target):
         # A turn needs no position (in place, eg7 to eg8).
-        return ("rotate",) if turns < 3 else ("cancel", "no rotation matches")
+        return ("rotate",) if turns < 3 else ("cancel", t("aucune rotation ne correspond"))
     spots = fit(visible, hidden, shape)
     if not spots:
-        return ("cancel", "preview not located")
+        return ("cancel", t("aperçu pas situé"))
     # Several fits (cubes hidden): the one hiding fewest under placed cubes
     # (off the reading rather than overlapping); the next look checks it.
     before = set(before)
@@ -189,41 +207,45 @@ def preview_step(before, now, valid, base, turns, target):
         return ("move", start[0], (start[0][0] + shift[0], start[0][1] + shift[1]))
     if valid is True:
         return ("confirm",)
-    return ("cancel", "spot read invalid" if valid is False else "check unreadable")
+    return ("cancel", t("emplacement lu invalide") if valid is False else t("coche illisible"))
 
 
 def check(grid, cards, variant, pattern, name, variant_name, gold=False):
-    """What is still not right, in English ([] when ready): the grid's
+    """What is still not right, status texts ([] when ready): the grid's
     shape, every card locked, the pieces placed the variant's and the
     chosen cards."""
     if grid is None:
-        return ["grid unreadable"]
+        return [t("grille illisible")]
     problems = []
     unlocked = [card["index"] for card in cards if card["locked"] is not True]
     if unlocked:
-        problems.append(f"not read locked: {_numbers(unlocked)}")
+        problems.append(t("pas lue(s) verrouillée(s) : n°{numbers}", numbers=_numbers(unlocked)))
     if {cell for cell, state in grid["cells"].items() if state != "none"} != {tuple(c) for c in pattern}:
-        problems.append(f"the grid read is not {name}'s")
+        problems.append(t("la grille lue n’a pas la forme de {name}", name=name))
     if any(card["shape"] is None or card["level"] is None for card in cards):
-        problems.append("a piece unreadable")
+        problems.append(t("une pièce illisible"))
         return problems
     chosen = choose(cards, variant, gold)
     for shape, count in needed(variant).items():
         if len(chosen.get(shape, [])) < count:
-            problems.append(f"{count - len(chosen.get(shape, []))} piece(s) {shape} missing")
+            problems.append(t("il manque {count} pièce(s) {shape}", count=count - len(chosen.get(shape, [])), shape=shape))
     want = sorted(_cells(piece["cells"]) for piece in variant["pieces"])
     if sorted(_cells(piece) for piece in grid["pieces"]) != want:
-        problems.append(f"the pieces placed are not {variant_name}'s")
+        problems.append(t("les pièces posées ne sont pas celles de {variant}", variant=variant_name))
     by_index = {card["index"]: card for card in cards}
     wanted = {index for indices in chosen.values() for index in indices}
     placed = {card["index"] for card in cards if card["placed"]}
     if placed - wanted:
-        problems.append("placed, not the best: " + ", ".join(_named(by_index[i]) for i in sorted(placed - wanted)))
+        problems.append(t("posée(s) sans être la meilleure : {pieces}",
+                          pieces=joined([_named(by_index[i]) for i in sorted(placed - wanted)], "{first}, {then}")))
     if wanted - placed:
-        problems.append("not placed: " + ", ".join(_named(by_index[i]) for i in sorted(wanted - placed)))
+        problems.append(t("pas posée(s) : {pieces}",
+                          pieces=joined([_named(by_index[i]) for i in sorted(wanted - placed)], "{first}, {then}")))
     return problems
 
 
 def alert(name, variant_name, problems):
-    """The one error alert of an engraving not set up."""
-    return f"Engraving of {name} ({variant_name}) not ready: " + "; ".join(problems)
+    """The one error alert of an engraving not set up: a status text, the
+    sequence's failure (its English, the phone alert's)."""
+    return t("Gravure de {name} ({variant}) pas prête : {problems}", name=name, variant=variant_name,
+             problems=joined(problems))

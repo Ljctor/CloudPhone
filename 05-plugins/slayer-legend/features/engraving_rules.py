@@ -439,13 +439,13 @@ def fit_gold_balanced(entry, owned, shapes):
 
 
 def missing_alert(weapon, variant, missing, shapes):
-    """The phone alert when pieces are missing: nothing is placed. missing:
+    """The phone alert (English) when pieces are missing: nothing is placed. missing:
     by shape, or by oriented piece ("L:1") per_piece."""
     def piece(key):
         shape, _, turn = key.partition(":")
         return f"{shapes[shape]['name']} ({shape}{', orientation ' + turn if turn else ''})"
     what = ", ".join(f"{count} × {piece(key)}" for key, count in sorted(missing.items()))
-    return f"Gravure de {weapon} ({variant}) : il manque {what}. Rien n’a été placé."
+    return f"Engraving of {weapon} ({variant}): missing {what}. Nothing was placed."
 
 
 def load(path=DATA):

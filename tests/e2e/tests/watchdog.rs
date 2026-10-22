@@ -100,9 +100,9 @@ fn a_crashed_game_is_closed_relaunched_and_farming_again_within_a_minute() {
     assert!((38..=442).contains(&x) && (520..=582).contains(&y), "{taps:?}");
     never_killed(&cp);
 
-    assert!(has_record(&cp, "warning", "Farming mpw18 : le jeu a planté (fenêtre d’erreur d’Android)", true), "{:#?}", plugin_records(&cp));
-    assert!(has_record(&cp, "normal", "Réparation : relance du jeu", false), "{:#?}", plugin_records(&cp));
-    assert!(has_record(&cp, "normal", "Réparation réussie : relance du jeu", false), "{:#?}", plugin_records(&cp));
+    assert!(has_record(&cp, "warning", "Farming mpw18: the game crashed (Android's error window)", true), "{:#?}", plugin_records(&cp));
+    assert!(has_record(&cp, "normal", "Repair: game relaunch", false), "{:#?}", plugin_records(&cp));
+    assert!(has_record(&cp, "normal", "Repair done: game relaunch", false), "{:#?}", plugin_records(&cp));
     let counters = &watchdog(&cp)["counters"];
     assert_eq!(counters["next_attempt"], json!({}), "the relaunch worked: no backoff {counters}");
     assert_eq!(counters["alerts"], 1, "{counters}");
@@ -114,7 +114,7 @@ fn a_game_not_responding_gets_wait_once_then_an_alert_and_is_never_killed() {
     wait_ok(&cp, Duration::from_secs(40));
     cp.fake().control(json!({"app": {"state": "anr"}}));
     wait_for("the alert", Duration::from_secs(40), || {
-        has_record(&cp, "warning", "Farming mpw18 : le jeu ne répond pas (fenêtre d’Android), « Attendre » sans effet : à faire à la main", true)
+        has_record(&cp, "warning", "Farming mpw18: the game is not responding (Android's window), \"Wait\" had no effect: to do by hand", true)
             .then_some(())
     });
     std::thread::sleep(Duration::from_secs(16));
@@ -126,7 +126,7 @@ fn a_game_not_responding_gets_wait_once_then_an_alert_and_is_never_killed() {
     assert_eq!(taps.len(), 1, "{calls:#?}");
     assert!((520..=582).contains(&taps[0].1), "{taps:?}");
     assert_eq!(relaunches(&cp), 0, "{calls:#?}");
-    assert!(has_record(&cp, "normal", "Le jeu ne répond pas : « Attendre » touché", false), "{:#?}", plugin_records(&cp));
+    assert!(has_record(&cp, "normal", "The game is not responding: Wait pressed", false), "{:#?}", plugin_records(&cp));
     assert_eq!(watchdog(&cp)["symptom"], "anr");
     never_killed(&cp);
 }
@@ -141,7 +141,7 @@ fn at_the_gateways_start_it_observes_then_relaunches_a_game_that_is_not_running(
     });
     // The second look alerts; the relaunch waits for the third (45 s).
     wait_for("the alert", Duration::from_secs(25), || {
-        has_record(&cp, "warning", "Farming mpw18 : le jeu ne tourne pas", true).then_some(())
+        has_record(&cp, "warning", "Farming mpw18: the game is not running", true).then_some(())
     });
     assert_eq!(relaunches(&cp), 0, "a restored gateway observes its first two looks");
     wait_for("the relaunch", Duration::from_secs(30), || (relaunches(&cp) > 0).then_some(()));
@@ -167,13 +167,13 @@ fn free_play_suspends_it_and_another_holder_of_the_lease_defers_the_relaunch() {
     let state = watchdog(&cp);
     assert_eq!(state["status"]["template"], "Jeu libre : rien n’est surveillé", "{state}");
     assert_eq!(relaunches(&cp), 0);
-    assert!(plugin_records(&cp).is_empty(), "no alert in free play: {:#?}", plugin_records(&cp));
+    assert!(plugin_records(&cp).iter().all(|r| r["notify"] != true), "no alert in free play: {:#?}", plugin_records(&cp));
 
     let lease = json!({"holder": "agent", "reason": "réglages", "seconds": 600});
     assert_eq!(cp.post_json(&format!("{path}/lease"), &lease).status(), 200);
     assert_eq!(cp.post_json(&format!("{path}/mode"), &json!({"mode": "mpw18"})).status(), 200);
     wait_for("the deferred repair", Duration::from_secs(70), || {
-        has_record(&cp, "normal", "Réparation différée : bail tenu par agent", false).then_some(())
+        has_record(&cp, "normal", "Repair deferred: lease held by agent", false).then_some(())
     });
     assert_eq!(relaunches(&cp), 0, "deferred while the lease is held");
     assert_eq!(watchdog(&cp)["lease"]["holder"], "agent");
@@ -219,7 +219,7 @@ fn the_sign_in_screen_gets_google_then_the_one_account_and_farms_again() {
     assert!((751..=800).contains(&taps[0].1), "Google's button: {taps:?}");
     assert!((416..=466).contains(&taps[1].1), "the account: {taps:?}");
     assert!(!taps.iter().any(|&(_, y)| (819..=870).contains(&y)), "never Apple's button: {taps:?}");
-    assert!(has_record(&cp, "warning", "Farming mpw18 : le jeu demande de se reconnecter (Sign in with Google)", true),
+    assert!(has_record(&cp, "warning", "Farming mpw18: the game asks to sign in again (Sign in with Google)", true),
             "{:#?}", plugin_records(&cp));
     never_killed(&cp);
 }

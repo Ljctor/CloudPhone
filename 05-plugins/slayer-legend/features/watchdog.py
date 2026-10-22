@@ -64,22 +64,24 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
     the relaunch only); gold: the gold feature's api (current: gold/s), whose
     rate at 0 reads AUTO at once (rules.gold_zero)."""
     memory = rules.fresh(ports.store.saved.get("watchdog"))
-    status = {"template": "Démarrage", "params": {}, "symptom": None, "paused": None, "repairing": None,
+    status = {"text": ports.t("Démarrage"), "symptom": None, "paused": None, "repairing": None,
               "mode": None, "ended_at": None, "resumed": False, "anr_waited": False, "controls": None,
               "gold": rules.gold_fresh(),
               "gold_due": False}
     available = AVAILABLE + (tuple(FARMING) if farming else ())
     ports.store.register("watchdog", lambda: rules.persisted(memory))
 
-    def say(level, template, params, notify=False):
-        """One record for the gateway's log (and the page), in French with
-        its template for translation; notify: also a phone alert."""
-        text = template.format(**params) if params else template
-        ports.log(level, text, notify)
-        return text
+    def say(level, text, params=None, notify=False):
+        """One record for the gateway's log (and the page), in English: an
+        English template filled with params, or a status text (rules.record);
+        notify: also a phone alert. Its text."""
+        said = ports.english(text) if ports.is_t(text) else ports.fill(text, params)
+        ports.log(level, said, notify)
+        return said
 
-    def show(template, params=None):
-        status["template"], status["params"] = template, params or {}
+    def show(text):
+        """The status: a status text."""
+        status["text"] = text
 
     def mode_now():
         """The mode's name ("mine" while the mine farms)."""
@@ -149,8 +151,8 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             seen["battle_settings"], seen["auto"] = kept[0]["preset"], kept[0]["auto"]
 
     async def notify_all(actions):
-        for _, level, template, values, notify in actions:
-            said = say(level, template, values, notify)
+        for _, level, text, values, notify in actions:
+            said = say(level, text, values, notify)
             if notify:
                 await ports.notify(said)
 
@@ -163,7 +165,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         part = profile()
         name = part["mode"]
         status["repairing"] = kind
-        show("Réparation en cours : {repair}", {"repair": rules.REPAIR_NAMES[kind]})
+        show(ports.t("Réparation en cours : {repair}", repair=rules.REPAIR_NAMES[kind]))
         try:
             if kind == "auto_on":
                 answer = await farming["ensure_auto"](name)
@@ -172,8 +174,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                                                modes["state"]().get("highest"))
         except ports.Busy as e:
             memory = rules.not_run(memory, kind)
-            say("normal", "Réparation différée : {repair} ({why})",
-                {"repair": rules.REPAIR_NAMES[kind], "why": str(e)})
+            say("normal", "Repair deferred: {repair} ({why})", {"repair": rules.REPAIR_NAMES[kind], "why": e.t})
             return
         finally:
             status["repairing"] = None
@@ -181,8 +182,8 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             memory, actions = rules.stopped(memory, kind, ports.clock.wall(), random.uniform(-1.0, 1.0), name)
             # Why it stopped, with the backoff's alert (if it is one).
             notify = any(action[4] for action in actions)
-            text = say("warning", "Réparation arrêtée : {repair} : {why}",
-                       {"repair": rules.REPAIR_NAMES[kind], "why": answer["text"]}, notify=notify)
+            text = say("warning", "Repair stopped: {repair}: {why}",
+                       {"repair": rules.REPAIR_NAMES[kind], "why": answer["text_t"]}, notify=notify)
             if notify:
                 await ports.notify(text)
             await notify_all([(*action[:4], False) for action in actions])
@@ -190,8 +191,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             modes["confirm"](name)
         elif answer["result"] == "plan":
             memory = rules.not_run(memory, kind)
-            say("normal", "Plan seul : {repair} : {plan}",
-                {"repair": rules.REPAIR_NAMES[kind], "plan": answer["text"]})
+            say("normal", "Plan only: {repair}: {plan}", {"repair": rules.REPAIR_NAMES[kind], "plan": answer["text_t"]})
 
     async def wait_anr():
         """Android says the game is not responding: "Wait", once per
@@ -206,14 +206,14 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             status["anr_waited"] = False
             return
         try:
-            async with ports.leased("watchdog", "« Attendre » sur « ne répond pas »", 60):
+            async with ports.leased("watchdog", "Wait on the not responding dialog", 60):
                 pressed = await ports.wait_anr(shot)
         except ports.Busy as e:
             ports.log("normal", f"Watchdog: Wait on the ANR dialog deferred: {e}")
             status["anr_waited"] = False
             return
-        say("normal", "Le jeu ne répond pas : « Attendre » touché" if pressed
-            else "Le jeu ne répond pas : bouton « Attendre » introuvable", {})
+        say("normal", "The game is not responding: Wait pressed" if pressed
+            else "The game is not responding: Wait button not found")
 
     async def relaunch(kind="relaunch"):
         """The launch, holder "watchdog". Deferred (the lease, a user
@@ -226,7 +226,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             memory = rules.not_run(memory, kind)
             return
         status["repairing"] = kind
-        show("Réparation en cours : {repair}", {"repair": rules.REPAIR_NAMES[kind]})
+        show(ports.t("Réparation en cours : {repair}", repair=rules.REPAIR_NAMES[kind]))
         try:
             await task
         finally:
@@ -249,8 +249,8 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                 answer = await mines["reenter"]()
             finally:
                 status["repairing"] = None
-            say("normal", "Retour dans la mine : {result} {text}", {"result": answer["result"],
-                                                                    "text": answer["text"]})
+            say("normal", "Back into the mine: {result} {text}", {"result": answer["result"],
+                                                                  "text": answer["text_t"]})
 
     async def tick():
         nonlocal memory
@@ -280,10 +280,10 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                 memory = rules.suspended(memory)
                 status["resumed"] = True
             status["symptom"] = None
-            show(why, {"mode": rules.MODE_NAMES.get(name, name)})
+            show(ports.t(why, mode=rules.MODE_NAMES.get(name, name)) if "{mode}" in why else ports.t(why))
             return False
         if launches["running"]():
-            show("Lancement du jeu en cours")
+            show(ports.t("Lancement du jeu en cours"))
             return False
         seen = await look()
         if seen["anr"]:
@@ -309,14 +309,14 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         ports.store.save()
         minutes = rules.waiting(memory, symptom, wall)
         if minutes is not None:
-            show(text + " ; prochain essai dans {minutes} min", {**params, "minutes": minutes})
+            show(ports.t("{what} ; prochain essai dans {minutes} min", what=ports.t(text, **params), minutes=minutes))
         else:
-            show(text, params)
+            show(ports.t(text, **params))
         repaired = False
         for action in actions:
             if action[0] == "record":
-                _, level, template, values, notify = action
-                said = say(level, template, values, notify)
+                _, level, text, values, notify = action
+                said = say(level, text, values, notify)
                 if notify:
                     await ports.notify(said)
             elif action[0] == "repair" and action[1] in ("relaunch", "mine_relaunch"):
@@ -328,8 +328,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                 await farm_repair(action[1])
                 repaired = True
             elif action[0] == "plan":
-                say("normal", "Plan seul (interrupteur sur plan) : {repair}",
-                    {"repair": rules.REPAIR_NAMES[action[1]]})
+                say("normal", "Plan only (switch on plan): {repair}", {"repair": rules.REPAIR_NAMES[action[1]]})
         return repaired
 
     async def watch():
@@ -341,7 +340,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                 raise
             except Exception as e:
                 ports.exception("Watchdog failed")
-                show("Erreur : {error}", {"error": f"{e!r}"[:200]})
+                show(ports.t("Erreur : {error}", error=f"{e!r}"[:200]))
 
     async def start(app):
         ports.spawn(watch())
@@ -351,21 +350,19 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         repair under way, "{repair} dans {minutes} min" while the symptom's
         repair backs off, else the symptom (as the status)."""
         if status["paused"] or status["repairing"] or status["symptom"] in ("unknown", "pending"):
-            return {"template": status["template"], "params": status["params"]}
+            return status["text"]
         if status["symptom"] is None:
-            return {"template": "OK", "params": {}}
+            return ports.t("OK")
         minutes = rules.waiting(memory, status["symptom"], ports.clock.wall())
         kind = rules.REPAIRS.get(status["symptom"])
         if minutes is not None:
-            return {"template": "{repair} dans {minutes} min",
-                    "params": {"repair": rules.REPAIR_NAMES[kind], "minutes": minutes}}
-        return {"template": status["template"], "params": status["params"]}
+            return ports.t("{repair} dans {minutes} min", repair=rules.REPAIR_NAMES[kind], minutes=minutes)
+        return status["text"]
 
     def state():
         held = ports.lease.state()
         wall = ports.clock.wall()
-        return {"mode": status["mode"], "status": {"template": status["template"], "params": status["params"]},
-                "text": status["template"].format(**status["params"]) if status["params"] else status["template"],
+        return {"mode": status["mode"], "status": status["text"], "text": ports.french(status["text"]),
                 "line": line(),
                 "waiting": sorted(kind for kind, kept in memory["backoff"].items() if kept["next"] > wall),
                 "symptom": status["symptom"], "paused": status["paused"], "repairing": status["repairing"],
@@ -386,7 +383,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             return ports.respond({"error": f"Expected {{kind}}: one of {', '.join(rules.REPAIR_NAMES)}"}, status=400)
         memory = rules.retry(memory, kind)
         ports.store.save()
-        say("normal", "Réessayer maintenant : {repair}", {"repair": rules.REPAIR_NAMES[kind]})
+        say("normal", "Retry now: {repair}", {"repair": rules.REPAIR_NAMES[kind]})
         return ports.respond(state())
 
     return {"routes": [("GET", "/watchdog", handle_state), ("POST", "/watchdog/retry", handle_retry)],
