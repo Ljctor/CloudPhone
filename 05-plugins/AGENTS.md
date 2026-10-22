@@ -145,6 +145,26 @@ Rules:
     toast (right edge, y 0.32-0.37; forbidden in `navigation.json`): it
     equips the game's pick, while the soul weapon is the mode's loadout.
     It is no obstacle either: the battle under it reads as such.
+  - Never tapped: a screen the classifier calls "other" (a pop-up, an
+    event, an offer, maintenance, an update, another device, a choice of
+    saves). The watchdog names it by its text, as read
+    (`screens.other_name`), in one error-level alert: « Unknown screen:
+    "<title>" [<button>]; farming blocked », a bug report for the plugin.
+    `navigation.json` refuses any move there by default. A screen enters
+    `other_screens.json` only once seen for real, with a fixture cropped
+    to its title and buttons (no account name or id); an entry names it,
+    it adds no move.
+  - « Connected on another device » (and the choice between two saves
+    after it): resuming the session there touches the account, so no move
+    is allowed until this precondition is written out and validated by the
+    user, here, in a commit of its own. Proposed, NOT validated: the move
+    is the screen's one button that keeps the game on this device, only
+    when (1) the screen reads as its catalogue entry, cut from a real
+    capture; (2) the selected mode is mpw18 or mpw4 farming and has been
+    for at least AFTER_MODE, so that the user is not playing elsewhere;
+    (3) no user input for PAUSE_AFTER_INPUT; (4) at most once per hour,
+    one alert each time; never on the choice between two saves, which
+    stays an alert. Until then: the error alert above, no move.
 - Gates on readings (binding for every plugin): a tap or gesture
   conditioned on a reading is never real until its reader has a crop of a
   REAL capture (`fixtures/`) and a green test for EVERY state it must tell

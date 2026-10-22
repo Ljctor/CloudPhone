@@ -165,7 +165,7 @@ class OtherScreen(unittest.TestCase):
         w.looks(OTHER, 3)
         self.assertEqual(w.alerts(), [], "a stage transition or a loading screen")
         w.look(OTHER)
-        self.assertEqual(w.alerts(), [("warning", "Farming mpw18: unexpected screen")])
+        self.assertEqual(w.alerts(), [("error", "Farming mpw18: unknown screen: no text read; farming blocked")])
         w.looks(OTHER, 40)
         self.assertEqual((w.repairs, w.plans), ([], []))
 
@@ -656,7 +656,7 @@ class GoldTrigger(unittest.TestCase):
             async def analyse(facts, shot):
                 name = screen(looked[0])
                 battle = name in ("battle", "parked")
-                return name, 3 if battle else None, stage, bar(looked[0]) if battle else None
+                return name, 3 if battle else None, stage, bar(looked[0]) if battle else None, None
 
             @staticmethod
             async def notify(text):
@@ -1164,7 +1164,8 @@ class AfterMode(unittest.TestCase):
         w.looks(OTHER, 2)
         self.assertEqual(w.symptoms[-1], "after_mode_screen")
         self.assertEqual(len(w.alerts()), 1)
-        self.assertIn("another device", w.alerts()[0][1])
+        self.assertEqual(w.alerts()[0][0], "error")
+        self.assertIn("unknown screen after the mode ended: no text read; farming blocked", w.alerts()[0][1])
         w.looks(OTHER, 10)
         self.assertEqual(w.repairs, [])
         self.assertEqual(len(w.alerts()), 1, "said once")
@@ -1183,6 +1184,34 @@ class AfterMode(unittest.TestCase):
         w.looks(OTHER, 3)
         self.assertEqual(w.symptoms[-1], "unexpected")
         self.assertEqual(w.alerts(), [], "4 looks for another screen")
+
+
+class NamedScreens(unittest.TestCase):
+    """Another screen is a bug report: an error alert naming it by its
+    text as read, never a task for the user, never a tap."""
+
+    def test_the_alert_names_the_screen_by_its_text(self):
+        w = Watch()
+        w.looks(BATTLE, 3)
+        w.looks({**OTHER, "named": '"Connected on another device" [OK]'}, 4)
+        self.assertEqual(w.alerts(), [("error", 'Farming mpw18: unknown screen: "Connected on another device" [OK]; '
+                                                 'farming blocked')])
+        self.assertEqual(w.repairs, [])
+        self.assertEqual(w.plans, [])
+
+    def test_after_a_mode_too(self):
+        w = Watch()
+        w.looks(BATTLE, 3)
+        w.after_mode = True
+        w.looks({**OTHER, "named": '"Select save data" [Local] [Cloud]'}, 2)
+        self.assertEqual(w.alerts(), [("error", 'Farming mpw18: unknown screen after the mode ended: '
+                                                 '"Select save data" [Local] [Cloud]; farming blocked')])
+
+    def test_no_text_asks_nothing_of_the_user(self):
+        for symptom in ("unexpected", "after_mode_screen"):
+            self.assertNotIn("main", rules.SYMPTOMS[symptom])
+            self.assertIn(symptom, rules.ERRORS)
+            self.assertIsNone(rules.REPAIRS[symptom])
 
 
 class Flapping(unittest.TestCase):

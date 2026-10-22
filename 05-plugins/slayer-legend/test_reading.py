@@ -39,9 +39,10 @@ class Canvas:
             for x in range(left, right):
                 self.pixels[(y * self.width + x) * 3:(y * self.width + x) * 3 + 3] = bytes(colour)
 
-    def text(self, string, x, y, scale=2, colour=(255, 255, 255)):
-        """string drawn from the font with its top left at (x, y) fractions."""
-        rows = font.render(string, scale)
+    def text(self, string, x, y, scale=2, colour=(255, 255, 255), shapes=None):
+        """string drawn from the font (or shapes) with its top left at (x, y)
+        fractions."""
+        rows = font.render(string, scale, font=shapes)
         left, top = round(x * self.width), round(y * self.height)
         for dy, row in enumerate(rows):
             for dx, on in enumerate(row):
@@ -58,6 +59,12 @@ def lines_of(rows):
     return marks, font.lines(marks)
 
 
+# Plain stroke numerals for the Battle settings buttons (the game's are
+# serif ones, read by their strokes: font.numeral).
+STROKES = {"I": ["##"] * 7 + [".."] * 2,
+           "V": ["#..#", "#..#", "#..#", "#.##", "###.", ".##.", ".#..", "....", "...."]}
+
+
 class Font(unittest.TestCase):
     def read(self, string, scale, gap=1):
         marks, found = lines_of(font.render(string, scale, gap=gap))
@@ -65,10 +72,10 @@ class Font(unittest.TestCase):
         return font.text(font.read_line(marks, *found[0]))
 
     def test_every_shape_reads_back(self):
-        for char in font.FONT:
+        for char in sorted({key[0] for key in font.FONT}):
             for scale in (2, 3):
-                # A capital first, so that the line's top is a capital's.
-                self.assertEqual(self.read(f"X{char}", scale), f"X{char}", (char, scale))
+                # Capitals first, so that the line's top and base are a capital's.
+                self.assertEqual(self.read(f"XX{char}", scale), f"XX{char}", (char, scale))
 
     def test_names(self):
         for string in ("Giant's Glass XIX", "Select Region", "Battle settings", "AUTO", "Move"):
@@ -228,7 +235,7 @@ class Controls(unittest.TestCase):
                 canvas.rect((x - 0.062, 0.276, x + 0.062, 0.334), (255, 255, 255))
                 canvas.rect((x - 0.052, 0.281, x + 0.052, 0.329), (20, 20, 20))
             canvas.text(controls.NUMERALS[i], x - 0.015, 0.297, scale=2,
-                        colour=(255, 255, 255) if controls.NUMERALS[i] == chosen else (70, 70, 70))
+                        colour=(255, 255, 255) if controls.NUMERALS[i] == chosen else (70, 70, 70), shapes=STROKES)
         return canvas.shot()
 
     def test_settings(self):

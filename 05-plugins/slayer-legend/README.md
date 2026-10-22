@@ -70,6 +70,8 @@ a decision comes out.
 | `features/mode.py`, `mode_rules.py` | `GET`/`POST /mode`, `POST /mode/timer`: the mode, its timer and its end (a `POST /mode` without `until` keeps the timer, `until: null` clears it); its stages are the loadouts' (`features/engraving.py`) |
 | `features/timer_rules.py`, `values.py` | the timers' arithmetic (mode and mine); the checks of values read back from `state.json` |
 | `screens.py` | the game's main screens off a screenshot (title, save notice, battle, menu, Power Saving Mode, other) and where the plugin's own taps and hold go on them |
+| `pixel_font.py`, `font_cut.py`, `fixtures/texts.json` | the game's pixel font: its reader, and its glyphs, cut by `font_cut.py --write` from the fixtures whose text `fixtures/texts.json` gives (each the average of two occurrences or more; `docs/TODO.md` lists the ones still drawn or missing) |
+| `other_screens.json` | the catalogue of « other » screens seen for real, named by their text (`screens.other_name`); empty until one is captured; nothing on them is ever tapped |
 | `stage.py` | reads the stage number (Power Saving Mode), the name's Roman numeral and the stage progress bar's fill (battle screen) off a screenshot |
 | `gold.py` | the gold counter off a screenshot: its glyphs, its unit letter (A is a thousand, B a thousand A…), the notation's parser (abbreviated or full digits, `parse`), and the rate's notation |
 | `soul_counters.py` | the Equipment panel's souls row off a screenshot: the four counters (green, blue, red, white) in the pixel font, parsed as gold's |
@@ -102,6 +104,7 @@ a decision comes out.
 | `emerald_font.js` | the game's counter font at 480 px wide, for the rewritten number |
 | `test_nav.py` | the graph is consistent; the guard lets the plugin's own actions through and refuses the forbidden ones (`python3 -m unittest test_nav`) |
 | `test_watchdog.py` | the watchdog's rules on virtual time: timings, alerts said once, caps, the lease, a gateway restart, the profile, after a mode's end, one scenario per mode; its Wait on the ANR dialog (`python3 -m unittest test_watchdog`) |
+| `test_font.py` | the pixel font on the fixtures it was cut from: every text read back, close letters apart by a margin, the 89 soul weapons' and the regions' names through render then read, the glyphs still drawn as `docs/TODO.md` lists them (`python3 -m unittest test_font`) |
 | `test_screens.py` | `screens.classify` on synthetic screenshots drawn from the areas it reads (`python3 -m unittest test_screens`) |
 | `test_trace.py` | tests of `trace.py` on synthetic screenshots (`python3 -m unittest test_trace`) |
 | `test_engraving.py` | `engravings.json` is well formed and its variants fill their patterns; rotations, the gold layout, the pieces needed (`python3 -m unittest test_engraving`) |

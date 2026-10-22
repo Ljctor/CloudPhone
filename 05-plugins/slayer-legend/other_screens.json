@@ -1,0 +1,4 @@
+{
+  "about": "Screens the classifier calls other, named by their text (screens.other_name). An entry goes in only once the screen was seen for real: name (as the alert says it), title (its title as the game writes it, matched with pixel_font.close), buttons, fixture (fixtures/<fixture>.txt: a crop of the title and buttons only, no account name or id), seen (date). Nothing on these screens is tapped (navigation.json refuses by default). Wanted (docs/TODO.md, calibration captures): connected on another device, the choice between two saves, event, offer, maintenance and update-required pop-ups.",
+  "screens": []
+}

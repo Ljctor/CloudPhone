@@ -13,7 +13,8 @@ Android's crash dialog ("Slayer Legend keeps stopping") is closed by its
 The sign-in screen the game may show after a relaunch gets "Sign in with
 Google" once (the user's choice, 2026-10-17), then Google's chooser its one
 account (read by uiautomator, ports.account_chooser), then the save notice
-its Confirm; anything else there is one alert, for the user.
+its Confirm; anything else that stays is one error record naming the
+screen by its text (screens.other_name), never tapped.
 """
 
 import asyncio
@@ -107,7 +108,9 @@ def launch(ports, screens, rules):
                     await ports.notify(f"Google sign-in failed: the chooser listed {chooser['count']} accounts")
                 return
             elif move == "blocked_other":
-                report("blocked", t("Lancement arrêté : écran inattendu (lu : {screen}), pas encore catalogué", screen=screen))
+                # Never tapped: named by its text, as read.
+                name = await ports.analyse(screens.other_name, shot)
+                report("blocked", t("Lancement arrêté : écran inconnu {screen}", screen=name))
                 return
         report("blocked", t("Le jeu n’a pas atteint l’écran de combat en 3 minutes"))
 

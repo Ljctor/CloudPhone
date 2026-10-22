@@ -195,3 +195,41 @@ class StageList(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def text_shot(lines):
+    """A dark pop-up with white text lines: [(string, x, y, scale)]."""
+    pixels = bytearray(bytes((30, 24, 20)) * (W * H))
+    for string, x, y, scale in lines:
+        rows = screens.font.render(string, scale)
+        left, top = round(x * W), round(y * H)
+        for dy, row in enumerate(rows):
+            for dx, on in enumerate(row):
+                if on:
+                    i = ((top + dy) * W + left + dx) * 3
+                    pixels[i:i + 3] = bytes((245, 245, 245))
+    return W, H, bytes(pixels)
+
+
+class OtherScreens(unittest.TestCase):
+    """Another screen is named by its text, as read; a catalogued one by
+    its entry. Never a tap: nothing here returns a move."""
+    POPUP = [("Soul Weapon", 0.25, 0.40, 3), ("Accessories", 0.25, 0.55, 2), ("Grand", 0.60, 0.55, 2)]
+
+    def test_title_and_buttons_as_read(self):
+        shot_ = text_shot(self.POPUP)
+        self.assertEqual(screens.classify(shot_), "other")
+        self.assertEqual(screens.other_name(shot_, catalogue=[]), '"Soul Weapon" [Accessories] [Grand]')
+
+    def test_a_catalogued_screen_is_named_by_its_entry(self):
+        entry = {"name": "Soul Weapon pop-up", "title": "Soul Weapon", "buttons": ["Accessories"],
+                 "fixture": "sw_title", "seen": "2026-10-21"}
+        self.assertEqual(screens.other_name(text_shot(self.POPUP), catalogue=[entry]), "Soul Weapon pop-up")
+
+    def test_no_text(self):
+        self.assertEqual(screens.other_name(text_shot([]), catalogue=[]), "no text read")
+
+    def test_the_catalogue_holds_only_screens_seen_for_real(self):
+        for entry in screens.CATALOGUE:
+            self.assertTrue(os.path.exists(os.path.join(HERE, "fixtures", f"{entry['fixture']}.txt")), entry)
+            self.assertTrue(entry.get("seen"), entry)

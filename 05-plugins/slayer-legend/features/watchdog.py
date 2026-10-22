@@ -128,7 +128,8 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         return (name, stage.read_battle(shot) if battle else None,
                 farming["battle_stage"](shot, *((screens.PARKED_SHADE,) if name == "parked" else ()))
                 if battle and farming else None,
-                stage.progress(shot) if name == "parked" or battle and screens.plain_battle(shot) else None)
+                stage.progress(shot) if name == "parked" or battle and screens.plain_battle(shot) else None,
+                screens.other_name(shot) if name == "other" else None)
 
     async def look():
         """What one look sees (watchdog_rules.judge's seen)."""
@@ -149,7 +150,8 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         if seen["focused"]:
             shot = await ports.capture(max_age=rules.MAX_AGE)
             if shot:
-                seen["screen"], seen["numeral"], seen["stage"], seen["bar"] = await ports.analyse(facts, shot)
+                seen["screen"], seen["numeral"], seen["stage"], seen["bar"], seen["named"] = \
+                    await ports.analyse(facts, shot)
         return seen
 
     async def read_controls(seen):

@@ -9,11 +9,26 @@ screen's panels over it), saver (Power Saving Mode) or other. Screens are recogn
 screen (the page's device shapes keep this ratio). A screenshot is
 (width, height, RGB888 bytes).
 
-TODO: the "connected on another device" screen (after free play on
-another phone) and the choice between two saves have no known layout yet:
-they are "other" (the watchdog alerts on them, for the user). Android's
-crash dialog is not the game's: ports.crashed() reads it from dumpsys.
+Another screen ("other") is named by its text: other_name(shot) reads
+its title and buttons with the pixel font, as read, in English (the
+game's), e.g. '"Connected on another device" [OK]'. A screen the
+catalogue (other_screens.json) holds is named by its entry; one enters
+the catalogue only once seen for real, its fixture a crop of its title
+and buttons (nothing identifying). Nothing on another screen is ever
+tapped: navigation.json refuses it by default. The "connected on another
+device" screen and the choice between two saves have no catalogue entry
+yet. Android's crash dialog is not the game's: ports.crashed() reads it
+from dumpsys.
 """
+
+import importlib.util
+import json
+import os
+
+_spec = importlib.util.spec_from_file_location(
+    "cloudphone_plugin_slayer_legend_screens_font", os.path.join(os.path.dirname(__file__), "pixel_font.py"))
+font = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(font)
 
 START_TEXT = (0.30, 0.80, 0.70, 0.87)   # "TAP TO START", white on dark
 START_TAP = (0.50, 0.836)
@@ -178,3 +193,92 @@ PARKED_SHADE = 159 / 255
 def plain_battle(shot):
     """The battle screen with nothing over it (its skill bar shows)."""
     return share(shot, TOP_EMERALD, green) > 0.15 and share(shot, MANA_BAR, blue) > 0.5
+
+
+# Another screen's text: the lines read in the middle of the screen, of a
+# title's or a button's size (cap height as a fraction of the screen
+# height), at most OTHER_LINES, each with at least OTHER_LETTERS letters
+# read and at most a third of its glyphs unread (not a picture's edges).
+OTHER_AREA = (0.04, 0.04, 0.96, 0.96)
+OTHER_CAPS = (0.007, 0.03)
+OTHER_LINES = 6
+OTHER_LETTERS = 2
+# A line this many words or fewer after the title is a button.
+BUTTON_WORDS = 3
+
+
+def _catalogue():
+    with open(os.path.join(os.path.dirname(__file__), "other_screens.json"), encoding="utf-8") as f:
+        return json.load(f)["screens"]
+
+
+CATALOGUE = _catalogue()
+
+
+# Words further apart than this many cap heights are two phrases (two
+# buttons side by side).
+PHRASE_GAP = 1.5
+
+
+def _inverted(r, g, b):
+    return 255 - min(r, g, b)
+
+
+def other_lines(shot):
+    """The text read on another screen, top to bottom: each line as its
+    phrases (two buttons on one row are two phrases). Light text on dark
+    and dark text on light (a grey button) alike."""
+    found = sorted(_lines(shot, max) + _lines(shot, _inverted))
+    return [phrases for _, phrases in found][:OTHER_LINES]
+
+
+def _lines(shot, channel):
+    """[(top, phrases)] of the lines read with channel (see other_lines)."""
+    marks = font.ink(font.crop(shot, OTHER_AREA, channel))
+    if not marks:
+        return []
+    height, found = shot[1], []
+    for top, bottom in font.lines(marks):
+        runs, cap = font.metrics(marks, top, bottom)
+        if len(runs) > 40 or not OTHER_CAPS[0] <= cap / height <= OTHER_CAPS[1]:
+            continue
+        phrases, last = [], None
+        for word in font.read_line(marks, top, bottom):
+            text = font.text([word])
+            if last is not None and word[0][2][0] - last > PHRASE_GAP * cap:
+                phrases.append(text)
+            elif phrases:
+                phrases[-1] += " " + text
+            else:
+                phrases.append(text)
+            last = word[-1][2][1]
+        whole = "".join(phrases).replace(" ", "")
+        letters = sum(c.isalnum() for c in whole)
+        if letters >= OTHER_LETTERS and whole.count("?") * 3 <= len(whole):
+            found.append((top, phrases))
+    return found
+
+
+def describe(lines):
+    """'"title" [button] [button]': the first line is the title, the short
+    phrases after it buttons, the longer ones more of the title's text."""
+    if not lines:
+        return "no text read"
+    title, buttons = [" ".join(lines[0])], []
+    for line in lines[1:]:
+        for phrase in line:
+            (buttons if len(phrase.split()) <= BUTTON_WORDS else title).append(phrase)
+    return " ".join([f'"{" ".join(title)}"'] + [f"[{b}]" for b in buttons])
+
+
+def other_name(shot, catalogue=None):
+    """Another screen's name: its catalogue entry's when its title reads as
+    one (close, with a margin), else its text as read (describe)."""
+    lines = other_lines(shot)
+    entries = CATALOGUE if catalogue is None else catalogue
+    titles = [entry["title"] for entry in entries]
+    for line in lines[:2]:
+        title = font.close(" ".join(line), titles, most=0.3, margin=2) if titles else None
+        if title:
+            return next(entry["name"] for entry in entries if entry["title"] == title)
+    return describe(lines)

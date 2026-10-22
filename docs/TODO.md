@@ -69,3 +69,76 @@ the machine at once (wrap `cargo test` in `flock` on one shared lock file).
    page open in the user's browser.
 4. Hexagonal refactor: gateway domains (display next, with
    `adapters/host_files.py`), then the page, then the plugin.
+
+# Pixel font: what is left
+
+`05-plugins/slayer-legend/pixel_font.py` is cut from the fixtures by
+`font_cut.py` (each glyph the average of at least two occurrences;
+`fixtures/texts.json` holds the texts). `test_font.py` checks the lines
+below; shrink them to nothing with the calibration captures (next
+section), then run `python3 font_cut.py --write`.
+
+Glyphs not cut yet: `B` `D` (drawn).
+
+Read wrong at one size: `0` in `sw_owned_0` (reads O: the only small 0; capture 10's
+Owned : 0 of another weapon gives a second one), `U` in `sw_tag_unequip` (reads u:
+narrower than AUTO's two U; capture 10's tags give a second one).
+
+Characters seen once: `1` `B` `H` `P` `b` `k` (a second occurrence cuts them).
+
+Never seen: the capitals `F` `J` `L` `N` `Q` `Y` `Z`, lowercase `j` `x` `y`
+`z`, the digits `5` `6` `8` `9`, and `-` `!` `?` `,`.
+
+Not unified, on purpose: `stage.py`'s DIGITS (Power Saving Mode's "STAGE
+920") are another face, 10 px high with 2 px strokes and no lowercase, so
+they cannot share the font's CAP/ROWS grid, and no fixture of that screen
+exists yet: capture 12 below gives one, and a second `font_cut.py`
+texts file for that face can then cut them. `engraving_screen.py`'s
+level digits (5 x 8, "Lv.NN") are the same case: the cards' crystals
+overlap them in `eg_cards`, so they are not cut from it either.
+
+The « Better Soul Weapon / Equip » toast's text (cap 7 px, a dark outline
+merging the letters) is not read: the toast is told by its colours.
+
+# Calibration captures (one session, about 20 minutes)
+
+The plugin's readers that stay alert-only or plan-only until a real capture
+calibrates them, and the pixel font's missing letters, all wait on the
+captures below. One session takes them all, in this order, and ends with
+the game back on mpw18 farming. Full screenshots stay in the scratchpad
+and are deleted after; only small hex crops (`fixtures/*.txt`, the
+`fixtures/` header format: screen size, crop origin, size) are committed,
+each checked by eye: no account name, id, guild or chat in the crop.
+All crops are at 480x1040, in pixels (left, top, width, height).
+
+Before: the plugin on **Jeu libre** (free play), so that the watchdog
+neither repairs nor alerts during the session; the game on the battle
+screen, stage of mpw18, preset III, AUTO on. Two captures of the same
+state, 0.5 s to 2 s apart, everywhere a reader needs two frames or a
+glyph needs two occurrences.
+
+| # | Screen to reach (how) | Crop(s) to take | Consumed by |
+|---|---|---|---|
+| 1 | Battle, plain, farming: the yellow progress bar in the middle of the screen | the bar's row, full width (0, y, 480, 16) with y measured on the first capture: 2 frames about 10 s apart while it advances → `battle_progress_1`, `_2`; and one while it is stalled, whenever it is seen stalled (opportunistic, never provoked: the AUTO button is never tapped) → `battle_progress_stalled` | the stalled-progress alert (another agent's work, replacing the AUTO tap) |
+| 2 | Bottom panel **Character** (Enhance tab), then its **Growth** tab | each: menu labels (0, 1010, 480, 28) → `menu_labels_character`; panel tabs row (0, 548, 480, 22) → `panel_character_tabs`, `panel_character_growth_tabs` | `screens.open_tab()` per lit tab, the watchdog's `back_to_battle` (alert-only until every panel is classified); font: "Enhance Growth Promotion", "LEVEL UP" |
+| 3 | Bottom panel **Skill** | menu labels → `menu_labels_skill`; the "Skill" title and Skill Proficiency line (0, 560, 480, 40) → `panel_skill_title` | same; font: k, f, y |
+| 4 | Bottom panel **Equipment**, Weapon tab | menu labels → `menu_labels_equipment` (`sw_tabs` is already the tabs row) | same |
+| 5 | Bottom panel **Companion** | menu labels → `menu_labels_companion`; tabs (0, 470, 480, 30) → `panel_companion_tabs` | same; font: B (Beast), k |
+| 6 | Bottom panel **Shop** (Summon tab), look only | menu labels → `menu_labels_shop`; tabs (0, 445, 480, 30) → `shop_tabs` | `screens.open_tab()`; font: P, k, y, K |
+| 7 | Bottom panel **Adventure** (Adventure tab) | menu labels → `menu_labels_adventure`; tabs row "Adventure Dungeon Guild" with the feathers count (0, 245, 480, 30) → `adventure_tabs` | `mine.adventure_open` (None until then: the mine's way back in stops before its first tap), `screens.open_tab()` |
+| 8 | Adventure → **Dungeon** tab (wait 5 s) | tabs row again, Dungeon lit → `dungeon_tabs`; the "Closed Mine" label on the map (100, 640, 200, 30) → `dungeon_closed_mine` | `mine.dungeon_open` |
+| 9 | Dungeon → **Closed Mine** → a floor row → **Area** pop-up → an Area → **feathers** pop-up; then close each with its X, **no feather tapped** | floor list title (180, 64, 120, 20) → `mine_list_title`; area row (60, 900, 360, 30) → `mine_area_row`; feathers pop-up buttons and count (48, 760, 384, 60) → `mine_feathers_2`, the same at another count when one is seen → `mine_feathers_1` | `mine.feathers_left` (None until then), `mine.feather_popup`, `test_mine` |
+| 10 | Equipment → Weapon → **Soul Weapon**; select each of the 89 weapons in the left list one by one (a cell's upper part, never an orange tag), scrolling the list slowly | per weapon the card's name (199, 610, 207, 44) → one `sw_name_<name>` each; also once the "Equip Effect" line (199, 650, 207, 24) and the Craft/Harvest button text (150, 860, 150, 30); on an owned weapon not equipped: its orange Equip tag (0, 590, 90, 100) → `sw_tag_equip` and its card's sword badge (408, 608, 34, 42) → `sw_badge_owned_grey`; **never** Equip, Unequip, Craft, Harvest, Breakdown | the gates `soul_weapon.TAG_LEARNED` and `BADGE_TELLS` (`test_gates.py`), test A3 (render/read round trip on the real names), `soul_weapon.name()`, the font's remaining letters (every capital and most lowercase of `engravings.json`) |
+| 11 | Close back to the battle; open **Select Region** (stage map button); browse the regions with the banner arrows (no Move), 39 regions | each banner (120, 307, 240, 31) → `banner_<region>`; the first row of a few regions (48, 429, 278, 29) | test A3 on real region names, `stage_select.banner()`; letters of `stages.json` names (B, D, F, H, K, L, M, P, U, Y, f, k, m, p, u, y, z, -) |
+| 12 | ≡ top menu → **Settings**, look only; then ≡ → **Power Saving Mode**, capture, hold the button 4 s to leave | Settings title and its labels (0, 100, 480, 300) cut into line crops; Power Saving: "STAGE 920" (96, 382, 288, 26) → `saver_number`, name (48, 409, 384, 30) → `saver_name` | font letters; `stage.py` DIGITS (cut its 10 digits from real captures, see the font note below) |
+| 13 | Toasts and pop-ups, whenever one shows during the session: the **Better Soul Weapon** toast (over the battle and over an open panel), event, offer, maintenance, update required | the toast (334, 328, 146, 60) → `toast_better_weapon_2`, `toast_over_panel`; a pop-up's title and buttons only, never its body if it shows an account | `screens.better_weapon_toast()` (second occurrence: its text is cap 7 and not read yet), part B's catalogue of named screens |
+| 14 | Optional, the user's call: open the game on the user's own phone for a minute, then back here: the **connected on another device** screen and, after it, the **choice between two saves** | title and buttons only (no account, no save ids) → `other_another_device`, `other_save_choice` | part B's catalogue; **no move** on them until `05-plugins/AGENTS.md`'s precondition is validated by the user; the user resolves them on the device |
+| 15 | Back to the battle: every panel closed, stage of mpw18, preset III, AUTO on (the gear spinning); the plugin back on **mpw18 farming** | none | the watchdog says OK within a minute |
+
+Already captured (2026-10-22, upstream): the engraving card with an open padlock
+(`eg_cards_unlocked`, `eg_cards_relocked`), its piece pop-up and the drag
+preview; nothing more to take there.
+
+Not in the session (they come when they come): the maintenance and update
+required screens, and the event and offer pop-ups if no relaunch shows
+them; their crops go in on the next sighting, same rule.

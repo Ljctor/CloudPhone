@@ -16,10 +16,12 @@ text names the mode (MODE_NAMES). When a mode ends, the watchdog looks at
 once, with no menu grace (still paused for a minute after a user input).
 During free play the game may well be open on another device: nothing is
 checked then. When it ends, the game here may show a "connected on another device"
-screen or a choice of saves, whose layouts are not mapped yet: for
-AFTER_MODE seconds after a mode ended, another screen is that
-(after_mode_screen), alerted after ALERT_AFTER looks, for the user to do by
-hand. The save notice and the title are start screens: the relaunch's
+screen or a choice of saves, not catalogued yet: for AFTER_MODE seconds
+after a mode ended, another screen is after_mode_screen, alerted after
+ALERT_AFTER looks. Another screen is never tapped: its alert, at error
+level, names it by its text as read (screens.other_name, seen["named"]),
+a bug report for the plugin, e.g. « Unknown screen: "Connected on another
+device" [OK]; farming blocked ». The save notice and the title are start screens: the relaunch's
 launch steps take the latest save.
 
 Symptom → response, one look at a time (SYMPTOMS, REPAIRS):
@@ -45,11 +47,11 @@ Symptom → response, one look at a time (SYMPTOMS, REPAIRS):
 | the battle screen while the farming mode  | back to the Soul Weapon screen: the   |
 | parks (park_wanted)                       | soul weapon step's own navigation,    |
 |                                           | no tap inside its panel (park)        |
-| another screen (a stage transition, a     | no tap: observed, an alert after      |
-| loading screen, an unknown pop-up)        | ALERT_AFTER_OTHER looks               |
-| another screen within AFTER_MODE of a     | no tap (TODO: map the disconnect      |
-| mode's end (another device, saves)        | screen and the save choice): an alert |
-|                                           | after ALERT_AFTER looks               |
+| another screen (a stage transition, a     | no tap: observed, an error alert      |
+| loading screen, an unknown pop-up)        | naming it by its text after           |
+|                                           | ALERT_AFTER_OTHER looks               |
+| another screen within AFTER_MODE of a     | no tap: an error alert naming it by   |
+| mode's end (another device, saves)        | its text after ALERT_AFTER looks      |
 
 Parking: while mpw18 or mpw4 farms, its idle place is the Soul Weapon
 screen (the Equipment panel's, its souls counters shown, the battle going
@@ -161,15 +163,14 @@ SYMPTOMS = {
     "anr": "le jeu ne répond pas (fenêtre d’Android) : « Attendre » touché sans effet",
     "start_screen": "le jeu est revenu à son écran titre",
     "sign_in": "le jeu demande de se reconnecter (Sign in with Google)",
-    "after_mode_screen": "écran inconnu après la fin du mode (connecté sur un autre appareil, ou choix de "
-                         "sauvegarde) : pas encore catalogué",
+    "after_mode_screen": "écran inconnu après la fin du mode : {screen} ; farming bloqué",
     "menu": "un menu du jeu est ouvert depuis plus d’une minute sans l’utilisateur",
     "wrong_stage": "mauvais stage, pas le {stage}",
     "wrong_battle_settings": "mauvais préréglage de combat : pas le {preset}",
     "wrong_loadout": "mauvais équipement : {what}",
     "progress_stalled": "barre de progression du stage immobile depuis {seconds} s (AUTO : {state})",
     "unparked": "hors de l’écran Soul Weapon",
-    "unexpected": "écran inattendu",
+    "unexpected": "écran inconnu : {screen} ; farming bloqué",
     "mine_away": "le jeu n’est plus au premier plan",
 }
 # The repair of each symptom (None: alert only).
@@ -208,7 +209,9 @@ QUIET_AFTER_ALERT = 30 * 60
 # Delays (seconds) whose first reach is a phone alert.
 ESCALATE = (480, 1800)
 KINDS = tuple(REPAIR_NAMES)
-ERRORS = ("adb_missing", "anr", "after_mode_screen", "progress_stalled")
+# Error level: adb gone, the ANR, a stalled bar, and another screen (the
+# plugin does not know it: a bug report).
+ERRORS = ("adb_missing", "anr", "after_mode_screen", "progress_stalled", "unexpected")
 # Alert-only symptoms said again when they last this long (seconds).
 TIERED = ("progress_stalled",)
 # Repairs that are never plan-only.
@@ -390,9 +393,10 @@ def judge(seen, profile, numeral_of, last_input, resumed, memory, now, after_mod
         if numeral is not None and numeral == expected:
             return None, "OK (numéral {numeral})", {"numeral": roman(numeral)}, memory
         return None, "OK", {}, memory
+    named = {"screen": seen.get("named") or "no text read"}
     if after_mode:
-        return "after_mode_screen", SYMPTOMS["after_mode_screen"], {}, memory
-    return "unexpected", SYMPTOMS["unexpected"], {}, memory
+        return "after_mode_screen", SYMPTOMS["after_mode_screen"], named, memory
+    return "unexpected", SYMPTOMS["unexpected"], named, memory
 
 
 def _mine(seen, away, memory):

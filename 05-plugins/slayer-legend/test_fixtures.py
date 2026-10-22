@@ -236,8 +236,11 @@ class Confusion(unittest.TestCase):
         wrong = {truth: dict(row) for truth, row in counts.items() if set(row) != {truth}}
         total = sum(sum(row.values()) for row in counts.values())
         right = sum(row[truth] for truth, row in counts.items())
-        # The banner's letters touch: its cut may differ, the rest must not.
-        self.assertLessEqual(set(uncut), {"banner_giants_glass"}, uncut)
+        # The banner's letters touch: its cut may differ; so may a text with
+        # a letter the font has not cut yet (Battle's B); the rest must not.
+        cut = {key[0] for key in font.SOURCES}
+        waiting = {name for name, (truth, _, _) in TEXTS.items() if set(truth) - {" "} - cut}
+        self.assertLessEqual(set(uncut), {"banner_giants_glass"} | waiting, uncut)
         self.assertGreaterEqual(right / total, 0.95, wrong)
         # The numerals that name the stages are never confused.
         for numeral in "IVX":

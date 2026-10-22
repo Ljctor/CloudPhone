@@ -36,7 +36,6 @@
   "Jeu libre : rien n’est touché jusqu’à la fin du minuteur": "Free play: nothing is touched until the timer ends",
   "La relance de la mine a échoué {tries} fois de suite : pas de combat vu après la relance": "The mine relaunch failed {tries} times in a row: no fight seen after the relaunch",
   "La variante {variant} de {name} sort de la grille ou se chevauche": "Variant {variant} of {name} leaves the grid or overlaps",
-  "Lancement arrêté : écran inattendu (lu : {screen}), pas encore catalogué": "Launch stopped: unexpected screen (read: {screen}), not catalogued yet",
   "Lancement différé : {why}": "Launch deferred: {why}",
   "Lancement du jeu en cours": "Game launch under way",
   "Le jeu est sur l’écran de combat": "The game is on the battle screen",
@@ -237,13 +236,15 @@
   "à poser : {piece} (rotation pas apprise)": "to place: {piece} (rotation not learned)",
   "écran Soul Weapon pas reconnu": "Soul Weapon screen not recognised",
   "écran de combat pas vu": "battle screen not seen",
-  "écran inattendu": "unexpected screen",
   "écran inattendu (ni le combat, ni un panneau du menu du bas reconnu ; lu : {screen})": "unexpected screen (neither the battle nor a bottom menu's panel recognised; read: {screen})",
-  "écran inconnu après la fin du mode (connecté sur un autre appareil, ou choix de sauvegarde) : pas encore catalogué": "unknown screen after the mode ended (connected on another device, or a choice of saves): not catalogued yet",
   "écran {name} pas vu": "{name} screen not seen",
   "écrans Adventure et Dungeon pas encore reconnus": "Adventure and Dungeon screens not recognised yet",
   "étage de 1 à 9999, zone de 1 à 5": "floor 1 to 9999, area 1 to 5",
   "étage {floor}, zone {area}": "floor {floor}, area {area}",
   "étage, zone ou plumes": "floor, area or feathers",
-  "étiquette illisible": "tag unreadable"
+  "étiquette illisible": "tag unreadable",
+  "écran inconnu : {screen} ; farming bloqué": "unknown screen: {screen}; farming blocked",
+  "écran inconnu après la fin du mode : {screen} ; farming bloqué": "unknown screen after the mode ended: {screen}; farming blocked",
+  "Lancement arrêté : écran inconnu {screen}": "Launch stopped: unknown screen {screen}",
+  "écran inattendu": "unexpected screen"
 }
