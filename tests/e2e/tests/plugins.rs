@@ -428,7 +428,7 @@ fn slayer_legends_switch_is_not_held_by_an_input_with_the_game_away() {
         assert!(answer["hold"].is_null(), "no hold with the game away: {answer}");
         std::thread::sleep(Duration::from_millis(500));
     }
-    assert!(!cp.fake().ntfy_posts().iter().any(|p| p["text"].as_str().is_some_and(|t| t.contains("en attente"))));
+    assert!(!cp.fake().ntfy_posts().iter().any(|p| p["text"].as_str().is_some_and(|t| t.contains("on hold"))));
 }
 
 #[test]
