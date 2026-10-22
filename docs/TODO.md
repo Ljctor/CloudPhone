@@ -18,6 +18,14 @@ None at the moment.
   reads the controls folded; the AUTO gear is tapped only after an OFF
   reading (a still gear) and never to turn AUTO off.
 
+- 2026-10-21, Slayer Legend: the plugin equipped the soul weapon Vision in
+  mpw18 by itself (the user saw the result) while the Equip tag reader had
+  never read a real tag (its two fixture tests were skipped). No supervised
+  run up to Equip was recorded; the run's records were not collected. Fix:
+  Equip is planned only once fixtures/sw_tag_equip.txt and
+  sw_tag_unequip.txt exist from real captures; until then the step alerts
+  « à équiper à la main ».
+
 # Planned work
 
 In order of value. One worktree per track; never two black-box suites on
