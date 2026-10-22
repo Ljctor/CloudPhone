@@ -160,7 +160,10 @@ async fn open_mine_dialog(page: &Page) {
 
 #[test]
 fn in_english_the_gateways_states_show_no_french() {
-    let cp = CloudPhone::start_with(json!({"plugins": [SLAYER_LEGEND]}));
+    // The game in front: an input there is playing (on the launcher it is not).
+    let app = json!({"package": "com.gear2.growslayer", "activity": "com.google.firebase.MessagingUnityPlayerActivity",
+        "state": "running", "picture": [[0.36, 0.012, 0.42, 0.036, [40, 200, 60]], [0.0, 0.972, 1.0, 0.998, [225, 225, 225]]]});
+    let cp = CloudPhone::start_with(json!({"plugins": [SLAYER_LEGEND], "options": {"app": app}}));
     let phone = cp.clone();
     browser_test(&cp, Options::without_video(), |page| async move {
         choose_english(&page).await;
