@@ -34,9 +34,6 @@ BY_HAND = re.compile(r"à la main|by hand|manually", re.I)
 # The calls whose text is a log record or a phone alert.
 EMITTERS = {"log", "notify", "alert", "say", "record", "fill", "remember", "exception",
             "debug", "info", "warning", "error", "critical"}
-# Templates that are another agent's to fix (soul_weapon_rules.py): skipped
-# here only while they are still in the sources.
-OTHERS = {"arme {weapon} inconnue ou de nom partagé (à équiper à la main)"}
 
 
 def french(text):
@@ -118,11 +115,9 @@ class Templates(unittest.TestCase):
         for path in paths:
             _, others = literals(path)
             missing = sorted(text for text in others
-                             if french(text) and text not in table and text not in OTHERS and text.strip())
+                             if french(text) and text not in table and text.strip())
             self.assertEqual(missing, [], f"{os.path.relpath(path, HERE)}: not in {where}")
         for template, english in table.items():
-            if template in OTHERS:
-                continue
             self.assertFalse(BY_HAND.search(template) or BY_HAND.search(english), template)
             self.assertFalse(french(english), f"{template!r}: {english!r} is not English")
             self.assertEqual(placeholders(template), placeholders(english), template)
@@ -132,13 +127,6 @@ class Templates(unittest.TestCase):
 
     def test_every_french_text_of_the_gateway_is_a_template_with_its_english(self):
         self.check(gateway_sources(), gateway_templates(), "core/texts.py TEMPLATES")
-
-    def test_the_others_are_still_there(self):
-        """An entry of OTHERS fixed in the sources leaves OTHERS too."""
-        found = set()
-        for path in plugin_sources():
-            found |= literals(path)[1]
-        self.assertEqual(OTHERS - found, set())
 
 
 if __name__ == "__main__":
