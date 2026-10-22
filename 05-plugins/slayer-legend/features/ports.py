@@ -17,11 +17,15 @@ of the gateway, so what it may do to the game is all here.
 - lease, leased(holder, reason, seconds, user=False, pause=True), Busy:
   the one shared lease on the game's taps (see Lease); `async with
   leased(...)` runs a tapping sequence under it, Busy when another holder
-  has it or the user plays (pause=False: the user's last minute is not
+  has it or the user plays (an input in the last minute with the game in
+  front, looked at then: see Lease.playing; pause=False: the user's last minute is not
   waited for, e.g. a switch the user asked to resume now; an input during
   the sequence still stops it).
 - pause_left(): the seconds left of the user-input pause (0: none).
-- last_input(): the user's last input ({monotonic, wall}) or None.
+- last_input(): the user's last input ({monotonic, wall}) or None, wherever
+  it went (the launcher, another app, the stream's play button).
+  user_input(): the same only when it counts as playing (Lease.playing:
+  the game in front, looked at now when the input is recent), else None.
 - viewers(): the viewers connected now (None on a gateway that does not
   say: then nothing that shows on screen is done for the watchdog).
 - focused(): the game is the app in front (its window has the focus).
@@ -256,7 +260,9 @@ class Lease:
     holder only; one that expires is logged as a warning. A user input (a
     touch, a swipe or a key, context.last_input) refuses it for
     INPUT_PAUSE seconds and stops the sequence under way, unless it was
-    taken on the user's own press (user=True). pause=False takes it
+    taken on the user's own press (user=True), but only while the game is
+    in front: an input on the launcher or another app, the game not
+    running, is not playing (front: the focus last seen, saw_focus). pause=False takes it
     within that minute (the user asked for it elsewhere), an input after
     it still stopping the sequence."""
 
@@ -265,6 +271,11 @@ class Lease:
         self.last_input = last_input
         self.enabled = enabled
         self.held = None
+        self.front = None  # the game in front at the last look (None: not looked, cannot tell)
+
+    def saw_focus(self, game):
+        """The focus seen (focus_of's game: True, False, None)."""
+        self.front = game
 
     def current(self):
         """{holder, reason, since, until (Unix), user, mark}, or None."""
@@ -279,13 +290,21 @@ class Lease:
         last = self.last_input()
         return last is not None and last["monotonic"] > mark
 
-    def playing(self):
+    def recent(self):
+        """An input in the last INPUT_PAUSE seconds, wherever it went."""
         return self.input_since(self.clock.monotonic() - INPUT_PAUSE)
+
+    def playing(self):
+        """The user plays: a recent input, and the game not seen away at
+        the last look (the callers look first: leased, user_input)."""
+        return self.recent() and self.front is not False
 
     def pause_left(self):
         """Seconds before the user-input pause ends (0: none)."""
         last = self.last_input()
-        return max(0.0, last["monotonic"] + INPUT_PAUSE - self.clock.monotonic()) if last else 0.0
+        if not last or not self.playing():
+            return 0.0
+        return max(0.0, last["monotonic"] + INPUT_PAUSE - self.clock.monotonic())
 
     def take(self, holder, reason, seconds, user=False, pause=True):
         """None once holder has it (taken or renewed until now + seconds),
@@ -354,6 +373,8 @@ def build(context, nav):
     async def leased(holder, reason, seconds, user=False, pause=True):
         """The tapping sequence in the with block holds the lease (Busy
         when it cannot); released at its end."""
+        if not user and pause and lease.recent():
+            await focus()  # is the game in front now? (lease.front)
         why = lease.take(holder, reason, seconds, user, pause)
         if why:
             raise Busy(why)
@@ -397,12 +418,22 @@ def build(context, nav):
 
     async def focused():
         code, out = await adb("shell", "dumpsys", "window")
+        lease.saw_focus(focus_of(out)[0] if code == 0 else None)
         return code == 0 and any("mCurrentFocus" in line and PACKAGE in line for line in out.splitlines())
 
     async def focus():
         code, out = await adb("shell", "dumpsys", "window")
         game, window = focus_of(out) if code == 0 else (None, None)
+        lease.saw_focus(game)
         return {"game": game, "window": window}
+
+    async def user_input():
+        """last_input() when it counts as playing (the game in front, looked
+        at now when the input is recent), else None."""
+        if not lease.recent():
+            return last_input()
+        await focus()
+        return last_input() if lease.playing() else None
 
     async def running():
         """False when the game's process is gone, None when adb cannot tell."""
@@ -504,7 +535,7 @@ def build(context, nav):
     return SimpleNamespace(
         capture=context.screenshot, analyse=context.analyse,
         tap=tap, taps=taps, hold=hold, swipe=swipe, lease=lease, leased=leased, Busy=Busy, last_input=last_input,
-        pause_left=lease.pause_left,
+        user_input=user_input, pause_left=lease.pause_left,
         viewers=viewers,
         focused=focused, focus=focus, running=running, start_game=start_game, dialog=dialog, crashed=crashed, close_crash=close_crash, wait_anr=wait_anr,
         account_chooser=account_chooser, choose_account=choose_account,

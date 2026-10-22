@@ -229,7 +229,9 @@ def suspended(memory):
 def paused(mode, last_input, now, moving=False):
     """Why the watchdog does not look now (a template, its parameter
     {mode} the mode's MODE_NAMES name), or None. mode: the mode's name;
-    last_input: monotonic time of the last user input, or None; moving:
+    last_input: monotonic time of the last user input made with the game
+    in front (ports.user_input: one on the launcher or another app is not
+    playing, the game is relaunched), or None; moving:
     the mode's entry sequence runs (it holds the lease)."""
     if mode not in MODE_NAMES:
         return "Jeu libre : rien n’est surveillé"

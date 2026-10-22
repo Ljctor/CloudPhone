@@ -262,7 +262,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         nonlocal memory
         name = mode_now()
         now, wall = ports.clock.monotonic(), ports.clock.wall()
-        last = ports.last_input()
+        last = await ports.user_input()  # only an input with the game in front
         if name != status["mode"]:
             if status["mode"] is not None:
                 # Another mode: its own symptoms, from scratch (the backoff

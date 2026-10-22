@@ -257,6 +257,14 @@ class Pause(unittest.TestCase):
         self.assertIsNone(self.lease.take("stage_change", "farm mpw18", 60, pause=False))
         self.lease.check("stage_change")
 
+    def test_the_game_seen_away_is_no_pause(self):
+        self.lease.saw_focus(False)
+        self.assertEqual(self.lease.pause_left(), 0)
+        self.assertIsNone(self.lease.take("stage_change", "farm mpw18", 60))
+        self.lease.release("stage_change")
+        self.lease.saw_focus(True)
+        self.assertEqual(self.lease.take("stage_change", "farm mpw18", 60), rules.USER_PLAYING)
+
     def test_an_input_after_it_still_stops_the_sequence(self):
         self.lease.take("stage_change", "farm mpw18", 60, pause=False)
         self.clock.now += 1

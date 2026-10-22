@@ -31,7 +31,9 @@ stage, preset, soul weapon) runs the same path at once (loadout_changed),
 the soul weapon alone by its step alone (the stage change feature's
 ensure_soul_weapon), notified « Configuration mpw18 appliquée en 21 s ».
 Each switch is one log line with its steps' seconds. While the user
-played in the last minute (the lease refused: rules.USER_PLAYING), the
+played in the last minute with the game in front (the lease refused:
+rules.USER_PLAYING; an input elsewhere, the game not running, is not
+playing: the switch goes on), the
 switch is on hold: one alert says so with the delay before its next try
 (« Passage au farming mpw18 en attente : tu joues. Nouvel essai dans 60
 s. »), once per switch however long the wait; GET /mode's hold gives it

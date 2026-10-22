@@ -341,6 +341,50 @@ class Lease(MineTest):
         self.assertEqual(at_80["/enabled"], {"enabled": False})
         self.assertEqual(self.last(answers, "/mine")["state"], "farming")
 
+    def front(self, front):
+        """ports built on a game whose window is in front (front) or not,
+        the user's last input 10 s ago."""
+        game = Game({"fight": dict(FIGHT_GOLD)}, "fight")
+        context = game.context()
+        inner = context.adb
+
+        async def adb(*args, timeout=10):
+            if args[:2] == ("shell", "dumpsys") and not front:
+                return 0, "  mCurrentFocus=Window{2 u0 com.android.launcher3/com.android.launcher3.Launcher}\n" \
+                          "  mFocusedApp=ActivityRecord{3 u0 com.android.launcher3/.Launcher t1}\n"
+            return await inner(*args, timeout=timeout)
+        context.adb = adb
+        last = {"monotonic": time.monotonic() - 10, "wall": time.time() - 10}
+        context.last_input = lambda: last
+        return load_feature("ports").build(context, load_feature("../nav")), last
+
+    def test_an_input_with_the_game_away_is_not_playing(self):
+        # The launcher in front (the game not running, another app, the
+        # stream's play button): no pause, the relaunch and the switch go on.
+        ports, last = self.front(False)
+
+        async def go():
+            async with ports.leased("watchdog", "relance", 60):
+                pass
+            return await ports.user_input()
+        self.assertIsNone(asyncio.run(go()))
+        self.assertEqual(ports.pause_left(), 0)
+        self.assertEqual(ports.last_input(), last, "the input itself is still said")
+
+    def test_an_input_with_the_game_in_front_is_playing(self):
+        ports, last = self.front(True)
+
+        async def go():
+            with self.assertRaises(ports.Busy) as refused:
+                async with ports.leased("stage_change", "farm mpw4", 60):
+                    pass
+            self.assertEqual(str(refused.exception), "l’utilisateur joue")
+            async with ports.leased("stage_change", "farm mpw4", 60, pause=False):
+                pass
+            return await ports.user_input()
+        self.assertEqual(asyncio.run(go()), last)
+        self.assertGreater(ports.pause_left(), 45)
+
     def test_the_lease_is_refused_to_the_plugin_while_it_is_off(self):
         game = Game({"fight": dict(FIGHT_GOLD)}, "fight")
         ports = load_feature("ports").build(game.context(), load_feature("../nav"))

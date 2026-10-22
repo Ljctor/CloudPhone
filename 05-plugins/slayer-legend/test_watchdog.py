@@ -605,6 +605,10 @@ class GoldTrigger(unittest.TestCase):
                 coroutines.append(coroutine)
 
             last_input = staticmethod(lambda: None)
+
+            @staticmethod
+            async def user_input():
+                return None
             viewers = staticmethod(lambda: viewers(looked[0]))
 
             @staticmethod
@@ -903,6 +907,10 @@ class WaitOnTheDialog(unittest.TestCase):
                 coroutines.append(coroutine)
 
             last_input = staticmethod(lambda: None)
+
+            @staticmethod
+            async def user_input():
+                return None
 
             @staticmethod
             async def running():
