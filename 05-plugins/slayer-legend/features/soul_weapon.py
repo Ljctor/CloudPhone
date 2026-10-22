@@ -215,7 +215,7 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
         shot, mismatch, done = await engrave(shot, entry, variant)
         engraved = round(ports.clock.monotonic() - began, 1)
         if done:
-            logging.info(f"Slayer Legend soul weapon: engraving step took {engraved} s ({done['gestures']} gestures)")
+            ports.log("normal", f"Soul weapon: engraving step took {engraved} s ({done['gestures']} gestures)")
         await close_screen(shot)
         seconds = round(ports.clock.monotonic() - since, 1)
         over = seconds > BUDGET

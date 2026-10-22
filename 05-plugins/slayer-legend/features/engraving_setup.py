@@ -267,10 +267,10 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on):
             # never taps it.
             for card in reading["cards"]:
                 if card["locked"] is not True and not await lock(card["index"]):
-                    left = f"#{card['index'] + 1} left unlocked" + (" (padlock unreadable)"
-                                                                     if card["locked"] is None else "")
-                    problems.append(left)
-                    await error(left)
+                    unread = card["locked"] is None
+                    problems.append(ports.t("n°{number} laissée déverrouillée (cadenas illisible)" if unread
+                                            else "n°{number} laissée déverrouillée", number=card["index"] + 1))
+                    await error(f"#{card['index'] + 1} left unlocked" + (" (padlock unreadable)" if unread else ""))
             shot, reading = await steady(size, shapes)
             if size == 5 and named == entry["name"]:
                 problems = problems + [p for p in rules.check(reading["grid"], remember(reading["cards"]), variant,
