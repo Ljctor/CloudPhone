@@ -205,7 +205,7 @@ PROGRESS_BOX_COLOUR = (89, 69, 45)
 PROGRESS_MARGIN = 16
 # Read only while calibrated on real captures of every state it tells
 # apart (test_gates.py: fixtures/bar_empty, bar_partial, bar_full,
-# bar_flash).
+# bar_flash; on the parking screen bar_parked_*).
 PROGRESS_CALIBRATED = True
 
 
@@ -216,7 +216,8 @@ def _near(pixels, i, colour):
 def progress(shot):
     """The stage progress bar's fill, 0 (empty) to 1 (full), or None when
     it is not drawn as calibrated (its "?" box not read). Read on the plain
-    battle screen only (the caller's check)."""
+    battle screen and on the Soul Weapon screen, the farming modes' parking,
+    where it is drawn the same (the caller's check)."""
     if not PROGRESS_CALIBRATED:
         return None
     width, height, pixels = shot

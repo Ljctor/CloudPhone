@@ -170,6 +170,11 @@ def blue(r, g, b):
     return b > 200 and g > 100 and r < 120
 
 
+# The Soul Weapon screen (the farming modes' parking) shades the battle
+# above it: its whites read 159 (real captures at 480x1040, 2026-10-22).
+PARKED_SHADE = 159 / 255
+
+
 def plain_battle(shot):
     """The battle screen with nothing over it (its skill bar shows)."""
     return share(shot, TOP_EMERALD, green) > 0.15 and share(shot, MANA_BAR, blue) > 0.5

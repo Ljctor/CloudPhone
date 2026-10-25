@@ -422,13 +422,15 @@ class Sequence(unittest.TestCase):
         self.assertEqual(outcome(answer), ("done", ""))
         self.assertNotIn(("soul_weapon", "equip"), game.moves)
         self.assertEqual(game.moves[:2], [("battle", "menu_equipment"), ("equipment_weapon", "soul_weapon")])
-        self.assertEqual(game.moves[-2:], [("soul_weapon", "close"), ("equipment_weapon", "close")])
-        self.assertEqual(game.state["screen"], "battle")
-        # The next time: nothing read, nothing tapped.
+        # Parked: the screen stays open, nothing closed.
+        self.assertNotIn(("soul_weapon", "close"), game.moves)
+        self.assertEqual(game.state["screen"], "soul")
+        # The next time: one look (still parked), nothing tapped.
         before, captures = len(game.moves), game.captures
         self.assertEqual(outcome(asyncio.run(api["soul_weapon"]("mpw18"))), ("done", ""))
-        self.assertEqual((len(game.moves), game.captures), (before, captures))
-        # After a relaunch it reads again.
+        self.assertEqual((len(game.moves), game.captures), (before, captures + 1))
+        # After a relaunch (the game back on the battle) it reads again.
+        game.state["screen"] = "battle"
         asyncio.run(api["relaunched"]("mpw18"))
         self.assertGreater(len(game.moves), before)
         self.assertEqual(game.alerts, [])
@@ -520,11 +522,12 @@ class Sequence(unittest.TestCase):
         self.assertEqual(game.moves.count(("soul_weapon", "equip")), 1)
 
     def test_no_weapon_chosen(self):
+        # Nothing equipped: only the way to the parking.
         game = Game(selected=GRAND)
         loadouts = {"mpw18": {"stage": 920, "preset": None, "soul_weapon": None}}
         _, api = build(game, loadouts)
         self.assertEqual(outcome(asyncio.run(api["soul_weapon"]("mpw18"))), ("done", ""))
-        self.assertEqual(game.moves, [])
+        self.assertEqual(game.moves, [("battle", "menu_equipment"), ("equipment_weapon", "soul_weapon")])
 
     def test_emergency_off(self):
         game = Game(selected=GRAND)
@@ -559,6 +562,81 @@ class Sequence(unittest.TestCase):
         self.assertIsNone(api["relaunched"]("mine"))
 
 
+
+# The moves that reach the parking: the soul weapon step's own way there.
+PARKING_MOVES = {("battle", "menu_equipment"), ("equipment_accessories", "weapon"),
+                 ("equipment_weapon", "soul_weapon")}
+
+
+class Parking(unittest.TestCase):
+    """The farming modes' idle place, the Soul Weapon screen: reached by
+    the soul weapon step's moves, never a tap inside its panel."""
+
+    def test_the_mode_switch_ends_parked_within_its_budget(self):
+        game = Game(selected=AMBITION)
+        ports, api = build(game)
+        answer = asyncio.run(api["soul_weapon"]("mpw4"))
+        self.assertEqual(outcome(answer), ("done", ""))
+        self.assertIn("park", answer["timings"])
+        self.assertEqual(game.state["screen"], "soul")
+        self.assertLessEqual(game.now, 60)
+
+    def test_park_from_the_battle_then_already_parked(self):
+        game = Game(tab="accessories")
+        _, api = build(game)
+        self.assertEqual(outcome(asyncio.run(api["park"]("mpw18"))), ("done", ""))
+        self.assertEqual(game.state["screen"], "soul")
+        self.assertLessEqual(set(game.moves), PARKING_MOVES)
+        moves = list(game.moves)
+        self.assertEqual(outcome(asyncio.run(api["park"]("mpw18"))), ("done", ""))
+        self.assertEqual(game.moves, moves, "already parked: nothing tapped")
+        self.assertEqual(game.leases[-1], ("stage_change", "farm mpw18"))
+
+    def test_never_in_free_play_or_the_mine(self):
+        for mode in ("free", "mine"):
+            game = Game()
+            _, api = build(game)
+            asyncio.run(api["park"](mode))
+            self.assertEqual((game.moves, game.state["screen"]), ([], "battle"), mode)
+
+    def test_never_with_the_soul_weapon_switch_off(self):
+        game = Game()
+        ports = game.ports()
+        ports.store.saved["soul_weapon"] = {"switch": "off"}
+        part = stage_change.stage_change(ports, fake_screens(), SimpleNamespace(regions=lambda table: []),
+                                         SimpleNamespace(), stage_rules, STAGES,
+                                         {"feature": feature.soul_weapon, "reader": fake_reader(game),
+                                          "rules": rules, "table": TABLE, "loadout": lambda mode: None})
+        self.assertEqual(part["api"]["soul_weapon_switch"](), "off")
+        asyncio.run(part["api"]["park"]("mpw18"))
+        self.assertEqual(game.moves, [])
+
+    def test_held_while_the_user_plays(self):
+        game = Game(busy="the user plays")
+        _, api = build(game)
+        with self.assertRaises(RuntimeError):
+            asyncio.run(api["park"]("mpw18"))
+        self.assertEqual(game.moves, [])
+
+    def test_leaving_it_for_free_play_or_a_repair(self):
+        game = Game(screen="soul", panel="equipment_weapon")
+        _, api = build(game)
+        self.assertTrue(api["parked"](game.snapshot()))
+        self.assertEqual(outcome(asyncio.run(api["unpark"]("free"))), ("done", ""))
+        self.assertEqual(game.moves, [("soul_weapon", "close"), ("equipment_weapon", "close")])
+        self.assertEqual(game.state["screen"], "battle")
+        # On the battle already: nothing.
+        self.assertEqual(outcome(asyncio.run(api["unpark"]("free"))), ("done", ""))
+        self.assertEqual(len(game.moves), 2)
+
+    def test_back_to_the_parking_after_a_relaunch(self):
+        game = Game(selected=GRAND)
+        _, api = build(game)
+        asyncio.run(api["soul_weapon"]("mpw18"))
+        game.state.update(screen="battle", panel=None)  # the relaunch
+        asyncio.run(api["relaunched"]("mpw18"))
+        self.assertEqual(game.state["screen"], "soul")
+        self.assertEqual(game.alerts, [])
 
 
 # The engraving, as the captures of 2026-10-22 show it (Vision filled as
@@ -777,7 +855,7 @@ class Engraving(unittest.TestCase):
         self.assertTrue(all(c["locked"] for c in eng["cards"]))
         self.assertIsNone(eng["popup"])
         self.assertIsNone(eng["preview"])
-        self.assertEqual(game.state["screen"], "battle")
+        self.assertEqual(game.state["screen"], "soul")  # parked
 
     def test_ready_as_it_is_nothing_touched(self):
         game = vision_game()
@@ -787,7 +865,7 @@ class Engraving(unittest.TestCase):
         self.assertEqual(game.alerts, [])
         captures = game.captures
         self.assertEqual(outcome(asyncio.run(api["soul_weapon"]("mpw18"))), ("done", ""))
-        self.assertEqual(game.captures, captures)
+        self.assertEqual(game.captures, captures + 1, "one look: still parked")
 
     def test_atk_to_gold_balanced_swaps_relocks_and_places(self):
         game = vision_game()
@@ -821,7 +899,7 @@ class Engraving(unittest.TestCase):
         self.assertIn("déverrouillée", answer[1])
         self.assertTrue(any("unlocked" in alert for alert in game.alerts))
         self.assertIsNone(game.state["engraving"]["popup"])
-        self.assertEqual(game.state["screen"], "battle")
+        self.assertEqual(game.state["screen"], "soul")
 
     def test_an_unreadable_padlock_at_the_end_is_an_error_never_ready(self):
         game = vision_game(padlock_unread={2})

@@ -3,7 +3,8 @@
 // features' overlay lines (the mode's) top left, both in the gold
 // counter's own pixel font (gold_text.js). Options: the "Gold" section.
 // The overlay applies while the counter was read lately (the game's
-// battle screen).
+// battle screen). Souls per second, per colour, beside gold/s: read on the
+// Soul Weapon screen, where the farming modes park.
 import { drawText } from './gold_text.js';
 import { GOLD } from './page_icons.js';
 
@@ -14,9 +15,22 @@ import { GOLD } from './page_icons.js';
 // 9.1 % of the width: up to 37.1 %.
 const BAR_LEFT = '28%';
 const BAR_MIDDLE = '2.5%';
+// The souls' colours, each as its round coloured dot (page_screen.js's).
+const SOULS = [['green', '🟢'], ['blue', '🔵'], ['red', '🔴'], ['white', '⚪']];
+const FRENCH = new Intl.NumberFormat('fr-FR', { maximumSignificantDigits: 3 });
+
+// « 🟢 667 000 · 🔵 120 000 », the colours measured; '' for none.
+export function soulsText(souls) {
+  return SOULS.filter(([colour]) => typeof souls?.[colour]?.rate === 'number')
+    .map(([colour, dot]) => `${dot} ${FRENCH.format(souls[colour].rate)}`).join(' · ');
+}
 
 // overlay: functions giving the lines written top left; enabled(): the
 // plugin is on (nothing is drawn while it is off).
+// The window is not full yet: its length (5 min, 1 min in full digits)
+// less one reading and a half.
+const partial = (answer) => answer?.span < (answer?.window ?? 300) - 15;
+
 export default function goldFeature(api, { overlay, enabled = () => true }) {
   const gold = { answer: null, timer: null, font: null, line: '' };
   api.get('/gold-font').catch(() => null).then((font) => {
@@ -74,8 +88,13 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
   const goldText = () => {
     const answer = gold.answer;
     if (!answer) return '…';
-    if (answer.rate_text) return `${answer.span < 285 ? '~' : ''}${answer.rate_text}/s`;
+    if (answer.rate_text) return `${partial(answer) ? '~' : ''}${answer.rate_text}/s`;
     return answer.read ? api.tr('pas encore mesuré') : api.tr('non visible');
+  };
+  const soulsValue = () => {
+    const answer = gold.answer;
+    if (!answer) return '…';
+    return soulsText(answer.souls) || api.tr('pas encore mesuré');
   };
   const showGold = () => {
     const answer = gold.answer;
@@ -83,10 +102,9 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
     // Only while the counter was read lately: it moves with the game's
     // panels and Power Saving Mode hides it.
     const fresh = box && answer.read && Date.now() / 1000 - answer.read < 25;
-    // "~" while the 5-minute window is not full yet.
-    const partial = answer?.span < 285 ? '~' : '';
+    // "~" while the window is not full yet.
     gold.line = api.setting('goldOverlay') === 'off' || !fresh ? ''
-      : (answer.rate_text ? `${partial}${answer.rate_text}/S` : '...');
+      : (answer.rate_text ? `${partial(answer) ? '~' : ''}${answer.rate_text}/S` : '...');
     showLabel(Boolean(fresh && gold.font && enabled()));
   };
   const askGold = async () => {
@@ -104,6 +122,7 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
     options: [
       { type: 'section', key: 'gold', label: 'Gold', icon: GOLD },
       { type: 'status', label: 'Gold par seconde', value: goldText },
+      { type: 'status', label: 'Âmes par seconde', value: soulsValue },
       {
         type: 'choice', key: 'goldOverlay', label: 'Overlay gold/s',
         choices: [{ value: 'on', label: 'Affiché' }, { value: 'off', label: 'Masqué' }],

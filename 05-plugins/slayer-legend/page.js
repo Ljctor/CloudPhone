@@ -40,6 +40,7 @@ const ENGLISH = {
   'défaut': 'default',
   'Gold': 'Gold',
   'Gold par seconde': 'Gold per second',
+  'Âmes par seconde': 'Souls per second',
   'Overlay gold/s': 'Gold/s overlay',
   'MISE EN PLACE...': 'SETTING UP...',
   'EN ATTENTE': 'ON HOLD',

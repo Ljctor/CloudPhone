@@ -5,11 +5,18 @@ battle, so the band where it may be is searched; Power Saving Mode does
 not show it.
 
 The amount is a number with up to 3 significant digits and a unit letter:
-A is a thousand, B a thousand A, and so on.
+A is a thousand, B a thousand A, and so on (parse). The game can also
+write it in full digits (its option); that reading is gated by
+FULL_DIGITS_CALIBRATED until a real capture of it is a fixture.
+
+The Soul Weapon screen, the farming modes' parking screen, shades the
+battle above it: the counter is then read with its colours at
+screens.PARKED_SHADE (read's shades).
 """
 
 import importlib.util
 import os
+import re
 
 # The stage reader's glyph matching, loaded beside this file (the gateway
 # loads plugin files by path, not as a package).
@@ -103,6 +110,39 @@ LETTERS = {
           ".##.....", "##......", "##......", "########", "########", "########"],
 }
 
+# Full digits read only once a real capture of them is a fixture
+# (test_gates.py: fixtures/gold_full); until then such a reading is None.
+FULL_DIGITS_CALIBRATED = False
+# Separators between groups of 3 in full digits.
+SEPARATORS = re.compile("[,. \u00a0\u202f]")
+
+
+def parse(text):
+    """{value, step, full} of a counter's text: abbreviated, "94.6C"
+    (94.6 x 1000^3, step 0.1C: one unit of its last digit), or in full
+    digits, "94600000000" or with separators between groups of 3 (step 1);
+    None when it is neither."""
+    if not text:
+        return None
+    unit = text[-1]
+    if "A" <= unit <= "Z":
+        number = text[:-1]
+        if not number or number.startswith(".") or number.endswith(".") or number.count(".") > 1 \
+                or not number.replace(".", "").isdigit():
+            return None
+        scale = 1000.0 ** (ord(unit) - ord("A") + 1)
+        decimals = len(number.split(".")[1]) if "." in number else 0
+        return {"value": float(round(float(number) * scale)), "step": scale / 10 ** decimals, "full": False}
+    groups = SEPARATORS.split(text)
+    if not all(group.isdigit() for group in groups):
+        return None
+    if len(groups) > 1 and (len(groups[0]) > 3 or any(len(group) != 3 for group in groups[1:])):
+        return None
+    digits = "".join(groups)
+    # Up to 3 digits read the same in both notations.
+    return {"value": float(digits), "step": 1.0, "full": len(digits) > 3}
+
+
 # Signs the page needs to write the rate in the same font (drawn in the
 # same style; the game's counter never shows them).
 SIGNS = {
@@ -125,8 +165,8 @@ def _grey(pixels, i, low, high):
     return max(r, g, b) - min(r, g, b) <= 4 and low <= r <= high
 
 
-def _coin(r, g, b):
-    return r > 220 and 120 < g < 215 and b < 90
+def _coin(r, g, b, shade=1.0):
+    return r > 220 * shade and 120 * shade < g < 215 * shade and b < 90 * shade
 
 
 def _ink(shot, x0, y0, x1, y1, low=140):
@@ -170,17 +210,26 @@ def _glyphs(ink, top, bottom):
     return found
 
 
-def read(shot):
-    """The counter as {text: "111F", value: 1.11e20, box: [left, top, right,
-    bottom] as fractions of the screen}, or None when it is not on screen
-    or not readable."""
+def read(shot, shades=(1.0,)):
+    """The counter as {text: "111F", value: 1.11e20, step, full (parse),
+    box: [left, top, right, bottom] as fractions of the screen}, or None
+    when it is not on screen or not readable. shades: the brightnesses
+    tried in turn (screens.PARKED_SHADE: under the Soul Weapon screen)."""
+    for shade in shades:
+        reading = _read(shot, shade)
+        if reading:
+            return reading
+    return None
+
+
+def _read(shot, shade):
     width, height, pixels = shot
     x0, y0 = int(BAND[0] * width), int(BAND[1] * height)
     x1, y1 = int(BAND[2] * width), int(BAND[3] * height)
-    ink = _ink(shot, x0, y0, x1, y1)
+    ink = _ink(shot, x0, y0, x1, y1, 140 * shade)
     # Pure white only: the mid grey edges join neighbouring glyphs, so
     # glyphs are cut apart on this, and read on all the ink.
-    core = _ink(shot, x0, y0, x1, y1, 245)
+    core = _ink(shot, x0, y0, x1, y1, 245 * shade)
     line = TEXT_HEIGHT * height
     counts = [sum(row) for row in ink]
     y = 0
@@ -212,13 +261,13 @@ def read(shot):
         for group in groups:
             if len(group) < 2:
                 continue
-            reading = _read_group(shot, ink, group, x0, y0, top, bottom, line)
+            reading = _read_group(shot, ink, group, x0, y0, top, bottom, line, shade)
             if reading:
                 return reading
     return None
 
 
-def _read_group(shot, ink, group, x0, y0, top, bottom, line):
+def _read_group(shot, ink, group, x0, y0, top, bottom, line, shade=1.0):
     width, height, pixels = shot
     # The coin: gold pixels within five text heights left of the number.
     left = x0 + group[0][0]
@@ -226,7 +275,7 @@ def _read_group(shot, ink, group, x0, y0, top, bottom, line):
     for y in range(y0 + top, y0 + bottom + 1):
         for x in range(max(0, int(left - 5 * line)), left):
             i = (y * width + x) * 3
-            coin += _coin(pixels[i], pixels[i + 1], pixels[i + 2])
+            coin += _coin(pixels[i], pixels[i + 1], pixels[i + 2], shade)
     if coin < 0.6 * line * line * 0.3:
         return None
     text = ""
@@ -235,17 +284,16 @@ def _read_group(shot, ink, group, x0, y0, top, bottom, line):
             text += "."
             continue
         last = k == len(group) - 1
-        name, distance = stage._best(ink, glyph, LETTERS if last else DIGITS)
+        shapes = ({**LETTERS, **DIGITS} if FULL_DIGITS_CALIBRATED else LETTERS) if last else DIGITS
+        name, distance = stage._best(ink, glyph, shapes)
         if distance > 0.2:
             return None
         text += name
-    number, unit = text[:-1], text[-1]
-    if not number or number.startswith(".") or number.endswith(".") or number.count(".") > 1:
-        return None
-    if not number.replace(".", "").isdigit():
+    parsed = parse(text)
+    if parsed is None or parsed["full"] and not FULL_DIGITS_CALIBRATED:
         return None
     box = [(x0 + group[0][0]) / width, (y0 + top) / height, (x0 + group[-1][1] + 1) / width, (y0 + bottom + 1) / height]
-    return {"text": text, "value": float(number) * 1000.0 ** (ord(unit) - ord("A") + 1), "box": box}
+    return {"text": text, **parsed, "box": box}
 
 
 def rate_text(per_second):

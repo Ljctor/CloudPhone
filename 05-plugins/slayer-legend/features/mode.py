@@ -17,8 +17,10 @@ POST /mode/hold    {action: "free" | "resume"[, hold: id]}: a switch on hold
 
 Entering mpw18 or mpw4 farming brings the game there in the background
 (features/stage_change.py): the mode's stage, its Battle settings preset,
-then its soul weapon equipped (AUTO is never tapped); a step that fails stops it with
-one alert naming the step. It
+then its soul weapon equipped, and it parks on the Soul Weapon screen
+(AUTO is never tapped); a step that fails stops it with
+one alert naming the step. Entering free play or the mine leaves that
+screen, when the game shows it and the user is not playing. It
 starts at once on its trigger (POST /mode, or the timer's end: the watch
 wakes on it), within rules.SWITCH_BUDGET seconds; a switch that stops is
 tried again on its own with a backoff (rules.retry_after) while within
@@ -272,6 +274,21 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
             report("free", free_text())
         else:
             report("mine", t("Mine"))
+        if move[0] in ("free", "mine") and "unpark" in farming:
+            status["change"] = ports.spawn(leave_park(name))
+
+    async def leave_park(name):
+        """Free play or the mine starts: the farming modes' parking (the
+        Soul Weapon screen) is left, when the game shows it; while the
+        user plays (the lease refused) nothing is touched."""
+        try:
+            answer = await farming["unpark"](name)
+        except ports.Busy as e:
+            ports.log("normal", f"Mode {name}: the Soul Weapon screen not left: {ports.english(e.t)}")
+            return
+        if answer["result"] == "failed":
+            ports.log("warning", f"Mode {name}: leaving the Soul Weapon screen stopped: "
+                      f"{ports.english(answer['text_t'])}")
 
     def loadout_changed(name, before, after):
         """The engraving feature's on_change: a change of the running

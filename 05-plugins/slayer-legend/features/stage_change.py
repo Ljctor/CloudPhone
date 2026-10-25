@@ -41,7 +41,13 @@ Every sequence holds the shared lease (holder "stage_change", reason
 in the last minute (the caller waits for its next look), and a user input
 during it stops it at the next tap.
 
-- Soul Weapon (last: a slow one never delays farming): the
+- Park (last of all, inside the 60 s): the farming mode's idle place,
+  the Soul Weapon screen, the battle going on above it
+  (features/soul_weapon.py's park: the soul weapon step's own moves, the
+  screen left open after it). Only for mpw18 and mpw4, while the soul
+  weapon's switch is real. to_battle leaves it by its red X first;
+  unpark(mode) does only that, when free play or the mine starts.
+- Soul Weapon (a slow one never delays farming): the
   mode's loadout's soul weapon equipped (features/soul_weapon.py). Its
   switch, soul_weapon, is "real" by default (the user's choice: no plan
   mode), "off" an emergency stop; kept in state.json ("soul_weapon").
@@ -49,7 +55,7 @@ during it stops it at the next tap.
   preset are done by then). After a watchdog relaunch (relaunched(mode)) it
   runs alone, with one alert if it fails.
 
-api: farm(stage, preset, mode) runs the three; change_stage, set_preset,
+api: farm(stage, preset, mode) runs the three and parks; change_stage, set_preset,
 ensure_soul_weapon(mode, loadout=None) alone (the last for a
 loadout change of the active mode); each answers {result: "done", "plan"
 or "failed", text_t: why or the plan, a status text, or None}. read_controls() for the watchdog: {preset, auto} read
@@ -81,6 +87,8 @@ RELAUNCH_RETRY = 10
 RELAUNCH_WAIT = 300
 HOLDER = "stage_change"
 SWITCHES = ("stage_change", "preset")
+# The modes that park on the Soul Weapon screen.
+FARMED = ("mpw18", "mpw4")
 
 
 def t(template, **params):
@@ -165,12 +173,20 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         else:
             await ports.tap(shot, screen, move, point, verified=verified, seen=seen)
 
+    def parked(shot):
+        """The Soul Weapon screen shows (its title): the one parking check,
+        for the watchdog too (api parked)."""
+        return bool(souls) and bool(soul["reader"].title(shot))
+
     def battle_or_panel(shot):
-        """"plain", the open panel's tab, "saver", or None (another screen)."""
+        """"plain", the open panel's tab, "saver", "parked" (the Soul
+        Weapon screen), or None (another screen)."""
         if screens.plain_battle(shot):
             return "plain"
         if screens.classify(shot) == "saver":
             return "saver"
+        if parked(shot):
+            return "parked"
         return screens.open_tab(shot)
 
     async def to_battle(may_tap=True):
@@ -178,9 +194,15 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         up to SETTLE for it (a screen passing by, a toast sliding in): a
         bottom panel open is closed with its own tab, only when that tab
         reads lit (no guess); Power Saving Mode is left by its hold (once:
-        the game shows battle again behind it). The game's « Better Soul
-        Weapon » toast is no obstacle (screens.better_weapon_toast)."""
+        the game shows battle again behind it); the Soul Weapon screen (the
+        parking) by its red X first. The game's « Better Soul Weapon »
+        toast is no obstacle (screens.better_weapon_toast)."""
         shot, seen = await settle(battle_or_panel)
+        if seen == "parked":
+            if not may_tap:
+                raise Plan("quitter l’écran Soul Weapon")
+            await souls["leave"](shot)
+            shot, seen = await settle(battle_or_panel)
         if seen == "saver":
             if not may_tap:
                 raise Plan("quitter le mode économie d’énergie")
@@ -204,6 +226,9 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
     async def change_stage(target):
         if not rules.supported(target, names):
             raise Stop("stage {stage} hors des régions connues", stage=target)
+        shot = await look()
+        if parked(shot) and await ports.analyse(select.battle_stage, shot, names, screens.PARKED_SHADE) == target:
+            return  # parked on the target stage: nothing to leave
         shot = await to_battle(real("stage_change"))
         seen = await ports.analyse(select.battle_stage, shot, names)
         if seen == target:
@@ -340,19 +365,48 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
                                 SimpleNamespace(look=look, tap=tap, front=front, to_battle=to_battle, Stop=Stop),
                                 soul.get("engraving"))
 
+    def parks(mode):
+        return bool(souls) and mode in FARMED and souls["switch"]() == "real"
+
     async def equip_soul_weapon(mode, loadout=None):
         """The mode's loadout's soul weapon equipped (loadout: that one
         instead of the stored one; none chosen, or the switch off:
-        nothing)."""
+        nothing); its screen left open when the mode parks there."""
         part = loadout if loadout is not None else (soul["loadout"](mode) if souls else None)
         chosen = (part or {}).get("soul_weapon") if souls else None
         if not chosen or souls["switch"]() != "real":
             return
         try:
-            await souls["ensure"](chosen["id"], chosen.get("variant"))
+            await souls["ensure"](chosen["id"], chosen.get("variant"), parks(mode))
         except Stop as e:
             ports.log("error", f"Soul weapon: {ports.english(e.t)}")
             raise Stop("Soul Weapon : {why}", why=e.t) from None
+
+    async def park(mode):
+        """The farming mode's idle place: the Soul Weapon screen (only for
+        mpw18 and mpw4, the soul weapon's switch real)."""
+        if not parks(mode):
+            return
+        try:
+            await souls["park"]()
+        except Stop as e:
+            raise Stop("Soul Weapon : {why}", why=e.t) from None
+
+    def soul_steps(mode, loadout=None):
+        steps = [("soul_weapon", lambda: equip_soul_weapon(mode, loadout))]
+        return steps + ([("park", lambda: park(mode))] if souls else [])
+
+    async def leave_park():
+        """The Soul Weapon screen closed when it shows (back to the plain
+        battle), else nothing."""
+        if parked(await look()):
+            await to_battle()
+
+    async def unpark(mode, force=False):
+        """Free play or the mine starts: the Soul Weapon screen left, when
+        the game shows it ({result, text_t}); ports.Busy when the lease
+        cannot be had (the user plays: nothing is touched)."""
+        return await run(mode, [("unpark", leave_park)], force)
 
     async def ensure_soul_weapon(mode, loadout=None, force=False):
         """The soul weapon step alone, under the lease (e.g. the active
@@ -360,7 +414,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         ports.Busy when the lease cannot be had (the caller retries). A
         weapon read equipped since the last relaunch or user input is not
         read again (≈0 s); another one is."""
-        return await run(mode, [("soul_weapon", lambda: equip_soul_weapon(mode, loadout))], force)
+        return await run(mode, soul_steps(mode, loadout), force)
 
     async def farm(stage, preset, mode, highest=None, force=False):
         """Farming stage with preset (None: kept as it is), then the
@@ -374,7 +428,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         steps = [("stage", lambda: change_stage(stage))]
         if preset:
             steps.append(("preset", lambda: set_preset(preset)))
-        steps.append(("soul_weapon", lambda: equip_soul_weapon(mode)))
+        steps += soul_steps(mode)
         return await run(mode, steps, force)
 
     async def after_relaunch(mode):
@@ -384,7 +438,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         since = ports.clock.monotonic()
         while True:
             try:
-                answer = await run(mode, [("soul_weapon", lambda: equip_soul_weapon(mode))])
+                answer = await run(mode, soul_steps(mode))
                 break
             except ports.Busy:
                 if ports.clock.monotonic() - since >= RELAUNCH_WAIT:
@@ -452,6 +506,8 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
            "set_preset": lambda name, mode="mpw18": run(mode, [("preset", lambda: set_preset(name))]),
            "read_controls": read_controls, "switches": lambda: dict(switches),
            "relaunched": relaunched, "ensure_soul_weapon": ensure_soul_weapon,
+           "park": lambda mode: run(mode, [("park", lambda: park(mode))]), "parked": parked, "unpark": unpark,
+           "soul_weapon_switch": lambda: souls["switch"]() if souls else "off",
            "soul_weapon": lambda mode="mpw18": ensure_soul_weapon(mode),
-           "battle_stage": lambda shot: select.battle_stage(shot, names)}
+           "battle_stage": lambda shot, shade=1.0: select.battle_stage(shot, names, shade)}
     return {"api": api, "routes": [("GET", "/farming", handle_get), ("POST", "/farming", handle_post)]}

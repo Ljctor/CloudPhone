@@ -87,6 +87,15 @@ Rules:
     - Never the « Better Soul Weapon / Equip » toast (below).
     - Never Unequip (any tap on a tag read Unequip is refused by the
       guard), Craft, Harvest or Breakdown.
+    - Parking (mpw18 and mpw4 only, the switch's last step and the
+      watchdog's repair « retour à l’écran Soul Weapon »): the Soul Weapon
+      screen left open as the farming mode's idle place, reached by the
+      moves above (Equipment, the Weapon tab, the Soul Weapon icon). It is
+      a navigation: nothing inside the panel is ever tapped to park or to
+      stay parked. Left by its red X, then the panel's tab, before any
+      sequence that needs the battle, and when free play or the mine
+      starts. Never in free play, the mine, during a switch or its hold,
+      nor with the switch `soul_weapon` off.
   - Soul weapon engraving (right after the equip, the card's big icon;
     the step is done, the weapon « prête », only once the grid is the
     loadout's variant with the highest-level cards and all 8 cards read

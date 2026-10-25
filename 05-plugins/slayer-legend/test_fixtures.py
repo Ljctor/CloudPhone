@@ -153,6 +153,14 @@ class ProgressBar(unittest.TestCase):
     def test_nothing_drawn_is_unread(self):
         self.assertIsNone(stage.progress(screen("row_920")))
 
+    def test_on_the_parking_screen(self):
+        # The Soul Weapon screen open below (a real series, stage 920):
+        # the bar is drawn the same, its flash unread too.
+        self.assertEqual(stage.progress(screen("bar_parked_empty")), 0.0)
+        self.assertAlmostEqual(stage.progress(screen("bar_parked_partial")), 155 / 214)
+        self.assertEqual(stage.progress(screen("bar_parked_full")), 1.0)
+        self.assertIsNone(stage.progress(screen("bar_parked_flash")))
+
 
 class SignIn(unittest.TestCase):
     def test_the_two_buttons_are_the_sign_in_screen(self):

@@ -171,9 +171,11 @@ def view(shot, names):
     return {"popup": True, "region": banner(shot, names), "rows": rows(shot, names)}
 
 
-def battle_stage(shot, names):
-    """The stage the battle screen's top names, or None."""
-    for text, _, _ in font.read(shot, BATTLE_NAME, level=WHITE_TEXT, channel=min, caps=BATTLE_CAP):
+def battle_stage(shot, names, shade=1.0):
+    """The stage the battle screen's top names, or None. shade: the
+    battle's brightness (screens.PARKED_SHADE under the Soul Weapon
+    screen)."""
+    for text, _, _ in font.read(shot, BATTLE_NAME, level=WHITE_TEXT * shade, channel=min, caps=BATTLE_CAP):
         words = text.split(" ")
         numeral = font.roman(words[-1]) if len(words) >= 2 else None
         region = which(" ".join(words[:-1]), names) if numeral else None

@@ -42,11 +42,23 @@ Symptom → response, one look at a time (SYMPTOMS, REPAIRS):
 | the stage progress bar still for          | error alert, no repair, no tap (the   |
 | STALL_LOOKS looks (bar_look)              | AUTO button is never tapped)          |
 | wrong soul weapon or engraving            | loadout (phase 3)                     |
+| the battle screen while the farming mode  | back to the Soul Weapon screen: the   |
+| parks (park_wanted)                       | soul weapon step's own navigation,    |
+|                                           | no tap inside its panel (park)        |
 | another screen (a stage transition, a     | no tap: observed, an alert after      |
 | loading screen, an unknown pop-up)        | ALERT_AFTER_OTHER looks               |
 | another screen within AFTER_MODE of a     | no tap (TODO: map the disconnect      |
 | mode's end (another device, saves)        | screen and the save choice): an alert |
 |                                           | after ALERT_AFTER looks               |
+
+Parking: while mpw18 or mpw4 farms, its idle place is the Soul Weapon
+screen (the Equipment panel's, its souls counters shown, the battle going
+on above it): the screen "parked" is then the battle (its stage, preset,
+loadout and progress bar checked the same way), and the plain battle is
+the symptom unparked, whose repair goes back there (PARK_ALERT_AFTER looks
+before its alert: a relaunch or a stage change leaves it on purpose).
+Never in free play, the mine, or while a switch runs or waits on hold
+(park_wanted); then the Soul Weapon screen is a game menu.
 
 The aim: after any disruption, the mode's farming is back within a minute. A
 look every EVERY seconds; a user who plays (an input in the last
@@ -156,6 +168,7 @@ SYMPTOMS = {
     "wrong_battle_settings": "mauvais préréglage de combat : pas le {preset}",
     "wrong_loadout": "mauvais équipement : {what}",
     "progress_stalled": "barre de progression du stage immobile depuis {seconds} s (AUTO : {state})",
+    "unparked": "hors de l’écran Soul Weapon",
     "unexpected": "écran inattendu",
     "mine_away": "le jeu n’est plus au premier plan",
 }
@@ -175,6 +188,7 @@ REPAIRS = {
     "wrong_battle_settings": "select_preset",
     "wrong_loadout": "loadout",
     "progress_stalled": None,
+    "unparked": "park",
     "unexpected": None,
     # The relaunch, then the mine's own way back in (features/mine.py reenter).
     "mine_away": "mine_relaunch",
@@ -182,7 +196,7 @@ REPAIRS = {
 REPAIR_NAMES = {"relaunch": t("relance du jeu"), "mine_relaunch": t("relance du jeu et retour dans la mine"),
                 "back_to_battle": t("retour au combat"),
                 "stage_change": t("changement de stage"), "select_preset": t("choix du préréglage de combat"),
-                "loadout": t("rééquipement")}
+                "loadout": t("rééquipement"), "park": t("retour à l’écran Soul Weapon")}
 # Seconds without attempt of a kind after its nth failure (DELAYS[n],
 # the last one for any later), each ±JITTER of it.
 DELAYS = (0, 60, 120, 240, 480, 960, 1800)
@@ -198,7 +212,18 @@ ERRORS = ("adb_missing", "anr", "after_mode_screen", "progress_stalled")
 # Alert-only symptoms said again when they last this long (seconds).
 TIERED = ("progress_stalled",)
 # Repairs that are never plan-only.
-ALWAYS_REAL = ("relaunch", "mine_relaunch", "back_to_battle")
+ALWAYS_REAL = ("relaunch", "mine_relaunch", "back_to_battle", "park")
+# Looks off the parking screen before its alert (a park that did not take).
+PARK_ALERT_AFTER = 8
+
+
+def park_wanted(mode, switch, state=None, hold=None):
+    """The mode parks on the Soul Weapon screen: mpw18 or mpw4 farming only
+    (never free play or the mine), its soul weapon switch real (switch;
+    "off" stops it), and no switch running or waiting (state "moving" or
+    "waiting": its own sequence parks at its end) nor on hold (hold: the
+    user plays)."""
+    return mode in ("mpw18", "mpw4") and switch == "real" and state not in ("moving", "waiting") and hold is None
 
 
 def kept_backoff(saved):
@@ -270,7 +295,8 @@ def judge(seen, profile, numeral_of, last_input, resumed, memory, now, after_mod
     seen: {adb (False: adb does not answer), running, focused (None:
     cannot tell, see ports.focus; False AWAY_AFTER looks in a row: away, or
     sign_in for a Google window), window (the one in front), crash (an
-    Android error window in front), anr (its "not responding" one), screen (None: no capture), numeral
+    Android error window in front), anr (its "not responding" one), screen (None: no capture;
+    "parked": the Soul Weapon screen over the battle), numeral
     (battle: the numeral ending the stage's name, None: unread),
     battle_settings (the preset's name read, None: not read), loadout
     (None: not checked; else what is wrong, "" when nothing), stage (battle:
@@ -283,7 +309,7 @@ def judge(seen, profile, numeral_of, last_input, resumed, memory, now, after_mod
     menu grace); after_mode: one ended less than AFTER_MODE ago (another
     screen is after_mode_screen).
 
-    symptom None: well (battle or Power Saving Mode); "unknown": the look
+    symptom None: well (battle, its parking or Power Saving Mode); "unknown": the look
     cannot tell (no capture); "pending": a game menu inside its grace.
     Neither unknown nor pending changes anything the watchdog remembers
     but the count of looks.
@@ -324,6 +350,10 @@ def judge(seen, profile, numeral_of, last_input, resumed, memory, now, after_mod
             return "sign_in", SYMPTOMS["sign_in"], {}, memory
         return "away", SYMPTOMS["away"], {"window": window}, memory
     screen = seen["screen"]
+    if screen == "parked":
+        # The Soul Weapon screen over the battle: the mode's parking, or a
+        # game menu when the mode does not park.
+        screen = "battle" if profile.get("park") else "menu"
     if screen in ("title", "save"):
         return "start_screen", SYMPTOMS["start_screen"], {}, memory
     if screen == "sign_in":
@@ -353,6 +383,8 @@ def judge(seen, profile, numeral_of, last_input, resumed, memory, now, after_mod
         if seen.get("stalled") is not None:
             return "progress_stalled", SYMPTOMS["progress_stalled"], {
                 "seconds": round(seen["stalled"]), "state": AUTO_STATES.get(seen.get("auto"), AUTO_STATES[None])}, memory
+        if profile.get("park") and seen["screen"] == "battle":
+            return "unparked", SYMPTOMS["unparked"], {}, memory
         if number is not None and number == wanted:
             return None, "OK (stage {stage})", {"stage": wanted}, memory
         if numeral is not None and numeral == expected:
@@ -527,7 +559,7 @@ def decide(memory, symptom, text, params, context, wall):
     memory["since_repair"] = memory["since_repair"] + 1 if same else 1
     memory["symptom"] = symptom
     alert_after = {"unexpected": ALERT_AFTER_OTHER, "mine_away": MINE_AWAY_LOOKS,
-                   "progress_stalled": 1}.get(symptom, ALERT_AFTER)
+                   "progress_stalled": 1, "unparked": PARK_ALERT_AFTER}.get(symptom, ALERT_AFTER)
     if memory["streak"] >= alert_after and not memory["alerted"]:
         memory["alerted"] = True
         memory["alerts"] += 1
@@ -571,10 +603,11 @@ def decide(memory, symptom, text, params, context, wall):
 
 
 # Gold per second at 0 often means AUTO is off (the slayer does nothing): a
-# trigger to read AUTO at once, never a proof (AUTO is never tapped). It needs a full window (gold_rules.WINDOW, less one
-# reading), a fresh sample (at most GOLD_FRESH seconds old, counted on the
+# trigger to read AUTO at once, never a proof (AUTO is never tapped). It needs a full window (the gold feature's
+# window, gold_rules.WINDOW or SHORT in full digits, less one reading), a fresh sample (at most GOLD_FRESH seconds old, counted on the
 # battle screen) and GOLD_ZEROS such readings in a row.
 GOLD_FULL = 290
+GOLD_SLACK = 10
 GOLD_FRESH = 30
 GOLD_ZEROS = 2
 GOLD_ALERT = "gold/s at 0 but AUTO on"
@@ -588,14 +621,15 @@ def gold_zero(kept, gold, wall):
     """(kept, trigger): trigger once GOLD_ZEROS fresh readings in a row,
     each a new sample, read the rate at 0 over a full window. kept:
     gold_fresh() then what this returned; gold: the gold feature's current()
-    ({rate, span, last}) or None. A rate above 0 clears it all (and the
+    ({rate, span, window, last}) or None. A rate above 0 clears it all (and the
     alert said, see gold_alert)."""
     if not gold or gold.get("last") is None or gold["last"] == kept["last"] or wall - gold["last"] > GOLD_FRESH:
         return kept, False
     kept = {**kept, "last": gold["last"]}
     if gold["rate"] is not None and gold["rate"] > 0:
         return gold_fresh() | {"last": gold["last"]}, False
-    if gold["rate"] is None or gold["span"] < GOLD_FULL:
+    full = GOLD_FULL if gold.get("window") is None else gold["window"] - GOLD_SLACK
+    if gold["rate"] is None or gold["span"] < full:
         return {**kept, "zeros": 0}, False
     zeros = kept["zeros"] + 1
     return {**kept, "zeros": zeros}, zeros == GOLD_ZEROS
@@ -610,7 +644,9 @@ def gold_alert(kept, auto):
 
 
 # The stage progress bar (stage.progress: its fill, 0 to 1 of its 214 px),
-# read at each look on the plain battle screen only. Measured on
+# read at each look on the plain battle screen and on the parking screen
+# (the Soul Weapon screen: the bar is drawn there the same, real captures
+# fixtures/bar_parked_*), never under another panel. Measured on
 # 2026-10-22 (stage 920, a look every 15 s): it fills at about 4.3 px/s,
 # empty to full in 55-60 s, then back to empty about once a minute: about
 # 65 px between two looks, and no pause longer than one look. Moved: a
@@ -664,13 +700,14 @@ def counters(memory, wall):
                                     "next": state["next"]} for kind, state in memory["backoff"].items()}}
 
 
-def profile(loadout, stage18, mode="mpw18"):
+def profile(loadout, stage18, mode="mpw18", park=False):
     """The selected mode's profile: mode (mpw18, mpw4 or mine), its stage
     (stage18: the mode's stage, None for the mine) and its loadout, as the
     engraving feature keeps it per mode (its api loadout(mode): {preset:
     "I"-"V", the Battle settings preset; soul_weapon: {id, variant}}, or
-    None). The soul weapon waits for phase 3 (the panels that show it are
-    not mapped yet). The engraving's placement is the engraving's."""
+    None); park: it parks on the Soul Weapon screen (park_wanted). The soul
+    weapon waits for phase 3 (the panels that show it are not mapped yet).
+    The engraving's placement is the engraving's."""
     loadout = loadout if isinstance(loadout, dict) else {}
     preset = loadout.get("preset")
     weapon = loadout.get("soul_weapon")
@@ -678,6 +715,7 @@ def profile(loadout, stage18, mode="mpw18"):
     variant = weapon.get("variant") if isinstance(weapon, dict) else None
     return {
         "mode": mode,
+        "park": bool(park) and mode in ("mpw18", "mpw4"),
         "stage": stage18 if isinstance(stage18, int) and not isinstance(stage18, bool) and stage18 > 0 else None,
         "preset": preset if preset in ("I", "II", "III", "IV", "V") else None,
         "soul_weapon": ({"id": weapon_id, "variant": variant if isinstance(variant, str) else None}

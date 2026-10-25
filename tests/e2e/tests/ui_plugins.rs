@@ -507,6 +507,13 @@ fn slayer_legends_debug_section_is_last_folded_and_holds_the_developer_rows_and_
         let lines = page.dialog_lines(O).await;
         let state = lines.iter().position(|l| l == "État").unwrap_or_else(|| panic!("{lines:#?}"));
         assert_eq!(lines.get(state + 2).map(String::as_str), Some("Stage"), "{lines:#?}");
+        // Souls per second right under gold per second, values only (none
+        // measured on the fake).
+        page.wait_dialog_value(O, "Âmes par seconde", Duration::from_secs(15), |_| true).await;
+        let lines = page.dialog_lines(O).await;
+        let gold = lines.iter().position(|l| l == "Gold par seconde").unwrap_or_else(|| panic!("{lines:#?}"));
+        assert_eq!(lines.get(gold + 2).map(String::as_str), Some("Âmes par seconde"), "{lines:#?}");
+        assert_eq!(lines.get(gold + 3).map(String::as_str), Some("pas encore mesuré"), "{lines:#?}");
         for gone in ["Jeu", "Stage sélectionné", "Monstres par vague", "Équipement lâché", "Couleur des âmes", "Minuteur",
                      "Plumes", "Farming mpw18 (par défaut)", "Lancer le jeu", "Lancement"] {
             assert!(!lines.iter().any(|l| l == gone), "no {gone:?}: {lines:#?}");

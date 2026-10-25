@@ -17,7 +17,14 @@ of that screen, under the stage change's lease:
   unchanged. Unequip is never tapped (the guard refuses any tap on a tag
   read Unequip). At most MOST_MOVES moves, and a move that changes nothing
   stops it;
-- closed with the red X, then the panel with its own tab (to_battle).
+- closed with the red X, then the panel with its own tab (to_battle);
+  or left open when the farming mode parks there (ensure's park).
+
+Parking (park): the farming modes' idle place is the Soul Weapon screen,
+the battle going on above it and the souls counters shown. Reached by the
+same moves (Equipment, the Weapon tab, the Soul Weapon icon), and left by
+its red X (leave, then the panel's tab: the stage change's to_battle).
+Nothing inside the panel is tapped to park or to stay parked.
 
 Fast: each wait polls for what the move should show (POLL, at most
 WAIT_MOST), no fixed long sleeps. Skipped altogether when the last check
@@ -108,6 +115,11 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
                 return shot, None
 
     async def open_screen():
+        """The Soul Weapon screen, open already (parked) or opened from the
+        battle."""
+        shot = await helpers.look()
+        if await ports.analyse(reader.title, shot):
+            return shot
         shot = await helpers.to_battle()
         await helpers.tap(shot, "battle", "menu_equipment", EQUIPMENT_TAP)
         shot, tab = await wait_for(reader.tab)
@@ -128,11 +140,17 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
             raise Stop("ouverture de l’écran Soul Weapon")
         return shot
 
-    async def close_screen(shot):
+    async def leave(shot):
+        """From the Soul Weapon screen (shot): its red X; the Equipment
+        panel's Weapon tab must show."""
         await helpers.tap(shot, "soul_weapon", "close", CLOSE_TAP)
         shot, closed = await wait_for(lambda s: not reader.title(s) and reader.tab(s) == "weapon")
         if not closed:
             raise Stop("fermeture de l’écran Soul Weapon")
+        return shot
+
+    async def close_screen(shot):
+        await leave(shot)
         await helpers.to_battle()
 
     async def move(shot, view, step, target):
@@ -175,10 +193,11 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
             return shot, engraving["rules"].alert(entry["name"], variant, done["problems"]), done
         return shot, None, done
 
-    async def ensure(target_id, variant=None):
+    async def ensure(target_id, variant=None, park=False):
         """The weapon target_id equipped and its engraving set up as variant:
         "cached", "equipped" (it already was) or "done" (Equip tapped); else
-        Stop with the step (an engraving not ready: its alert)."""
+        Stop with the step (an engraving not ready: its alert). park: the
+        screen is left open (the farming mode parks there)."""
         since = ports.clock.monotonic()
         entry = by_id.get(target_id)
         if entry is None:
@@ -230,7 +249,8 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
         engraved = round(ports.clock.monotonic() - began, 1)
         if done:
             ports.log("normal", f"Soul weapon: engraving step took {engraved} s ({done['gestures']} gestures)")
-        await close_screen(shot)
+        if not park:
+            await close_screen(shot)
         seconds = round(ports.clock.monotonic() - since, 1)
         over = seconds > BUDGET
         ports.log("warning" if over else "normal",
@@ -247,6 +267,18 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
                                f"(engraving {engraved} s, {done['gestures']} gestures)"
                                + (f" (over the {BUDGET} s budget)" if over else ""))
         return result
+
+    async def park():
+        """The Soul Weapon screen open, the farming mode's idle place:
+        "parked" (it was) or "opened"."""
+        since = ports.clock.monotonic()
+        shot = await helpers.look()
+        if await ports.analyse(reader.title, shot):
+            return "parked"
+        await open_screen()
+        ports.log("normal", f"Soul weapon: parked on the Soul Weapon screen in "
+                  f"{round(ports.clock.monotonic() - since, 1)} s")
+        return "opened"
 
     def relaunched():
         """The game was relaunched: the next ensure reads again."""
@@ -273,7 +305,7 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
             status["cache"] = None
             ports.store.save()
 
-    return {"ensure": ensure, "relaunched": relaunched, "forget": forget, "set_switch": set_switch,
+    return {"ensure": ensure, "park": park, "leave": leave, "relaunched": relaunched, "forget": forget, "set_switch": set_switch,
             "switch": lambda: status["switch"], "set_engraving": set_engraving,
             "state": lambda: {"switch": status["switch"], "engraving": status["engraving"],
                               "direction": status["direction"], "last": status["last"],

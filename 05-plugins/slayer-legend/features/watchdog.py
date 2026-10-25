@@ -37,7 +37,8 @@ screen (only a user's input pauses it, a minute). AUTO is never tapped
 (the user's order, 2026-10-22): its reading is only said in the alerts.
 
 The stage progress bar (stage.progress, under the stage's name) is read
-at each look on the plain battle screen while mpw18 or mpw4 farms; still
+at each look on the plain battle screen or the parking screen (the Soul
+Weapon screen, where it is drawn too) while mpw18 or mpw4 farms; still
 for rules.STALL_LOOKS readable looks in a row (rules.bar_look) it is the
 symptom progress_stalled: an error alert, no repair, no tap. Not counted
 while paused (free play, a mode's entry, a user input), in the mine, on
@@ -45,6 +46,15 @@ another screen (a menu: its own symptom) or within rules.BAR_SETTLE of a
 relaunch: the count starts over. The way
 back to battle from a game menu stays an alert (its close buttons differ
 per panel); the soul weapon and its engraving wait for phase 3.
+
+Parking (rules.park_wanted): while mpw18 or mpw4 farms, its idle place
+is the Soul Weapon screen, the battle going on above it. The screen read
+there (farming's parked: its title) counts as the battle: its stage,
+preset and progress bar are read the same way (the bar is drawn there
+too); the preset and AUTO are not unfolded there. The plain battle is
+then the symptom unparked: the stage change feature's park() goes back,
+through the soul weapon step's own moves (Equipment, the Weapon tab, the
+Soul Weapon icon), never a tap inside the panel.
 
 Free play suspends it, and so does a mode's entry while its sequence
 runs (the mode feature's state "moving", under the lease): the watchdog
@@ -77,7 +87,8 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
               "mode": None, "ended_at": None, "resumed": False, "anr_waited": False, "controls": None,
               "gold": rules.gold_fresh(),
               "gold_due": False, "bar": rules.bar_fresh(), "relaunched_at": None}
-    available = AVAILABLE + (tuple(FARMING) if farming else ())
+    parking = bool(farming) and "park" in farming
+    available = AVAILABLE + (tuple(FARMING) if farming else ()) + (("park",) if parking else ())
     ports.store.register("watchdog", lambda: rules.persisted(memory))
 
     def say(level, text, params=None, notify=False):
@@ -102,16 +113,22 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         if name not in FARMED:
             return rules.profile(None, None, name)
         part = loadout(name) or {}
-        return rules.profile(part, part.get("stage"), name)
+        state = modes["state"]()
+        park = parking and rules.park_wanted(name, farming["soul_weapon_switch"](), state.get("state"),
+                                             state.get("hold"))
+        return rules.profile(part, part.get("stage"), name, park)
 
     def facts(shot):
         name = screens.classify(shot)
         if name == "menu" and farming and screens.plain_battle(shot):
             name = "battle"  # the skill bar shows: no panel over the battle
-        battle = name == "battle"
+        elif name == "menu" and parking and farming["parked"](shot):
+            name = "parked"  # the Soul Weapon screen, the battle above it
+        battle = name in ("battle", "parked")
         return (name, stage.read_battle(shot) if battle else None,
-                farming["battle_stage"](shot) if battle and farming else None,
-                stage.progress(shot) if battle and screens.plain_battle(shot) else None)
+                farming["battle_stage"](shot, *((screens.PARKED_SHADE,) if name == "parked" else ()))
+                if battle and farming else None,
+                stage.progress(shot) if name == "parked" or battle and screens.plain_battle(shot) else None)
 
     async def look():
         """What one look sees (watchdog_rules.judge's seen)."""
@@ -167,9 +184,10 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                 await ports.notify(said)
 
     async def farm_repair(kind):
-        """A stage change repair: farm() for the stage and the preset; read
-        again at the next look. Deferred or a
-        plan: not a failure (rules.not_run); stopped: one (rules.stopped)."""
+        """A stage change repair: farm() for the stage and the preset, park()
+        back to the parking screen; read again at the next look. Deferred
+        or a plan: not a failure (rules.not_run); stopped: one
+        (rules.stopped)."""
         nonlocal memory
         status["controls"] = None
         part = profile()
@@ -177,7 +195,8 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         status["repairing"] = kind
         show(ports.t("Réparation en cours : {repair}", repair=rules.REPAIR_NAMES[kind]))
         try:
-            answer = await farming["farm"](part["stage"], part["preset"], name, modes["state"]().get("highest"))
+            answer = await (farming["park"](name) if kind == "park" else
+                            farming["farm"](part["stage"], part["preset"], name, modes["state"]().get("highest")))
         except ports.Busy as e:
             memory = rules.not_run(memory, kind)
             say("normal", "Repair deferred: {repair} ({why})", {"repair": rules.REPAIR_NAMES[kind], "why": e.t})
@@ -301,7 +320,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             status["anr_waited"] = False
         await read_controls(seen)
         settled = status["relaunched_at"] is None or now - status["relaunched_at"] >= rules.BAR_SETTLE
-        if name in FARMED and seen["screen"] == "battle" and settled:
+        if name in FARMED and seen["screen"] in ("battle", "parked") and settled:
             status["bar"], seen["stalled"] = rules.bar_look(status["bar"], seen["bar"], now)
         else:
             status["bar"] = rules.bar_fresh()
@@ -317,7 +336,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                    "act": {kind: farming["switches"]()[switch] == "real" for kind, switch in FARMING.items()}
                    if farming else {}, "available": available, "jitter": random.uniform(-1.0, 1.0),
                    "mode": name}
-        if symptom is None and name in FARMED:
+        if symptom in (None, "unparked") and name in FARMED:
             modes["confirm"](name)
         memory, actions = rules.decide(memory, symptom, text, params, context, wall)
         ports.store.save()
@@ -337,7 +356,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                 ports.store.save()
                 await relaunch(action[1])
                 repaired = True
-            elif action[0] == "repair" and action[1] in FARMING:
+            elif action[0] == "repair" and (action[1] in FARMING or action[1] == "park"):
                 ports.store.save()
                 await farm_repair(action[1])
                 repaired = True

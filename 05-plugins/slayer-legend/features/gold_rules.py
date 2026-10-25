@@ -1,40 +1,57 @@
-"""Gold per second: which readings of the gold counter count, and the rate
-over the window. Pure: the window and a reading go in, the new window
-comes out (nothing is changed in place).
+"""Gold per second, and the souls' per colour: which readings of a
+counter count, and the rate over the window. Pure: the window and a
+reading go in, the new window comes out (nothing is changed in place).
 
-The window is {samples: [(time, value)], pending, text, place, number,
-odd}: samples are the values that count (a value counts once two readings
-in a row agree, pending is the last reading), all on the same stage;
+The window is {samples: [(time, value)], pending, text, step, offset,
+place, number, odd}: samples are the values that count (a value counts
+once two readings in a row agree, pending is the last reading), all on
+the same stage; step is the last reading's resolution (one unit of its
+last digit, gold.parse), offset what was spent and left out (souls);
 place is the battle screen's stage name line (its ink) where they were
 read, number the stage number Power Saving Mode showed meanwhile, odd the
 checks in a row somewhere else.
+
+The window's length follows the resolution read (window_for): WINDOW
+while the counter is abbreviated (its last digit moves by coarse steps),
+SHORT once it reads full digits.
 """
 
-# Readings every SECONDS; the slope over WINDOW; the readings stop IDLE
-# seconds after the last page asked.
+# Readings every SECONDS; the slope over WINDOW (SHORT in full digits);
+# the readings stop IDLE seconds after the last page asked.
 SECONDS = 10
 WINDOW = 300
+SHORT = 60
 IDLE = 600
+# The souls' counters move by one step of « 94.6C » every few minutes:
+# their abbreviated window is longer.
+SOULS_WINDOW = 1800
 
 
 def empty():
-    return {"samples": [], "pending": None, "text": None, "place": None, "number": None, "odd": 0}
+    return {"samples": [], "pending": None, "text": None, "step": None, "offset": 0.0, "place": None,
+            "number": None, "odd": 0}
 
 
-def trimmed(samples, now):
-    """The samples of the last WINDOW seconds."""
+def window_for(step, long=WINDOW):
+    """Seconds of the window for a counter read at step (one unit of its
+    last digit, None: not read yet): SHORT in full digits, else long."""
+    return SHORT if step is not None and step <= 1 else long
+
+
+def trimmed(samples, now, seconds=WINDOW):
+    """The samples of the last seconds."""
     kept = list(samples)
-    while kept and now - kept[0][0] > WINDOW:
+    while kept and now - kept[0][0] > seconds:
         kept.pop(0)
     return kept
 
 
-def rate(samples, now):
-    """(gold per second, the samples kept): the least-squares slope of the
+def rate(samples, now, seconds=WINDOW):
+    """(per second, the samples kept): the least-squares slope of the
     window's values (the counter moves by steps of its last digit), from
     the second value on (over what there is until the window is full: the
     page marks it as provisional); None without two values over some time."""
-    samples = trimmed(samples, now)
+    samples = trimmed(samples, now, seconds)
     if len(samples) < 2 or samples[-1][0] - samples[0][0] <= 0:
         return None, samples
     n = len(samples)
@@ -58,7 +75,7 @@ def same_place(a, b):
 
 def restarted(window, place=None):
     """The window starts again, at place if known."""
-    return {**window, "place": place, "number": None, "odd": 0, "pending": None, "samples": []}
+    return {**window, "place": place, "number": None, "odd": 0, "pending": None, "samples": [], "offset": 0.0}
 
 
 def elsewhere(window, place=None):
@@ -92,13 +109,24 @@ def where(window, kind, here):
     return elsewhere(window, here), False
 
 
-def counted(window, reading, now):
+def counted(window, reading, now, long=WINDOW, spent="restart"):
     """A reading on the window's stage: its value counts when the reading
-    before agreed; spending gold starts the samples again."""
+    before agreed. A drop is spending: "restart" starts the samples again
+    (gold), "skip" leaves it out (souls: the samples go on from the last
+    value, the drop kept in offset). long: the abbreviated window
+    (window_for)."""
     if window["pending"] == reading["value"]:
         samples = list(window["samples"])
-        if samples and reading["value"] < samples[-1][1]:
-            samples = []  # gold was spent
-        samples.append((now, reading["value"]))
-        window = {**window, "samples": trimmed(samples, now), "text": reading["text"]}
+        offset = window.get("offset", 0.0)
+        value = reading["value"] + offset
+        if samples and value < samples[-1][1]:
+            if spent == "skip":
+                offset += samples[-1][1] - value
+                value = samples[-1][1]
+            else:
+                samples, offset, value = [], 0.0, reading["value"]
+        samples.append((now, value))
+        step = reading.get("step")
+        window = {**window, "samples": trimmed(samples, now, window_for(step, long)), "text": reading["text"],
+                  "step": step, "offset": offset}
     return {**window, "pending": reading["value"]}

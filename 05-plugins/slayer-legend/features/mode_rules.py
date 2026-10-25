@@ -58,7 +58,8 @@ def next_look(until, now):
     return max(0.2, until - now + 0.1)
 
 
-STEP_NAMES = {"stage": "stage change", "preset": "preset", "soul_weapon": "Soul Weapon"}
+STEP_NAMES = {"stage": "stage change", "preset": "preset", "soul_weapon": "Soul Weapon",
+              "park": "parking on Soul Weapon"}
 # A farming mode's loadout fields whose change is applied at once.
 LOADOUT_FIELDS = ("stage", "preset", "soul_weapon")
 

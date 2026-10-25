@@ -473,9 +473,11 @@ class Profile(unittest.TestCase):
 
     def test_the_stage_and_the_modes_loadout(self):
         self.assertEqual(rules.profile(None, 920),
-                         {"mode": "mpw18", "stage": 920, "preset": None, "soul_weapon": None})
-        self.assertEqual(rules.profile(self.LOADOUT, 915, "mpw4"),
-                         {"mode": "mpw4", "stage": 915, "preset": "III", "soul_weapon": {"id": 32, "variant": "Gold"}})
+                         {"mode": "mpw18", "park": False, "stage": 920, "preset": None, "soul_weapon": None})
+        self.assertEqual(rules.profile(self.LOADOUT, 915, "mpw4", park=True),
+                         {"mode": "mpw4", "park": True, "stage": 915, "preset": "III",
+                          "soul_weapon": {"id": 32, "variant": "Gold"}})
+        self.assertFalse(rules.profile(None, None, "mine", park=True)["park"])
         self.assertIsNone(rules.profile({}, None)["stage"], "no mpw18 stage chosen yet")
         for bad in ({"preset": "VI"}, {"preset": 3}, {"soul_weapon": {"id": "32"}}, {"soul_weapon": 32}, 3):
             profile = rules.profile(bad, 920)
@@ -585,12 +587,15 @@ class GoldTrigger(unittest.TestCase):
     preset and AUTO are read."""
 
     def looks(self, count, auto, viewers=lambda look: 0, stage=920, answer=None, mode="mpw18", entering=False,
-              game=True, launched=False, bar=lambda look: look * 0.27 % 1, screen=lambda look: "battle"):
+              game=True, launched=False, bar=lambda look: look * 0.27 % 1, screen=lambda look: "battle",
+              park=None, hold=None):
         """count looks, AUTO read as auto, viewers(look) connected, the
         stage progress bar read as bar(look) (None: unreadable; by default
-        it moves) on screen(look); (the looks that read the controls, the
-        alerts, the farming calls other than reading); self.state: GET
-        /watchdog's at the end."""
+        it moves) on screen(look); park: the soul weapon's switch when the
+        stage change parks ("real", "off"; None: no parking), hold: the
+        switch on hold (the user plays); (the looks that read the controls,
+        the alerts, the farming calls other than reading); self.state: GET
+        /watchdog's at the end; self.parks: the looks that parked."""
         spec = importlib.util.spec_from_file_location("watchdog_feature", os.path.join(HERE, "features", "watchdog.py"))
         feature = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(feature)
@@ -650,7 +655,8 @@ class GoldTrigger(unittest.TestCase):
             @staticmethod
             async def analyse(facts, shot):
                 name = screen(looked[0])
-                return name, 3 if name == "battle" else None, stage, bar(looked[0]) if name == "battle" else None
+                battle = name in ("battle", "parked")
+                return name, 3 if battle else None, stage, bar(looked[0]) if battle else None
 
             @staticmethod
             async def notify(text):
@@ -679,12 +685,20 @@ class GoldTrigger(unittest.TestCase):
             farmed.append(args)
             return answer or {"result": "plan", "text": "plan"}
 
-        farming = {"read_controls": read_controls, "battle_stage": lambda shot: stage,
+        farming = {"read_controls": read_controls, "battle_stage": lambda shot, shade=1.0: stage,
                    "farm": farm, "switches": lambda: {"stage_change": "real", "preset": "plan"}}
+        self.parks = parks = []
+        if park:
+            async def parking(name):
+                parks.append((looked[0], name))
+                return {"result": "done", "text_t": None}
+
+            farming.update(park=parking, parked=lambda shot: True, soul_weapon_switch=lambda: park)
         gold = {"current": lambda: {"rate": 0, "span": 300, "last": Ports.clock.wall() - 1}}
         built = feature.watchdog(
             Ports, None, None, rules, NUMERALS.get,
-            {"state": lambda: {"mode": mode, "highest": 925, "state": "moving" if entering else "farming"},
+            {"state": lambda: {"mode": mode, "highest": 925, "state": "moving" if entering else "farming",
+                               "hold": hold},
              "confirm": confirmed.append},
             {"state": lambda: {"enabled": mode == "mine"}, "reenter": reenter},
             {"running": lambda: False, "start": start, "state": lambda: {"state": "done", "message": ""}},
@@ -908,6 +922,80 @@ class StageProgressBar(GoldTrigger):
                           ("error", "Farming mpw18: Stage progress bar stalled for 1800 s (AUTO reads unknown)")])
         w.looks(BATTLE, rules.RECOVERED_AFTER)
         self.assertEqual(w.alerts()[-1], ("normal", "Farming mpw18: recovered"))
+
+
+PARKED = {**BATTLE, "screen": "parked"}
+
+
+class Parking(unittest.TestCase):
+    """The farming modes' idle place, the Soul Weapon screen (rules: judge,
+    decide, park_wanted)."""
+
+    def test_when_it_parks(self):
+        self.assertTrue(rules.park_wanted("mpw18", "real", "farming"))
+        self.assertTrue(rules.park_wanted("mpw4", "real", "failed"))
+        for mode in ("free", "mine", None):
+            self.assertFalse(rules.park_wanted(mode, "real", "farming"), mode)
+        self.assertFalse(rules.park_wanted("mpw18", "off", "farming"), "the soul weapon's emergency stop")
+        for state in ("moving", "waiting"):
+            self.assertFalse(rules.park_wanted("mpw18", "real", state), "its switch parks at its end")
+        self.assertFalse(rules.park_wanted("mpw18", "real", "farming", {"id": "a1", "mode": "mpw18", "left": 40}),
+                         "on hold: the user plays")
+
+    def test_parked_is_farming_the_battle_is_parked_again(self):
+        w = Watch(profile=rules.profile(None, 920, park=True), available=ALL + ("park",))
+        w.looks(PARKED, 4)
+        self.assertEqual((w.symptoms, w.records, w.repairs), ([None] * 4, [], []))
+        # A repair left it on the battle: back to the parking, no alert.
+        w.looks(BATTLE, 2)
+        self.assertEqual(w.symptoms[-2:], ["unparked", "unparked"])
+        self.assertEqual(w.kinds(), ["park"])
+        w.looks(PARKED, rules.RECOVERED_AFTER)
+        self.assertEqual(w.alerts(), [])
+
+    def test_a_park_that_does_not_take_is_alerted_late(self):
+        w = Watch(profile=rules.profile(None, 920, park=True), available=ALL + ("park",))
+        off = ("warning", "Farming mpw18: off the Soul Weapon screen")
+        w.looks(BATTLE, rules.PARK_ALERT_AFTER - 1)
+        self.assertNotIn(off, w.alerts())
+        self.assertIn("park", w.kinds())
+        w.look(BATTLE)
+        self.assertEqual(w.alerts()[-1], off)
+
+    def test_the_parking_screen_checks_the_stage_as_the_battle(self):
+        w = Watch(profile=rules.profile(None, 920, park=True), available=ALL + ("park",))
+        w.looks({**PARKED, "numeral": 4}, 2)
+        self.assertEqual(w.symptoms, ["wrong_stage", "wrong_stage"])
+
+    def test_not_parking_the_soul_weapon_screen_is_a_menu(self):
+        w = Watch()
+        w.looks(PARKED, 2)
+        self.assertEqual(w.symptoms, ["pending", "pending"])
+        w.looks(BATTLE, 2)
+        self.assertEqual(w.symptoms[-2:], [None, None], "no parking: the battle is well")
+
+    def test_the_feature_parks_again_and_reads_the_bar_there(self):
+        screen = lambda look: "battle" if 3 <= look <= 4 else "parked"
+        _, alerts, other = self.feature().looks(10, "on", park="real", screen=screen)
+        self.assertEqual([name for _, name in self.harness.parks], ["mpw18"])
+        self.assertEqual([a for a in alerts if "Soul Weapon" in a], [])
+        # The bar still on the parking screen: its stall alert, no repair.
+        _, alerts, _ = self.feature().looks(8, "on", park="real", screen=lambda look: "parked",
+                                            bar=lambda look: 0.4)
+        self.assertEqual([a for a in alerts if "Stage progress bar stalled" in a],
+                         ["Farming mpw18: Stage progress bar stalled for 45 s (AUTO reads unknown)"])
+        # The controls are never unfolded on the parking screen.
+        self.assertEqual((self.harness.parks, self.harness.farmed), ([], []))
+
+    def test_the_feature_never_parks_in_free_play_the_mine_a_hold_or_switched_off(self):
+        for options in ({"mode": "free"}, {"mode": "mine"}, {"hold": {"id": "a1", "mode": "mpw18", "left": 30}},
+                        {"park": "off"}):
+            self.feature().looks(8, "on", **{"park": "real", "screen": lambda look: "battle", **options})
+            self.assertEqual(self.harness.parks, [], options)
+
+    def feature(self):
+        self.harness = GoldTrigger("looks")
+        return self.harness
 
 
 class Focus(unittest.TestCase):

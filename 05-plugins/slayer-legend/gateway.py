@@ -7,7 +7,7 @@ Each feature is in features/, with its rules beside it as a pure module
 (features/<feature>_rules.py); the screens are read by the analysis
 modules beside this file (screens.py, stage.py, gold.py, mine.py,
 gold_scroll.py, emerald_mask.py, trace.py, stage_select.py,
-battle_controls.py, soul_weapon.py, with the pixel font of pixel_font.py) and every move on the game
+battle_controls.py, soul_weapon.py, soul_counters.py, with the pixel font of pixel_font.py) and every move on the game
 goes through the navigation guard (nav.py, navigation.json).
 
 Routes, under /api/v1/plugins/slayer-legend:
@@ -81,7 +81,7 @@ def setup(context):
     mode = feature("mode").mode(ports, feature("mode_rules"), timer, values, mine["api"], screens,
                                 module("gold_scroll"), engraving["api"], farming["api"])
     screen_rules = feature("screen_rules")
-    gold = feature("gold").gold(ports, screens, stage, module("gold"), feature("gold_rules"))
+    gold = feature("gold").gold(ports, screens, stage, module("gold"), feature("gold_rules"), module("soul_counters"))
     features = [
         feature("power").power(ports),
         feature("lease").lease(ports),
