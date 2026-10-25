@@ -1,0 +1,113 @@
+{
+  "about": "Every game screen screens.look() recognises, by navigation.json id. A screen is the base (one at a time); an overlay shows over the bases it lists. Each anchor is a patch (a fixture's crop, or its box [x, y, w, h] in the crop's pixels, compared as a downscaled grey signature after its brightness and contrast are evened out: distance under limit), a share (the share of an area of screens.py passing a colour test, above or below a level) or a reader (a function returning true). An anchor's margin runs from 1 (sure) through 0 (its limit) to -1; a screen's margin is its anchors' lowest. status: registered (its fixtures are real crops and test_screen_model proves them) or measured (recognised from areas measured on a real capture that is not in fixtures yet: matched only when no registered screen is). Every other navigation.json screen is pending capture: never matched, and named in docs/TODO.md's calibration list. fixtures: the crops that, pasted back on an empty screen of background, make the screen; an overlay's include its base's.",
+  "outside": {
+    "account_chooser": "Android's window, told by dumpsys",
+    "crash_dialog": "Android's window, told by dumpsys",
+    "anr_dialog": "Android's window, told by dumpsys",
+    "unknown": "the name of any screen not recognised"
+  },
+  "screens": {
+    "sign_in": {
+      "kind": "screen", "status": "registered", "legacy": "sign_in",
+      "anchors": [
+        {"patch": "sign_in_buttons", "limit": 0.6},
+        {"reader": "sign_in"}
+      ],
+      "fixtures": ["sign_in_buttons"], "background": [90, 60, 35]
+    },
+    "battle": {
+      "kind": "screen", "status": "registered", "legacy": "battle",
+      "anchors": [
+        {"share": "TOP_EMERALD", "test": "green", "above": 0.15},
+        {"patch": "battle_emerald", "limit": 0.6}
+      ],
+      "fixtures": ["battle_emerald", "battle_menu_labels", "battle_mana_bar"]
+    },
+    "saver": {
+      "kind": "screen", "status": "registered", "legacy": "saver",
+      "anchors": [
+        {"patch": "saver_mode", "limit": 0.6},
+        {"share": "SAVER_TOP", "test": "black", "above": 0.95, "step": 8}
+      ],
+      "fixtures": ["saver_mode"], "background": [0, 0, 0]
+    },
+    "soul_weapon_engraving": {
+      "kind": "screen", "status": "registered", "legacy": "other",
+      "anchors": [
+        {"patch": "eg_title", "box": [35, 4, 265, 26], "limit": 0.6}
+      ],
+      "fixtures": ["eg_title"], "background": [0, 0, 0]
+    },
+    "title": {
+      "kind": "screen", "status": "measured", "legacy": "title",
+      "anchors": [
+        {"share": "START_TEXT", "test": "white", "above": 0.02, "step": 4},
+        {"share": "START_TEXT", "test": "white", "below": 0.4, "step": 4}
+      ]
+    },
+    "save_notice": {
+      "kind": "screen", "status": "measured", "legacy": "save",
+      "anchors": [
+        {"share": "CONFIRM_BUTTON", "test": "orange", "above": 0.6},
+        {"share": "EXIT_BUTTON", "test": "grey", "above": 0.6}
+      ]
+    },
+    "panel": {
+      "kind": "overlay", "over": ["battle"], "status": "measured",
+      "anchors": [
+        {"share": "MENU_LABELS", "test": "light", "below": 0.01}
+      ]
+    },
+    "soul_weapon": {
+      "kind": "overlay", "over": ["battle"], "status": "registered",
+      "anchors": [
+        {"patch": "sw_title", "limit": 0.6}
+      ],
+      "fixtures": ["battle_emerald", "sw_tabs", "sw_title"]
+    },
+    "equipment_weapon": {
+      "kind": "overlay", "over": ["battle"], "status": "registered",
+      "anchors": [
+        {"patch": "sw_tabs", "limit": 0.6}
+      ],
+      "fixtures": ["battle_emerald", "sw_tabs"]
+    },
+    "stage_select": {
+      "kind": "overlay", "over": ["battle"], "status": "registered",
+      "anchors": [
+        {"patch": "title_select_region", "limit": 0.6}
+      ],
+      "fixtures": ["battle_emerald", "title_select_region"]
+    },
+    "battle_settings": {
+      "kind": "overlay", "over": ["battle"], "status": "registered",
+      "anchors": [
+        {"patch": "settings_title", "limit": 0.6}
+      ],
+      "fixtures": ["battle_emerald", "settings_title"]
+    },
+    "better_weapon_toast": {
+      "kind": "overlay", "over": ["battle"], "status": "registered",
+      "anchors": [
+        {"share": "TOAST_ICON", "test": "dark", "above": 0.4},
+        {"share": "TOAST_TEXT", "test": "white", "above": 0.1}
+      ],
+      "fixtures": ["battle_emerald", "battle_menu_labels", "battle_mana_bar", "toast_better_weapon"]
+    },
+    "soul_weapon_engraving_piece": {
+      "kind": "overlay", "over": ["soul_weapon_engraving"], "status": "registered",
+      "anchors": [
+        {"patch": "eg_popup_locked", "box": [15, 155, 140, 28], "limit": 0.6},
+        {"reader": "engraving_screen.popup"}
+      ],
+      "fixtures": ["eg_title", "eg_popup_locked"], "background": [0, 0, 0]
+    },
+    "soul_weapon_engraving_preview": {
+      "kind": "overlay", "over": ["soul_weapon_engraving"], "status": "registered",
+      "anchors": [
+        {"share": "PREVIEW_AREA", "test": "red", "above": 0.001, "step": 4}
+      ],
+      "fixtures": ["eg_title", "eg_preview_base"], "background": [0, 0, 0]
+    }
+  }
+}

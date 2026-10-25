@@ -1,4 +1,5 @@
 """screens.classify on synthetic screenshots drawn from the areas it reads
+(the battle and Power Saving Mode from their crops in fixtures/)
 (no screenshot of the game in the repository), and the reading of
 Android's crash dialog (ports.crash_window, ports.close_button) from the
 text dumpsys and uiautomator print. Run: python3 -m unittest test_screens
@@ -34,6 +35,19 @@ def shot(*areas, background=(0, 0, 0)):
     return W, H, bytes(pixels)
 
 
+def pasted(*parts, background=(0, 0, 0)):
+    """shot() with fixtures (a name) pasted back where they were cut, and
+    (area, colour) fills."""
+    width, height, pixels = shot(*[part for part in parts if not isinstance(part, str)], background=background)
+    pixels = bytearray(pixels)
+    for name in (part for part in parts if isinstance(part, str)):
+        _, _, x, y, w, h, data = screens.fixture(name)
+        for row in range(h):
+            start = ((y + row) * W + x) * 3
+            pixels[start:start + w * 3] = data[row * w * 3:(row + 1) * w * 3]
+    return width, height, bytes(pixels)
+
+
 GREEN, LIGHT, ORANGE, GREY, WHITE = (40, 200, 60), (225, 225, 225), (230, 140, 30), (110, 110, 110), (250, 250, 250)
 
 
@@ -47,12 +61,15 @@ class Classify(unittest.TestCase):
         self.assertEqual(screens.classify(shot(((left, top, left + 0.06, bottom), WHITE))), "title")
 
     def test_battle_and_a_panel_over_it(self):
-        self.assertEqual(screens.classify(shot((screens.TOP_EMERALD, GREEN), (screens.MENU_LABELS, LIGHT))), "battle")
-        self.assertEqual(screens.classify(shot((screens.TOP_EMERALD, GREEN))), "menu", "the bottom names covered")
+        # The emerald is a real crop (fixtures/): a green square is not it.
+        self.assertEqual(screens.classify(pasted("battle_emerald", (screens.MENU_LABELS, LIGHT))), "battle")
+        self.assertEqual(screens.classify(pasted("battle_emerald")), "menu", "the bottom names covered")
+        self.assertEqual(screens.classify(shot((screens.TOP_EMERALD, GREEN), (screens.MENU_LABELS, LIGHT))), "other")
 
     def test_power_saving_mode(self):
+        self.assertEqual(screens.classify(pasted("saver_mode")), "saver")
         self.assertEqual(screens.classify(shot((screens.SAVER_BUTTON, (70, 70, 70)), (screens.SAVER_TEXT, ORANGE))),
-                         "saver")
+                         "other", "a grey box is not the button")
 
     def test_anything_else_is_other(self):
         # TODO: the "connected on another device" screen and the choice of

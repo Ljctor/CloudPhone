@@ -1,13 +1,20 @@
 """The game's main screens off a screenshot, and where the plugin's own
 moves on them are.
 
-classify(shot) is one of: title, save (the "last save time" notice),
-sign_in (the game asks to sign in again: "Sign in with Google" / "Sign in
-with Apple", seen after a relaunch), battle, menu (one of the battle
-screen's panels over it), saver (Power Saving Mode) or other. Screens are recognised from a few pixel areas, as
-(left, top, right, bottom) fractions of the screen, measured on a 360x780
-screen (the page's device shapes keep this ratio). A screenshot is
-(width, height, RGB888 bytes).
+look(shot) is the screen model: one pass per capture, its answer shared
+by every feature, {screen, overlays, margin}: the one base screen of
+screen_registry.json whose anchors hold, with a margin, else "unknown";
+the overlays over it (the Soul Weapon screen over the battle is the
+battle with the "soul_weapon" overlay: soul_weapon_over_battle()). See
+the model's section at the end.
+
+classify(shot) is the name the features know, from look(): title, save
+(the "last save time" notice), sign_in (the game asks to sign in again:
+"Sign in with Google" / "Sign in with Apple", seen after a relaunch),
+battle, menu (one of the battle screen's panels over it), saver (Power
+Saving Mode) or other. Areas are (left, top, right, bottom) fractions of
+the screen, measured on a 360x780 screen (the page's device shapes keep
+this ratio). A screenshot is (width, height, RGB888 bytes).
 
 Another screen ("other") is named by its text: other_name(shot) reads
 its title and buttons with the pixel font, as read, in English (the
@@ -58,17 +65,18 @@ SIGN_IN_APPLE_LOGO = (0.275, 0.803, 0.325, 0.823)
 SIGN_IN_GOOGLE_TAP = (0.50, 0.746)
 
 
-def share(shot, area, test):
-    """Fraction of the pixels in area (fractions of the screen) passing test(r, g, b)."""
+def share(shot, area, test, step=2):
+    """Fraction of the pixels in area (fractions of the screen) passing
+    test(r, g, b), every step-th pixel of every step-th row."""
     width, height, pixels = shot
     left, top = int(area[0] * width), int(area[1] * height)
     right, bottom = max(left + 1, int(area[2] * width)), max(top + 1, int(area[3] * height))
     hits = total = 0
-    for y in range(top, bottom, 2):
-        for x in range(left, right, 2):
-            i = (y * width + x) * 3
-            total += 1
-            hits += bool(test(pixels[i], pixels[i + 1], pixels[i + 2]))
+    for y in range(top, bottom, step):
+        row = pixels[(y * width + left) * 3:(y * width + right) * 3]
+        found = [test(r, g, b) for r, g, b in zip(row[0::3 * step], row[1::3 * step], row[2::3 * step])]
+        total += len(found)
+        hits += sum(1 for hit in found if hit)
     return hits / total if total else 0.0
 
 
@@ -121,20 +129,14 @@ def sign_in(shot):
 
 
 def classify(shot):
-    if share(shot, CONFIRM_BUTTON, orange) > 0.6 and share(shot, EXIT_BUTTON, grey) > 0.6:
-        return "save"
-    if sign_in(shot):
-        return "sign_in"
-    # The top bar's emerald: the battle screen, or one of its panels over it
-    # (the bottom menu names then go dark or are covered).
-    if share(shot, TOP_EMERALD, green) > 0.15:
-        return "battle" if share(shot, MENU_LABELS, light) > 0.01 else "menu"
-    if (share(shot, SAVER_BUTTON, dim_grey) > 0.8 and share(shot, SAVER_TOP, black) > 0.95
-            and share(shot, SAVER_TEXT, orange) > 0.08):
-        return "saver"
-    if 0.02 < share(shot, START_TEXT, white) < 0.4:
-        return "title"
-    return "other"
+    """The screen's name as the features know it: look()'s screen, "menu"
+    for the battle screen under a panel, "other" for any screen without
+    a name of its own here (unknown, or the engraving screen)."""
+    seen = look(shot)
+    name = REGISTRY[seen["screen"]].get("legacy", "other") if seen["screen"] in REGISTRY else "other"
+    if name == "battle" and "panel" in seen["overlays"]:
+        return "menu"
+    return name
 
 
 # The bottom menu's tabs, and with a panel open the one it is: its label
@@ -173,12 +175,19 @@ TOAST_TEXT = (0.81, 0.33, 0.99, 0.34)
 
 def better_weapon_toast(shot):
     """The « Better Soul Weapon / Equip » toast shows (nothing to do: never tapped)."""
-    return share(shot, TOAST_ICON, dark) > 0.4 and share(shot, TOAST_TEXT, white) > 0.1
+    return "better_weapon_toast" in look(shot)["overlays"]
 
 
 # The battle screen with no panel or pop-up over it shows the skill bar:
 # its blue mana bar (the start of it, filled unless the mana is spent).
 MANA_BAR = (0.12, 0.546, 0.30, 0.551)
+# The engraving screen's piece preview: its red cancel in this area
+# (engraving_screen.BAR_AREA; its bar() then finds where).
+PREVIEW_AREA = (60 / 480, 200 / 1040, 420 / 480, 600 / 1040)
+
+
+def red(r, g, b):
+    return r > 200 and g < 60 and b < 60
 
 
 def blue(r, g, b):
@@ -192,7 +201,7 @@ PARKED_SHADE = 159 / 255
 
 def plain_battle(shot):
     """The battle screen with nothing over it (its skill bar shows)."""
-    return share(shot, TOP_EMERALD, green) > 0.15 and share(shot, MANA_BAR, blue) > 0.5
+    return look(shot)["plain"]
 
 
 # Another screen's text: the lines read in the middle of the screen, of a
@@ -272,8 +281,12 @@ def describe(lines):
 
 
 def other_name(shot, catalogue=None):
-    """Another screen's name: its catalogue entry's when its title reads as
-    one (close, with a margin), else its text as read (describe)."""
+    """Another screen's name: its navigation.json name when look() knows
+    it (the engraving screen), its catalogue entry's when its title reads
+    as one (close, with a margin), else its text as read (describe)."""
+    known = look(shot)["screen"]
+    if known in NAMES:
+        return f'"{NAMES[known]}"'
     lines = other_lines(shot)
     entries = CATALOGUE if catalogue is None else catalogue
     titles = [entry["title"] for entry in entries]
@@ -282,3 +295,201 @@ def other_name(shot, catalogue=None):
         if title:
             return next(entry["name"] for entry in entries if entry["title"] == title)
     return describe(lines)
+
+
+# -- The screen model: one look per capture --------------------------------
+#
+# screen_registry.json holds every screen recognised, by navigation.json
+# id, with its anchors and fixtures (see its "about"). look(shot) runs once
+# per capture, its answer kept for the last few captures and shared by
+# every feature: {screen, overlays, margin, plain, margins}. screen is the
+# one base screen whose anchors all hold, "unknown" when none does or
+# when its margin over the next one is under MARGIN; overlays the
+# overlays over it whose anchors hold. Every navigation.json screen the
+# registry does not hold is pending capture (pending()): never matched.
+WIDTH, HEIGHT = 480, 1040
+MARGIN = 0.05
+# A patch is compared on about this many points (a downscaled signature).
+SAMPLES = 256
+CACHE = 4
+# The Soul Weapon screen over the battle: the battle screen as the base,
+# this overlay over it (and the Equipment tabs, equipment_weapon, under it).
+SOUL_WEAPON = "soul_weapon"
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def _load(name):
+    with open(os.path.join(HERE, name), encoding="utf-8") as f:
+        return json.load(f)
+
+
+def fixture(name):
+    """(screen width, height, left, top, width, height, rgb bytes) of fixtures/<name>.txt."""
+    with open(os.path.join(HERE, "fixtures", f"{name}.txt"), encoding="ascii") as f:
+        lines = [line.strip() for line in f if not line.startswith("#")]
+    sw, sh, x, y, w, h = map(int, lines[0].split())
+    return sw, sh, x, y, w, h, b"".join(bytes.fromhex(row) for row in lines[1:1 + h])
+
+
+_REGISTRY = _load("screen_registry.json")
+REGISTRY = _REGISTRY["screens"]
+OUTSIDE = _REGISTRY["outside"]
+NAMES = {key: node["name"] for key, node in _load("navigation.json")["screens"].items()}
+BASES = [key for key, entry in REGISTRY.items() if entry["kind"] == "screen"]
+OVERLAYS = [key for key, entry in REGISTRY.items() if entry["kind"] == "overlay"]
+TIERS = {"registered": 0, "measured": 1}
+
+
+def pending():
+    """The navigation.json screens with no anchors yet: pending capture."""
+    return [key for key in NAMES if key not in REGISTRY and key not in OUTSIDE]
+
+
+def _even(values):
+    """values with their mean taken off and divided by their mean spread."""
+    mean = sum(values) / len(values)
+    spread = sum(abs(v - mean) for v in values) / len(values)
+    return mean, spread
+
+
+class Patch:
+    """A fixture's area as a downscaled grey signature, its brightness and
+    contrast evened out (a panel dimming the screen changes neither). Each
+    point of the signature is a cell's grey: the sum of two runs of step
+    pixels, step / 2 rows apart (one C-speed sum per run), so that thin
+    strokes still count at another screen size."""
+
+    def __init__(self, name, box=None, limit=0.6):
+        _, _, x, y, w, h, data = fixture(name)
+        bx, by, bw, bh = box or (0, 0, w, h)
+        self.step = step = max(2, round((bw * bh / SAMPLES) ** 0.5))
+        self.cells = [(x + px, y + py) for py in range(by, by + bh - step + 1, step)
+                      for px in range(bx, bx + bw - step + 1, step)]
+        grey = [self._grey(data, w, [((py - y) * w + (px - x)) * 3, ((py - y + step // 2) * w + (px - x)) * 3],
+                           step * 3) for px, py in self.cells]
+        mean, self.spread = _even(grey)
+        self.signature = [(g - mean) / max(self.spread, 1) for g in grey]
+        self.limit = limit
+        self.offsets = {}
+
+    @staticmethod
+    def _grey(pixels, width, starts, run):
+        return sum(sum(pixels[i:i + run]) for i in starts) / run
+
+    def distance(self, shot):
+        width, height, pixels = shot
+        cached = self.offsets.get((width, height))
+        if cached is None:
+            sx, sy = width / WIDTH, height / HEIGHT
+            run = max(1, round(self.step * sx)) * 3
+            cached = self.offsets[(width, height)] = (run, [
+                ((int(py * sy) * width + int(px * sx)) * 3, (int((py + self.step // 2) * sy) * width + int(px * sx)) * 3)
+                for px, py in self.cells])
+        run, offsets = cached
+        grey = [(sum(pixels[i:i + run]) + sum(pixels[j:j + run])) / run for i, j in offsets]
+        mean, spread = _even(grey)
+        spread = max(spread, self.spread / 4, 1)
+        return sum(abs((g - mean) / spread - s) for g, s in zip(grey, self.signature)) / len(grey)
+
+    def margin(self, shot):
+        return max(-1.0, 1 - self.distance(shot) / self.limit)
+
+
+def _share_margin(value, level, above):
+    """1 when the share is as far past its level as the level is from 0 or
+    1 (the nearer), -1 as far short of it."""
+    gap = (value - level) if above else (level - value)
+    return max(-1.0, min(1.0, gap / max(min(level, 1 - level), 1e-6)))
+
+
+_engraving = None
+# The shares measured on the capture being looked at (two anchors may read one).
+_shares = {}
+
+
+def _reader(name):
+    """A reader by name: one of this module's, or engraving_screen's."""
+    global _engraving
+    if not name.startswith("engraving_screen."):
+        return globals()[name]
+    if _engraving is None:
+        spec = importlib.util.spec_from_file_location(
+            "cloudphone_plugin_slayer_legend_screens_engraving", os.path.join(HERE, "engraving_screen.py"))
+        _engraving = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(_engraving)
+    return getattr(_engraving, name.split(".", 1)[1])
+
+
+def _anchor(spec):
+    """A function shot -> margin for one registry anchor."""
+    if "patch" in spec:
+        return Patch(spec["patch"], spec.get("box"), spec.get("limit", 0.6)).margin
+    if "share" in spec:
+        area, test, step = globals()[spec["share"]], globals()[spec["test"]], spec.get("step", 2)
+        above = "above" in spec
+        level = spec["above"] if above else spec["below"]
+        key = (spec["share"], spec["test"], step)
+
+        def margin_of(shot):
+            if key not in _shares:
+                _shares[key] = share(shot, area, test, step)
+            return _share_margin(_shares[key], level, above)
+        return margin_of
+    reader = spec["reader"]
+    return lambda shot: 1.0 if _reader(reader)(shot) else -1.0
+
+
+ANCHORS = {key: [_anchor(spec) for spec in entry["anchors"]] for key, entry in REGISTRY.items()}
+SIGNATURES = {key: [Patch(spec["patch"], spec.get("box")).signature for spec in entry["anchors"] if "patch" in spec]
+              for key, entry in REGISTRY.items()}
+
+
+def margin(shot, key):
+    """key's margin on shot: its anchors' lowest, or the first one under 0
+    (the others are then not looked at)."""
+    low = 1.0
+    for anchor in ANCHORS[key]:
+        low = min(low, anchor(shot))
+        if low <= 0:
+            break
+    return low
+
+
+_seen = []
+
+
+def look(shot):
+    """{screen, overlays, margin, plain, margins} of one capture (see above)."""
+    width, height, pixels = shot
+    for kept, answer in _seen:
+        if kept is pixels and answer["size"] == (width, height):
+            return answer
+    _shares.clear()
+    margins = {key: margin(shot, key) for key in BASES}
+    found = sorted((TIERS[REGISTRY[key]["status"]], -value, key) for key, value in margins.items() if value > 0)
+    if found:
+        tier, best, screen = found[0]
+        rivals = [-value for t, value, _ in found[1:] if t == tier]
+        sure = min(-best, -best - max(rivals)) if rivals else -best
+    else:
+        screen, sure = "unknown", max(margins.values())
+    if sure < MARGIN:
+        screen = "unknown"
+    overlays = []
+    for key in OVERLAYS:
+        if screen in REGISTRY[key]["over"]:
+            margins[key] = margin(shot, key)
+            if margins[key] > 0:
+                overlays.append(key)
+    plain = screen == "battle" and share(shot, MANA_BAR, blue) > 0.5
+    answer = {"screen": screen, "overlays": overlays, "margin": round(sure, 3), "plain": plain,
+              "margins": {key: round(value, 3) for key, value in margins.items()}, "size": (width, height)}
+    _seen.insert(0, (pixels, answer))
+    del _seen[CACHE:]
+    return answer
+
+
+def soul_weapon_over_battle(shot):
+    """The Soul Weapon screen is open over the battle."""
+    seen = look(shot)
+    return seen["screen"] == "battle" and SOUL_WEAPON in seen["overlays"]

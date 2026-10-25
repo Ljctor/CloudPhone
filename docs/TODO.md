@@ -135,6 +135,13 @@ glyph needs two occurrences.
 | 14 | Optional, the user's call: open the game on the user's own phone for a minute, then back here: the **connected on another device** screen and, after it, the **choice between two saves** | title and buttons only (no account, no save ids) → `other_another_device`, `other_save_choice` | part B's catalogue; **no move** on them until `05-plugins/AGENTS.md`'s precondition is validated by the user; the user resolves them on the device |
 | 15 | Back to the battle: every panel closed, stage of mpw18, preset III, AUTO on (the gear spinning); the plugin back on **mpw18 farming** | none | the watchdog says OK within a minute |
 
+Screens pending capture: `loading` `character_enhance` `character_growth` `character_promotion` `skill` `weapon_detail` `equipment_accessories` `equipment_relic` `spirit` `companion` `beast` `adventure_map` `adventure_quest` `dungeon_map` `raid_camp` `mine_list` `mine_area` `mine_feathers` `mine_fight` `top_menu` `shop_summon` `quest_panel` `guild` `promotion_bonus` `quit_dialog` `black_orb` `black_orb_accessory`.
+Rows 2 to 9 take them; `screens.look()` never names them until then.
+
+Screens recognised without a fixture: `title` `save_notice` `panel`.
+Their areas were measured on real captures never committed; rows 2 and 12 take their crops.
+`panel` reads the bottom menu's names light: on the plain battle they are grey 138, so `classify` says `menu` there and the watchdog's skill bar test says battle; rows 2 to 7 give the names with and without a panel.
+
 Already captured (2026-10-22, upstream): the engraving card with an open padlock
 (`eg_cards_unlocked`, `eg_cards_relocked`), its piece pop-up and the drag
 preview; nothing more to take there.
