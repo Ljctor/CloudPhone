@@ -1,0 +1,128 @@
+[
+  {
+    "field": "diamond",
+    "label": "Diamants",
+    "english": "Diamonds",
+    "pending": true
+  },
+  {
+    "field": "gold",
+    "label": "Gold",
+    "english": "Gold",
+    "pending": false
+  },
+  {
+    "field": "emerald",
+    "label": "Émeraudes",
+    "english": "Emeralds",
+    "pending": true
+  },
+  {
+    "field": "cubes",
+    "label": "Cubes",
+    "english": "Cubes",
+    "pending": true
+  },
+  {
+    "field": "crystals",
+    "label": "Cristaux",
+    "english": "Crystals",
+    "pending": true
+  },
+  {
+    "field": "soul_green",
+    "label": "Âmes vertes",
+    "english": "Green souls",
+    "pending": false
+  },
+  {
+    "field": "soul_blue",
+    "label": "Âmes bleues",
+    "english": "Blue souls",
+    "pending": false
+  },
+  {
+    "field": "soul_red",
+    "label": "Âmes rouges",
+    "english": "Red souls",
+    "pending": false
+  },
+  {
+    "field": "dice",
+    "label": "Dés",
+    "english": "Dice",
+    "pending": true
+  },
+  {
+    "field": "stone_green",
+    "label": "Pierres vertes",
+    "english": "Green stones",
+    "pending": true
+  },
+  {
+    "field": "stone_blue",
+    "label": "Pierres bleues",
+    "english": "Blue stones",
+    "pending": true
+  },
+  {
+    "field": "stone_red",
+    "label": "Pierres rouges",
+    "english": "Red stones",
+    "pending": true
+  },
+  {
+    "field": "stone_yellow",
+    "label": "Pierres jaunes",
+    "english": "Yellow stones",
+    "pending": true
+  },
+  {
+    "field": "feather_white",
+    "label": "Plumes blanches",
+    "english": "White feathers",
+    "pending": true
+  },
+  {
+    "field": "feather_green",
+    "label": "Plumes vertes",
+    "english": "Green feathers",
+    "pending": true
+  },
+  {
+    "field": "feather_purple",
+    "label": "Plumes violettes",
+    "english": "Purple feathers",
+    "pending": true
+  },
+  {
+    "field": "feather_black",
+    "label": "Plumes noires",
+    "english": "Black feathers",
+    "pending": true
+  },
+  {
+    "field": "dragon_power",
+    "label": "Dragon Power",
+    "english": "Dragon Power",
+    "pending": true
+  },
+  {
+    "field": "dragon_spark",
+    "label": "Dragon Spark",
+    "english": "Dragon Spark",
+    "pending": true
+  },
+  {
+    "field": "black_mana",
+    "label": "Black Mana",
+    "english": "Black Mana",
+    "pending": true
+  },
+  {
+    "field": "soul_white",
+    "label": "Âmes blanches",
+    "english": "White souls",
+    "pending": false
+  }
+]

@@ -14,6 +14,13 @@ whose reader waits for its calibration captures is "pending": it has no
 fact.
 """
 
+import json
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+RESOURCES = json.loads((ROOT / "resources.json").read_text(encoding="utf-8"))
+TREE = json.loads((ROOT / "screen_registry.json").read_text(encoding="utf-8"))["tree"]
+
 SOURCES = ("scan", "setup", "page")
 
 # Each screen's fields, by navigation.json / tree id: label (French, the
@@ -53,6 +60,30 @@ SCHEMA = {
         "mine_feathers": {"label": "Plumes", "shown": "number", "pending": True},
     }},
 }
+
+# Resource counters have one home, independent of the screen that reads them.
+for group in SCHEMA.values():
+    for resource in RESOURCES:
+        group["fields"].pop(resource["field"], None)
+SCHEMA["soul_weapon"]["fields"]["souls"] = {"persist": True}
+SCHEMA["mine_list"]["fields"].pop("mine_feathers", None)
+SCHEMA["resources"] = {"label": "Ressources", "fields": {
+    row["field"]: {"label": row["label"], "shown": "text", "pending": row["pending"]}
+    for row in RESOURCES}}
+# Keep the legacy mine reading private until its feather type is calibrated.
+SCHEMA["mine_list"]["fields"]["mine_feathers"] = {"pending": True}
+
+
+def screen_path(screen):
+    """The access path from the game's own navigation catalogue."""
+    path, visited = [], set()
+    while screen and screen not in visited:
+        visited.add(screen)
+        node = TREE.get(screen, {})
+        path.insert(0, node.get("name", "Combat" if screen == "battle" else screen))
+        screen = node.get("parent")
+    return path
+
 
 FIELDS = {field: {"persist": True, "pending": False, **spec, "screen": screen}
           for screen, group in SCHEMA.items() for field, spec in group["fields"].items()}
@@ -133,7 +164,7 @@ VOLATILE = ("progress", "gold", "souls")
 
 def lasting(field):
     """A kept value that does not move on its own."""
-    return FIELDS[field]["persist"] and field not in VOLATILE
+    return FIELDS[field]["persist"] and field not in VOLATILE and FIELDS[field]["screen"] != "resources"
 
 
 def fresh(saved, now):
@@ -152,6 +183,10 @@ def fresh(saved, now):
                         "seen": float(seen) if isinstance(seen, (int, float)) and not isinstance(seen, bool) else now,
                         "verified": False,
                         "source": fact.get("source") if fact.get("source") in SOURCES else "scan"}
+    # Migrate the previous aggregate without inventing a new observation time.
+    for colour, value in facts.get("souls", {}).get("value", {}).items():
+        if value is not None and f"soul_{colour}" in FIELDS:
+            facts.setdefault(f"soul_{colour}", {**facts["souls"], "value": value})
     return facts
 
 
@@ -173,6 +208,8 @@ def noted(facts, readings, now, source="scan"):
     facts = dict(facts)
     changes = []
     readings = dict(readings)
+    for colour, value in (readings.get("souls") or {}).items():
+        readings[f"soul_{colour}"] = value
     if readings.get("stage") is not None:
         readings["highest"] = max(filter(None, (readings.get("highest"), readings["stage"])))
     for field, value in readings.items():
@@ -218,8 +255,16 @@ def answer(facts):
                          "pending": bool(spec.get("pending")), "value": fact.get("value"),
                          "seen": fact.get("seen"), "verified": fact.get("verified", False),
                          "source": fact.get("source")})
-        screens.append({"screen": screen, "label": group["label"], "fields": rows})
-    return {"screens": screens}
+        screens.append({"screen": screen, "label": group["label"], "path": screen_path(screen), "fields": rows})
+    resources = next(group["fields"] for group in screens if group["screen"] == "resources")
+    known = {group["screen"]: group for group in screens if group["screen"] != "resources"}
+    # Catalogue order is the menu order, with children beside their parent.
+    ordered = [known.pop("battle")]
+    for screen, node in TREE.items():
+        ordered.append(known.pop(screen, {"screen": screen, "label": node["name"],
+                                         "path": screen_path(screen), "fields": [], "pending": True}))
+    ordered.extend(known.values())
+    return {"screens": ordered, "resources": resources}
 
 
 def change_line(field, before, after):

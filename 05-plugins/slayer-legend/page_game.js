@@ -4,7 +4,7 @@
 // the game was stopped or relaunched is greyed out. Asked at load, then
 // every 10 s while a row shows. rows(options, at): puts the sections into
 // the plugin's options list at index at, once the gateway answered.
-const SOULS = [['green', '🟢'], ['blue', '🔵'], ['red', '🔴'], ['white', '⚪']];
+import { RESOURCE_ICONS } from './page_resources.js';
 const PIECE = '#d9a441';
 const EVERY = 10000;
 
@@ -15,9 +15,6 @@ export default function gameFeature(api) {
     const value = row.value;
     if (row.shown === 'percent') return `${Math.round(value * 100)} %`;
     if (row.shown === 'switch') return api.tr(value === 'on' ? 'Activé' : 'Désactivé');
-    if (row.shown === 'souls') {
-      return SOULS.filter(([colour]) => value?.[colour]).map(([colour, dot]) => `${dot} ${value[colour].text}`).join(' · ');
-    }
     if (value && typeof value === 'object') return String(value.text ?? '');
     return String(value);
   };
@@ -40,8 +37,23 @@ export default function gameFeature(api) {
   // The current answer's row of field, read at each render.
   const rowOf = (screen, field) => game.answer?.screens?.find((s) => s.screen === screen)
     ?.fields.find((f) => f.field === field);
-  const sections = () => (game.answer?.screens ?? []).flatMap((screen) => [
-    { type: 'section', key: `game-${screen.screen}`, label: screen.label, folded: true },
+  const resourceRows = () => [
+    { type: 'section', key: 'resources', label: 'Ressources', folded: false },
+    ...(game.answer?.resources ?? []).map((field) => {
+      const current = () => game.answer?.resources?.find((row) => row.field === field.field) ?? field;
+      return {
+        type: 'status', label: field.label,
+        visible: () => { ask(); return true; },
+        value: () => [{ icon: RESOURCE_ICONS[field.field], text: text(current()) }],
+        muted: () => !current().verified,
+      };
+    }),
+  ];
+  const sections = () => [...resourceRows(), ...(game.answer?.screens ?? []).flatMap((screen) => [
+    { type: 'section', key: `game-${screen.screen}`,
+      label: (screen.path ?? [screen.label]).map((part) => api.tr(part)).join(' → '), folded: true },
+    ...(screen.fields.length ? [] : [{ type: 'status', label: 'État',
+      value: () => api.tr('lecteur en attente de capture') }]),
     ...screen.fields.map((field) => (field.shown === 'grid' ? {
       type: 'grid', label: field.label,
       visible: () => {
@@ -62,10 +74,10 @@ export default function gameFeature(api) {
         return Boolean(row && row.value !== null && !row.verified);
       },
     })),
-  ]);
+  ])];
   // The sections, once: the screens and their fields are the gateway's.
   const place = () => {
-    if (!game.list || game.count) return;
+    if (!game.list || game.count || !game.answer) return;
     const made = sections();
     game.list.splice(game.start, 0, ...made);
     game.count = made.length;

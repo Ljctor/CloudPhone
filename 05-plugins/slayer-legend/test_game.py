@@ -62,7 +62,8 @@ SCREENS = {
         ("battle_emerald", "sw_tabs", "sw_title", "gold_parked", "souls_row", "sw_name_vision", "sw_tag_unequip",
          "bar_parked_partial"), None,
         {"gold": {"text": "28.9F", "value": 2.89e19}, "soul_weapon_selected": "Vision",
-         "soul_weapon_equipped": "Vision", "souls": None, "progress": None}),
+         "soul_weapon_equipped": "Vision", "souls": None, "progress": None,
+         "soul_green": None, "soul_blue": None, "soul_red": None, "soul_white": None}),
     "Select Region": (("battle_emerald", "title_select_region", "banner_giants_glass"), None,
                       {"region": "Giant's Glass"}),
     "Battle settings": (("battle_emerald", "settings_title", "settings_presets_iii"), None, {"preset": "III"}),
@@ -168,10 +169,42 @@ class Rules(unittest.TestCase):
         answer = rules.answer(facts)
         battle = next(group for group in answer["screens"] if group["screen"] == "battle")
         rows = {row["field"]: row for row in battle["fields"]}
-        self.assertEqual((rows["stage"]["value"], rows["highest"]["value"], rows["emerald"]["pending"]),
+        resources = {row['field']: row for row in answer['resources']}
+        self.assertEqual((rows["stage"]["value"], rows["highest"]["value"], resources["emerald"]["pending"]),
                          (920, 920, True))
+        self.assertNotIn('gold', rows)
+        engraving = next(group for group in answer['screens'] if group['screen'] == 'soul_weapon_engraving')
+        self.assertEqual(engraving['path'], ['Combat', 'Equipment: Weapon', 'Soul Weapon', 'Soul Weapon Engraving'])
         self.assertNotIn("gold_place", rows)
         json.dumps(answer)
+
+    def test_partial_soul_read_preserves_each_counters_age(self):
+        facts, _ = rules.noted({}, {'souls': {'green': {'text': '12', 'value': 12},
+                                             'blue': {'text': '0', 'value': 0}}}, 1.0)
+        facts, _ = rules.noted(facts, {'souls': {'green': {'text': '13', 'value': 13}}}, 2.0)
+        self.assertEqual(facts['soul_blue']['seen'], 1.0)
+        self.assertEqual(facts['soul_blue']['value']['value'], 0)
+        self.assertEqual(facts['soul_green']['seen'], 2.0)
+        restored = rules.fresh(rules.persisted(facts), 3.0)
+        self.assertEqual(restored['soul_blue']['value']['value'], 0)
+        self.assertFalse(restored['soul_blue']['verified'])
+
+    def test_legacy_souls_migrate_without_becoming_fresh(self):
+        facts = rules.fresh({'souls': {'value': {'red': {'text': '8', 'value': 8}},
+                                       'seen': 1.0, 'source': 'scan'}}, 10.0)
+        self.assertEqual(facts['soul_red']['seen'], 1.0)
+        self.assertFalse(facts['soul_red']['verified'])
+
+    def test_every_requested_resource_has_one_counter_and_unknown_is_not_zero(self):
+        rows = rules.answer({})['resources']
+        expected = {'diamond', 'gold', 'emerald', 'cubes', 'crystals', 'dice',
+                    'soul_green', 'soul_blue', 'soul_red', 'soul_white',
+                    'stone_green', 'stone_blue', 'stone_red', 'stone_yellow',
+                    'feather_white', 'feather_green', 'feather_purple', 'feather_black',
+                    'dragon_power', 'dragon_spark', 'black_mana'}
+        self.assertEqual({row['field'] for row in rows}, expected)
+        self.assertEqual(len(rows), len(expected))
+        self.assertTrue(all(row['value'] is None for row in rows))
 
 
 class Clock:

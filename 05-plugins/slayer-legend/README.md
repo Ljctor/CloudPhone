@@ -358,3 +358,20 @@ user plays: then nothing is touched).
 - The counter font sizes come from screenshots of the game; a game update
   that changes its top bar can break the emerald rewrite (the panel then says
   "non détecté").
+
+## Game state and resources
+
+The Resources section contains diamonds, gold, emeralds, cubes, crystals,
+green/blue/red/white souls, dice, green/blue/red/yellow stones,
+white/green/purple/black feathers, Dragon Power, Dragon Spark and Black Mana.
+Counters show the last observed value and observation time. Unknown values
+are not zero. Gold and souls have calibrated readers; the other counters
+remain pending calibration. Gold and soul icons are game crops; the other
+symbols are vector illustrations. Each soul colour retains its own observation
+time even when another colour cannot be read.
+
+Other state sections follow the access paths in `screen_registry.json`.
+All catalogued screens are listed, including screens whose state reader is
+still pending. This catalogue does not imply complete state recognition.
+`05-plugins/scripts/verify.sh BASE_URL` checks the installed resource and
+navigation response without interacting with the game.
