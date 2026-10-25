@@ -150,7 +150,8 @@ class Recognised(unittest.TestCase):
         self.assertEqual(screens.classify(made("saver")), "saver")
         self.assertEqual(screens.classify(made("sign_in")), "sign_in")
         self.assertEqual(screens.classify(made("soul_weapon_engraving")), "other")
-        self.assertEqual(screens.other_name(made("soul_weapon_engraving")), '"Soul Weapon Engraving"')
+        self.assertEqual(screens.known_name(made("soul_weapon_engraving")), "Soul Weapon Engraving")
+        self.assertIsNone(screens.known_name(screen()))
         self.assertTrue(screens.plain_battle(made("battle")))
         self.assertFalse(screens.plain_battle(made("soul_weapon")))
 

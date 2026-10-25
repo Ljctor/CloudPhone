@@ -21,7 +21,9 @@ after a mode ended, another screen is after_mode_screen, alerted after
 ALERT_AFTER looks. Another screen is never tapped: its alert, at error
 level, names it by its text as read (screens.other_name, seen["named"]),
 a bug report for the plugin, e.g. « Unknown screen: "Connected on another
-device" [OK]; farming blocked ». The save notice and the title are start screens: the relaunch's
+device" [OK]; farming blocked ». A screen the plugin knows (seen["screen"]
+"known", screens.known_name) is stated open, never unknown: « Screen
+Soul Weapon Engraving open; farming blocked » (KNOWN). The save notice and the title are start screens: the relaunch's
 launch steps take the latest save.
 
 Symptom → response, one look at a time (SYMPTOMS, REPAIRS):
@@ -172,6 +174,12 @@ SYMPTOMS = {
     "unparked": "hors de l’écran Soul Weapon",
     "unexpected": "écran inconnu : {screen} ; farming bloqué",
     "mine_away": "le jeu n’est plus au premier plan",
+}
+# The same symptoms on a screen the plugin knows (screens.known_name):
+# named as known, never as unknown.
+KNOWN = {
+    "unexpected": "écran {screen} ouvert ; farming bloqué",
+    "after_mode_screen": "écran {screen} ouvert après la fin du mode ; farming bloqué",
 }
 # The repair of each symptom (None: alert only).
 REPAIRS = {
@@ -394,9 +402,10 @@ def judge(seen, profile, numeral_of, last_input, resumed, memory, now, after_mod
             return None, "OK (numéral {numeral})", {"numeral": roman(numeral)}, memory
         return None, "OK", {}, memory
     named = {"screen": seen.get("named") or "no text read"}
-    if after_mode:
-        return "after_mode_screen", SYMPTOMS["after_mode_screen"], named, memory
-    return "unexpected", SYMPTOMS["unexpected"], named, memory
+    symptom = "after_mode_screen" if after_mode else "unexpected"
+    # A screen the plugin knows (seen["screen"] "known", seen["named"]
+    # its name) is stated as open; only a screen matched by nothing is unknown.
+    return symptom, (KNOWN if screen == "known" else SYMPTOMS)[symptom], named, memory
 
 
 def _mine(seen, away, memory):

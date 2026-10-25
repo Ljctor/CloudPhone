@@ -120,6 +120,9 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
 
     def facts(shot):
         name = screens.classify(shot)
+        known = screens.known_name(shot) if name == "other" else None
+        if known:
+            return "known", None, None, None, known
         if name == "menu" and farming and screens.plain_battle(shot):
             name = "battle"  # the skill bar shows: no panel over the battle
         elif name == "menu" and parking and farming["parked"](shot):

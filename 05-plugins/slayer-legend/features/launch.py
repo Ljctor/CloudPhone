@@ -108,7 +108,11 @@ def launch(ports, screens, rules):
                     await ports.notify(f"Google sign-in failed: the chooser listed {chooser['count']} accounts")
                 return
             elif move == "blocked_other":
-                # Never tapped: named by its text, as read.
+                # Never tapped: a known screen by its name, another by its text, as read.
+                known = await ports.analyse(screens.known_name, shot)
+                if known:
+                    report("blocked", t("Lancement arrêté : écran {screen} ouvert", screen=known))
+                    return
                 name = await ports.analyse(screens.other_name, shot)
                 report("blocked", t("Lancement arrêté : écran inconnu {screen}", screen=name))
                 return

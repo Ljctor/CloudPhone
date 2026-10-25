@@ -281,12 +281,9 @@ def describe(lines):
 
 
 def other_name(shot, catalogue=None):
-    """Another screen's name: its navigation.json name when look() knows
-    it (the engraving screen), its catalogue entry's when its title reads
-    as one (close, with a margin), else its text as read (describe)."""
-    known = look(shot)["screen"]
-    if known in NAMES:
-        return f'"{NAMES[known]}"'
+    """Another screen's name: its catalogue entry's when its title reads as
+    one (close, with a margin), else its text as read (describe). A screen
+    look() knows is named by known_name instead."""
     lines = other_lines(shot)
     entries = CATALOGUE if catalogue is None else catalogue
     titles = [entry["title"] for entry in entries]
@@ -487,6 +484,13 @@ def look(shot):
     _seen.insert(0, (pixels, answer))
     del _seen[CACHE:]
     return answer
+
+
+def known_name(shot):
+    """The navigation.json name of the screen look() recognises, e.g.
+    "Soul Weapon Engraving"; None when it is unknown."""
+    screen = look(shot)["screen"]
+    return None if screen == "unknown" else NAMES.get(screen)
 
 
 def soul_weapon_over_battle(shot):

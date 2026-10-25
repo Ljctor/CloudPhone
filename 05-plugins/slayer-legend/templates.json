@@ -246,5 +246,8 @@
   "écran inconnu : {screen} ; farming bloqué": "unknown screen: {screen}; farming blocked",
   "écran inconnu après la fin du mode : {screen} ; farming bloqué": "unknown screen after the mode ended: {screen}; farming blocked",
   "Lancement arrêté : écran inconnu {screen}": "Launch stopped: unknown screen {screen}",
+  "écran {screen} ouvert ; farming bloqué": "screen {screen} open; farming blocked",
+  "écran {screen} ouvert après la fin du mode ; farming bloqué": "screen {screen} open after the mode ended; farming blocked",
+  "Lancement arrêté : écran {screen} ouvert": "Launch stopped: screen {screen} open",
   "écran inattendu": "unexpected screen"
 }

@@ -1207,6 +1207,20 @@ class NamedScreens(unittest.TestCase):
         self.assertEqual(w.alerts(), [("error", 'Farming mpw18: unknown screen after the mode ended: '
                                                  '"Select save data" [Local] [Cloud]; farming blocked')])
 
+    def test_a_known_screen_is_stated_open_never_unknown(self):
+        w = Watch()
+        w.looks(BATTLE, 3)
+        w.looks({**OTHER, "screen": "known", "named": "Soul Weapon Engraving"}, 4)
+        self.assertEqual(w.alerts(), [("error", "Farming mpw18: screen Soul Weapon Engraving open; farming blocked")])
+        w = Watch()
+        w.looks(BATTLE, 3)
+        w.after_mode = True
+        w.looks({**OTHER, "screen": "known", "named": "Soul Weapon Engraving"}, 2)
+        self.assertEqual(w.alerts(), [("error", "Farming mpw18: screen Soul Weapon Engraving open after the mode "
+                                                 "ended; farming blocked")])
+        for text in rules.KNOWN.values():
+            self.assertNotIn("inconnu", text)
+
     def test_no_text_asks_nothing_of_the_user(self):
         for symptom in ("unexpected", "after_mode_screen"):
             self.assertNotIn("main", rules.SYMPTOMS[symptom])
