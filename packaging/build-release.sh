@@ -126,8 +126,13 @@ touch "$gateway/src/videobridge_gateway/proto/__init__.py"
 rm -rf "$BUILD/venv" "$BUILD/wheels"
 python3 -m venv "$BUILD/venv"
 "$BUILD/venv/bin/pip" install --quiet --disable-pip-version-check build
-BAZEL_ROOT=$BUILD/bazel-root "$BUILD/venv/bin/python" -m build --wheel \
-  --outdir "$BUILD/wheels" "$gateway"
+# The stubs grpcio-tools generates require a grpcio at least as new as
+# itself, so the tools follow the grpcio pinned in the constraints.
+grpcio=$(sed -n 's/^grpcio==//p' "$CONSTRAINTS")
+build_constraints=$BUILD/build-constraints.txt
+{ cat "$CONSTRAINTS"; [ -z "$grpcio" ] || echo "grpcio-tools==$grpcio"; } >"$build_constraints"
+PIP_CONSTRAINT=$build_constraints BAZEL_ROOT=$BUILD/bazel-root \
+  "$BUILD/venv/bin/python" -m build --wheel --outdir "$BUILD/wheels" "$gateway"
 wheel=$(ls "$BUILD"/wheels/*.whl)
 wheel_files=$(python3 -m zipfile -l "$wheel")
 for stub in emulator_controller_pb2 emulator_controller_pb2_grpc rtc_service_v2_pb2 ice_config_pb2; do
