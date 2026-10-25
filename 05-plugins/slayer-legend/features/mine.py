@@ -14,7 +14,7 @@ whose timer ended while the gateway was down gets a stop pass at the
 gateway's start. When to do what is in mine_rules.py; every tap, hold and
 swipe goes through the navigation guard (ports), each sequence of them
 under the shared lease (holder "mine"): while another holder has it, or
-for a minute after a user input, the mine waits for its next look. The game not in front is the
+for 10 s after a user input, the mine waits for its next look. The game not in front is the
 watchdog's (mine_away): it relaunches the game, then calls reenter(),
 the way back in from the battle screen (Adventure, Dungeon, Closed Mine,
 then the floor, Area and feathers), tried again after 2, 4, 8 then 16 s

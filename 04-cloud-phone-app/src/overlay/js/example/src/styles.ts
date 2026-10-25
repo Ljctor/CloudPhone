@@ -63,6 +63,19 @@ export const styles = {
   pluginTitle: { marginTop: '6px', fontWeight: 600, cursor: 'pointer' },
   // A plugin's or a section's icon before its title (pixel art kept sharp).
   pluginIcon: { width: '14px', height: '14px', marginRight: '6px', verticalAlign: '-2px', imageRendering: 'pixelated' },
+  // A status value's part: an icon at its own size, then its text.
+  statusPart: { display: 'inline-flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' },
+  statusIcon: { imageRendering: 'pixelated' },
+  // A value written as a game writes its numbers: white, bold and narrow,
+  // a 1 px black outline drawn by shadows in the 8 directions.
+  gameText: {
+    display: 'inline-flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', justifyContent: 'flex-end',
+    color: '#ffffff', fontWeight: 700, letterSpacing: '0.03em',
+    fontFamily: "'Arial Narrow', 'Roboto Condensed', " + 'system-ui, sans-serif',
+    fontStretch: 'condensed',
+    textShadow: '-1px -1px 0 #000, 0 -1px 0 #000, 1px -1px 0 #000, -1px 0 0 #000, 1px 0 0 #000, '
+      + '-1px 1px 0 #000, 0 1px 0 #000, 1px 1px 0 #000',
+  },
   numberInput: {
     width: '96px', padding: '3px 6px', borderRadius: '6px', border: '1px solid #3a3f47',
     background: '#1b1d22', color: '#e8ebf0', font: 'inherit', textAlign: 'right',

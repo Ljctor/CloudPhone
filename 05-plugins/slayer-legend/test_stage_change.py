@@ -212,7 +212,8 @@ class Game:
                                focused=focused,
                                notify=notify, clock=SimpleNamespace(sleep=sleep, wall=lambda: 1e9 + game.now,
                                                                      monotonic=lambda: game.now),
-                               leased=leased, Busy=Busy, pause_left=lambda: game.state.get("pause_left", 60),
+                               leased=leased, Busy=Busy, pause_left=lambda: game.state.get("pause_left",
+                                                                  10 if game.state["busy"] == "l’utilisateur joue" else 0),
                                store=store, enabled=lambda: True, respond=lambda value, status=200: (status, value),
                                log=LOG, exception=EXCEPTION, **TEXTS)
 
@@ -481,6 +482,8 @@ class Mode(unittest.TestCase):
         async def farm(stage, preset, mode, highest=None):
             calls.append((stage, preset, mode))
             answer = answers.pop(0)
+            # The user's input holds the taps 10 s (ports.Lease.pause_left).
+            game.state["pause_left"] = 10 if answer == "l’utilisateur joue" else 0
             if isinstance(answer, str):
                 raise busy(answer)
             return {"result": answer["result"], "text_t": answer["text"] and {"template": answer["text"], "params": {}}}
@@ -565,7 +568,7 @@ class Mode(unittest.TestCase):
         self.assertEqual(len(calls), 2)
         self.assertEqual(state["state"], "farming")
         self.assertIsNone(state["hold"], "the hold is over")
-        self.assertEqual(alerts[0], "Switch to farming mpw4 on hold: you are playing. Next try in 60 s.")
+        self.assertEqual(alerts[0], "Switch to farming mpw4 on hold: you are playing. Next try in 10 s.")
         # The fake's sleeps all move one clock: the hold's time is all of it.
         self.assertRegex(alerts[1], r"^Farming mpw4 ready in (\d+) s \(including \1 s waiting: you were playing\)$")
         self.assertEqual(len(alerts), 2)

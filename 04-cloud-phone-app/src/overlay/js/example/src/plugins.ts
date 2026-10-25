@@ -14,11 +14,15 @@
 // choices and placeholder may also be functions, read at each render.
 //   { type: 'action', label, button, run(), disabled?() }
 //   { type: 'buttons', label, buttons: [{ label, run(), disabled?() }] }   a row of small buttons
-//   { type: 'status', label, value(), href?(), button?(), muted?() }   href makes the value a link;
+//   { type: 'status', label, value(), href?(), button?(), muted?(), look? }   href makes the value a link;
 //                                                  muted() true greys the value out;
 //                                                  button() => { label, run() }, a list of them,
 //                                                  or null: small buttons after the value, while
-//                                                  it gives some
+//                                                  it gives some; value() gives a text or a list
+//                                                  of parts, each a text or { icon, text } (icon:
+//                                                  an image URL before the text, at its own size);
+//                                                  look: 'game' writes the value in white with a
+//                                                  1 px black outline, as a game writes numbers
 //   { type: 'grid', label, rows() }               a grid of fixed-size cells, rows() =>
 //                                                  [[cell, ...], ...], a cell: a CSS colour (filled),
 //                                                  'empty' (outlined) or null (not part of the grid)

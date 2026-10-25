@@ -288,7 +288,7 @@ class Switch(unittest.TestCase):
         self.assertRegex(game.alerts[0], r"^Farming mpw4 ready in \d+ s; Switch mpw18 → mpw4 in \d+ s \(over 60 s\): "
                                          r"slowest step: stage change \(\d+ s\)$")
 
-    def test_the_users_minute_is_waited_apart_and_never_counted(self):
+    def test_the_users_10_s_are_waited_apart_and_never_counted(self):
         # The user played just before: the lease is refused for 40 s.
         game = SlowGame(stage=905, preset="IV", busy="l’utilisateur joue")
         h = harness(game)
@@ -308,7 +308,7 @@ class Switch(unittest.TestCase):
         # The hold said once; the time since the choice, the user's wait
         # included and said apart; no over-budget alert.
         self.assertEqual(len(game.alerts), 2, game.alerts)
-        self.assertEqual(game.alerts[0], "Switch to farming mpw4 on hold: you are playing. Next try in 60 s.")
+        self.assertEqual(game.alerts[0], "Switch to farming mpw4 on hold: you are playing. Next try in 10 s.")
         self.assertRegex(game.alerts[1], r"^Farming mpw4 ready in \d+ s \(including 4\d s waiting: you were playing\)$")
         self.assertGreaterEqual(int(game.alerts[1].split(" in ")[1].split(" ")[0]), 40)
         self.assertTrue(there(game, 925, "II"))
@@ -341,11 +341,13 @@ class Switch(unittest.TestCase):
         seen = self.on_hold(game, harness(game), 30, stop_playing)
         during = seen["during"]
         self.assertEqual((during["state"], during["setup"], during["hold"]["mode"]), ("waiting", True, "mpw4"))
-        self.assertEqual(french(during["message_t"]), "Passage au farming mpw4 en attente : tu joues · nouvel essai dans 60 s")
+        self.assertEqual(during["tone"], "hold", "yellow on the overlay")
+        self.assertEqual(french(during["message_t"]), "Passage au farming mpw4 en attente : tu joues · nouvel essai dans 10 s")
         self.assertEqual(len(game.alerts), 2, game.alerts)
-        self.assertEqual(game.alerts[0], "Switch to farming mpw4 on hold: you are playing. Next try in 60 s.")
+        self.assertEqual(game.alerts[0], "Switch to farming mpw4 on hold: you are playing. Next try in 10 s.")
         self.assertRegex(game.alerts[1], r"^Farming mpw4 ready in \d+ s \(including 1[67]\d s waiting: you were playing\)$")
         self.assertEqual((seen["after"]["state"], seen["after"]["hold"]), ("farming", None))
+        self.assertEqual(seen["after"]["tone"], "ok", "green once set up")
 
     def test_resume_now_runs_the_switch_while_the_user_plays(self):
         game = SlowGame(stage=905, preset="IV", busy="l’utilisateur joue")
@@ -376,7 +378,7 @@ class Switch(unittest.TestCase):
         self.assertEqual((after["mode"], after["state"], after["hold"]), ("free", "free", None))
         self.assertIsNotNone(after["until"], "free play is timed, as its radio button")
         self.assertEqual(game.moves, [], "nothing tapped")
-        self.assertEqual(game.alerts, ["Switch to farming mpw4 on hold: you are playing. Next try in 60 s."])
+        self.assertEqual(game.alerts, ["Switch to farming mpw4 on hold: you are playing. Next try in 10 s."])
 
     def test_the_hold_alert_has_two_buttons_with_a_one_time_token_revoked_after(self):
         game = SlowGame(stage=905, preset="IV", busy="l’utilisateur joue")
@@ -471,11 +473,11 @@ class Switch(unittest.TestCase):
         async def go():
             await h.post({"mode": "mpw4", "stage4": 925})
             await h.clock.until(lambda: game.now >= 3, 600)
-            seen.append((await h.state())[1]["setup"])
+            seen.append(((await h.state())[1]["setup"], (await h.state())[1]["tone"]))
             await h.clock.until(lambda: any(line.startswith("switch ") for line in self.lines), 600)
-            seen.append((await h.state())[1]["setup"])
+            seen.append(((await h.state())[1]["setup"], (await h.state())[1]["tone"]))
         asyncio.run(go())
-        self.assertEqual(seen, [True, False])
+        self.assertEqual(seen, [(True, "setup"), (False, "ok")])
 
     def test_loadout_changes_and_their_report(self):
         old = {"stage": 920, "preset": "III", "soul_weapon": None}

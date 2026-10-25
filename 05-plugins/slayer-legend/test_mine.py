@@ -313,15 +313,15 @@ INPUT = ("INPUT", None, None)
 
 
 class Lease(MineTest):
-    """The mine's taps wait for the shared lease: a minute after a user
+    """The mine's taps wait for the shared lease: 10 s after a user
     input, and while another holder has it."""
 
-    def test_a_user_input_pauses_the_relaunch_a_minute(self):
-        game, answers = self.play(RELAUNCH_SCENES, "fight", [(0, [mine()]), (44, [INPUT]), (80, [GET_MINE]),
+    def test_a_user_input_pauses_the_relaunch_10_s(self):
+        game, answers = self.play(RELAUNCH_SCENES, "fight", [(0, [mine()]), (44, [INPUT]), (50, [GET_MINE]),
                                                              (200, [GET_MINE])], 200)
         self.assertEqual(len(game.taps), 3, game.taps)
-        self.assertGreaterEqual(game.taps[0][0], 44 + 60, game.taps)
-        waiting = [body for t, p, body in answers if t == 80][0]
+        self.assertGreaterEqual(game.taps[0][0], 44 + 10, game.taps)
+        waiting = [body for t, p, body in answers if t == 50][0]
         self.assertEqual((waiting["state"], french(waiting["message_t"])), ("waiting", "En attente : l’utilisateur joue"))
         self.assertEqual(self.last(answers, "/mine")["state"], "farming")
 
@@ -349,7 +349,7 @@ class Lease(MineTest):
 
     def front(self, front):
         """ports built on a game whose window is in front (front) or not,
-        the user's last input 10 s ago."""
+        the user's last input 4 s ago."""
         game = Game({"fight": dict(FIGHT_GOLD)}, "fight")
         context = game.context()
         inner = context.adb
@@ -360,7 +360,7 @@ class Lease(MineTest):
                           "  mFocusedApp=ActivityRecord{3 u0 com.android.launcher3/.Launcher t1}\n"
             return await inner(*args, timeout=timeout)
         context.adb = adb
-        last = {"monotonic": time.monotonic() - 10, "wall": time.time() - 10}
+        last = {"monotonic": time.monotonic() - 4, "wall": time.time() - 4}
         context.last_input = lambda: last
         return load_feature("ports").build(context, load_feature("../nav")), last
 
@@ -389,7 +389,8 @@ class Lease(MineTest):
                 pass
             return await ports.user_input()
         self.assertEqual(asyncio.run(go()), last)
-        self.assertGreater(ports.pause_left(), 45)
+        self.assertGreater(ports.pause_left(), 4)
+        self.assertLessEqual(ports.pause_left(), 6)
 
     def test_the_lease_is_refused_to_the_plugin_while_it_is_off(self):
         game = Game({"fight": dict(FIGHT_GOLD)}, "fight")

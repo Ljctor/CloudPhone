@@ -241,6 +241,40 @@ pub fn wait_for<T>(what: &str, timeout: Duration, mut check: impl FnMut() -> Opt
     }
 }
 
+/// The user keeps playing: an input every 3 s, each holding the plugins'
+/// taps for 10 s after it, until the guard is dropped (no input after that).
+pub struct Playing {
+    on: Arc<AtomicBool>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl Drop for Playing {
+    fn drop(&mut self) {
+        self.on.store(false, Ordering::SeqCst);
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
+/// Inputs on `cp` every 3 s from now on, the first one at once.
+pub fn keep_playing(cp: &CloudPhone) -> Playing {
+    let on = Arc::new(AtomicBool::new(true));
+    let (cp, running) = (cp.clone(), on.clone());
+    let thread = std::thread::spawn(move || {
+        while running.load(Ordering::SeqCst) {
+            assert_eq!(cp.post_json("api/v1/input", &serde_json::json!({})).status(), 200);
+            for _ in 0..30 {
+                if !running.load(Ordering::SeqCst) {
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        }
+    });
+    Playing { on, thread: Some(thread) }
+}
+
 /// A unique viewer id for this test process.
 pub fn viewer_id(name: &str) -> String {
     let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().subsec_nanos();

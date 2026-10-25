@@ -169,19 +169,22 @@ fn in_english_the_gateways_states_show_no_french() {
         choose_english(&page).await;
         open_plugin(&page).await;
         let mut seen = Vec::new();
-        // The watchdog paused while the user plays (an input), as the
-        // État row's end says it at the page's next ask (every 15 s).
+        // The watchdog paused while the user plays (an input every few
+        // seconds, each one pausing it 10 s), as the État row's end says it
+        // at the page's next ask (every 15 s).
         let p = phone.clone();
-        blocking(move || {
-            assert_eq!(p.post_json("api/v1/input", &json!({})).status(), 200);
+        let playing = blocking(move || {
+            let playing = keep_playing(&p);
             wait_for("the watchdog paused", Duration::from_secs(60), || {
                 let state = p.try_get_json(WATCHDOG)?;
                 (state["status"]["template"] == "En pause : l’utilisateur joue").then_some(())
             });
+            playing
         });
         page.sleep(Duration::from_secs(16)).await;
         let paused = state_row(&page).await;
         seen.extend(french_in(&page, &format!("watchdog paused ({paused})"), "[role=dialog]", true).await);
+        blocking(move || drop(playing));
         // The mine on, configured and chosen in the page (no game on the
         // fake: its own status), at two looks.
         open_mine_dialog(&page).await;
@@ -215,13 +218,15 @@ fn in_english_the_gateways_states_show_no_french() {
         page.wait_dialog_value(en::OPTIONS_PANEL, "Status", Duration::from_secs(15), |v| v != refused).await;
         // A switch on hold while the user plays.
         let p = phone.clone();
-        blocking(move || {
-            assert_eq!(p.post_json("api/v1/input", &json!({})).status(), 200);
+        let playing = blocking(move || {
+            let playing = keep_playing(&p);
             assert_eq!(p.post_json(MODE, &json!({"mode": "mpw4", "stage4": 31})).status(), 200);
             wait_for("the switch on hold", Duration::from_secs(20), || (!p.try_get_json(MODE)?["hold"].is_null()).then_some(()));
+            playing
         });
         let held = page.wait_dialog_value(en::OPTIONS_PANEL, "Status", Duration::from_secs(20), |v| v.contains("on hold")).await;
         seen.extend(french_in(&page, &format!("on hold ({held})"), "[role=dialog]", true).await);
+        blocking(move || drop(playing));
         seen.dedup();
         assert!(seen.is_empty(), "French shown in English:\n{}", seen.join("\n"));
     });

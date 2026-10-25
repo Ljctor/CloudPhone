@@ -28,11 +28,11 @@ TIMED_MINUTES = 30
 WATCH_EVERY = 10
 # A mode switch (the trigger: POST /mode, or a timer's end) reaches the
 # battle screen on its stage and preset within this (seconds) of the
-# plugin's own time: waiting for the lease (the user's minute after an
+# plugin's own time: waiting for the lease (the user's 10 s after an
 # input, another holder) is logged apart and never counted. Over it, the
 # switch still completes, logged with one alert naming the slowest step.
 SWITCH_BUDGET = 60
-# While the lease cannot be had (the user played in the last minute,
+# While the lease cannot be had (the user played in the last 10 s,
 # another holder), the switch tries again this often (seconds).
 BUSY_RETRY = 2
 # A stage change waits for the shared lease this long at most (seconds).
@@ -230,7 +230,7 @@ def ready_text(name, seconds, applied=False, alert=None, held=0.0):
     return f"{text}; {alert}" if alert else text
 
 
-# The lease's refusal while the user played in the last minute (ports.Lease):
+# The lease's refusal while the user played in the last 10 s (ports.Lease):
 # the switch is on hold, said once, with a choice.
 USER_PLAYING = "l’utilisateur joue"
 HOLD_ACTIONS = ("free", "resume")
@@ -296,3 +296,38 @@ def back_text(why, default, stage=None, detail=""):
     reason = REASONS[why].replace("{detail}", detail)
     back = BACK_TO[default] + (f" (stage {stage})" if stage else "")
     return f"{reason}, {back}" if why in ("mine no feather", "mine entry") else f"{reason}: {back}"
+
+
+# The colour of the mode's lines on the overlay (GET /mode's tone): "ok"
+# (green) while the mode runs or is set up and the watchdog sees nothing
+# wrong, "hold" (orange) while the plugin holds its taps because the user
+# plays (an input in the last 10 s with the game in front, ports.Lease),
+# "setup" (blue) while returning to the instruction, "error" (red) when blocked.
+TONES = ("ok", "hold", "setup", "error")
+# The mode's states (features/mode.py) and the mine's (features/mine.py)
+# that are an error, or a setup under way.
+ERROR_STATES = ("failed", "blocked")
+SETUP_STATES = ("moving", "waiting", "relaunching", "stopping")
+
+
+def tone(mode, state, hold, playing, watched=None, mine=None, engraving_off=False):
+    """The overlay's tone (TONES), from: mode, the selected mode's name;
+    state, its state; hold, a switch on hold while the user plays; playing,
+    the plugin holds its taps now because of the user's last input (only
+    while the mode watches or acts: never in free play); watched, the
+    watchdog's last look at this mode ({level: None, "warning" or
+    "error"}) or None; mine, the mine's state while the mine is the mode;
+    engraving_off, the farming mode's loadout asks an engraving while the
+    engraving's switch is off. User input first, then an active repair,
+    then a confirmed block, and finally recovery or the reached instruction."""
+    watched = watched or {}
+    level = watched.get("level")
+    if hold or (playing and mode != "free"):
+        return "hold"
+    if watched.get("repairing"):
+        return "setup"
+    if state in ERROR_STATES or mine in ERROR_STATES or watched.get("blocked", level == "error") or engraving_off:
+        return "error"
+    if state in SETUP_STATES or (mine in SETUP_STATES and mode == "mine") or level:
+        return "setup"
+    return "ok"

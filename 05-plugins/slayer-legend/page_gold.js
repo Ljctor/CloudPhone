@@ -1,28 +1,31 @@
 // Gold per second, measured by the gateway (a reading every 10 s, the
 // slope over 5 minutes), written in the game's top bar, and the other
 // features' overlay lines (the mode's) top left, both in the gold
-// counter's own pixel font (gold_text.js). Options: the "Gold" section.
-// The overlay applies while the counter was read lately (the game's
-// battle screen). Souls per second, per colour, beside gold/s: read on the
-// Soul Weapon screen, where the farming modes park.
+// counter's own pixel font (gold_text.js): the rate in white after the
+// game's gold coin, the lines in their mode's colour. Options: the "Gold"
+// section. The overlay applies while the counter was read lately (the
+// game's battle screen). Souls per second, per colour, beside gold/s: read
+// on the Soul Weapon screen, where the farming modes park. The panel's
+// rates are written as the game writes them, white outlined in black,
+// each after the game's own icon.
 import { drawText } from './gold_text.js';
-import { GOLD } from './page_icons.js';
+import { GOLD, SOULS } from './page_icons.js';
 
 // Where the rate goes in the game's top bar: right of the player's name
-// (which ends at about 27 % of the width), before the emerald counter (its
-// icon at about 38 %), centred on the name's line (2.5 % of the height).
-// At the label's size the widest rate ("~44.4W/S", 71 font pixels) takes
-// 9.1 % of the width: up to 37.1 %.
-const BAR_LEFT = '28%';
+// (a 6-letter name ends at 25 % of the width), before the emerald counter
+// (its icon from 37.9 %), centred on the name's line (2.5 % of the height).
+// The game's coin first, as high as the text (8 game pixels), then 0.6 of
+// space; at the label's size the widest rate ("~44.4W/S", 71 font pixels)
+// takes 9.1 % of the width: up to 37.4 %.
+const BAR_LEFT = '26.5%';
 const BAR_MIDDLE = '2.5%';
-// The souls' colours, each as its round coloured dot (page_screen.js's).
-const SOULS = [['green', '🟢'], ['blue', '🔵'], ['red', '🔴'], ['white', '⚪']];
 const FRENCH = new Intl.NumberFormat('fr-FR', { maximumSignificantDigits: 3 });
 
-// « 🟢 667 000 · 🔵 120 000 », the colours measured; '' for none.
-export function soulsText(souls) {
-  return SOULS.filter(([colour]) => typeof souls?.[colour]?.rate === 'number')
-    .map(([colour, dot]) => `${dot} ${FRENCH.format(souls[colour].rate)}`).join(' · ');
+// The colours measured, each its game icon and rate: [{ icon, text }];
+// [] for none.
+export function soulsParts(souls) {
+  return ['green', 'blue', 'red', 'white'].filter((colour) => typeof souls?.[colour]?.rate === 'number')
+    .map((colour) => ({ icon: SOULS[colour], text: FRENCH.format(souls[colour].rate) }));
 }
 
 // overlay: functions giving the lines written top left; enabled(): the
@@ -44,21 +47,33 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
   const label = document.createElement('canvas');
   label.style.cssText = 'position:absolute;image-rendering:pixelated;left:3%;top:9.2%';
   const bar = document.createElement('canvas');
-  bar.style.cssText = `position:absolute;image-rendering:pixelated;left:${BAR_LEFT}`;
+  bar.style.cssText = 'position:absolute;image-rendering:pixelated';
+  const coin = document.createElement('img');
+  coin.src = GOLD;
+  coin.alt = '';
+  coin.style.cssText = `position:absolute;image-rendering:pixelated;left:${BAR_LEFT}`;
   let drawn = '';
   let barDrawn = '';
-  // The rate in the top bar, in the same font and size as the lines;
-  // removed while the overlay does not apply or it is hidden.
+  // The rate in the top bar, in the same font and size as the lines, in
+  // white after the game's coin as high as the text; removed while the
+  // overlay does not apply or it is hidden.
   const showBar = (cell) => {
     if (!cell || !gold.line) {
       bar.remove();
+      coin.remove();
       barDrawn = '';
       return;
     }
-    if (!bar.isConnected) api.layer.appendChild(bar);
+    if (!bar.isConnected) api.layer.append(coin, bar);
     const key = `${gold.line}@${cell}`;
     if (key !== barDrawn) {
-      drawText(bar, gold.font, [gold.line], cell);
+      drawText(bar, gold.font, [{ text: gold.line, colour: '#ffffff' }], cell);
+      // As high as the text's ink, the coin square.
+      const size = gold.font.height * cell;
+      coin.style.width = `${size}px`;
+      coin.style.height = `${size}px`;
+      coin.style.top = `calc(${BAR_MIDDLE} - ${size / 2}px)`;
+      bar.style.left = `calc(${BAR_LEFT} + ${size + cell}px)`;
       bar.style.top = `calc(${BAR_MIDDLE} - ${bar.style.height} / 2)`;
       barDrawn = key;
     }
@@ -76,7 +91,7 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
     // being 1040 of them high), not the gold counter's 13.
     const cell = api.layer.offsetHeight / 1040 * 8 / gold.font.height;
     showBar(cell);
-    const key = `${lines.join('|')}@${cell}`;
+    const key = `${JSON.stringify(lines)}@${cell}`;
     if (key !== drawn) {
       drawText(label, gold.font, lines, cell);
       drawn = key;
@@ -88,13 +103,14 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
   const goldText = () => {
     const answer = gold.answer;
     if (!answer) return '…';
-    if (answer.rate_text) return `${partial(answer) ? '~' : ''}${answer.rate_text}/s`;
+    if (answer.rate_text) return [{ icon: GOLD, text: `${partial(answer) ? '~' : ''}${answer.rate_text}/s` }];
     return answer.read ? api.tr('pas encore mesuré') : api.tr('non visible');
   };
   const soulsValue = () => {
     const answer = gold.answer;
     if (!answer) return '…';
-    return soulsText(answer.souls) || api.tr('pas encore mesuré');
+    const parts = soulsParts(answer.souls);
+    return parts.length ? parts : api.tr('pas encore mesuré');
   };
   const showGold = () => {
     const answer = gold.answer;
@@ -121,8 +137,8 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
     update: () => showGold(),
     options: [
       { type: 'section', key: 'gold', label: 'Gold', icon: GOLD },
-      { type: 'status', label: 'Gold par seconde', value: goldText },
-      { type: 'status', label: 'Âmes par seconde', value: soulsValue },
+      { type: 'status', label: 'Gold par seconde', value: goldText, look: 'game' },
+      { type: 'status', label: 'Âmes par seconde', value: soulsValue, look: 'game' },
       {
         type: 'choice', key: 'goldOverlay', label: 'Overlay gold/s',
         choices: [{ value: 'on', label: 'Affiché' }, { value: 'off', label: 'Masqué' }],
@@ -136,6 +152,7 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
       window.clearInterval(tick);
       label.remove();
       bar.remove();
+      coin.remove();
     },
   };
 }

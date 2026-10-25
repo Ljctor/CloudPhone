@@ -2,17 +2,19 @@
 farming mpw4, free play or the Closed Mine; back to mpw18 when the timer
 ends (the mine ends its last entry first).
 
-GET  /mode         {mode, default, until, stage18, stage4, highest, configured, state, message_t, setup, gold,
-                    mine} (message_t: a status text, texts.py)
+GET  /mode         {mode, default, until, stage18, stage4, highest, configured, state, message_t, setup, tone,
+                    gold, mine} (message_t: a status text, texts.py)
                    setup: true while the mode is being set up (its switch,
-                   waiting for the lease or tried again), for the overlay
+                   waiting for the lease or tried again), for the overlay;
+                   tone: the overlay's colour, "ok", "hold", "setup" or
+                   "error" (rules.tone)
 POST /mode         {mode, default, until, stage18, stage4, highest, floor, area}: a number
                    absent or null keeps its value; until absent keeps the
                    timer, null clears it (no time limit)
 POST /mode/timer   {add: minutes}: moves the end of the mode (and of the mine)
 POST /mode/hold    {action: "free" | "resume"[, hold: id]}: a switch on hold
                    while the user plays: free play instead, or the switch
-                   now (the user's minute not waited for); 409 when nothing
+                   now (the user's 10 s not waited for); 409 when nothing
                    is on hold, the same action again changes nothing
 
 Entering mpw18 or mpw4 farming brings the game there in the background
@@ -33,16 +35,16 @@ stage, preset, soul weapon) runs the same path at once (loadout_changed),
 the soul weapon alone by its step alone (the stage change feature's
 ensure_soul_weapon), notified "Loadout mpw18 applied in 21 s".
 Each switch is one log line with its steps' seconds. While the user
-played in the last minute with the game in front (the lease refused:
+played in the last 10 s with the game in front (the lease refused:
 rules.USER_PLAYING; an input elsewhere, the game not running, is not
 playing: the switch goes on), the
 switch is on hold: one alert says so with the delay before its next try
-("Switch to farming mpw18 on hold: you are playing. Next try in 60
+("Switch to farming mpw18 on hold: you are playing. Next try in 10
 s."), once per switch however long the wait; GET /mode's hold gives it
 ({id, mode, left}) for the page's two buttons, POST /mode/hold their
 answer: « free » chooses free play, « resume » runs the switch now; with
-no answer it goes on by itself once the minute is over. The ready
-notification says the hold apart ("ready in 95 s (including 60 s waiting:
+no answer it goes on by itself once the 10 s are over. The ready
+notification says the hold apart ("ready in 45 s (including 10 s waiting:
 you were playing)"). While
 farming mpw4 it looks for the
 gold scroll every 30 s on the battle screen (gold: true, false once missing
@@ -75,7 +77,9 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
               # hold: the switch on hold while the user plays ({id, mode,
               # until (monotonic), owner, action}), last_hold: the one that
               # ended last ({id, action}), wake: wakes the switch's wait.
-              "hold": None, "last_hold": None, "wake": None}
+              "hold": None, "last_hold": None, "wake": None,
+              # watched(): the watchdog's last look ({mode, level}), once wired.
+              "watched": None}
     ports.store.register("mode", lambda: {key: status[key] for key in (
         "mode", "default", "until", "highest", "configured")})
 
@@ -107,7 +111,35 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
                            "left": max(0, round(hold["until"] - ports.clock.monotonic()))} if hold else None)
         answer["gold"] = status["scroll"]["gold"] if status["mode"] == "mpw4" else None
         answer["mine"] = mines["state"]()
+        answer["tone"] = tone(answer["mine"])
+        if answer["tone"] == "error" and not answer["message_t"] and status["watched"]:
+            look = status["watched"]()
+            if look and look.get("mode") == answer["mode"]:
+                answer["message_t"] = look.get("message_t")
         return answer
+
+    def engraving_off(name):
+        """The farming mode's loadout asks an engraving while the
+        engraving's switch is off (features/soul_weapon.py)."""
+        switch = farming.get("engraving_switch") if isinstance(farming, dict) else None
+        if name not in ("mpw18", "mpw4") or switch is None or switch() != "off":
+            return False
+        weapon = loadouts["loadout"](name).get("soul_weapon") or {}
+        variant = loadouts.get("variant")
+        return bool(weapon.get("variant") and variant and variant(weapon.get("id"), weapon["variant"]))
+
+    def tone(mine):
+        """The overlay's colour (rules.tone)."""
+        name = "mine" if mine.get("enabled") else status["mode"]
+        look = status["watched"]() if status["watched"] else None
+        playing = (ports.pause_left() or 0) > 0 if hasattr(ports, "pause_left") else False
+        return rules.tone(name, status["state"], status["hold"] is not None, playing,
+                          look if look and look.get("mode") == name else None,
+                          mine.get("state") if name == "mine" else None, engraving_off(name))
+
+    def watched_by(look):
+        """look(): the watchdog's last look (its api's look)."""
+        status["watched"] = look
 
     def switched(answer, since, waited, applied=False):
         """The switch's log line, and its alert when over budget: since,
@@ -147,8 +179,8 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
                 status["wake"] = None
 
     async def on_hold(name, applied, owner, alerted):
-        """The user played in the last minute: the switch is on hold until
-        the minute is over (its hold made, or moved later), one alert the
+        """The user played in the last 10 s: the switch is on hold until
+        the 10 s are over (its hold made, or moved later), one alert the
         first time for this switch (alerted: it was sent). True once
         alerted."""
         left = ports.pause_left() or rules.BUSY_RETRY
@@ -172,7 +204,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
     async def set_stage(number, mpw, applied=False, step=None):
         """Brings the game to farming that stage with its loadout's preset.
         True once there; else one alert naming the step. While the
-        shared lease cannot be had (the user played in the last minute,
+        shared lease cannot be had (the user played in the last 10 s,
         another holder), it waits for its next look (WATCH_EVERY), at most
         rules.LEASE_WAIT: then one alert, for the user. While the user
         plays it is on hold (on_hold: one alert, POST /mode/hold's choice).
@@ -186,7 +218,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         report("moving", moving)
         since = status["switch_at"] if status["switch_at"] is not None else ports.clock.monotonic()
         waited, held, failures = 0.0, 0.0, 0
-        # force: resumed at the user's request, the user's minute is not
+        # force: resumed at the user's request, the user's 10 s are not
         # waited for, retries included, until an input of theirs stops it.
         me, alerted, force = object(), False, False
         try:
@@ -501,5 +533,5 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
                    ("POST", "/mode/hold", handle_hold)],
         "startup": [resume],
         # For the watchdog: the mode now (it runs only in the default one).
-        "api": {"state": state, "confirm": confirm},
+        "api": {"state": state, "confirm": confirm, "watched_by": watched_by},
     }

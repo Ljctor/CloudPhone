@@ -1,5 +1,11 @@
 # Slayer Legend plugin (part 05)
 
+The mode overlay is blue while the plugin returns to the selected instruction,
+green once reached, orange during user input and for 10 seconds after the
+latest input, and red when actually blocked. Every input restarts the pause.
+Blocked states display their error on the game overlay as well as the existing
+ntfy notification. Observations continue while automated actions are paused.
+
 Features for the game Slayer Legend only, installed as a plugin of the Cloud
 Phone app (part 04). They show in the page's options panel (the cog in the
 toolbar), under **Plugins → Slayer Legend**. Without this part the page has
@@ -111,7 +117,7 @@ a decision comes out.
 |---|---|
 | `plugin.json` | id, title, version, plugin API (`api`) |
 | `gateway.py` | gateway side: builds the ports and wires the features of `features/`; its docstring lists each route under `/api/v1/plugins/slayer-legend/` with the feature serving it |
-| `features/ports.py` | the ports the features get from the gateway's context: screenshots (with `max_age`), analysis, tap, hold and swipe (each through the guard of `nav.py`, refused otherwise, and only under the shared lease), the lease (`Lease`: one holder at a time, a reason, a time to live of at most 15 minutes renewed by its holder, released by its holder only, its expiry logged as a warning; a user input stops every holder but the user's own press for a minute, only while the game is in front: an input on the launcher or another app, the game not running, is not playing and the relaunch or the switch goes on), whether the game is in front or running, starting it (the launch only), alerts, the clock, `state.json` |
+| `features/ports.py` | the ports the features get from the gateway's context: screenshots (with `max_age`), analysis, tap, hold and swipe (each through the guard of `nav.py`, refused otherwise, and only under the shared lease), the lease (`Lease`: one holder at a time, a reason, a time to live of at most 15 minutes renewed by its holder, released by its holder only, its expiry logged as a warning; a user input stops every holder but the user's own press for 10 s after the last input, only while the game is in front: an input on the launcher or another app, the game not running, is not playing and the relaunch or the switch goes on), whether the game is in front or running, starting it (the launch only), alerts, the clock, `state.json` |
 | `features/lease.py` | `GET`/`POST`/`DELETE /lease`: the shared lease for a holder outside the plugin (`{holder, reason, seconds}`, the page token needed): while it holds it, the launch, the mine and the watchdog do not tap |
 | `features/counters.py` | `GET /emerald-mask`: a counter's mask off a screenshot, for browsers that cannot read the video |
 | `features/game.py`, `game_rules.py` | `GET /game`: the scan of every capture and the game's state (see **Architecture: the scan**); `game_rules.py` holds the schema by screen, the screen → readers mapping and how a reading becomes the state |
@@ -149,7 +155,7 @@ a decision comes out.
 | `page_screen.js` | the **Stage** row (under the mode's État) and the debug row **Écran détecté** |
 | `page_game.js` | the game's state sections (`GET /game`), one per screen, unverified values greyed |
 | `page_power.js` | the **Plugin** switch, first in the block |
-| `page_icons.js` | the pixel-art icons (plugin, Gold, Émeraudes, Diamants) |
+| `page_icons.js` | the icons: pixel art for the plugin, Émeraudes and Diamants; the game's gold coin and souls |
 | `page_mode.js` | the "Mode et farming" section; its overlay hook: the mode's lines over the game (`MISE EN PLACE...` while it sets up, a timed mode's time left under its name) |
 | `page_engraving.js` | in the **Farming mpw18** and **Farming mpw4** dialogs of `page_mode.js`: the mode's loadout (Battle settings preset, soul weapon, engraving variant), the variant's grid drawn read-only and the pieces it needs, **Enregistrer** (Save). A selector this browser never touched shows the saved value, and **Enregistrer** sends only what was chosen here: a field left out keeps the saved one |
 | `page_gold.js` | the "Gold" section, the gold rate in the game's top bar, and the label over the game, top left: the features' overlay lines, under the same condition |
@@ -291,7 +297,7 @@ screen by polling fresh captures (`settle`: every 0.25 s, at most 4 s, 8 s
 for a stage to load), never a fixed long sleep; the fixed waits left are
 the controls' own (0.5 s for the unfold, 0.4 s between the two looks at the
 gear, and their folding away by themselves). While the lease cannot be had
-(the user played in the last minute, another holder), it tries again every
+(the user played in the last 10 s, another holder), it tries again every
 2 s; that wait is the user's, logged apart and never counted. Each switch
 is one log line, e.g. `switch mpw4→mpw18 in 38 s (stage 24 s, preset 4 s,
 soul_weapon 6 s) (+12 s waiting for the lease)`; over budget the switch still

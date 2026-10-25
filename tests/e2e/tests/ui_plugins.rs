@@ -582,8 +582,8 @@ fn slayer_legends_switch_on_hold_shows_in_the_state_row_with_free_play_and_resum
         "state": "running", "picture": [[0.36, 0.012, 0.42, 0.036, [40, 200, 60]], [0.0, 0.972, 1.0, 0.998, [225, 225, 225]]]});
     let cp = CloudPhone::start_with(json!({"plugins": [SLAYER_LEGEND], "options": {"app": app}}));
     let mode = "api/v1/plugins/slayer-legend/mode";
-    // The user plays: the switch to mpw4 is on hold.
-    assert_eq!(cp.post_json("api/v1/input", &json!({})).status(), 200);
+    // The user plays, an input every few seconds: the switch to mpw4 is on hold.
+    let _playing = keep_playing(&cp);
     assert_eq!(cp.post_json(mode, &json!({"mode": "mpw4", "stage4": 31})).status(), 200);
     wait_for("the switch on hold", Duration::from_secs(20), || {
         (!cp.try_get_json(mode)?["hold"].is_null()).then_some(())

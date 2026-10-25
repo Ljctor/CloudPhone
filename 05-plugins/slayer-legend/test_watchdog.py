@@ -180,15 +180,28 @@ class OtherScreen(unittest.TestCase):
         self.assertEqual(w.kinds(), ["relaunch"])
 
 
+class Level(unittest.TestCase):
+    def test_each_symptom_has_its_alert_level(self):
+        self.assertEqual([rules.level(s) for s in (None, "unknown", "pending")], [None] * 3)
+        self.assertEqual(rules.level("progress_stalled"), "error")
+        self.assertEqual(rules.level("not_running"), "warning")
+        self.assertEqual({rules.level(s) for s in rules.ERRORS}, {"error"})
+
+
 class Pauses(unittest.TestCase):
-    def test_an_input_pauses_a_minute(self):
+    def test_an_input_pauses_10_s_from_the_last_one(self):
+        self.assertEqual(rules.PAUSE_AFTER_INPUT, 10)
         w = Watch()
         w.looks(BATTLE, 4)
         w.tap()
-        w.looks(GONE, 4)
-        self.assertEqual(w.paused, ["En pause : l’utilisateur joue"] * 4)
         w.look(GONE)
-        self.assertEqual(w.symptoms[-1], "not_running", "looks again after 60 s")
+        self.assertEqual(w.paused, ["En pause : l’utilisateur joue"], "7.5 s after the input")
+        w.tap()
+        w.look(GONE)
+        self.assertEqual(w.paused, ["En pause : l’utilisateur joue"] * 2, "another input starts the 10 s over")
+        w.look(GONE)
+        self.assertEqual(w.symptoms[-1], "not_running", "looks again 22.5 s after the last input")
+        self.assertEqual(len(w.paused), 2)
 
     def test_a_menu_is_a_disruption_after_60_s_with_no_input(self):
         w = Watch()

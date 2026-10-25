@@ -1,12 +1,17 @@
 // Lines of text drawn in the gold counter's own pixel font (from the
 // gateway's GET /gold-font: {height, glyphs: {char: rows of "#" and "."}}),
-// orange outlined in black like the game. Used by page_gold.js.
+// outlined in black like the game, orange gold unless a line says its
+// colour. Used by page_gold.js.
 
-// Lines of text on a canvas, `cell` CSS pixels per game pixel. Letters
-// without accents: the font has none.
+const ORANGE = '#ffa31a';
+
+// Lines of text on a canvas, `cell` CSS pixels per game pixel; a line is
+// a text or { text, colour }. Letters without accents: the font has none.
 export function drawText(canvas, font, lines, cell) {
-  const plain = (text) => text.normalize('NFD').replace(/[̀-ͯ]/g, '');
-  const glyphLines = lines.map((text) => [...plain(text)].map((c) => font.glyphs[c]).filter(Boolean));
+  const plain = (text) => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const colours = lines.map((line) => (typeof line === 'string' ? ORANGE : line.colour ?? ORANGE));
+  const glyphLines = lines.map((line) => [...plain(typeof line === 'string' ? line : line.text)]
+    .map((c) => font.glyphs[c]).filter(Boolean));
   const rows = font.height;
   // A game pixel of space between glyphs, one round the text for the
   // outline, two between lines.
@@ -19,9 +24,9 @@ export function drawText(canvas, font, lines, cell) {
   canvas.style.width = `${width * cell}px`;
   canvas.style.height = `${height * cell}px`;
   const context = canvas.getContext('2d');
-  for (const [colour, grow] of [['#000', 1], ['#ffa31a', 0]]) {
-    context.fillStyle = colour;
+  for (const [colour, grow] of [['#000', 1], [null, 0]]) {
     glyphLines.forEach((glyphs, line) => {
+      context.fillStyle = colour ?? colours[line];
       const base = 1 + line * (rows + 4);
       let pen = 1;
       for (const glyph of glyphs) {

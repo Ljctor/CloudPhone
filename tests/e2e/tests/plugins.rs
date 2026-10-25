@@ -469,16 +469,17 @@ fn slayer_legends_switch_on_hold_while_the_user_plays_alerts_once_with_one_time_
     let (mode, hold) = ("api/v1/plugins/slayer-legend/mode", "api/v1/plugins/slayer-legend/mode/hold");
     assert_eq!(cp.post_json("api/v1/notify", &json!({"enabled": true})).status(), 200);
     assert_eq!(cp.post_json(hold, &json!({"action": "resume"})).status(), 409, "nothing on hold");
-    // The user plays: the switch to mpw4 waits for the end of their minute.
-    assert_eq!(cp.post_json("api/v1/input", &json!({})).status(), 200);
+    // The user plays: the switch to mpw4 waits for 10 s after their last input.
+    let playing = keep_playing(&cp);
     assert_eq!(cp.post_json(mode, &json!({"mode": "mpw4", "stage4": 31})).status(), 200);
     let held = wait_for("the switch on hold", Duration::from_secs(20), || {
         let answer = cp.try_get_json(mode)?;
         (!answer["hold"].is_null()).then_some(answer)
     });
-    assert_eq!((held["hold"]["mode"].clone(), held["setup"].clone()), (json!("mpw4"), json!(true)), "{held}");
+    assert_eq!((held["hold"]["mode"].clone(), held["setup"].clone(), held["tone"].clone()),
+               (json!("mpw4"), json!(true), json!("hold")), "{held}");
     let left = held["hold"]["left"].as_u64().unwrap();
-    assert!((40..=60).contains(&left), "{held}");
+    assert!((1..=10).contains(&left), "{held}");
     // One alert, with the real delay and its two buttons.
     let alert = wait_for("the hold's alert", Duration::from_secs(10), || {
         cp.fake().ntfy_posts().into_iter().find(|p| p["text"].as_str().is_some_and(|t| t.contains("on hold")))
@@ -504,7 +505,9 @@ fn slayer_legends_switch_on_hold_while_the_user_plays_alerts_once_with_one_time_
     assert_eq!(post_with_action_token_from(&cp, hold, &token, Some("https://example.org"), &body), 403, "foreign Origin");
     assert_eq!(cp.get_json(mode)["hold"]["id"], id, "still on hold");
     // « Reprendre maintenant » from the phone (ntfy sends no Origin): the
-    // switch runs now, once.
+    // switch runs now, once. The user stops playing first: an input after
+    // it would stop the switch again.
+    drop(playing);
     assert_eq!(post_with_action_token(&cp, hold, &token, &body), 200, "no Origin, a valid token");
     assert_eq!(post_with_action_token(&cp, hold, &token, &json!({"action": "resume", "hold": id})), 403, "spent");
     let resumed = wait_for("the switch resumed", Duration::from_secs(20), || {

@@ -169,7 +169,7 @@ function pluginOption(context, plugin, option, index) {
     );
   }
   if (option.type === 'status') {
-    const value = option.value?.() ?? '–';
+    const value = statusValue(option.value?.() ?? '–', option.look);
     const href = option.href?.();
     const linked = href ? <a href={href} target="_blank" rel="noreferrer" style={styles.link}>{value}</a> : value;
     // muted(): a value not checked lately, greyed.
@@ -193,6 +193,20 @@ function pluginOption(context, plugin, option, index) {
     ) : shown);
   }
   return null;
+}
+
+// A status value: a text, or parts (a text, or { icon, text }: the icon
+// before its text); look 'game': white with a black outline.
+function statusValue(value, look) {
+  const parts = Array.isArray(value)
+    ? value.map((part, index) => (typeof part === 'string' ? <React.Fragment key={index}>{part}</React.Fragment> : (
+      <span key={index} style={styles.statusPart}>
+        {part.icon && <img src={part.icon} alt="" style={styles.statusIcon} />}
+        {part.text}
+      </span>
+    )))
+    : value;
+  return look === 'game' ? <span style={styles.gameText}>{parts}</span> : parts;
 }
 
 export function PluginList({ plugins, settings, updateSettings, openDialog }) {

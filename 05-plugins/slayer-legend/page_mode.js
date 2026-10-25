@@ -6,7 +6,11 @@
 // overlay applies: overlay(), the mode's lines on the game, top left (the
 // time left of a timed mode under its name, and "MISE EN PLACE..." under
 // it while the gateway sets the mode up, "EN ATTENTE" while the switch
-// waits for the user to stop playing; asked every 2 s then). While a
+// waits for the user to stop playing; asked every 2 s then), in the
+// colour of the gateway's tone: green when the instruction is reached,
+// orange during input and the rolling 10 s pause, red when blocked,
+// blue while returning to the instruction. A touch on the game asks the tone
+// again at once, and every 2 s while it holds. While a
 // switch is on hold, the État row says so with « Jeu libre » and
 // « Reprendre » inline (POST /mode/hold). The mpw18 and mpw4 dialogs
 // hold that mode's loadout (page_engraving.js). The État row ends with
@@ -21,6 +25,8 @@ const UNTIL = 'cloudphone-slayer-legend-mode-until';
 const TIMED_MINUTES = 30;
 const DOTS = { green: '🟢', blue: '🔵', red: '🔴' };
 const MODE_NAMES = { mpw18: 'Farming mpw18', mpw4: 'Farming mpw4', free: 'Jeu libre', mine: 'Mine fermée' };
+// The overlay's colour per tone (GET /mode).
+const TONES = { ok: '#4be04b', hold: '#ffa31a', error: '#ff4040', setup: '#409cff' };
 
 // Seconds as the game's timers write them: mm:ss, or h:mm:ss from an hour.
 const clock = (seconds) => {
@@ -48,7 +54,7 @@ export default function modeFeature(api, { known, watchdog, stage }) {
   // chosen: when the mode was last chosen here; sending: a POST under way.
   // at: when answer came (Date.now()), for the hold's countdown.
   const farm = { answer: null, timer: null, stages: null, chosen: 0, sending: 0, at: 0,
-    oldUntil: Number(takeOld(UNTIL)) || null };
+    oldUntil: Number(takeOld(UNTIL)) || null, inputUntil: 0 };
   const loadouts = loadout(api);
   const mode = () => api.setting('mode') || 'mpw18';
   // The mode a timed one goes back to, with no timer itself.
@@ -95,8 +101,15 @@ export default function modeFeature(api, { known, watchdog, stage }) {
     remember(await api.get('/mode').catch(() => null), asked);
     api.refresh();
     window.clearTimeout(farm.timer);
-    farm.timer = window.setTimeout(askMode, farm.answer?.setup ? 2000 : 10000);
+    farm.timer = window.setTimeout(askMode, farm.answer?.tone !== 'ok' || farm.inputUntil > Date.now() ? 1000 : 10000);
   };
+  // A touch on the game: the gateway holds its taps from now, ask its tone.
+  const untap = api.onTap?.(() => {
+    farm.inputUntil = Date.now() + 10000;
+    api.refresh();
+    window.clearTimeout(farm.timer);
+    farm.timer = window.setTimeout(askMode, 300);
+  });
   const sendMode = async () => {
     farm.sending += 1;
     const result = await api.post('/mode', modeOptions()).catch(() => null);
@@ -152,16 +165,19 @@ export default function modeFeature(api, { known, watchdog, stage }) {
 
   return {
     // The selected mode, under the player's level (top left), and below it
-    // "(défaut)" or the time left on the timer.
+    // "(défaut)" or the time left on the timer, in the tone's colour.
     overlay: () => {
       const current = farm.answer?.mode ?? mode();
       const seconds = Math.max(0, Math.round((farm.answer?.until ?? 0) - Date.now() / 1000));
+      const tone = current !== 'free' && farm.inputUntil > Date.now() ? 'hold' : farm.answer?.tone;
+      const colour = TONES[tone] ?? TONES.setup;
       return [
         api.tr(MODE_NAMES[current] ?? current).toUpperCase(),
-        ...(farm.answer?.hold ? [api.tr('EN ATTENTE')]
+        ...(tone === 'error' && farm.answer?.message_t ? [api.tr(farm.answer.message_t)] : []),
+        ...(tone === 'hold' ? [api.tr('EN ATTENTE')]
           : farm.answer?.setup ? [api.tr('MISE EN PLACE...')] : []),
         `(${(current === defaultMode() || !farm.answer?.until ? api.tr('défaut') : clock(seconds)).toUpperCase()})`,
-      ];
+      ].map((text) => ({ text, colour }));
     },
     options: [
       { type: 'section', key: 'mode', label: 'Mode et farming' },
@@ -273,6 +289,7 @@ export default function modeFeature(api, { known, watchdog, stage }) {
     },
     dispose: () => {
       loadouts.dispose();
+      untap?.();
       window.clearTimeout(farm.timer);
     },
   };

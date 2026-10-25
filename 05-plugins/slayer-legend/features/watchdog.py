@@ -33,7 +33,7 @@ plan-only while its switch says so, see features/stage_change.py). On the
 battle screen the stage is read whole (region and numeral); the preset and
 AUTO are read on one unfold of the right edge's controls (the arrow's tap,
 under the lease) at most every CONTROLS_EVERY seconds, whoever watches the
-screen (only a user's input pauses it, a minute). AUTO is never tapped
+screen (only a user's input pauses it, 10 s). AUTO is never tapped
 (the user's order, 2026-10-22): its reading is only said in the alerts.
 
 The stage progress bar (stage.progress, under the stage's name) is read
@@ -58,7 +58,7 @@ Soul Weapon icon), never a tap inside the panel.
 
 Free play suspends it, and so does a mode's entry while its sequence
 runs (the mode feature's state "moving", under the lease): the watchdog
-waits for it. A user input pauses it a minute; another holder of the
+waits for it. A user input pauses it 10 s; another holder of the
 lease defers its repair. At the gateway's start it only observes its first
 looks; the repairs' hourly counts are kept in state.json ("watchdog").
 """
@@ -462,5 +462,14 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         say("normal", "Retry now: {repair}", {"repair": rules.REPAIR_NAMES[kind]})
         return ports.respond(state())
 
+    def last_look():
+        """Its last look, for the mode's overlay tone: {mode, level}."""
+        symptom = status["symptom"]
+        return {"mode": status["mode"], "level": rules.level(symptom),
+                "message_t": status["text"],
+                "repairing": status["repairing"],
+                "blocked": bool(memory["alerted"] and symptom in rules.ERRORS
+                                and not status["repairing"])}
+
     return {"routes": [("GET", "/watchdog", handle_state), ("POST", "/watchdog/retry", handle_retry)],
-            "startup": [start]}
+            "startup": [start], "api": {"look": last_look}}

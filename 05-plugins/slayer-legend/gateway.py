@@ -89,6 +89,12 @@ def setup(context):
     mode = feature("mode").mode(ports, feature("mode_rules"), timer, values, mine["api"], screens,
                                 module("gold_scroll"), engraving["api"], farming["api"])
     gold = feature("gold").gold(ports, screens, stage, module("gold"), feature("gold_rules"), module("soul_counters"))
+    watchdog = feature("watchdog").watchdog(ports, screens, stage, feature("watchdog_rules"),
+                                            lambda number: screen_rules.name_numeral(table, stage, number),
+                                            mode["api"], mine["api"], launch["api"], engraving["api"]["loadout"],
+                                            farming["api"], gold["api"])
+    # The overlay's tone reads the watchdog's last look.
+    mode["api"]["watched_by"](watchdog["api"]["look"])
     features = [
         game,
         feature("power").power(ports),
@@ -102,10 +108,7 @@ def setup(context):
         farming,
         mode,
         engraving,
-        feature("watchdog").watchdog(ports, screens, stage, feature("watchdog_rules"),
-                                     lambda number: screen_rules.name_numeral(table, stage, number),
-                                     mode["api"], mine["api"], launch["api"], engraving["api"]["loadout"],
-                                     farming["api"], gold["api"]),
+        watchdog,
     ]
     # Every feature registered its part of state.json: an old highest.json
     # becomes state.json now.
