@@ -70,6 +70,40 @@ the machine at once (wrap `cargo test` in `flock` on one shared lock file).
 4. Hexagonal refactor: gateway domains (display next, with
    `adapters/host_files.py`), then the page, then the plugin.
 
+## Slayer Legend: every feature reads the game's state
+
+The scan (`features/game.py`) is the one producer of game facts; each
+feature should read the state (`game.get`, `game.require`, `scan(shot,
+force)`) instead of its own pixels. Already on it: the gold and souls
+rates, the highest stage, the watchdog's stage, numeral and progress bar,
+`/screen`'s stage. Still reading pixels on their own, in this order:
+
+1. the watchdog's screen naming (`screens.classify`, `known_name`,
+   `plain_battle`, `other_name`) and its preset and AUTO read
+   (`stage_change.read_controls`: two frames on one unfold, a reader of
+   two captures to add to the scan);
+2. the stage change's looks (`select.view`, `select.battle_stage`,
+   `controls.badge`, `controls.selected`, `controls.controls`), each a
+   check after its own tap: `scan(shot, force)` on the settled capture;
+3. the soul weapon step (`soul_weapon.view`: name, owned, tag, rows,
+   badge) and the engraving setup (`engraving_screen` grid, cards, popup,
+   preview);
+4. the mine (`mine.in_fight`, `repeat_ticked`, `gold_scroll`, `floors`,
+   the pop-ups) once its screens are registered;
+5. the launch (`screens.classify`, `sign_in`, the save notice) and the
+   mode's gold scroll look (`gold_scroll.seen`);
+6. `/screen`'s screen name and panel, `/emerald-mask`, the trace's
+   signatures (kept apart: they serve the page and the trace, not the game
+   state).
+
+Game state values with no reader yet (schema entries marked pending in
+`features/game_rules.py`): the emerald and diamond counts (the page reads
+only the digits after the comma; a reader of the whole count in the pixel
+font is to write from the top bar's crops), the mine's feathers
+(`mine.feathers_left`, row 9 below), and the mine's floor and area read on
+its screens (only noted by the mine's own entry until `mine_list` and
+`mine_area` are registered).
+
 # Pixel font: what is left
 
 `05-plugins/slayer-legend/pixel_font.py` is cut from the fixtures by

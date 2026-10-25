@@ -14,7 +14,9 @@ the watchdog: api current(), which asks as a page does).
 Which readings count and the rate are in gold_rules.py: one window each,
 the same rules, its length following the resolution read (full digits:
 a short window); spending souls is left out, spending gold starts its
-window again. Read-only: it never touches the game.
+window again. The readings are the game's scan of the capture
+(features/game.py, its gold and souls readers forced on it). Read-only:
+it never touches the game.
 """
 
 
@@ -22,6 +24,7 @@ window again. Read-only: it never touches the game.
 def gold(ports, screens, stage, counter, rules, souls=None):
     """souls: soul_counters.py (None: no souls rates)."""
     colours = souls.COLOURS if souls else ()
+    game = getattr(ports, "game", None)
     status = {"window": rules.empty(), "read": None, "box": None, "asked": 0.0, "task": None,
               "souls": {colour: rules.empty() for colour in colours}}
 
@@ -46,8 +49,14 @@ def gold(ports, screens, stage, counter, rules, souls=None):
                     status["window"] = rules.elsewhere(status["window"])
                     for colour in colours:
                         status["souls"][colour] = rules.elsewhere(status["souls"][colour])
+                elif game is not None:
+                    # The game's scan of this capture (features/game.py).
+                    readings = await game["scan"](shot, ("gold", "souls"))
+                    reading, row = readings.get("gold_reading"), readings.get("souls_reading")
+                    kind, here = readings.get("gold_place") or (None, None)
                 else:
                     reading, (kind, here), row = await ports.analyse(gold_facts, shot)
+                if shot:
                     if reading:
                         status["read"] = ports.clock.wall()
                         status["box"] = reading["box"]

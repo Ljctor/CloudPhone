@@ -42,6 +42,7 @@ from .http import display
 from .http import settings
 from .http import events
 from .http import notify
+from .http import page_settings
 from .http import session
 from .core import settings as settings_rules
 from .core.session import bearer
@@ -705,6 +706,8 @@ def init_app(videobridge_token, plugins_dir="", plugin_data=""):
     app.router.add_get("/api/v1/notify", notify.get_notify)
     app.router.add_post("/api/v1/notify", notify.set_notify)
     app.router.add_post("/api/v1/notify/test", notify.test_notify)
+    app.router.add_get("/api/v1/settings", page_settings.get_settings)
+    app.router.add_post("/api/v1/settings", page_settings.set_settings)
     app.router.add_post("/api/v1/viewers/disconnect-others", viewers.disconnect_others(forget_state))
     app.router.add_post("/api/v1/display", display.set_display(
         settings.status, settings.files, change_requested))
@@ -816,6 +819,12 @@ async def main():
         help="Where the phone alerts' setting is kept (empty: no alerts).",
     )
     parser.add_argument(
+        "--page_settings",
+        type=str,
+        default="",
+        help="Where the page's options are kept for every browser (empty: not kept).",
+    )
+    parser.add_argument(
         "--plugins_dir",
         type=str,
         default="",
@@ -890,6 +899,8 @@ async def main():
     # token. Passing the token on the command line would expose it via /proc.
     bridge_token = args.videobridge_token or DISCOVERY_PROPS.get("grpc.token", "")
     app = init_app(bridge_token, args.plugins_dir, args.plugin_data)
+    # After the plugins made their data directories, where their options are.
+    page_settings.load(args.page_settings, args.plugin_data)
     # The phone alerts' buttons post here (plugins.PluginContext.notify).
     app["public_url"] = alert_rules.public_url(args.host, args.port)
     runner = web.AppRunner(app)

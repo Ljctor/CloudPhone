@@ -44,9 +44,9 @@ export default function loadoutFeature(api) {
   loadList();
   loadSaved();
 
-  // What a selector shows: this browser's choice once made (null: never
-  // touched here; '' chosen empty), else the loadout saved on the server,
-  // so that a browser without local settings shows, and keeps, what is saved.
+  // What a selector shows: the page's option once chosen (null: never
+  // chosen; '' chosen empty), else the loadout saved on the server, so
+  // that options that never held it show, and keep, what is saved.
   const touched = (mode, field) => api.setting(`${mode}${field}`) !== null;
   const fromServer = (mode, field) => {
     const part = data.saved?.[mode];
@@ -118,7 +118,7 @@ export default function loadoutFeature(api) {
   // stays in engravings.json and the README.
   const warned = (mode) => Boolean(variant(mode)) && weapon(mode)?.wiki_check === 'community-differs';
   const save = async (mode) => {
-    // Only what was chosen in this browser: a field left out keeps the
+    // Only what was chosen in the page's options: a field left out keeps the
     // server's value (POST /loadout). An empty choice clears it; a weapon
     // without its variant yet is not a choice.
     const body = { mode };

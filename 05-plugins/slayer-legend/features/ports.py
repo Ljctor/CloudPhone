@@ -3,7 +3,12 @@
 of the gateway, so what it may do to the game is all here.
 
 - capture(max_age=0): Android's screen (width, height, RGB bytes) or None,
-  a capture at most max_age seconds old shared with the other callers.
+  a capture at most max_age seconds old shared with the other callers;
+  on_capture(listener): listener(shot) for each capture (the game's scan,
+  features/game.py: every capture is scanned).
+- on_relaunch(listener): listener(why) when running() finds the game's
+  process gone or another one (a relaunch, Android restarted);
+  relaunched(why) tells them.
 - analyse(fn, *args): fn(*args) in a worker thread (pixel work).
 - tap, hold, swipe, taps: the only ways to touch the game. Each names the
   screen recognised and the move wanted, and goes through the navigation
@@ -434,6 +439,10 @@ def build(context, nav):
             raise Refused(refusal)
 
     clock = SimpleNamespace(wall=time.time, monotonic=time.monotonic, sleep=asyncio.sleep)
+    # The game's process last seen (its pid), and who hears of a relaunch
+    # and of each capture (features/game.py).
+    process = {"pid": None}
+    relaunch_listeners, capture_listeners = [], []
     # Older gateways do not say when the user plays.
     last_input = getattr(context, "last_input", None) or (lambda: None)
     power = {"on": True}
@@ -507,11 +516,41 @@ def build(context, nav):
         return last_input() if lease.playing() else None
 
     async def running():
-        """False when the game's process is gone, None when adb cannot tell."""
+        """False when the game's process is gone, None when adb cannot tell.
+        A process gone, or another one than last time (the game relaunched,
+        Android restarted), is told to the relaunch listeners."""
         code, out = await adb("shell", "pidof", PACKAGE)
         if code == 0 and out.strip():
+            pid = out.split()[0]
+            if process["pid"] is not None and pid != process["pid"]:
+                relaunched("relaunched (another process)")
+            process["pid"] = pid
             return True
-        return False if code == 1 and not out.strip() else None
+        if code == 1 and not out.strip():
+            if process["pid"] is not None:
+                relaunched("stopped (process gone)")
+            process["pid"] = None
+            return False
+        return None
+
+    def relaunched(why):
+        for listener in list(relaunch_listeners):
+            try:
+                listener(why)
+            except Exception:
+                exception_log(log)(f"Relaunch listener failed ({why})")
+
+    async def capture(max_age=0):
+        """The shared capture, each one handed to the capture listeners
+        (the game's scan) as it comes."""
+        shot = await context.screenshot(max_age=max_age)
+        if shot:
+            for listener in list(capture_listeners):
+                try:
+                    listener(shot)
+                except Exception:
+                    exception_log(log)("Capture listener failed")
+        return shot
 
     async def start_game():
         """True when Android started (or brought to the front) the game's
@@ -604,7 +643,8 @@ def build(context, nav):
         log("normal", f"Plugin turned {'on' if on else 'off'}")
 
     return SimpleNamespace(
-        capture=context.screenshot, analyse=context.analyse,
+        capture=capture, analyse=context.analyse, on_capture=capture_listeners.append,
+        on_relaunch=relaunch_listeners.append, relaunched=relaunched,
         tap=tap, taps=taps, hold=hold, swipe=swipe, lease=lease, leased=leased, Busy=Busy, Refused=Refused,
         last_input=last_input, user_input=user_input, **text_ports(),
         pause_left=lease.pause_left,

@@ -1,5 +1,5 @@
 // The mode (the default one, « Mode par défaut »: mpw18 farming unless set
-// to mpw4 farming or free play; or a timed mode) runs in the gateway; this browser's options are sent to
+// to mpw4 farming or free play; or a timed mode) runs in the gateway; the page's options (kept by the gateway) are sent to
 // it when they change, and on load if the gateway has not been told since
 // it started. Its state is asked every 10 s. Options: the "Mode et
 // farming" section. Overlay hook, called by page_gold.js while the
@@ -13,8 +13,9 @@
 // the watchdog's look at the selected mode (page_watchdog.js).
 import loadout from './page_engraving.js';
 
-// This browser's copy of when the timed mode ends (Unix seconds), as the
-// gateway last said; sent again after a gateway restart.
+// Where earlier versions kept when the timed mode ends, in this browser:
+// sent once to a gateway that knows no mode yet, then removed (the
+// gateway keeps it in state.json).
 const UNTIL = 'cloudphone-slayer-legend-mode-until';
 // A timed mode starts with this timer (then +30 … −30 to adjust it).
 const TIMED_MINUTES = 30;
@@ -29,40 +30,36 @@ const clock = (seconds) => {
     : `${two(Math.floor(seconds / 60))}:${two(seconds % 60)}`;
 };
 
-const load = (name) => {
+// The old copy of the timer's end, read once and removed.
+const takeOld = (name) => {
   try {
-    return window.localStorage.getItem(name);
+    const value = window.localStorage.getItem(name);
+    window.localStorage.removeItem(name);
+    return value;
   } catch {
     return null;
   }
 };
-const keep = (name, value) => {
-  try {
-    if (value) window.localStorage.setItem(name, String(value));
-    else window.localStorage.removeItem(name);
-  } catch {
-    // Not kept: lost on reload.
-  }
-};
 
-// known(): the last stage number read (page_screen.js); watchdog: the
+// known(): the last stage number read (page_screen.js, from the gateway); watchdog: the
 // watchdog part (page_watchdog.js: line, retry); stage: the stage's row,
 // under État (page_screen.js).
 export default function modeFeature(api, { known, watchdog, stage }) {
   // chosen: when the mode was last chosen here; sending: a POST under way.
   // at: when answer came (Date.now()), for the hold's countdown.
-  const farm = { answer: null, timer: null, stages: null, chosen: 0, sending: 0, at: 0 };
+  const farm = { answer: null, timer: null, stages: null, chosen: 0, sending: 0, at: 0,
+    oldUntil: Number(takeOld(UNTIL)) || null };
   const loadouts = loadout(api);
   const mode = () => api.setting('mode') || 'mpw18';
   // The mode a timed one goes back to, with no timer itself.
   const defaultMode = () => api.setting('defaultMode') || 'mpw18';
-  // Only what this browser has: the gateway keeps its values for the rest.
+  // Only what the page's options have: the gateway keeps its values for the rest.
   const modeOptions = () => Object.fromEntries(Object.entries({
     mode: mode(),
     // Only once chosen here (or adopted from the gateway): a browser that
     // never chose one does not reset it.
     default: api.setting('defaultMode') || null,
-    until: farm.answer?.until ?? (Number(load(UNTIL)) || null),
+    until: farm.answer?.until ?? farm.oldUntil,
     stage18: Number(api.setting('stage18')) || null,
     stage4: Number(api.setting('stage4')) || null,
     floor: Number(api.setting('mineFloor')) || null,
@@ -80,7 +77,7 @@ export default function modeFeature(api, { known, watchdog, stage }) {
   const remember = (answer, asked = 0) => {
     farm.answer = answer;
     farm.at = Date.now();
-    if (answer) keep(UNTIL, answer.until);
+    if (answer?.configured) farm.oldUntil = null;
     // The gateway changed the mode itself (a timed mode ended: back to
     // mpw18): the radio follows, without sending it back (adopt), unless
     // the answer is older than the user's last choice here. Older pages'
@@ -142,7 +139,7 @@ export default function modeFeature(api, { known, watchdog, stage }) {
     ];
   };
   api.get('/mode').catch(() => null).then((answer) => {
-    // After a gateway restart it knows nothing: send this browser's options.
+    // A gateway that knows no mode yet: send the page's options.
     if (answer && !answer.configured) {
       farm.answer = null;
       sendMode();

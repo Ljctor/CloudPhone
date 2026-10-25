@@ -39,8 +39,8 @@ the browser and the gateway; `App.tsx` only assembles them.
 | `js/example/src/logs.tsx` | the page's log and the server's (`GET /api/v1/logs`), the log list, the level filter |
 | `js/example/src/logSection.tsx` | a log in the information panel: folded at first, with its filter |
 | `js/example/src/notify.tsx` | phone alerts (`GET`/`POST /api/v1/notify`), the options panel's section |
-| `js/example/src/pageSettings.ts` | the per-viewer settings' key and defaults, reading them from the stored text, a change, the log sections' folded state (pure) |
-| `js/example/src/viewerSettings.tsx` | the settings kept in this browser (`localStorage`), the page's language, the options panel's language, cursor and folding rows |
+| `js/example/src/pageSettings.ts` | the page's settings' defaults, the gateway's answer over them, a change and what of it is sent, what an earlier version left in the browser that moves to the gateway (`migration`), the log sections' folded state (pure) |
+| `js/example/src/viewerSettings.tsx` | the page's settings, kept by the gateway (`GET`/`POST /api/v1/settings`: read at load, each change sent at once, in order, no save button; the browser's old copy moved once, then removed; `data-settings` on `<html>`: loading, saving, saved, failed), the page's language, the options panel's language, cursor and folding rows |
 | `js/example/src/pluginSettings.ts` | a plugin option's stored value, its options cut into sections, folded sections (pure) |
 | `js/example/src/pluginOptions.tsx` | each plugin's options in the options panel, the seven option kinds, the dialog an option opens |
 | `js/example/src/plugins.ts` | loads the installed plugins' `page.js` and their API |
@@ -66,6 +66,8 @@ the browser and the gateway; `App.tsx` only assembles them.
 | `gateway/src/videobridge_gateway/core/events.py` | Android's and the server's events from logcat, `/proc/uptime` and `systemctl show` texts, and the record of each (no I/O) |
 | `gateway/src/videobridge_gateway/http/events.py` | `GET /api/v1/events`, Android's new events as records and alerts every minute, the gateway's start record |
 | `gateway/src/videobridge_gateway/core/alerts.py` | phone alerts: the saved state, the random topic, which events are new, their sentences (no I/O) |
+| `gateway/src/videobridge_gateway/core/page_settings.py` | the page's settings: a change checked and merged key by key (null removes one), the page's own part and each plugin's (no I/O) |
+| `gateway/src/videobridge_gateway/http/page_settings.py` | `GET`/`POST /api/v1/settings`: the page's own options in `--page_settings`, each plugin's in its data directory (`page-options.json`), both mode 600 |
 | `gateway/src/videobridge_gateway/http/notify.py` | `GET`/`POST /api/v1/notify`, `POST /api/v1/notify/test`, `send()` for the events and the plugins |
 | `gateway/src/videobridge_gateway/adapters/host_files.py` | every host file the gateway reads or writes: the request and status files the root-path units share with it, their times, the alerts' state (mode 600), `/proc`, `/sys`, the emulator's cgroup and command line |
 | `gateway/src/videobridge_gateway/adapters/adb.py` | every adb command (keys, Android's metrics and events, the plugins'), its path and serial, and whether adb still reaches Android from its error text |
@@ -145,6 +147,8 @@ Android keeps running. Reload the page (the index is never cached).
 | `GET /api/v1/notify` | phone alerts through ntfy.sh (`core/alerts.py`, `http/notify.py`): `{available, enabled, topic, url}`; `available` is false without `--notify_file` |
 | `POST /api/v1/notify` | `{enabled[, newTopic]}`: turns them on or off; the first time (or with `newTopic`) the gateway draws a random topic `cloudphone-<24 hex>`, kept with the setting in `/var/lib/cloudphone/notify.json` (mode 600). While on, the gateway alerts every minute on Android's new events (crash, ANR, app stopped while noticeable, Android or emulator restart) and plugins send theirs with `context.notify`. Messages go through the public ntfy.sh service: anyone who knows the topic can read them, so they carry nothing private |
 | `POST /api/v1/notify/test` | one test alert; 502 when ntfy.sh did not take it |
+| `GET /api/v1/settings` | the page's settings, the same for every browser and device: `{available, settings}`, `settings` the page's own (`language`, `touchMarker`, `autoFold`, `barDocked`, `foldedSections`, `foldedPlugins`, `logFilter`) with `plugins: {id: {key: value}}`; `available` is false without `--page_settings` |
+| `POST /api/v1/settings` `{key: value, plugins: {id: {key: value}}}` | merges the change (a key replaced, null removes it; a plugin's keys one by one, so two browsers changing two options keep both) and answers as `GET`. The page's own go to `/var/lib/cloudphone/page-settings.json`, a plugin's to `/var/lib/cloudphone/plugins/<id>/page-options.json` (both mode 600). No secret goes there: the alerts' topic stays in `notify.json` |
 | `GET /api/v1/emulator-settings` | renderer, cores and memory from the running emulator's command line, the configured screen (`display`), limits (`renderers`, `maxCores`, `maxMemoryMb`), state of the last request |
 | `POST /api/v1/emulator-settings` `{renderer, cores, memoryMb[, width, height, density]}` | what the page's Apply sends: change all of them with one restart of Android. A refusal is `{error_t: {template, params}}`, a French template the page translates (`core/texts.py`) |
 | `GET /api/v1/templates` | `{French template: English}` for the gateway's `error_t` texts (`core/texts.py`), for the page's translations |
@@ -208,7 +212,11 @@ token); systemd starts it again on the new emulator.
 - Fold button: tap folds the bar away (the screen takes the whole window, a
   floating handle unfolds it and can be dragged); long press docks the bar
   so it keeps its own space; a tap then makes it float again.
-- Settings are per browser, in `localStorage` key `cloudphone.settings`.
+- Settings are the gateway's, the same in every browser and on every
+  device (`GET`/`POST /api/v1/settings`), read when the page loads and sent
+  at each change. Nothing stays in the browser: what an earlier version
+  kept there (`localStorage` key `cloudphone.settings`) is sent once for
+  the keys the gateway does not hold yet, then removed.
 
 ## Logs
 

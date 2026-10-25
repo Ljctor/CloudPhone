@@ -103,7 +103,11 @@ def mine(ports, screens, readers, rules, timer, values):
             status["no_feather"] = True
             return False
         shot = await step(shot, "mine_feathers", "feathers", readers.FEATHER_TAPS[rules.FEATHERS - 1], 6)
-        return bool(shot) and await ports.analyse(readers.in_fight, shot)
+        fighting = bool(shot) and await ports.analyse(readers.in_fight, shot)
+        game = getattr(ports, "game", None)
+        if fighting and game is not None:
+            game["note"]({"mine_floor": floor, "mine_area": status["area"]}, "setup")
+        return fighting
 
     async def unticked(shot):
         """Unticks "Repeat entry" if it is ticked, so that the entry under

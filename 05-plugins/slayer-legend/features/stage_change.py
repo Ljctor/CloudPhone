@@ -253,6 +253,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
                               f"(read after Move: {seen or 'nothing'})")
                     raise Stop("stage {stage} non ouvert par le jeu (lu après Move : {seen})", stage=target,
                                seen=seen or t("rien"))
+                noted({"stage": target})
                 return
             if step[0] == "arrow":
                 await tap(shot, "stage_select", step[1], select.ARROW_TAPS[step[1]])
@@ -326,6 +327,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         await settle(screens.plain_battle)
         if await badge_of(*await controls_look()) != name:
             raise Stop("vérification du preset {preset} sur le badge", preset=name)
+        noted({"preset": name})
 
     async def run(mode, steps, force=False):
         """Runs steps ((name, step) pairs) under the lease: {result, text,
@@ -364,6 +366,15 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         souls = soul["feature"](ports, screens, soul["reader"], soul["rules"], soul["table"],
                                 SimpleNamespace(look=look, tap=tap, front=front, to_battle=to_battle, Stop=Stop),
                                 soul.get("engraving"))
+        if hasattr(ports, "on_relaunch"):
+            # A relaunch seen anywhere: the weapon read equipped is read again.
+            ports.on_relaunch(lambda why: souls["relaunched"]())
+
+    def noted(readings):
+        """What a step checked, noted in the game's state (source setup)."""
+        game = getattr(ports, "game", None)
+        if game is not None:
+            game["note"](readings, "setup")
 
     def parks(mode):
         return bool(souls) and mode in FARMED and souls["switch"]() == "real"

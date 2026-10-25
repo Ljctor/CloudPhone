@@ -1,7 +1,9 @@
-//! Client settings (the Options panel) stay in this browser
-//! (`localStorage`, key `cloudphone.settings`) and survive a reload, the
-//! plugins' options too. Each test runs in a fresh Firefox profile and
-//! still puts the defaults back before it ends.
+//! Client settings (the Options panel) are the gateway's (`GET`/`POST
+//! /api/v1/settings`), the plugins' options too: they survive a reload, show
+//! in another browser and survive a gateway restart. What earlier versions
+//! kept in the browser (`localStorage`, key `cloudphone.settings`) moves to
+//! the gateway once. Each test runs in a fresh Firefox profile and still
+//! puts the defaults back before it ends.
 use cloudphone_e2e::browser::{browser_test, en, fr, Options, Page};
 use cloudphone_e2e::*;
 use serde_json::{json, Value};
@@ -158,17 +160,67 @@ fn an_english_browser_can_switch_the_page_to_french() {
 }
 
 #[test]
-fn a_corrupt_stored_setting_falls_back_to_the_defaults() {
+fn an_option_set_in_one_browser_shows_in_another_and_after_a_gateway_restart() {
     let cp = CloudPhone::start_with(json!({"plugins": [PROBE]}));
     browser_test(&cp, Options::without_video(), |page| async move {
+        open_client_panel(&page).await;
+        wait_plugin_options(&page).await;
+        set_checked(&page, MARKER, false).await;
+        set_checked(&page, PROBE_TOGGLE, true).await;
+        set_language(&page, "en").await;
+        page.wait_for_label(en::POWER, Duration::from_secs(5)).await;
+        let stored = page.stored_settings().await;
+        assert_eq!((stored["touchMarker"].clone(), stored["language"].clone()), (json!(false), json!("en")), "{stored}");
+        assert_eq!(page.browser_settings().await, Value::Null, "nothing kept in the browser");
+    });
+    let token = cp.page_token();
+    cp.fake().action("restart_gateway");
+    cp.wait_new_token(&token, Duration::from_secs(20));
+    // A fresh Firefox profile: another device.
+    browser_test(&cp, Options::without_video(), |page| async move {
+        page.wait_for_label(en::POWER, Duration::from_secs(10)).await;
+        page.open_options().await;
+        page.wait_js("the plugin's options", Duration::from_secs(15),
+            "const d = document.querySelector('[role=dialog]'); return !!d && d.innerText.includes(arguments[0])",
+            vec![json!("Draw a frame")]).await;
+        assert!(!checked(&page, "Show the cursor").await, "the cursor stays off");
+        assert!(checked(&page, "Draw a frame").await, "the plugin's option stays on");
+        assert_eq!(language(&page).await, "en");
+        // Back to the defaults.
+        set_checked(&page, "Show the cursor", true).await;
+        set_checked(&page, "Draw a frame", false).await;
+        set_language(&page, "fr").await;
+        page.wait_for_label(fr::POWER, Duration::from_secs(5)).await;
+    });
+}
+
+#[test]
+fn settings_an_earlier_version_kept_in_the_browser_move_to_the_gateway_once() {
+    let cp = CloudPhone::start_with(json!({"plugins": [PROBE]}));
+    // The gateway already holds the cursor on: its value wins over the browser's.
+    let set = cp.post_json("api/v1/settings", &json!({"touchMarker": true}));
+    assert_eq!(set.status(), 200, "{:?}", set.text());
+    browser_test(&cp, Options::without_video(), |page| async move {
+        page.js("localStorage.setItem('cloudphone.settings', JSON.stringify({touchMarker: false, autoFold: false, \
+                 plugins: {'e2e-probe': {draw: true}}}))", vec![]).await;
+        page.reload(false).await;
+        let stored = page.stored_settings().await;
+        assert_eq!(stored["touchMarker"], true, "the gateway's value kept: {stored}");
+        assert_eq!(stored["autoFold"], false, "the browser's value moved: {stored}");
+        assert_eq!(stored["plugins"]["e2e-probe"]["draw"], true, "a plugin's option moved: {stored}");
+        assert_eq!(page.browser_settings().await, Value::Null, "the browser's copy removed");
+        open_client_panel(&page).await;
+        wait_plugin_options(&page).await;
+        assert!(checked(&page, MARKER).await && checked(&page, PROBE_TOGGLE).await && !checked(&page, AUTOFOLD).await);
+        // A broken copy is only removed.
         page.js("localStorage.setItem('cloudphone.settings', '{not json')", vec![]).await;
         page.reload(false).await;
         assert!(page.has_label(fr::POWER).await, "the page still loads");
+        assert_eq!(page.stored_settings().await["autoFold"], false);
+        assert_eq!(page.browser_settings().await, Value::Null);
         open_client_panel(&page).await;
         wait_plugin_options(&page).await;
-        assert!(checked(&page, MARKER).await && !checked(&page, PROBE_TOGGLE).await && checked(&page, AUTOFOLD).await);
-        page.js("localStorage.removeItem('cloudphone.settings')", vec![]).await;
-        let stored: Value = page.stored_settings().await;
-        assert!(stored.is_null());
+        set_checked(&page, PROBE_TOGGLE, false).await;
+        set_checked(&page, AUTOFOLD, true).await;
     });
 }

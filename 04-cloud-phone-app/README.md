@@ -36,8 +36,10 @@ and runs `scripts/install.sh --listen 10.20.0.1`.
   once; one change per 2 minutes).
 - The cog opens **Options**: language (French/English), cursor, fold
   3 s after entering fullscreen, and **Plugins**: the options of the
-  installed plugins (e.g. part 05, Slayer Legend). Settings stay in this
-  browser (`localStorage`, key `cloudphone.settings`).
+  installed plugins (e.g. part 05, Slayer Legend). Settings are kept by the
+  gateway (`/var/lib/cloudphone/page-settings.json`, a plugin's in its data
+  directory), the same in every browser and on every device; nothing stays
+  in the browser.
 - Plugins live in `/opt/cloudphone/plugins/<id>/` (`plugin.json`, optional
   `page.js` and `gateway.py`); the gateway loads them at start and lists them
   at `GET /api/v1/plugins`. API: `src/overlay/js/example/src/plugins.ts` and

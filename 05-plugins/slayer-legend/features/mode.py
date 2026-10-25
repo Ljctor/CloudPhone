@@ -79,6 +79,12 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
     ports.store.register("mode", lambda: {key: status[key] for key in (
         "mode", "default", "until", "highest", "configured")})
 
+    game = getattr(ports, "game", None)
+
+    def highest():
+        """The highest stage seen: the game's state (features/game.py)."""
+        return game["value"]("highest") if game is not None else status["highest"]
+
     def stages():
         return {"stage18": loadouts["stage"]("mpw18"), "stage4": loadouts["stage"]("mpw4")}
 
@@ -91,7 +97,8 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         ports.store.save()
 
     def state():
-        answer = {key: status[key] for key in ("mode", "default", "until", "highest", "configured", "state")}
+        answer = {key: status[key] for key in ("mode", "default", "until", "configured", "state")}
+        answer["highest"] = highest()
         answer["message_t"] = status["message"]
         answer.update(stages())
         answer["setup"] = status["state"] in ("moving", "waiting")
@@ -193,7 +200,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
                 try:
                     forced = {"force": True} if force else {}
                     answer = await (step(**forced) if step
-                                    else farming["farm"](number, preset, name, status["highest"], **forced))
+                                    else farming["farm"](number, preset, name, highest(), **forced))
                 except ports.Busy as e:
                     if not ports.enabled():
                         # The plugin off: it waits for as long, no alert.
@@ -379,7 +386,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         except (ValueError, TypeError, AttributeError):
             body = None
         mine = mines["state"]()
-        asked, error = rules.request(body, {**stages(), "highest": status["highest"],
+        asked, error = rules.request(body, {**stages(), "highest": highest(),
                                             "floor": mine["floor"], "area": mine["area"]}, status["default"])
         if error:
             return ports.respond({"error_t": error}, status=400)
@@ -392,7 +399,11 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         if default != status["default"]:
             ports.log("normal", f"Mode: default mode {status['default']} → {default}")
         until = rules.timer_for(name, until, given, status["mode"], status["until"], ports.clock.wall(), default)
-        status.update(mode=name, default=default, until=until, configured=True, highest=numbers["highest"])
+        status.update(mode=name, default=default, until=until, configured=True)
+        if game is not None and numbers["highest"]:
+            game["note"]({"highest": numbers["highest"]}, "page")
+        elif game is None:
+            status["highest"] = numbers["highest"]
         loadouts["set_stage"]("mpw18", numbers["stage18"])
         loadouts["set_stage"]("mpw4", numbers["stage4"])
         if name == "mine":

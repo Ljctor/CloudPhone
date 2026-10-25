@@ -171,7 +171,9 @@ function pluginOption(context, plugin, option, index) {
   if (option.type === 'status') {
     const value = option.value?.() ?? '–';
     const href = option.href?.();
-    const shown = href ? <a href={href} target="_blank" rel="noreferrer" style={styles.link}>{value}</a> : value;
+    const linked = href ? <a href={href} target="_blank" rel="noreferrer" style={styles.link}>{value}</a> : value;
+    // muted(): a value not checked lately, greyed.
+    const shown = option.muted?.() ? <span data-muted="true" style={{ color: styles.infoNote.color }}>{linked}</span> : linked;
     // Inline buttons after the value, while button() gives one (or a list).
     const given = option.button?.();
     const buttons = (Array.isArray(given) ? given : [given]).filter(Boolean);

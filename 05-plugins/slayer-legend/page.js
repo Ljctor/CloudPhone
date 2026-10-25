@@ -23,10 +23,13 @@
 // - page_watchdog.js: the gateway's watchdog at its last look on the
 //   selected mode and « Réessayer », at the end of the mode's État row;
 //   the lease and its counters in the debug section.
+// - page_game.js: the game's state the gateway scanned, one section per
+//   screen (GET /game), greyed while not read again since a relaunch.
 // - page_counters.js: the emerald and diamond counters, on this screen
 //   only (nothing is sent to Android), cut at their comma or rewritten
 //   (counter_rewrite.js, with emerald_mask.js and emerald_font.js).
 import counters from './page_counters.js';
+import game from './page_game.js';
 import gold from './page_gold.js';
 import power from './page_power.js';
 import { SWORD } from './page_icons.js';
@@ -110,6 +113,9 @@ const ENGLISH = {
   'Détection des émeraudes': 'Emerald detection',
   'Détection des diamants': 'Diamond detection',
   'Réessayer': 'Retry',
+  'lecteur en attente de capture': 'reader waiting for its capture',
+  'jamais lu': 'never read',
+  'vu à {time}': 'seen at {time}',
 };
 
 export default function activate(api) {
@@ -132,7 +138,8 @@ export default function activate(api) {
   const goldPart = gold(api, { overlay: [modePart.overlay], enabled: powerPart.on });
   const drawers = [counterPart, goldPart];
   const tracePart = trace(api);
-  const parts = [powerPart, counterPart, screenPart, modePart, goldPart, tracePart, watchdogPart];
+  const gamePart = game(api);
+  const parts = [powerPart, counterPart, screenPart, modePart, goldPart, tracePart, watchdogPart, gamePart];
   // ...and shown in this one, then « Debug & développement », last and
   // folded: the parts' developer rows and the plugin's log records.
   const shown = [powerPart, modePart, goldPart, counterPart];
@@ -141,9 +148,12 @@ export default function activate(api) {
     ...[screenPart, counterPart, watchdogPart, tracePart].flatMap((part) => part.debug ?? []),
     { type: 'log', match: (record) => record.source === api.id },
   ];
+  const options = [...shown.flatMap((part) => part.options), ...debug];
+  // The game's sections before « Debug & développement ».
+  gamePart.rows(options, options.length - debug.length);
   return {
     icon: SWORD,
-    options: [...shown.flatMap((part) => part.options), ...debug],
+    options,
     onSetting: (key, value) => {
       for (const part of parts) part.onSetting?.(key, value);
     },

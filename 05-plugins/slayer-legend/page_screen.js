@@ -17,31 +17,30 @@ const SCREENS = {
 };
 // The stage's soul colour, as a coloured dot.
 const DOTS = { green: '🟢', blue: '🔵', red: '🔴' };
-// The last stage number read, kept in this browser so that the gateway
-// still knows it after a restart (it reads it only in Power Saving Mode).
+// Where earlier versions kept the last stage read in this browser: sent
+// once to the gateway, which keeps the game's state itself, then removed.
 const STORE = 'cloudphone-slayer-legend-stage';
+
+function moveOldStage(api) {
+  let old = null;
+  try {
+    old = Number(window.localStorage.getItem(STORE)) || null;
+    window.localStorage.removeItem(STORE);
+  } catch {
+    old = null;
+  }
+  if (old) api.get(`/stages?known=${old}`).catch(() => null);
+}
 
 export default function screenFeature(api) {
   const screen = { answer: null, at: 0, busy: false, timer: null };
   let remembered = null;
-  try {
-    remembered = Number(window.localStorage.getItem(STORE)) || null;
-  } catch {
-    remembered = null;
-  }
+  moveOldStage(api);
   const watchScreen = () => {
     if (screen.busy || Date.now() - screen.at < 3000) return;
     screen.busy = true;
-    api.get(remembered ? `/screen?known=${remembered}` : '/screen').catch(() => null).then((answer) => {
-      const number = answer?.stage?.checked ? answer.stage.number : null;
-      if (number && number !== remembered) {
-        remembered = number;
-        try {
-          window.localStorage.setItem(STORE, String(number));
-        } catch {
-          // Not kept: read again in Power Saving Mode.
-        }
-      }
+    api.get('/screen').catch(() => null).then((answer) => {
+      if (answer?.stage?.checked) remembered = answer.stage.number;
       Object.assign(screen, { answer, at: Date.now(), busy: false });
       api.refresh();
       window.clearTimeout(screen.timer);

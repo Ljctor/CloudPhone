@@ -1,7 +1,8 @@
 //! A real browser on the page: Firefox driven over WebDriver (geckodriver).
 //!
 //! Every test gets its own Firefox with a fresh profile (so a fresh
-//! `localStorage`), opened on the instance's page. Browser tests of one test
+//! `localStorage`; the page's settings are the gateway's), opened on the
+//! instance's page. Browser tests of one test
 //! binary run one at a time: each open page is one more viewer of the phone,
 //! and several Firefox decoding the stream at once would only measure this
 //! machine.
@@ -745,12 +746,26 @@ impl Page {
         .await;
     }
 
-    // ---- settings in this browser ----
+    // ---- settings ----
 
-    /// The page's stored settings (`localStorage['cloudphone.settings']`), parsed.
+    /// The page's settings as the gateway keeps them (`GET /api/v1/settings`),
+    /// once the page has loaded them and sent its changes (its
+    /// `data-settings` is neither `loading` nor `saving`).
     pub async fn stored_settings(&self) -> Value {
+        self.wait_js("the settings saved", Duration::from_secs(10),
+            "const s = document.documentElement.dataset.settings; return !!s && s !== 'loading' && s !== 'saving'",
+            vec![]).await;
+        let raw = self.js("const x = new XMLHttpRequest(); x.open('GET', '/api/v1/settings', false); x.send(); \
+             return x.status === 200 ? x.responseText : null", vec![]).await;
+        raw.as_str().and_then(|s| serde_json::from_str::<Value>(s).ok()).map(|v| v["settings"].clone())
+            .unwrap_or(Value::Null)
+    }
+
+    /// What this browser keeps of the settings (`localStorage['cloudphone.settings']`,
+    /// earlier versions' place), parsed; null when nothing.
+    pub async fn browser_settings(&self) -> Value {
         let raw = self.js("return localStorage.getItem('cloudphone.settings')", vec![]).await;
-        raw.as_str().map(|s| serde_json::from_str(s).unwrap_or(Value::Null)).unwrap_or(Value::Null)
+        raw.as_str().map(|s| serde_json::from_str(s).unwrap_or(Value::String(s.to_string()))).unwrap_or(Value::Null)
     }
 
     pub async fn fullscreen_element(&self) -> Option<String> {
@@ -777,7 +792,7 @@ impl Page {
                  dialogs: [...document.querySelectorAll('[role=dialog]')].map(d => d.innerText.slice(0, 1500)), \
                  toolbar: [...document.querySelectorAll('nav button')].map(b => b.getAttribute('aria-label') + ' ' + b.innerText), \
                  video: v ? {w: v.videoWidth, h: v.videoHeight, t: v.currentTime, paused: v.paused} : null, \
-                 settings: localStorage.getItem('cloudphone.settings'), fullscreen: !!document.fullscreenElement}",
+                 settings: document.documentElement.dataset.settings, fullscreen: !!document.fullscreenElement}",
                 vec![],
             )
             .await;

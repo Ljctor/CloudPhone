@@ -7,8 +7,12 @@ GET /screen[?known=N]   {screen, stage, panel}, from a screenshot at most every 
 GET /stages[?known=N]   {highest, mpw18, mpw4}: every mpw18 and mpw4 stage,
                         those past highest too (the page marks them)
 
-Read-only: it never touches the game. The highest stage seen farmed is
-kept in state.json ("highest"). What the answers say is in screen_rules.py.
+Read-only: it never touches the game. The stage and the highest stage
+seen are the game's state (features/game.py: the scan of the capture,
+kept in state.json "game"); without it (an older setup in the tests) the
+highest is kept here, in state.json ("highest"). ?known=N: a stage a
+page saw, noted as the highest when it is higher. What the answers say is
+in screen_rules.py.
 """
 
 import asyncio
@@ -24,13 +28,22 @@ def screen(ports, screens, stage, rules, values, table):
     # The highest stage seen farmed: the game only farms unlocked stages.
     # None until one is read.
     highest = {"number": values.number_or_none(ports.store.saved.get("highest"), 99999)}
-    ports.store.register("highest", lambda: highest["number"])
+    game = getattr(ports, "game", None)
+    if game is None:
+        ports.store.register("highest", lambda: highest["number"])
 
-    def note_highest(number):
+    def note_highest(number, source="scan"):
+        if game is not None:
+            if number:
+                game["note"]({"highest": number}, source)
+            return
         higher = rules.higher(highest["number"], number)
         if higher:
             highest["number"] = higher
             ports.store.save()
+
+    def highest_now():
+        return game["value"]("highest") if game is not None else highest["number"]
 
     def screen_facts(shot):
         """The screen and what it says of the stage: (number, numeral) in
@@ -44,14 +57,29 @@ def screen(ports, screens, stage, rules, values, table):
             return name, stage.read_battle(shot), tab[1] if tab else None
         return name, None, None
 
+    def screen_name(shot):
+        """The screen, and the panel open over the battle screen."""
+        name = screens.classify(shot)
+        tab = screens.open_tab(shot) if name == "battle" else None
+        return name, tab[1] if tab else None
+
     async def read_screen(remembered):
         if not await ports.focused():
             return {"screen": "away", "stage": None}
         shot = await ports.capture(max_age=SECONDS)
         if not shot:
             return {"screen": None, "stage": None}
-        name, read, panel = await ports.analyse(screen_facts, shot)
-        answer, number = rules.answer(table, stage, name, read, farmed["number"] or remembered)
+        if game is not None:
+            # The stage as the scan of this capture read it.
+            name, panel = await ports.analyse(screen_name, shot)
+            readings = await game["scan"](shot, ("battle_stage", "saver_stage"))
+            read = ((readings.get("stage"), None) if name == "saver"
+                    else readings.get("stage_numeral") if name in ("battle", "menu") else None)
+            known = game["value"]("stage") or remembered
+        else:
+            name, read, panel = await ports.analyse(screen_facts, shot)
+            known = farmed["number"] or remembered
+        answer, number = rules.answer(table, stage, name, read, known)
         answer = {**answer, "panel": panel}
         if number:
             farmed["number"] = number
@@ -76,10 +104,10 @@ def screen(ports, screens, stage, rules, values, table):
         """Every mpw18 and mpw4 stage, and the highest one seen farmed (N:
         the highest the page saw): the stage change may reach one past it."""
         try:
-            note_highest(int(request.query.get("known") or 0) or None)
+            note_highest(int(request.query.get("known") or 0) or None, "page")
         except ValueError:
             pass
-        number = highest["number"]
+        number = highest_now()
         return ports.respond({"highest": number, "mpw18": rules.stage_list(table, 18, None),
                               "mpw4": rules.stage_list(table, 4, None)})
 

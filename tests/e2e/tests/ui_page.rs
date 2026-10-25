@@ -233,7 +233,8 @@ fn an_english_browser_gets_the_english_page() {
 fn the_page_holds_no_settings_until_one_is_changed() {
     let cp = CloudPhone::start();
     browser_test(&cp, Options::without_video(), |page| async move {
-        assert_eq!(page.stored_settings().await, serde_json::Value::Null, "a fresh browser stores nothing");
+        assert_eq!(page.stored_settings().await, json!({"plugins": {}}), "the gateway holds no setting yet");
+        assert_eq!(page.browser_settings().await, serde_json::Value::Null, "the browser keeps nothing");
     });
 }
 

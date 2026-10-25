@@ -36,7 +36,7 @@ function App() {
   // A plugin's dialog open over the options panel: { plugin, option }.
   const [pluginDialog, setPluginDialog] = usePluginDialog(panel);
   // Before any tr() of this render: sets the page's language.
-  const [settings, updateSettings] = useViewerSettings();
+  const [settings, updateSettings, settingsLoaded] = useViewerSettings();
   const barFold = useBarFold(loadSettings);
   const { barFolded } = barFold;
   // The gateway serves this page: same origin, no CORS.
@@ -59,7 +59,7 @@ function App() {
   const pluginLayer = useRef(null);
   const plugins = usePlugins({
     gatewayUrl, deviceRef, layerRef: pluginLayer, screenWidth: screen.width, settings, updateSettings, postFetch,
-    postHeaders,
+    postHeaders, settingsLoaded,
   });
   const displayState = useDisplayState(gatewayUrl, changeInProgress(emulatorSettings));
   const input = useInput({ gatewayUrl, display, showMarker: settings.touchMarker });

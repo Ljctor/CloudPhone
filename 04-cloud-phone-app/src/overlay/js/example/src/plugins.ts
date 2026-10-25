@@ -14,7 +14,8 @@
 // choices and placeholder may also be functions, read at each render.
 //   { type: 'action', label, button, run(), disabled?() }
 //   { type: 'buttons', label, buttons: [{ label, run(), disabled?() }] }   a row of small buttons
-//   { type: 'status', label, value(), href?(), button?() }   href makes the value a link;
+//   { type: 'status', label, value(), href?(), button?(), muted?() }   href makes the value a link;
+//                                                  muted() true greys the value out;
 //                                                  button() => { label, run() }, a list of them,
 //                                                  or null: small buttons after the value, while
 //                                                  it gives some
@@ -42,7 +43,9 @@
 //   video()               the <video> element showing Android, or null
 //   layer                 a <div> over the screen for drawing, pointer-events none
 //   screenWidth()         width of the shown screen in CSS pixels
-//   setting(key)          this plugin's stored option (true/false, or text)
+//   setting(key)          this plugin's stored option (true/false, or text),
+//                         kept by the gateway in the plugin's data directory
+//                         for every browser; plugins start once they are read
 //   adopt(key, value)     stores value as the option, as the gateway says it
 //                         is now (a timed mode that ended): onSetting is not
 //                         called for it, so the plugin does not send it back
@@ -95,6 +98,7 @@ function unload(item) {
 
 export function usePlugins({
   gatewayUrl, deviceRef, layerRef, screenWidth, settings, updateSettings, postFetch, postHeaders,
+  settingsLoaded = true,
 }) {
   const [plugins, setPlugins] = useState([]);
   const [, setVersion] = useState(0);
@@ -109,6 +113,8 @@ export function usePlugins({
   const active = useRef([]);
 
   useEffect(() => {
+    // The plugins start with the gateway's settings, not the defaults.
+    if (!settingsLoaded) return undefined;
     let cancelled = false;
     const refresh = () => setVersion((value) => value + 1);
     (async () => {
@@ -193,7 +199,7 @@ export function usePlugins({
       active.current.forEach(unload);
       active.current = [];
     };
-  }, [gatewayUrl]);
+  }, [gatewayUrl, settingsLoaded]);
 
   // Tell plugins when one of their stored options changes.
   const previous = useRef(settings.plugins ?? {});

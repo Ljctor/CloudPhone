@@ -849,7 +849,7 @@ class Emulator:
                        "--settings_request", self.path("settings-request"), "--settings_status", self.path("settings-status"),
                        "--plugins_dir", self.install_plugins(), "--plugin_data", self.path("plugin-data"),
                        "--log_dir", self.path("logs"), "--release_dir", self.path("release"),
-                       "--notify_file", self.path("notify.json")]
+                       "--notify_file", self.path("notify.json"), "--page_settings", self.path("page-settings.json")]
             self.gateway = await asyncio.create_subprocess_exec(
                 *command, stdin=asyncio.subprocess.DEVNULL, stdout=log_file, stderr=log_file, env=env,
                 preexec_fn=die_with_parent)

@@ -13,6 +13,7 @@ goes through the navigation guard (nav.py, navigation.json).
 Routes, under /api/v1/plugins/slayer-legend:
 
 GET  /emerald-mask[?counter=diamond]   features/counters.py
+GET  /game                             features/game.py (the game's state, scanned)
 GET  /screen[?known=N], /stages        features/screen.py
 GET  /launch, POST /launch             features/launch.py
 GET  /trace, /trace/graph, POST /trace features/trace.py
@@ -69,6 +70,13 @@ def setup(context):
         table = json.load(f)
     timer = feature("timer_rules")
     engraving = feature("engraving").engraving(ports, feature("engraving_rules"))
+    screen_rules = feature("screen_rules")
+    # The scan: every capture read once, the game's state for the features.
+    game_feature = feature("game")
+    game = game_feature.game(ports, screens, feature("game_rules"), game_feature.reader_table(
+        screens, stage, module("stage_select"), module("gold"), module("soul_counters"), module("soul_weapon"),
+        module("engraving_screen"), module("battle_controls"), screen_rules, table, engraving["api"]["table"]))
+    ports.game = game["api"]
     mine = feature("mine").mine(ports, screens, module("mine"), feature("mine_rules"), timer, values)
     launch = feature("launch").launch(ports, screens, feature("launch_rules"))
     soul = {"feature": feature("soul_weapon").soul_weapon, "reader": module("soul_weapon"),
@@ -80,9 +88,9 @@ def setup(context):
                                                    feature("stage_change_rules"), table, soul)
     mode = feature("mode").mode(ports, feature("mode_rules"), timer, values, mine["api"], screens,
                                 module("gold_scroll"), engraving["api"], farming["api"])
-    screen_rules = feature("screen_rules")
     gold = feature("gold").gold(ports, screens, stage, module("gold"), feature("gold_rules"), module("soul_counters"))
     features = [
+        game,
         feature("power").power(ports),
         feature("lease").lease(ports),
         feature("counters").counters(ports, module("emerald_mask")),

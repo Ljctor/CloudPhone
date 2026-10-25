@@ -242,6 +242,13 @@ fn slayer_legends_mode_and_mine_come_back_after_a_gateway_restart() {
     }
     assert_eq!(after["mine"]["state"], "waiting", "the mine watches again: {after}");
     assert_eq!(cp.get_json("api/v1/plugins/slayer-legend/stages")["highest"], 45);
+    // The game's state keeps it too, unverified until read again, and the mode says it.
+    assert_eq!(after["highest"], 45, "{after}");
+    let game = cp.get_json("api/v1/plugins/slayer-legend/game");
+    let battle = game["screens"].as_array().unwrap().iter().find(|s| s["screen"] == "battle").expect("battle").clone();
+    let highest = battle["fields"].as_array().unwrap().iter().find(|f| f["field"] == "highest").expect("highest").clone();
+    assert_eq!((highest["value"].clone(), highest["verified"].clone(), highest["source"].clone()),
+               (json!(45), json!(false), json!("page")), "{game}");
     // Turned off, it stays off across the next restart.
     assert_eq!(cp.post_json("api/v1/plugins/slayer-legend/mode", &json!({"mode": "mpw18"})).status(), 200);
     let token = cp.page_token();

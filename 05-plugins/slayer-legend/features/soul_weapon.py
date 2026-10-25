@@ -261,6 +261,9 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
         if mismatch:
             raise Stop(mismatch)
         status["cache"] = {"id": target_id, "variant": variant, "at": ports.clock.wall()}
+        game = getattr(ports, "game", None)
+        if game is not None:
+            game["note"]({"soul_weapon_equipped": target, "soul_weapon_variant": variant}, "setup")
         if done and (done["locked"] or done["placed"] or done["removed"]):
             await ports.notify(f"Soul Weapon {target} ({variant}) ready: {len(done['removed'])} removed, "
                                f"{len(done['placed'])} placed, {len(done['locked'])} locked, in {seconds} s "

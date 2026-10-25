@@ -91,6 +91,13 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
     available = AVAILABLE + (tuple(FARMING) if farming else ()) + (("park",) if parking else ())
     ports.store.register("watchdog", lambda: rules.persisted(memory))
 
+    def forget_controls(why):
+        """The game relaunched: the preset and AUTO are read again."""
+        status["controls"] = None
+
+    if hasattr(ports, "on_relaunch"):
+        ports.on_relaunch(forget_controls)
+
     def say(level, text, params=None, notify=False):
         """One record for the gateway's log (and the page), in English: an
         English template filled with params, or a status text (rules.record);
@@ -117,6 +124,34 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         park = parking and rules.park_wanted(name, farming["soul_weapon_switch"](), state.get("state"),
                                              state.get("hold"))
         return rules.profile(part, part.get("stage"), name, park)
+
+    game = getattr(ports, "game", None)
+
+    def naming(shot):
+        """The screen the look names (its stage and progress bar are the
+        scan's: features/game.py), and whether the battle shows plain."""
+        name = screens.classify(shot)
+        known = screens.known_name(shot) if name == "other" else None
+        if known:
+            return "known", known, False
+        if name == "menu" and farming and screens.plain_battle(shot):
+            name = "battle"
+        elif name == "menu" and parking and farming["parked"](shot):
+            name = "parked"
+        plain = name == "battle" and screens.plain_battle(shot)
+        return name, screens.other_name(shot) if name == "other" else None, plain
+
+    async def scanned_facts(shot):
+        """facts() with the stage, its numeral and the bar from the game's
+        scan of the same capture."""
+        name, named, plain = await ports.analyse(naming, shot)
+        if name == "known":
+            return "known", None, None, None, named
+        readings = await game["scan"](shot, ("battle_stage", "progress"))
+        battle = name in ("battle", "parked")
+        return (name, readings.get("stage_numeral") if battle else None,
+                readings.get("stage") if battle and farming else None,
+                readings.get("progress") if name == "parked" or plain else None, named)
 
     def facts(shot):
         name = screens.classify(shot)
@@ -154,7 +189,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             shot = await ports.capture(max_age=rules.MAX_AGE)
             if shot:
                 seen["screen"], seen["numeral"], seen["stage"], seen["bar"], seen["named"] = \
-                    await ports.analyse(facts, shot)
+                    await (scanned_facts(shot) if game is not None else ports.analyse(facts, shot))
         return seen
 
     async def read_controls(seen):
@@ -175,6 +210,8 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         if kept is None or triggered or now - kept[1] >= CONTROLS_EVERY:
             reading = await farming["read_controls"]()
             kept = status["controls"] = (reading, now) if reading else None
+            if reading and game is not None:
+                game["note"]({"preset": reading["preset"], "auto": reading["auto"]})
             if triggered:
                 status["gold"], alert = rules.gold_alert(status["gold"], reading and reading["auto"])
                 if alert:

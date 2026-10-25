@@ -1,7 +1,7 @@
 // The plugin's on/off switch, at the top of its block: kept by the gateway
 // (GET /enabled, POST /enabled); while off, the gateway taps nothing (no
 // watchdog, no mode switch, no mine) and the page draws nothing over the
-// game. This browser's choice follows the gateway's on load (adopt).
+// game. The page's option follows the gateway's on load (adopt).
 // changed(): called when it changes, for the parts that draw.
 
 export default function power(api, { changed }) {
