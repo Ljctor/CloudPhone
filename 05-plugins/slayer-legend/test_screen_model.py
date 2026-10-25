@@ -111,6 +111,81 @@ class Registry(unittest.TestCase):
         self.assertEqual(sorted(todo_line("Screens recognised without a fixture:")), sorted(MEASURED))
 
 
+nav = load("nav")
+
+
+def move_of(ref):
+    screen, move_id = ref.split("/")
+    return screen, next((m for m in nav.connections(screen) if m["id"] == move_id), None)
+
+
+def point_of(move, entry=None):
+    if entry and entry.get("point"):
+        return entry["point"]
+    if "tap" in move or "swipe" in move:
+        return (move.get("tap") or move["swipe"])[:2]
+    left, top, right, bottom = move["area"]
+    return (left + right) / 2, (top + bottom) / 2
+
+
+class Tree(unittest.TestCase):
+    """Every screen known so far: a parent, the move that reaches it and
+    the one back, each an allowed move the guard lets through; a screen
+    the tour skips says why; a scroll area the tour swipes is measured,
+    with its swipe in navigation.json."""
+
+    def test_every_parent_is_known(self):
+        for key, entry in screens.TREE.items():
+            with self.subTest(key=key):
+                self.assertTrue(entry["parent"] is None or entry["parent"] == "battle" or entry["parent"] in screens.TREE)
+                self.assertTrue(entry["visit"] or entry.get("why"))
+                if entry["look"] not in ("panel", "screen"):
+                    self.assertIn(entry["look"], screens.REGISTRY)
+
+    def test_the_tour_takes_allowed_moves_only(self):
+        for key, entry in screens.TREE.items():
+            if not entry["visit"]:
+                continue
+            with self.subTest(key=key):
+                parent = screens.TREE.get(entry["parent"], {"screen": "battle"})["screen"]
+                screen, move = move_of(entry["via"])
+                self.assertEqual(screen, parent, "the move leaves from the parent's screen")
+                self.assertEqual(move["to"], entry["screen"])
+                x, y = point_of(move, entry)
+                self.assertIsNone(nav.guard(screen, move["id"], x, y, "tap"))
+                if "back" in entry:
+                    screen, back = move_of(entry["back"])
+                    self.assertEqual(screen, entry["screen"])
+                    kind = "key" if "key" in back else "tap"
+                    self.assertIsNone(nav.guard(screen, back["id"], *(point_of(back) if kind == "tap" else (None, None)),
+                                                kind, verified=True))
+
+    def test_a_skipped_move_is_never_one_the_tour_sends(self):
+        forbidden = [key for key, entry in screens.TREE.items() if entry["via"] and move_of(entry["via"])[1].get("forbidden")]
+        for key in forbidden:
+            self.assertFalse(screens.TREE[key]["visit"], key)
+        self.assertIn("promotion_bonus", forbidden)
+
+    def test_scroll_areas(self):
+        for key, entry in screens.TREE.items():
+            for area in entry.get("scroll", []):
+                with self.subTest(key=key, content=area["content"]):
+                    left, top, right, bottom = area["rect"]
+                    self.assertTrue(0 <= left < right <= 1 and 0 <= top < bottom <= 1)
+                    if not area["measured"]:
+                        self.assertNotIn("move", area)
+                        self.assertTrue(area["why"])
+                        continue
+                    screen, move = move_of(area["move"])
+                    self.assertEqual(screen, entry["screen"])
+                    self.assertFalse(move.get("forbidden"))
+                    x, y = point_of(move)
+                    if area["direction"] != "pages":
+                        self.assertIn("swipe", move)
+                        self.assertTrue(left <= x <= right and top <= y <= bottom, "the swipe starts in its area")
+                        self.assertTrue(left <= move["swipe"][2] <= right and top <= move["swipe"][3] <= bottom)
+
+
 class Recognised(unittest.TestCase):
     def test_every_registered_screen_from_its_fixtures_with_a_margin(self):
         for key in REGISTERED:

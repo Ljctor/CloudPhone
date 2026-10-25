@@ -332,14 +332,18 @@ _REGISTRY = _load("screen_registry.json")
 REGISTRY = _REGISTRY["screens"]
 OUTSIDE = _REGISTRY["outside"]
 NAMES = {key: node["name"] for key, node in _load("navigation.json")["screens"].items()}
+# Every screen of the game known so far, recognised or not (see the registry's about).
+TREE = _REGISTRY["tree"]
 BASES = [key for key, entry in REGISTRY.items() if entry["kind"] == "screen"]
 OVERLAYS = [key for key, entry in REGISTRY.items() if entry["kind"] == "overlay"]
 TIERS = {"registered": 0, "measured": 1}
 
 
 def pending():
-    """The navigation.json screens with no anchors yet: pending capture."""
-    return [key for key in NAMES if key not in REGISTRY and key not in OUTSIDE]
+    """The screens of navigation.json and of the tree with no anchors yet:
+    pending capture."""
+    keys = list(NAMES) + [key for key in TREE if key not in NAMES]
+    return [key for key in keys if key not in REGISTRY and key not in OUTSIDE]
 
 
 def _even(values):

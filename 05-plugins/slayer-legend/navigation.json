@@ -700,6 +700,46 @@
      "label": "skill + (level up)",
      "forbidden": true,
      "reason": "spends resources"
+    },
+    {
+     "id": "element_1",
+     "to": "skill",
+     "tap": [
+      0.58,
+      0.574
+     ],
+     "label": "element tab 1 of the skill grid (a filter of the list)",
+     "source": "screens catalogue (skills/screens), not tapped yet"
+    },
+    {
+     "id": "element_2",
+     "to": "skill",
+     "tap": [
+      0.665,
+      0.574
+     ],
+     "label": "element tab 2 of the skill grid (a filter of the list)",
+     "source": "screens catalogue (skills/screens), not tapped yet"
+    },
+    {
+     "id": "element_3",
+     "to": "skill",
+     "tap": [
+      0.76,
+      0.574
+     ],
+     "label": "element tab 3 of the skill grid (a filter of the list)",
+     "source": "screens catalogue (skills/screens), not tapped yet"
+    },
+    {
+     "id": "element_4",
+     "to": "skill",
+     "tap": [
+      0.85,
+      0.574
+     ],
+     "label": "element tab 4 of the skill grid (a filter of the list)",
+     "source": "screens catalogue (skills/screens), not tapped yet"
     }
    ]
   },
@@ -2144,7 +2184,7 @@
     },
     {
      "id": "ranking",
-     "to": "unknown",
+     "to": "top_ranking",
      "tap": [
       0.785,
       0.027
@@ -2153,7 +2193,7 @@
     },
     {
      "id": "settings",
-     "to": "unknown",
+     "to": "top_settings",
      "tap": [
       0.86,
       0.027
@@ -2162,7 +2202,7 @@
     },
     {
      "id": "mail",
-     "to": "unknown",
+     "to": "top_mail",
      "tap": [
       0.86,
       0.068
@@ -2304,6 +2344,26 @@
       0.82
      ],
      "label": "Ad summon (skill card)"
+    },
+    {
+     "id": "equipment_tab",
+     "to": "shop_summon",
+     "tap": [
+      0.27,
+      0.483
+     ],
+     "label": "sub-tab Equipment of Summon",
+     "source": "screens catalogue (skills/screens), not tapped yet"
+    },
+    {
+     "id": "relic_tab",
+     "to": "shop_summon",
+     "tap": [
+      0.77,
+      0.483
+     ],
+     "label": "sub-tab Relic of Summon",
+     "source": "screens catalogue (skills/screens), not tapped yet"
     }
    ]
   },
@@ -2615,6 +2675,51 @@
      "label": "re-roll the bonus lines",
      "forbidden": true,
      "reason": "re-rolls the user's equipment"
+    }
+   ]
+  },
+  "top_ranking": {
+   "name": "Ranking (from the ≡ menu)",
+   "recognise": "not captured yet (screen_registry.json: pending capture)",
+   "source": "screens catalogue: reached from the ≡ menu, not explored",
+   "moves": [
+    {
+     "id": "close",
+     "to": "battle",
+     "key": "BACK",
+     "label": "Android Back (assumed: it closes most of the game's panels; on the battle screen it opens the quit dialog, so only sent while this screen shows)",
+     "precondition": "the fresh capture is not the battle screen (screens.look)",
+     "assumed": true
+    }
+   ]
+  },
+  "top_settings": {
+   "name": "Settings (from the ≡ menu)",
+   "recognise": "not captured yet (screen_registry.json: pending capture)",
+   "source": "screens catalogue: reached from the ≡ menu, not explored",
+   "moves": [
+    {
+     "id": "close",
+     "to": "battle",
+     "key": "BACK",
+     "label": "Android Back (assumed: it closes most of the game's panels; on the battle screen it opens the quit dialog, so only sent while this screen shows)",
+     "precondition": "the fresh capture is not the battle screen (screens.look)",
+     "assumed": true
+    }
+   ]
+  },
+  "top_mail": {
+   "name": "Mail (from the ≡ menu)",
+   "recognise": "not captured yet (screen_registry.json: pending capture)",
+   "source": "screens catalogue: reached from the ≡ menu, not explored",
+   "moves": [
+    {
+     "id": "close",
+     "to": "battle",
+     "key": "BACK",
+     "label": "Android Back (assumed: it closes most of the game's panels; on the battle screen it opens the quit dialog, so only sent while this screen shows)",
+     "precondition": "the fresh capture is not the battle screen (screens.look)",
+     "assumed": true
     }
    ]
   }
