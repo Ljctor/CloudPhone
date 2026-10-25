@@ -163,6 +163,16 @@ impl Fake {
         }
     }
 
+    /// The names of the files in the gateway's log directory (--log_dir),
+    /// sorted.
+    pub fn log_files(&self) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(self.workdir.join("logs"))
+            .map(|dir| dir.filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().into_owned()).collect())
+            .unwrap_or_default();
+        names.sort();
+        names
+    }
+
     /// The phone alerts the gateway sent ({text, headers}), oldest first
     /// (they never reach ntfy.sh: tests/fake-emulator/gateway_shim.py).
     pub fn ntfy_posts(&self) -> Vec<Value> {

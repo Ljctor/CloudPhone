@@ -71,8 +71,9 @@ the browser and the gateway; `App.tsx` only assembles them.
 | `gateway/src/videobridge_gateway/adapters/adb.py` | every adb command (keys, Android's metrics and events, the plugins'), its path and serial, and whether adb still reaches Android from its error text |
 | `gateway/src/videobridge_gateway/adapters/ntfy.py` | the alert's HTTP post to ntfy.sh |
 | `gateway/src/videobridge_gateway/adapters/systemd.py` | `systemctl show` of the emulator unit |
+| `gateway/src/videobridge_gateway/adapters/log_files.py` | the log records' files: written from one thread, rotated, gzipped, deleted after `RETENTION_DAYS`, read back |
 | `gateway/src/videobridge_gateway/plugins.py` | loads the installed plugins' `gateway.py`, serves their scripts |
-| `gateway/src/videobridge_gateway/logs.py` | the gateway's log records: journald, the last 500 in memory for `GET /api/v1/logs` |
+| `gateway/src/videobridge_gateway/logs.py` | the gateway's log records: journald, the files of `--log_dir`, the last 500 in memory for `GET /api/v1/logs`, its filters |
 
 ## Build
 
@@ -140,6 +141,7 @@ Android keeps running. Reload the page (the index is never cached).
 | `GET /api/v1/state?viewer=ID[&details=1]` | emulator unit state (`systemctl show`), Android booted, viewers, load, `display` and `settings` change status, `kicked` for this viewer; cached 2 s. `details=1` adds `metrics` (host, emulator, Android) and `plugins` (`{id: {screenshots}}`: the screenshots each plugin's gateway code took since the gateway started), and turns on adb sampling of Android for 30 s. The page polls every 3 s, every 2 s with details while the Server tab is open |
 | `GET /api/v1/events` | what happened to Android and the server, newest first (`core/events.py`, `http/events.py`): app crashes, ANRs and apps Android stopped while noticeable (out-of-memory score ≤ 200, e.g. stopped for a Google Play Services update), low memory, from `logcat -b events,crash` (back to Android's last boot at most); Android's boot (`/proc/uptime`), the emulator unit's start, automatic restarts and last result (`systemctl show`), the gateway's start. Each event is `{time, kind, app, reason}`; cached 10 s. Kept for API clients: the page shows the server's log instead, where the gateway turns these events into records (below) |
 | `GET /api/v1/logs?since=CURSOR` | the gateway's log records after `CURSOR`, oldest first: `{cursor, records}` (see "Logs" below). Without a cursor, or with one from an earlier gateway process, every record kept (the last 500). Same origin check as the other GETs; `no-store`. The page reads it every 4 s |
+| `GET /api/v1/logs?since=TIME&until=TIME&level=L&source=S&contains=T&limit=N` | the same records filtered, any of them optional: `since` and `until` Unix times in seconds, inclusive (a `since` that is a number is a time, anything else a cursor); `level` a minimum (`warning` gives warnings and errors); `source` exact; `contains` part of the text, any case; `limit` the newest N, 500 by default, 5000 at most. `{cursor, records[, more]}`, oldest first, `more: true` when the limit left some out. When memory does not reach back far enough, the gateway reads its log files too (see "Logs"). `cursor=CURSOR` with filters gives only the records after it, from memory. An invalid value is a 400 `{error}` |
 | `GET /api/v1/notify` | phone alerts through ntfy.sh (`core/alerts.py`, `http/notify.py`): `{available, enabled, topic, url}`; `available` is false without `--notify_file` |
 | `POST /api/v1/notify` | `{enabled[, newTopic]}`: turns them on or off; the first time (or with `newTopic`) the gateway draws a random topic `cloudphone-<24 hex>`, kept with the setting in `/var/lib/cloudphone/notify.json` (mode 600). While on, the gateway alerts every minute on Android's new events (crash, ANR, app stopped while noticeable, Android or emulator restart) and plugins send theirs with `context.notify`. Messages go through the public ntfy.sh service: anyone who knows the topic can read them, so they carry nothing private |
 | `POST /api/v1/notify/test` | one test alert; 502 when ntfy.sh did not take it |
@@ -245,7 +247,8 @@ What becomes a record (`logs.py`, `watch_health()` every 3 s and
 
 | Event | Level | Notify |
 |---|---|---|
-| gateway start | normal | yes |
+| gateway start, with its version and commit | normal | yes |
+| log records no longer written to disk | warning | |
 | gateway restarting to follow a new emulator process | warning | yes |
 | emulator unit in auto-restart (crash), `failed`, stopped without a request | error | yes |
 | emulator restarted between two looks, or just before the gateway started (abnormal result) | error | yes |
@@ -263,6 +266,41 @@ What becomes a record (`logs.py`, `watch_health()` every 3 s and
 
 adb is never called just to check it: its state comes from the calls the
 gateway makes anyway (keys, metrics, events, plugins).
+
+**Files.** Every record also goes to `/var/lib/cloudphone/logs/`
+(`--log_dir`, created by the gateway, owned by `cloudphone`, mode 700,
+kept across upgrades), as one JSON object per line in
+`records-YYYYMMDDTHHMMSSZ.jsonl`, named after its first write in UTC.
+`adapters/log_files.py`:
+
+- a new file each UTC day and every 16 MB; files last written more than a
+  day ago are gzipped (`.jsonl.gz`);
+- records are kept **61 days** (`RETENTION_DAYS`, the one constant to
+  change), and all files together at most 1 GB: past that, the oldest
+  files go first. A record takes about 200 bytes: one a minute is
+  0.3 MB a day, one every 5 s 3.5 MB, and gzip divides that by about 10,
+  so 61 days stay far below 1 GB;
+- writes run in one thread fed by a queue: a record never waits for the
+  disk. If a write fails (disk full, permissions), one warning record
+  says so and the gateway keeps its records in memory only until it
+  restarts;
+- at start the gateway reads its last 500 records back, so the page and
+  `GET /api/v1/logs` show the history across restarts and upgrades. Each
+  start writes "Gateway started · version V · commit C" (`params.version`,
+  `params.commit`): `VERSION` and `COMMIT` of the release
+  (`--release_dir`); `packaging/stage-release.sh` writes `COMMIT` from the
+  tarball's `.commit`, with `-dirty` when it was built with uncommitted
+  changes, else `unknown`.
+- Android's events from before the start that the gateway finds again in
+  logcat are shown, not written again.
+
+To read past records from a shell on the VPN:
+
+```sh
+curl -s "$PAGE/api/v1/logs?since=$(date -d '3 days ago' +%s)&level=warning&limit=5000"
+curl -s "$PAGE/api/v1/logs?since=0&source=slayer-legend&contains=gold%20scroll"
+sudo zcat -f /var/lib/cloudphone/logs/records-*.jsonl* | tail     # on the server
+```
 
 **journald.** The gateway writes each record to the journal's socket with
 the native protocol: `PRIORITY` 6, 4 or 3, `SYSLOG_IDENTIFIER=cloudphone-gateway`,

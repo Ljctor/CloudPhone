@@ -38,6 +38,7 @@ import argparse
 import asyncio
 import ctypes
 import fractions
+import gzip
 import json
 import logging
 import os
@@ -115,6 +116,14 @@ DEFAULTS = {
     # repository, e.g. "tests/fake-emulator/plugins/e2e-probe". None by
     # default (an empty directory).
     "plugins": [],
+    # The gateway's log directory (--log_dir, as files/libexec passes
+    # /var/lib/cloudphone/logs), kept across gateway restarts. "read-only":
+    # the gateway can read it but not write in it (a full disk).
+    "log_dir": "writable",
+    # Files put in it before the gateway first starts: [{name, age_days,
+    # records: [{time, level, source, text}], gzip: bool}], each last
+    # modified age_days ago.
+    "log_files": [],
 }
 
 
@@ -393,8 +402,32 @@ class Emulator:
         self.write_host()
         self.write_unit()
         self.write_android()
+        self.write_log_files()
+        self.write_release()
 
     # ---- files the gateway reads ----
+
+    def write_log_files(self):
+        directory = self.work / "logs"
+        directory.mkdir(mode=0o700, exist_ok=True)
+        for entry in self.config["log_files"]:
+            path = directory / entry["name"]
+            data = "".join(json.dumps(r) + "\n" for r in entry.get("records", [])).encode()
+            if entry.get("gzip"):
+                data = gzip.compress(data)
+            path.write_bytes(data)
+            at = time.time() - entry.get("age_days", 0) * 86400
+            os.utime(path, (at, at))
+        if self.config["log_dir"] == "read-only":
+            directory.chmod(0o500)
+
+    def write_release(self):
+        """The release directory (--release_dir): VERSION from the
+        repository, COMMIT a fixed value."""
+        release = self.work / "release"
+        release.mkdir(exist_ok=True)
+        (release / "VERSION").write_text((HERE.parent.parent / "VERSION").read_text())
+        (release / "COMMIT").write_text("e2e0commit\n")
 
     def path(self, name):
         return str(self.work / name)
@@ -815,6 +848,7 @@ class Emulator:
                        "--display_request", self.path("display-request"), "--display_status", self.path("display-status"),
                        "--settings_request", self.path("settings-request"), "--settings_status", self.path("settings-status"),
                        "--plugins_dir", self.install_plugins(), "--plugin_data", self.path("plugin-data"),
+                       "--log_dir", self.path("logs"), "--release_dir", self.path("release"),
                        "--notify_file", self.path("notify.json")]
             self.gateway = await asyncio.create_subprocess_exec(
                 *command, stdin=asyncio.subprocess.DEVNULL, stdout=log_file, stderr=log_file, env=env,

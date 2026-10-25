@@ -41,6 +41,10 @@ check "web page answers on $host:$WEB_PORT" answers "http://$host:$WEB_PORT/"
 check "gateway answers on $host:$WEB_PORT" answers "http://$host:$WEB_PORT/api/v1/emulator/status"
 check "gateway serves its log records" bash -c \
   "curl -fsS --max-time 5 http://$host:$WEB_PORT/api/v1/logs | grep -q '\"records\"'"
+check "gateway keeps its log records in $STATE/logs" bash -c \
+  "[ \"\$(stat -c %U \"$STATE/logs\")\" = \"$SERVICE_USER\" ] && compgen -G \"$STATE/logs/records-*.jsonl*\" >/dev/null"
+check "gateway's start record names release $RELEASE_VERSION" bash -c \
+  "curl -fsS --max-time 5 'http://$host:$WEB_PORT/api/v1/logs?contains=Gateway%20started&limit=1' | grep -qF 'version $RELEASE_VERSION'"
 check "gateway logs to the journal as cloudphone-gateway" bash -c \
   "[ \"\$(systemctl show -p SyslogIdentifier --value cloudphone-gateway.service)\" = cloudphone-gateway ]"
 check "page carries a token" bash -c "curl -fsS --max-time 5 http://$host:$WEB_PORT/ | grep -q 'name=\"cloudphone-token\"'"

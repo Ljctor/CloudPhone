@@ -90,6 +90,9 @@ install_release() {
   "$release/venv/bin/pip" install --quiet --disable-pip-version-check \
     -c "$PART/constraints.txt" "$PART"/dist/wheels/*.whl
   install -m 644 "$TREE/VERSION" "$TREE/lib/versions.env" "$release/"
+  # The commit the release was built from, when stage-release.sh wrote it:
+  # the gateway names it in its start record.
+  [ ! -f "$TREE/COMMIT" ] || install -m 644 "$TREE/COMMIT" "$release/"
 
   ln -sfn "$release" "$PREFIX/current.new"
   mv -T "$PREFIX/current.new" "$PREFIX/current"

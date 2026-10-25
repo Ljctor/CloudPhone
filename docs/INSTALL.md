@@ -229,6 +229,22 @@ what to do next. One **Niveau** (Level) filter serves both: all, warnings
 and errors, or errors only. The gateway keeps its last 500 records in
 memory; the page keeps the last 200 of each side.
 
+The gateway also writes every record to `/var/lib/cloudphone/logs/`, one
+JSON object per line, and reads its last 500 back when it starts: a
+restart or an upgrade keeps the history, and each start is a record
+"Gateway started · version V · commit C". Files are gzipped after a day
+and kept **61 days**, 1 GB at most, the oldest deleted first. If the disk
+refuses a write, one warning record says so and records stay in memory
+only until the next restart. `GET /api/v1/logs` filters them: `since`,
+`until` (Unix times), `level` (minimum), `source`, `contains`, `limit`
+(5000 at most):
+
+```sh
+curl -s "http://10.20.0.1:8000/api/v1/logs?since=$(date -d '2 days ago' +%s)&level=error"
+```
+
+Details: [DEVELOPMENT.md](../04-cloud-phone-app/docs/DEVELOPMENT.md#logs).
+
 **Nothing pops up over the game.** Alerts reach you only as the phone
 alerts described below; over the Android screen the page shows no toast
 and no notification for them. Events worth your attention are records in
@@ -339,6 +355,7 @@ sudo ./uninstall.sh --purge    # erases the phone permanently
 | `/var/lib/cloudphone/avd` | **Android's data** | only with `--purge` |
 | `/var/lib/cloudphone/.android` | adb key of the service account | only with `--purge` |
 | `/var/lib/cloudphone/plugins` | Plugins' own data, one directory each (part 05) | only with `--purge` |
+| `/var/lib/cloudphone/logs` | The gateway's log records, 61 days | only with `--purge` |
 | `/etc/cloudphone` | Configuration and gRPC access policy | only with `--purge` |
 | `/etc/systemd/system/cloudphone-*.service`, `cloudphone-*.path` | Services and the two path units | yes |
 

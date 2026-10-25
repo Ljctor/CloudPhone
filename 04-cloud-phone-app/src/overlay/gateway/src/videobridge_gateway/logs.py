@@ -19,7 +19,12 @@ they are sent to the journal's socket with its native protocol; if that
 fails, written to stderr with a "<4>" prefix, which journald reads as the
 priority. Outside systemd, plain lines on stderr.
 
-The last RECORDS_KEPT records also stay in memory for GET /api/v1/logs.
+The last RECORDS_KEPT records also stay in memory for GET /api/v1/logs,
+and every record goes to JSON-lines files in the log directory
+(configure(), adapters/log_files.py): at start the gateway reads the last
+RECORDS_KEPT back, so the page shows records from before a restart, and
+query() reads older ones from the files. If a write fails, one warning
+record says so and records stay in memory only.
 Error records say what to do next, in one sentence after the event.
 The same text logged again within REPEAT_SECONDS is dropped.
 
@@ -29,6 +34,7 @@ see log() below.
 
 import collections
 import logging
+import math
 import os
 import secrets
 import socket
@@ -37,9 +43,15 @@ import sys
 import threading
 import time
 
+from .adapters import log_files
+
 IDENTIFIER = "cloudphone-gateway"
 JOURNAL_SOCKET = "/run/systemd/journal/socket"
 RECORDS_KEPT = 500
+# GET /api/v1/logs with filters: limit's default and maximum.
+QUERY_DEFAULT = RECORDS_KEPT
+QUERY_MAX = 5000
+LEVELS = ("normal", "warning", "error")
 REPEAT_SECONDS = 30.0
 SOURCES = ("gateway", "emulator", "adb")
 # journald priorities: 3 err, 4 warning, 6 info.
@@ -50,7 +62,7 @@ PRIORITY = {"normal": 6, "warning": 4, "error": 3}
 # a page's old cursor gets every record again.
 INSTANCE = secrets.token_hex(4)
 RECORDS = collections.deque(maxlen=RECORDS_KEPT)
-_state = {"next": 1, "recent": {}}
+_state = {"next": 1, "recent": {}, "writer": None, "directory": None}
 _lock = threading.Lock()
 
 
@@ -62,15 +74,65 @@ def level_of(levelno):
     return "normal"
 
 
-def _remember(level, source, text, notify, at, params=None):
+def _remember(level, source, text, notify, at, params=None, persist=True):
     with _lock:
         record = {"id": _state["next"], "time": round(at, 3), "level": level, "source": source, "text": text}
         if notify:
             record["notify"] = True
         if params:
             record["params"] = params
+        if not persist:
+            # Found again at each start (remember()): never written.
+            record["found"] = True
         _state["next"] += 1
         RECORDS.append(record)
+        writer = _state["writer"]
+    if persist and writer:
+        writer.put(_public(record))
+
+
+def _public(record):
+    return {k: v for k, v in record.items() if k not in ("id", "found")}
+
+
+def _disk_failed(reason):
+    log("warning", "gateway", "Log records are no longer written to disk · {reason} · "
+        "The gateway keeps its last 500 records in memory until it restarts.", reason=reason)
+
+
+def configure(directory):
+    """Keeps records in `directory` from now on (created if needed, mode
+    700) and puts its last RECORDS_KEPT records in memory before the ones
+    of this process. Empty: memory only."""
+    if not directory:
+        return
+    try:
+        os.makedirs(directory, mode=0o700, exist_ok=True)
+        loaded = log_files.read_tail(directory, RECORDS_KEPT)
+    except OSError as e:
+        _disk_failed(e.strerror or str(e))
+        return
+    writer = log_files.Writer(directory, _disk_failed)
+    with _lock:
+        mine = [r for r in RECORDS]
+        RECORDS.clear()
+        for number, record in enumerate(loaded + mine, start=1):
+            record = dict(record)
+            record["id"] = number
+            RECORDS.append(record)
+        _state["next"] = len(loaded) + len(mine) + 1
+        _state["writer"] = writer
+        _state["directory"] = directory
+    for record in mine:
+        if not record.get("found"):
+            writer.put(_public(record))
+
+
+def close():
+    """Writes the records still queued (at exit)."""
+    writer = _state["writer"]
+    if writer:
+        writer.close()
 
 
 def _repeated(level, source, text, now):
@@ -96,11 +158,105 @@ def since(cursor):
     if instance == INSTANCE and number.isdigit():
         after = int(number)
     with _lock:
-        records = [dict(r) for r in RECORDS if r["id"] > after]
+        records = [_public(r) for r in RECORDS if r["id"] > after]
         last = _state["next"] - 1
-    for record in records:
-        del record["id"]
     return {"cursor": f"{INSTANCE}-{last}", "records": records}
+
+
+def _number(text, name):
+    try:
+        value = float(text)
+    except ValueError:
+        raise ValueError(f"{name} must be a Unix time in seconds") from None
+    if not math.isfinite(value):
+        raise ValueError(f"{name} must be a Unix time in seconds")
+    return value
+
+
+def is_time(text):
+    """True when a `since` value is a Unix time rather than a cursor."""
+    try:
+        return math.isfinite(float(text))
+    except ValueError:
+        return False
+
+
+def parse_query(query):
+    """The filters of GET /api/v1/logs from its query string, or None when
+    there are none (the plain cursor read). ValueError: an invalid one."""
+    since = query.get("since", "")
+    filters = {"cursor": query.get("cursor", "")[:64]}
+    if since and is_time(since) and "cursor" not in query:
+        filters["since"] = _number(since, "since")
+    elif not filters["cursor"]:
+        filters["cursor"] = since[:64]
+    if "until" in query:
+        filters["until"] = _number(query["until"], "until")
+    if "level" in query:
+        if query["level"] not in LEVELS:
+            raise ValueError("level must be normal, warning or error")
+        filters["level"] = query["level"]
+    if query.get("source"):
+        filters["source"] = query["source"][:64]
+    if query.get("contains"):
+        filters["contains"] = query["contains"][:200]
+    if "limit" in query:
+        try:
+            limit = int(query["limit"])
+        except ValueError:
+            raise ValueError(f"limit must be a whole number from 1 to {QUERY_MAX}") from None
+        if limit < 1:
+            raise ValueError(f"limit must be a whole number from 1 to {QUERY_MAX}")
+        filters["limit"] = min(limit, QUERY_MAX)
+    if set(filters) == {"cursor"}:
+        return None
+    return filters
+
+
+def _matcher(filters):
+    since, until = filters.get("since"), filters.get("until")
+    level = LEVELS.index(filters["level"]) if "level" in filters else 0
+    source = filters.get("source")
+    contains = (filters.get("contains") or "").casefold()
+
+    def keep(record):
+        return ((since is None or record["time"] >= since) and (until is None or record["time"] <= until)
+                and LEVELS.index(record["level"]) >= level
+                and (source is None or record["source"] == source)
+                and (not contains or contains in record["text"].casefold()))
+    return keep
+
+
+def query(filters):
+    """{cursor, records[, more]}: the records matching `filters`
+    (parse_query()), oldest first, the newest `limit` of them; `more` when
+    the limit left some out. Records after a cursor of this process come
+    from memory only; otherwise the files are read too when memory does
+    not reach back far enough. Reads files: call it off the event loop."""
+    limit = filters.get("limit", QUERY_DEFAULT)
+    keep = _matcher(filters)
+    after = None
+    instance, _, number = (filters.get("cursor") or "").partition("-")
+    if instance == INSTANCE and number.isdigit():
+        after = int(number)
+    with _lock:
+        kept = [r for r in RECORDS if after is None or r["id"] > after]
+        last = _state["next"] - 1
+        directory = _state["directory"]
+    # Memory holds every record written from `boundary` on.
+    written = [r["time"] for r in kept if not r.get("found")]
+    boundary = min(written) if written else math.inf
+    found = [_public(r) for r in kept if keep(r)]
+    since = filters.get("since")
+    if (after is None and directory and len(found) < limit
+            and (since is None or since < boundary)):
+        older = log_files.read_range(directory, lambda r: r["time"] < boundary and keep(r), since)
+        found = older + found
+    found.sort(key=lambda r: r["time"])
+    answer = {"cursor": f"{INSTANCE}-{last}", "records": found[-limit:]}
+    if len(found) > limit:
+        answer["more"] = True
+    return answer
 
 
 def _journal_field(name, value):
@@ -207,7 +363,13 @@ def log(level, source, text, notify=False, **params):
 def remember(level, source, text, at, **params):
     """A record for the page only (not the journal): events from before
     this gateway started, found when it first reads Android's logs."""
-    _remember(level, source, text.format(**params) if params else text, False, at, params or None)
+    text = text.format(**params) if params else text
+    with _lock:
+        # Already kept by an earlier gateway, which logged it when it
+        # found it, up to a few minutes after it happened.
+        if any(r["source"] == source and r["text"] == text and 0 <= r["time"] - at < 600 for r in RECORDS):
+            return
+    _remember(level, source, text, False, at, params or None, persist=False)
 
 
 # adb's reachability, from the calls the gateway makes anyway (keys,

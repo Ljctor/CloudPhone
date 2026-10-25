@@ -111,11 +111,12 @@ async def watch(adb, expected):
             await notify.send(alerts.sentence(event))
 
 
-async def log_start(expected):
-    """The gateway's start, and an emulator restart just before it: the
-    gateway restarts to follow the emulator, so the previous gateway's
-    records of a crash are only in the journal."""
-    log("normal", "gateway", "Gateway started", notify=True)
+async def log_start(expected, version="unknown", commit="unknown"):
+    """The gateway's start with its release, and an emulator restart just
+    before it: the gateway restarts to follow the emulator, so the previous
+    gateway's records of a crash are only in the journal and the log files."""
+    log("normal", "gateway", "Gateway started · version {version} · commit {commit}", notify=True,
+        version=version, commit=commit)
     unit = await read_unit_start()
     if unit and time.time() - unit["time"] < 180 and unit.get("reason") and not expected():
         log("error", "emulator", "Android restarted after an abnormal stop ({result}, {restarts} automatic "

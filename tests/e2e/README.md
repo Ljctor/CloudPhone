@@ -85,6 +85,11 @@ in a fresh directory per test:
   from a browser with no settings of its own.
   `--plugin_data` is a directory of the fake's, kept across gateway
   restarts;
+- the gateway's log files: `--log_dir` is the fake's `logs/`, kept across
+  gateway restarts; `log_files` puts files in it first (`name`,
+  `age_days`, `records`, `gzip`), `"log_dir": "read-only"` makes every
+  write fail; `Fake::log_files()` lists it. `--release_dir` holds the
+  repository's `VERSION` and `COMMIT` `e2e0commit`;
 
 Its control API (127.0.0.1, random port), wrapped by `src/fake.rs`:
 

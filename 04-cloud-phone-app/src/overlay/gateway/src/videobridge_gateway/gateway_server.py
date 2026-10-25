@@ -429,9 +429,33 @@ async def handle_logs(request):
     GET /api/v1/logs?since=CURSOR: {cursor, records}, the gateway's log
     records after CURSOR, oldest first (see logs.py); all that are kept
     without a cursor or with one from an earlier gateway process.
+    With filters (since=UNIX_TIME, until, level, source, contains, limit,
+    cursor): logs.query(), which reads the files beyond memory.
     """
-    return web.json_response(logs.since(request.query.get("since", "")[:64]),
-                             headers={"Cache-Control": "no-store"})
+    try:
+        filters = logs.parse_query(request.query)
+    except ValueError as e:
+        return web.json_response({"error": str(e)}, status=400, headers={"Cache-Control": "no-store"})
+    if filters is None:
+        value = logs.since((request.query.get("cursor") or request.query.get("since", ""))[:64])
+    else:
+        value = await asyncio.get_running_loop().run_in_executor(None, logs.query, filters)
+    return web.json_response(value, headers={"Cache-Control": "no-store"})
+
+
+def read_release(directory):
+    """{version, commit} of the release the gateway runs from: its VERSION
+    and COMMIT files, "unknown" when missing."""
+    found = {"version": "unknown", "commit": "unknown"}
+    for key, name in (("version", "VERSION"), ("commit", "COMMIT")):
+        if not directory:
+            break
+        try:
+            with open(os.path.join(directory, name)) as f:
+                found[key] = f.readline().strip()[:64] or "unknown"
+        except OSError:
+            pass
+    return found
 
 
 async def read_screenshot():
@@ -803,7 +827,20 @@ async def main():
         default="",
         help="Where plugins keep their files, one subdirectory each, created as needed (empty: nowhere).",
     )
+    parser.add_argument(
+        "--log_dir",
+        type=str,
+        default="",
+        help="Where log records are kept as JSON lines across restarts, created as needed (empty: memory only).",
+    )
+    parser.add_argument(
+        "--release_dir",
+        type=str,
+        default="",
+        help="Directory of the running release, with its VERSION and COMMIT files, named in the start record.",
+    )
     args = parser.parse_args()
+    logs.configure(args.log_dir)
 
     global EMULATOR_UNIT, DISCOVERY_FILE
     EMULATOR_UNIT = args.emulator_unit
@@ -865,7 +902,7 @@ async def main():
     watcher = asyncio.create_task(watch_discovery_file())
     sampler = asyncio.create_task(sample_metrics())
     alerts = asyncio.create_task(events.watch(adb_output, change_expected))
-    await events.log_start(change_expected)
+    await events.log_start(change_expected, **read_release(args.release_dir))
     health = asyncio.create_task(watch_health())
 
     # Run forever
@@ -879,6 +916,7 @@ async def main():
         if VIDEOBRIDGE_CHANNEL and VIDEOBRIDGE_CHANNEL != EMULATOR_CHANNEL:
             await VIDEOBRIDGE_CHANNEL.close()
         await runner.cleanup()
+        logs.close()
 
 
 def run_main():

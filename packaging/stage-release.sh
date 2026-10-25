@@ -15,6 +15,16 @@ as_root=${AS_ROOT:-sudo -n -u master sudo -n}
 [ -f "$tarball.sha256" ] || { echo "ERROR: $tarball.sha256 is missing" >&2; exit 1; }
 name=$(basename "$tarball" .tar.gz)
 dir=/var/tmp/cloudphone-release
+# The commit build-release.sh wrote beside the tarball, "-dirty" when built
+# with uncommitted changes: unpacked as COMMIT, which the gateway names in
+# its start record.
+commit=$(head -1 "$tarball.commit" 2>/dev/null || true)
+case $commit in
+  *[!0-9a-f]* | '') commit=unknown ;;
+esac
+if [ "$commit" != unknown ] && grep -q "uncommitted changes" "$tarball.commit"; then
+  commit=$commit-dirty
+fi
 
 upload=$(ssh -o BatchMode=yes "$target" 'mktemp -d /var/tmp/cloudphone-upload.XXXXXX')
 scp -q -o BatchMode=yes "$tarball" "$tarball.sha256" "$target:$upload/"
@@ -27,6 +37,7 @@ ssh -o BatchMode=yes "$target" "$as_root sh -euc '
   chown -R root:root $dir/$name
   cd $dir/$name
   sha256sum -c --quiet SHA256SUMS
+  echo $commit >COMMIT
   rm -rf $upload
 '"
 echo "$dir/$name"
