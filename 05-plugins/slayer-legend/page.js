@@ -114,6 +114,7 @@ const ENGLISH = {
   'Détection des diamants': 'Diamond detection',
   'Réessayer': 'Retry',
   'lecteur en attente de capture': 'reader waiting for its capture',
+  'État du jeu': 'Game state',
   'jamais lu': 'never read',
   'vu à {time}': 'seen at {time}',
 };
@@ -138,11 +139,11 @@ export default function activate(api) {
   const goldPart = gold(api, { overlay: [modePart.overlay], enabled: powerPart.on });
   const drawers = [counterPart, goldPart];
   const tracePart = trace(api);
-  const gamePart = game(api);
+  const gamePart = game(api, { resourceOptions: counterPart.options });
   const parts = [powerPart, counterPart, screenPart, modePart, goldPart, tracePart, watchdogPart, gamePart];
   // ...and shown in this one, then « Debug & développement », last and
   // folded: the parts' developer rows and the plugin's log records.
-  const shown = [powerPart, modePart, goldPart, counterPart];
+  const shown = [powerPart, modePart, goldPart];
   const debug = [
     { type: 'section', key: 'debug', label: 'Debug & développement', folded: true },
     ...[screenPart, counterPart, watchdogPart, tracePart].flatMap((part) => part.debug ?? []),

@@ -1,24 +1,16 @@
 // Gold per second, measured by the gateway (a reading every 10 s, the
-// slope over 5 minutes), written in the game's top bar, and the other
-// features' overlay lines (the mode's) top left, both in the gold
-// counter's own pixel font (gold_text.js): the rate in white after the
-// game's gold coin, the lines in their mode's colour. Options: the "Gold"
-// section. The overlay applies while the counter was read lately (the
-// game's battle screen). Souls per second, per colour, beside gold/s: read
-// on the Soul Weapon screen, where the farming modes park. The panel's
-// rates are written as the game writes them, white outlined in black,
-// each after the game's own icon.
+// slope over a measured window), shown at the right edge below the top
+// bar. The mode remains at the left. Souls per second are read on the Soul
+// Weapon screen, where farming modes park. Values use the game's font and
+// real counter icons. Gold changes from light blue to white while its
+// measurement window fills.
 import { drawText } from './gold_text.js';
 import { GOLD, SOULS } from './page_icons.js';
 
-// Where the rate goes in the game's top bar: right of the player's name
-// (a 6-letter name ends at 25 % of the width), before the emerald counter
-// (its icon from 37.9 %), centred on the name's line (2.5 % of the height).
-// The game's coin first, as high as the text (8 game pixels), then 0.6 of
-// space; at the label's size the widest rate ("~44.4W/S", 71 font pixels)
-// takes 9.1 % of the width: up to 37.4 %.
-const BAR_LEFT = '26.5%';
-const BAR_MIDDLE = '2.5%';
+// Keep the four measured rates against the right edge, below the game's
+// top bar. Each row keeps its own icon beside its value.
+const RATE_TOP = 8.8;
+const RATE_STEP = 2.4;
 const FRENCH = new Intl.NumberFormat('fr-FR', { maximumSignificantDigits: 3 });
 
 // The colours measured, each its game icon and rate: [{ icon, text }];
@@ -30,12 +22,14 @@ export function soulsParts(souls) {
 
 // overlay: functions giving the lines written top left; enabled(): the
 // plugin is on (nothing is drawn while it is off).
-// The window is not full yet: its length (5 min, 1 min in full digits)
-// less one reading and a half.
-const partial = (answer) => answer?.span < (answer?.window ?? 300) - 15;
+// Confidence grows as the measuring window fills: light blue to white.
+export function rateColour(answer, elapsed = 0) {
+  const share = Math.max(0, Math.min(1, ((answer?.span ?? 0) + elapsed) / (answer?.window ?? 300)));
+  return `rgb(${Math.round(175 + 80 * share)}, ${Math.round(221 + 34 * share)}, 255)`;
+}
 
 export default function goldFeature(api, { overlay, enabled = () => true }) {
-  const gold = { answer: null, timer: null, font: null, line: '' };
+  const gold = { answer: null, at: 0, timer: null, font: null, line: '' };
   api.get('/gold-font').catch(() => null).then((font) => {
     gold.font = font;
     showGold();
@@ -46,43 +40,48 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
   // pixels, so the lines take 9.2–11.1 %. Redo this if the banner moves.
   const label = document.createElement('canvas');
   label.style.cssText = 'position:absolute;image-rendering:pixelated;left:3%;top:9.2%';
-  const bar = document.createElement('canvas');
-  bar.style.cssText = 'position:absolute;image-rendering:pixelated';
-  const coin = document.createElement('img');
-  coin.src = GOLD;
-  coin.alt = '';
-  coin.style.cssText = `position:absolute;image-rendering:pixelated;left:${BAR_LEFT}`;
+  const rateRows = [GOLD, SOULS.green, SOULS.blue, SOULS.red].map((src, index) => {
+    const row = document.createElement('div');
+    row.style.cssText = `position:absolute;right:1%;top:${RATE_TOP + index * RATE_STEP}%;display:flex;align-items:center;gap:2px;pointer-events:none`;
+    const icon = document.createElement('img');
+    icon.src = src;
+    icon.alt = '';
+    icon.style.imageRendering = 'pixelated';
+    const value = document.createElement('canvas');
+    value.style.imageRendering = 'pixelated';
+    row.append(icon, value);
+    return { row, icon, value };
+  });
   let drawn = '';
-  let barDrawn = '';
-  // The rate in the top bar, in the same font and size as the lines, in
-  // white after the game's coin as high as the text; removed while the
-  // overlay does not apply or it is hidden.
-  const showBar = (cell) => {
+  let ratesDrawn = '';
+  const showRates = (cell) => {
     if (!cell || !gold.line) {
-      bar.remove();
-      coin.remove();
-      barDrawn = '';
+      rateRows.forEach(({ row }) => row.remove());
+      ratesDrawn = '';
       return;
     }
-    if (!bar.isConnected) api.layer.append(coin, bar);
-    const key = `${gold.line}@${cell}`;
-    if (key !== barDrawn) {
-      drawText(bar, gold.font, [{ text: gold.line, colour: '#ffffff' }], cell);
-      // As high as the text's ink, the coin square.
-      const size = gold.font.height * cell;
-      coin.style.width = `${size}px`;
-      coin.style.height = `${size}px`;
-      coin.style.top = `calc(${BAR_MIDDLE} - ${size / 2}px)`;
-      bar.style.left = `calc(${BAR_LEFT} + ${size + cell}px)`;
-      bar.style.top = `calc(${BAR_MIDDLE} - ${bar.style.height} / 2)`;
-      barDrawn = key;
+    const souls = gold.answer?.souls ?? {};
+    const entries = [gold.line, ...['green', 'blue', 'red'].map((colour) =>
+      typeof souls[colour]?.rate === 'number' ? `${FRENCH.format(souls[colour].rate)}/s` : '')];
+    const colour = rateColour(gold.answer, (Date.now() - gold.at) / 1000);
+    const key = `${entries.join('|')}@${cell}@${colour}`;
+    if (key !== ratesDrawn) {
+      rateRows.forEach(({ row, icon, value }, index) => {
+        if (!entries[index]) { row.remove(); return; }
+        if (!row.isConnected) api.layer.append(row);
+        drawText(value, gold.font, [{ text: entries[index], colour: index ? '#fff' : colour }], cell);
+        const size = gold.font.height * cell;
+        icon.style.width = `${size}px`;
+        icon.style.height = `${size}px`;
+      });
+      ratesDrawn = key;
     }
   };
   const showLabel = (shown) => {
     if (!shown) {
       label.remove();
       drawn = '';
-      showBar(null);
+      showRates(null);
       return;
     }
     if (!label.isConnected) api.layer.appendChild(label);
@@ -90,7 +89,7 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
     // As high as the level's text above it (8 game pixels, the screen
     // being 1040 of them high), not the gold counter's 13.
     const cell = api.layer.offsetHeight / 1040 * 8 / gold.font.height;
-    showBar(cell);
+    showRates(cell);
     const key = `${JSON.stringify(lines)}@${cell}`;
     if (key !== drawn) {
       drawText(label, gold.font, lines, cell);
@@ -99,11 +98,13 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
   };
   const tick = window.setInterval(() => {
     if (label.isConnected) showLabel(true);
+    if (gold.answer?.rate_text) api.refresh();
   }, 1000);
   const goldText = () => {
     const answer = gold.answer;
     if (!answer) return '…';
-    if (answer.rate_text) return [{ icon: GOLD, text: `${partial(answer) ? '~' : ''}${answer.rate_text}/s` }];
+    if (answer.rate_text) return [{ icon: GOLD, text: `${answer.rate_text}/s`,
+      color: rateColour(answer, (Date.now() - gold.at) / 1000) }];
     return answer.read ? api.tr('pas encore mesuré') : api.tr('non visible');
   };
   const soulsValue = () => {
@@ -118,13 +119,13 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
     // Only while the counter was read lately: it moves with the game's
     // panels and Power Saving Mode hides it.
     const fresh = box && answer.read && Date.now() / 1000 - answer.read < 25;
-    // "~" while the window is not full yet.
     gold.line = api.setting('goldOverlay') === 'off' || !fresh ? ''
-      : (answer.rate_text ? `${partial(answer) ? '~' : ''}${answer.rate_text}/S` : '...');
+      : (answer.rate_text ? `${answer.rate_text}/s` : '...');
     showLabel(Boolean(fresh && gold.font && enabled()));
   };
   const askGold = async () => {
     gold.answer = await api.get('/gold').catch(() => null);
+    gold.at = Date.now();
     showGold();
     api.refresh();
     window.clearTimeout(gold.timer);
@@ -151,8 +152,7 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
       window.clearTimeout(gold.timer);
       window.clearInterval(tick);
       label.remove();
-      bar.remove();
-      coin.remove();
+      rateRows.forEach(({ row }) => row.remove());
     },
   };
 }

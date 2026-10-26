@@ -260,10 +260,10 @@ class Tone(unittest.TestCase):
         self.assertEqual(rules.tone("mpw4", "waiting", True, False), "hold", "its hold not over yet")
         self.assertEqual(rules.tone("free", "free", False, True), "ok", "free play holds nothing")
 
-    def test_red_on_any_error(self):
+    def test_red_only_on_confirmed_block(self):
         self.assertEqual(rules.tone("mpw18", "failed", False, False), "error", "a setup step failed")
-        self.assertEqual(rules.tone("mpw18", "farming", False, False, {"level": "error"}), "error")
-        self.assertEqual(rules.tone("mpw18", "farming", False, False, None, None, True), "error", "engraving off")
+        self.assertEqual(rules.tone("mpw18", "farming", False, False, {"level": "error"}), "setup")
+        self.assertEqual(rules.tone("mpw18", "farming", False, False, None, None, True), "setup", "engraving off")
         self.assertEqual(rules.tone("mine", "mine", False, False, None, "blocked"), "error")
         self.assertEqual(rules.tone("mpw18", "failed", True, True), "hold", "user intervention takes priority")
 

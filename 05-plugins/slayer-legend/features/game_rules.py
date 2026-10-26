@@ -78,11 +78,22 @@ def screen_path(screen):
     """The access path from the game's own navigation catalogue."""
     path, visited = [], set()
     while screen and screen not in visited:
+        if screen == "battle":
+            break  # Battle is the base screen, not a menu to open.
         visited.add(screen)
         node = TREE.get(screen, {})
-        path.insert(0, node.get("name", "Combat" if screen == "battle" else screen))
+        path.insert(0, node.get("name", screen))
         screen = node.get("parent")
     return path
+
+
+def forbidden_menu(screen):
+    """The top-right menu and everything behind it are outside this plugin."""
+    while screen:
+        if screen == "top_menu":
+            return True
+        screen = TREE.get(screen, {}).get("parent")
+    return False
 
 
 FIELDS = {field: {"persist": True, "pending": False, **spec, "screen": screen}
@@ -258,9 +269,12 @@ def answer(facts):
         screens.append({"screen": screen, "label": group["label"], "path": screen_path(screen), "fields": rows})
     resources = next(group["fields"] for group in screens if group["screen"] == "resources")
     known = {group["screen"]: group for group in screens if group["screen"] != "resources"}
-    # Catalogue order is the menu order, with children beside their parent.
+    # Catalogue order is the menu order, with children beside their parent;
+    # Battle itself is the base screen and has no menu path.
     ordered = [known.pop("battle")]
     for screen, node in TREE.items():
+        if forbidden_menu(screen):
+            continue
         ordered.append(known.pop(screen, {"screen": screen, "label": node["name"],
                                          "path": screen_path(screen), "fields": [], "pending": True}))
     ordered.extend(known.values())

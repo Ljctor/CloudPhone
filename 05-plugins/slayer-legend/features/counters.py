@@ -29,13 +29,15 @@ def mask_of(emerald, shot, area):
         return {"mask": None, "reason": "screenshot"}
     mask, reason = emerald.find_emerald_mask(pixels, w, h, scale, channels=3, area=area)
     if mask:
-        # The page redraws the digits after the comma: send their pixels.
-        box = mask["decimals"]["pixels"]
-        crop = bytearray()
-        for y in range(box["y"], box["y"] + box["height"]):
-            start = (y * w + box["x"]) * 3
-            crop += pixels[start:start + box["width"] * 3]
-        box["rgb"] = base64.b64encode(bytes(crop)).decode("ascii")
+        # The page redraws either side of the comma: send both crops for
+        # browsers that cannot read the video's pixels.
+        for part in ("kept", "decimals"):
+            box = mask[part]["pixels"]
+            crop = bytearray()
+            for y in range(box["y"], box["y"] + box["height"]):
+                start = (y * w + box["x"]) * 3
+                crop += pixels[start:start + box["width"] * 3]
+            box["rgb"] = base64.b64encode(bytes(crop)).decode("ascii")
         # The finder counts from AREA; the crop starts at a whole pixel.
         dx, dy = x0 / scale - area["x"], y0 / scale - area["y"]
         for part in (mask, mask["number"]):

@@ -80,6 +80,7 @@ UNFOLD_WAIT = 0.5
 LOOK_GAP = 0.4
 FOLD_SETTLE = 4.0
 SETTINGS_CLOSE = (0.09, 0.965)
+BATTLE_RETURN = (0.5, 0.18)
 LEASE_SECONDS = 240
 # After a relaunch, the soul weapon's check waits for the lease this often,
 # this long at most (seconds).
@@ -217,7 +218,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
                        screen=await ports.analyse(screens.classify, shot))
         if not may_tap:
             raise Plan("fermer le panneau ({panel})", panel=tab[1])
-        await tap(shot, tab[1], "close", (tab[0], screens.TAB_TAP_Y))
+        await tap(shot, tab[1], "close", BATTLE_RETURN)
         shot, plain = await settle(screens.plain_battle)
         if not plain:
             raise Stop("fermeture du panneau du menu du bas")

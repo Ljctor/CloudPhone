@@ -26,6 +26,10 @@ host=$LISTEN_ADDRESS
 [ "$host" != 0.0.0.0 ] || host=127.0.0.1
 
 answers() { curl -fsS --max-time 5 "$1" >/dev/null; }
+live_metrics() {
+  curl -fsS --max-time 5 "http://$host:$WEB_PORT/api/v1/state?details=1" |
+    python3 -c 'import json,sys; host=(json.load(sys.stdin).get("metrics") or {}).get("host") or {}; assert host.get("cpu") is not None and (host.get("memory") or {}).get("total")'
+}
 listens_only_on() {
   local port=$1 addresses
   addresses=$(ss -Hltn | awk -v p=":$port" 'substr($4, length($4) - length(p) + 1) == p { print $4 }')
@@ -39,6 +43,7 @@ check "cloudphone-gateway is active" systemctl is-active --quiet cloudphone-gate
 check "no separate cloudphone-web service is left" test ! -e /etc/systemd/system/cloudphone-web.service
 check "web page answers on $host:$WEB_PORT" answers "http://$host:$WEB_PORT/"
 check "gateway answers on $host:$WEB_PORT" answers "http://$host:$WEB_PORT/api/v1/emulator/status"
+check "gateway reports live CPU and memory" live_metrics
 check "gateway serves its log records" bash -c \
   "curl -fsS --max-time 5 http://$host:$WEB_PORT/api/v1/logs | grep -q '\"records\"'"
 check "gateway keeps its log records in $STATE/logs" bash -c \

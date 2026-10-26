@@ -155,6 +155,16 @@ export function findEmeraldMask(pixels, width, height, scale, why = {}, area = A
       height: (best.bottom - best.top + 1 + tailRows) / scale + 2 * pad,
       digitHeight: (best.bottom - best.top + 1) / scale,
     },
+    // Digits retained by cut mode, before the comma. The page reads them
+    // and redraws them at the size the game uses for the shorter number.
+    kept: {
+      pixels: {
+        x: start,
+        y: Math.max(0, best.top - 1),
+        width: Math.max(0, comma - start),
+        height: Math.min(height - 1, best.bottom + 1) - Math.max(0, best.top - 1) + 1,
+      },
+    },
     // The digits after the comma: where they are on screen, and the same
     // box in the search area's pixels (to copy them), one row of margin.
     decimals: {

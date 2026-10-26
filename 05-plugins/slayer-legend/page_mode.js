@@ -3,10 +3,8 @@
 // it when they change, and on load if the gateway has not been told since
 // it started. Its state is asked every 10 s. Options: the "Mode et
 // farming" section. Overlay hook, called by page_gold.js while the
-// overlay applies: overlay(), the mode's lines on the game, top left (the
-// time left of a timed mode under its name, and "MISE EN PLACE..." under
-// it while the gateway sets the mode up, "EN ATTENTE" while the switch
-// waits for the user to stop playing; asked every 2 s then), in the
+// overlay applies: overlay(), only the mode and timer (or small "défaut")
+// on the game, top left; explanations stay in notifications and options. In the
 // colour of the gateway's tone: green when the instruction is reached,
 // orange during input and the rolling 10 s pause, red when blocked,
 // blue while returning to the instruction. A touch on the game asks the tone
@@ -165,19 +163,17 @@ export default function modeFeature(api, { known, watchdog, stage }) {
 
   return {
     // The selected mode, under the player's level (top left), and below it
-    // "(défaut)" or the time left on the timer, in the tone's colour.
+    // Only the mode and its timer (or small "défaut") on the game.
     overlay: () => {
       const current = farm.answer?.mode ?? mode();
       const seconds = Math.max(0, Math.round((farm.answer?.until ?? 0) - Date.now() / 1000));
       const tone = current !== 'free' && farm.inputUntil > Date.now() ? 'hold' : farm.answer?.tone;
       const colour = TONES[tone] ?? TONES.setup;
       return [
-        api.tr(MODE_NAMES[current] ?? current).toUpperCase(),
-        ...(tone === 'error' && farm.answer?.message_t ? [api.tr(farm.answer.message_t)] : []),
-        ...(tone === 'hold' ? [api.tr('EN ATTENTE')]
-          : farm.answer?.setup ? [api.tr('MISE EN PLACE...')] : []),
-        `(${(current === defaultMode() || !farm.answer?.until ? api.tr('défaut') : clock(seconds)).toUpperCase()})`,
-      ].map((text) => ({ text, colour }));
+        { text: api.tr(MODE_NAMES[current] ?? current).toUpperCase(), colour },
+        { text: current === defaultMode() || !farm.answer?.until ? api.tr('défaut').toLowerCase() : clock(seconds),
+          colour },
+      ];
     },
     options: [
       { type: 'section', key: 'mode', label: 'Mode et farming' },

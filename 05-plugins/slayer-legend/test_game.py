@@ -174,7 +174,10 @@ class Rules(unittest.TestCase):
                          (920, 920, True))
         self.assertNotIn('gold', rows)
         engraving = next(group for group in answer['screens'] if group['screen'] == 'soul_weapon_engraving')
-        self.assertEqual(engraving['path'], ['Combat', 'Equipment: Weapon', 'Soul Weapon', 'Soul Weapon Engraving'])
+        self.assertEqual(battle['path'], [])
+        self.assertEqual(engraving['path'], ['Equipment: Weapon', 'Soul Weapon', 'Soul Weapon Engraving'])
+        self.assertFalse({row['screen'] for row in answer['screens']} &
+                         {'top_menu', 'top_ranking', 'top_settings', 'top_mail'})
         self.assertNotIn("gold_place", rows)
         json.dumps(answer)
 

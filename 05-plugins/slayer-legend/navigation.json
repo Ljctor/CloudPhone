@@ -237,7 +237,9 @@
       0.935,
       0.025
      ],
-     "label": "≡ menu"
+     "label": "≡ menu",
+     "forbidden": true,
+     "reason": "user, 2026-10-26: the plugin must never touch the top-right three-bar menu"
     },
     {
      "id": "quest",
@@ -301,10 +303,10 @@
      "id": "close",
      "to": "battle",
      "tap": [
-      0.073,
-      0.966
+      0.5,
+      0.18
      ],
-     "label": "its own bottom tab again: closes the panel (assumed: seen on Shop only, 2026-10-21)",
+     "label": "tap the middle of the visible combat area to return to Battle (user, 2026-10-26)",
      "assumed": true
     },
     {
@@ -405,10 +407,10 @@
      "id": "close",
      "to": "battle",
      "tap": [
-      0.073,
-      0.966
+      0.5,
+      0.18
      ],
-     "label": "its own bottom tab again: closes the panel (assumed: seen on Shop only, 2026-10-21)",
+     "label": "tap the middle of the visible combat area to return to Battle (user, 2026-10-26)",
      "assumed": true
     },
     {
@@ -509,10 +511,10 @@
      "id": "close",
      "to": "battle",
      "tap": [
-      0.073,
-      0.966
+      0.5,
+      0.18
      ],
-     "label": "its own bottom tab again: closes the panel (assumed: seen on Shop only, 2026-10-21)",
+     "label": "tap the middle of the visible combat area to return to Battle (user, 2026-10-26)",
      "assumed": true
     },
     {
@@ -624,10 +626,10 @@
      "id": "close",
      "to": "battle",
      "tap": [
-      0.24,
-      0.966
+      0.5,
+      0.18
      ],
-     "label": "its own bottom tab again: closes the panel (assumed: seen on Shop only, 2026-10-21)",
+     "label": "tap the middle of the visible combat area to return to Battle (user, 2026-10-26)",
      "assumed": true
     },
     {
@@ -765,10 +767,10 @@
      "id": "close",
      "to": "battle",
      "tap": [
-      0.41,
-      0.966
+      0.5,
+      0.18
      ],
-     "label": "its own bottom tab again: closes the panel (assumed: seen on Shop only, 2026-10-21)",
+     "label": "tap the middle of the visible combat area to return to Battle (user, 2026-10-26)",
      "assumed": true
     },
     {
@@ -916,10 +918,10 @@
      "id": "close",
      "to": "battle",
      "tap": [
-      0.41,
-      0.966
+      0.5,
+      0.18
      ],
-     "label": "its own bottom tab again: closes the panel (assumed: seen on Shop only, 2026-10-21)",
+     "label": "tap the middle of the visible combat area to return to Battle (user, 2026-10-26)",
      "assumed": true
     },
     {
@@ -1025,10 +1027,10 @@
      "id": "close",
      "to": "battle",
      "tap": [
-      0.41,
-      0.966
+      0.5,
+      0.18
      ],
-     "label": "its own bottom tab again: closes the panel (assumed: seen on Shop only, 2026-10-21)",
+     "label": "tap the middle of the visible combat area to return to Battle (user, 2026-10-26)",
      "assumed": true
     },
     {
@@ -1540,10 +1542,10 @@
      "id": "close",
      "to": "battle",
      "tap": [
-      0.585,
-      0.966
+      0.5,
+      0.18
      ],
-     "label": "its own bottom tab again: closes the panel (assumed: seen on Shop only, 2026-10-21)",
+     "label": "tap the middle of the visible combat area to return to Battle (user, 2026-10-26)",
      "assumed": true
     },
     {
@@ -1689,10 +1691,10 @@
      "id": "close",
      "to": "battle",
      "tap": [
-      0.755,
-      0.966
+      0.5,
+      0.18
      ],
-     "label": "its own bottom tab again: closes the panel (assumed: seen on Shop only, 2026-10-21)",
+     "label": "tap the middle of the visible combat area to return to Battle (user, 2026-10-26)",
      "assumed": true
     },
     {
@@ -1816,10 +1818,10 @@
      "id": "close",
      "to": "battle",
      "tap": [
-      0.755,
-      0.966
+      0.5,
+      0.18
      ],
-     "label": "its own bottom tab again: closes the panel (assumed: seen on Shop only, 2026-10-21)",
+     "label": "tap the middle of the visible combat area to return to Battle (user, 2026-10-26)",
      "assumed": true
     },
     {
@@ -2180,7 +2182,9 @@
       0.935,
       0.027
      ],
-     "label": "X"
+     "label": "X",
+     "forbidden": true,
+     "reason": "the plugin never enters or operates the top-right menu"
     },
     {
      "id": "ranking",
@@ -2189,7 +2193,9 @@
       0.785,
       0.027
      ],
-     "label": "Ranking (not explored)"
+     "label": "Ranking (not explored)",
+     "forbidden": true,
+     "reason": "user, 2026-10-26: Ranking is inaccessible to the plugin"
     },
     {
      "id": "settings",
@@ -2198,7 +2204,9 @@
       0.86,
       0.027
      ],
-     "label": "Settings (not explored)"
+     "label": "Settings (not explored)",
+     "forbidden": true,
+     "reason": "user, 2026-10-26: Settings is inaccessible to the plugin"
     },
     {
      "id": "mail",
@@ -2207,7 +2215,9 @@
       0.86,
       0.068
      ],
-     "label": "Mail (not explored)"
+     "label": "Mail (not explored)",
+     "forbidden": true,
+     "reason": "user, 2026-10-26: Mail is inaccessible to the plugin"
     },
     {
      "id": "power_saving",
@@ -2216,7 +2226,9 @@
       0.935,
       0.068
      ],
-     "label": "Power Saving Mode"
+     "label": "Power Saving Mode",
+     "forbidden": true,
+     "reason": "the plugin never operates the top-right menu"
     }
    ]
   },
@@ -2242,10 +2254,10 @@
      "id": "close",
      "to": "battle",
      "tap": [
-      0.925,
-      0.966
+      0.5,
+      0.18
      ],
-     "label": "its own bottom tab again: closes the panel (seen 2026-10-21)"
+     "label": "tap the middle of the visible combat area to return to Battle (user, 2026-10-26)"
     },
     {
      "id": "menu_character",

@@ -28,7 +28,7 @@ SOULS_WINDOW = 1800
 
 
 def empty():
-    return {"samples": [], "pending": None, "text": None, "step": None, "offset": 0.0, "place": None,
+    return {"samples": [], "pending": None, "text": None, "step": None, "offset": 0, "place": None,
             "number": None, "odd": 0}
 
 
@@ -56,11 +56,13 @@ def rate(samples, now, seconds=WINDOW):
         return None, samples
     n = len(samples)
     mean_t = sum(t for t, _ in samples) / n
-    mean_v = sum(v for _, v in samples) / n
+    origin = samples[0][1]
+    relative = [v - origin for _, v in samples]
+    mean_v = sum(relative) / n
     spread = sum((t - mean_t) ** 2 for t, _ in samples)
     if not spread:
         return None, samples
-    return max(0.0, sum((t - mean_t) * (v - mean_v) for t, v in samples) / spread), samples
+    return max(0.0, sum((t - mean_t) * (v - mean_v) for (t, _), v in zip(samples, relative)) / spread), samples
 
 
 def same_place(a, b):
@@ -75,7 +77,7 @@ def same_place(a, b):
 
 def restarted(window, place=None):
     """The window starts again, at place if known."""
-    return {**window, "place": place, "number": None, "odd": 0, "pending": None, "samples": [], "offset": 0.0}
+    return {**window, "place": place, "number": None, "odd": 0, "pending": None, "samples": [], "offset": 0}
 
 
 def elsewhere(window, place=None):
@@ -117,14 +119,14 @@ def counted(window, reading, now, long=WINDOW, spent="restart"):
     (window_for)."""
     if window["pending"] == reading["value"]:
         samples = list(window["samples"])
-        offset = window.get("offset", 0.0)
+        offset = window.get("offset", 0)
         value = reading["value"] + offset
         if samples and value < samples[-1][1]:
             if spent == "skip":
                 offset += samples[-1][1] - value
                 value = samples[-1][1]
             else:
-                samples, offset, value = [], 0.0, reading["value"]
+                samples, offset, value = [], 0, reading["value"]
         samples.append((now, value))
         step = reading.get("step")
         window = {**window, "samples": trimmed(samples, now, window_for(step, long)), "text": reading["text"],

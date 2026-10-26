@@ -1,6 +1,7 @@
 // The game's state as the gateway keeps it (GET /game, features/game.py:
-// every capture scanned): one foldable section per screen of the game, a
-// row per value with the time it was seen. A value not read again since
+// every capture scanned): the screens with readable values are nested by
+// their path through the game's menus, with resources in their own section.
+// A value not read again since
 // the game was stopped or relaunched is greyed out. Asked at load, then
 // every 10 s while a row shows. rows(options, at): puts the sections into
 // the plugin's options list at index at, once the gateway answered.
@@ -8,7 +9,7 @@ import { RESOURCE_ICONS } from './page_resources.js';
 const PIECE = '#d9a441';
 const EVERY = 10000;
 
-export default function gameFeature(api) {
+export default function gameFeature(api, { resourceOptions = [] } = {}) {
   const game = { answer: null, at: 0, busy: false, list: null, start: 0, count: 0 };
   const time = (seen) => new Date(seen * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const shown = (row) => {
@@ -44,17 +45,21 @@ export default function gameFeature(api) {
       return {
         type: 'status', label: field.label,
         visible: () => { ask(); return true; },
-        value: () => [{ icon: RESOURCE_ICONS[field.field], text: text(current()) }],
+        value: () => [{ icon: RESOURCE_ICONS[field.field], size: 12, text: text(current()) }],
         muted: () => !current().verified,
       };
     }),
+    ...resourceOptions.map((option) => option.type === 'section' ? { ...option, depth: 2 } : option),
   ];
-  const sections = () => [...resourceRows(), ...(game.answer?.screens ?? []).flatMap((screen) => [
-    { type: 'section', key: `game-${screen.screen}`,
-      label: (screen.path ?? [screen.label]).map((part) => api.tr(part)).join(' → '), folded: true },
-    ...(screen.fields.length ? [] : [{ type: 'status', label: 'État',
-      value: () => api.tr('lecteur en attente de capture') }]),
-    ...screen.fields.map((field) => (field.shown === 'grid' ? {
+  const accessPath = (screen) => ({
+    battle: [],
+    stage_select: ['Select Region'],
+    soul_weapon: ['Equipment', 'Weapon', 'Soul Weapon'],
+    soul_weapon_engraving: ['Equipment', 'Weapon', 'Soul Weapon', 'Engraving'],
+    mine_list: ['Adventure', 'Dungeon', 'Closed Mine'],
+  }[screen.screen] ?? (screen.path ?? [screen.label]).filter((part) => part !== 'Combat')
+    .flatMap((part) => part.split(': ').filter(Boolean)));
+  const fieldRows = (screen) => screen.fields.map((field) => (field.shown === 'grid' ? {
       type: 'grid', label: field.label,
       visible: () => {
         ask();
@@ -73,9 +78,28 @@ export default function gameFeature(api) {
         const row = rowOf(screen.screen, field.field);
         return Boolean(row && row.value !== null && !row.verified);
       },
-    })),
-  ])];
-  // The sections, once: the screens and their fields are the gateway's.
+    }));
+  const sections = () => {
+    const rows = [...resourceRows(),
+      { type: 'section', key: 'game-state', label: 'État du jeu', depth: 1, folded: true }];
+    const made = new Set();
+    for (const screen of game.answer?.screens ?? []) {
+      // A page with no reader has no game state to show. It should not
+      // become an empty menu; its place is retained when a reader arrives.
+      if (!screen.fields?.length) continue;
+      const path = accessPath(screen);
+      path.forEach((label, index) => {
+        const id = path.slice(0, index + 1).join('/');
+        if (made.has(id)) return;
+        made.add(id);
+        rows.push({ type: 'section', key: index === path.length - 1 ? `game-${screen.screen}` : `game-path-${id}`,
+          label, depth: index + 2, folded: true });
+      });
+      rows.push(...fieldRows(screen));
+    }
+    return rows;
+  };
+  // The sections, once: readable screens and their fields are the gateway's.
   const place = () => {
     if (!game.list || game.count || !game.answer) return;
     const made = sections();

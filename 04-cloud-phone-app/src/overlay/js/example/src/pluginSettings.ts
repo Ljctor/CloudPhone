@@ -17,6 +17,25 @@ export function optionParts(options) {
   return parts;
 }
 
+// A section may declare depth (1 by default). Its children stay under it
+// until the next section at the same or a shallower depth.
+export function optionTree(options) {
+  const root = { section: null, options: [], children: [] };
+  const stack = [{ depth: 0, node: root }];
+  (options ?? []).forEach((option, index) => {
+    if (option.type !== 'section') {
+      stack[stack.length - 1].node.options.push([option, index]);
+      return;
+    }
+    const depth = Math.max(1, Math.min(Number(option.depth) || 1, stack.length));
+    while (stack.length > depth) stack.pop();
+    const node = { section: option, options: [], children: [] };
+    stack[stack.length - 1].node.children.push(node);
+    stack.push({ depth, node });
+  });
+  return root;
+}
+
 export function sectionFoldId(plugin, section) {
   return `${plugin.id}:${section.key ?? section.label}`;
 }

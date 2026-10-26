@@ -124,6 +124,12 @@ class Rates(unittest.TestCase):
         self.assertLessEqual(samples[-1][0] - samples[0][0], rules.SHORT)
         self.assertAlmostEqual(rate, 1234)
 
+    def test_full_digits_keep_small_gains_at_a_large_balance(self):
+        balance = 10 ** 30
+        self.assertEqual(gold.parse(str(balance + 1234))["value"], balance + 1234)
+        rate, _ = rules.rate([(0, balance), (10, balance + 12340), (20, balance + 24680)], 20, 60)
+        self.assertAlmostEqual(rate, 1234)
+
     def test_spending_souls_is_left_out(self):
         texts = ["10.0C", "10.1C", "10.2C", "2.00C", "2.10C", "2.20C"]
         window, now = window_after(texts, rules.SOULS_WINDOW, "skip")

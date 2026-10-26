@@ -8,7 +8,7 @@ import { infoRow } from './infoRows';
 import { LogFilter, LogList, serverRecords } from './logs';
 import { styles } from './styles';
 import {
-  foldedChange, optionParts, pluginOptionChange, resolved, sectionFoldId, sectionFolded,
+  foldedChange, optionTree, pluginOptionChange, resolved, sectionFoldId, sectionFolded,
 } from './pluginSettings';
 
 // The dialog open over the options panel ({ plugin, option } or null);
@@ -19,14 +19,14 @@ export function usePluginDialog(panel) {
   return [pluginDialog, setPluginDialog];
 }
 
-// A plugin's options, cut into foldable sub-sections at each
-// { type: 'section', key, label, folded? } (folded: its default state).
+// A plugin's options, with foldable sections nested by their depth.
 // context, here and below: { settings, updateSettings, openDialog }.
 function pluginSections(context, plugin) {
   const { settings, updateSettings } = context;
-  return optionParts(plugin.instance.options).map(({ section, options }) => {
+  const render = ({ section, options, children }) => {
     const items = options.map(([option, index]) => pluginOption(context, plugin, option, index));
-    if (!section) return <React.Fragment key="top">{items}</React.Fragment>;
+    const nested = children.map(render);
+    if (!section) return <React.Fragment key="top">{items}{nested}</React.Fragment>;
     const id = sectionFoldId(plugin, section);
     const folded = sectionFolded(settings, id, section);
     return (
@@ -39,10 +39,11 @@ function pluginSections(context, plugin) {
           {section.icon && <img src={resolved(section.icon)} alt="" style={styles.pluginIcon} />}
           {tr(section.label)}
         </summary>
-        {items}
+        {items}{nested}
       </details>
     );
-  });
+  };
+  return render(optionTree(plugin.instance.options));
 }
 
 function pluginOption(context, plugin, option, index) {
@@ -201,8 +202,9 @@ function statusValue(value, look) {
   const parts = Array.isArray(value)
     ? value.map((part, index) => (typeof part === 'string' ? <React.Fragment key={index}>{part}</React.Fragment> : (
       <span key={index} style={styles.statusPart}>
-        {part.icon && <img src={part.icon} alt="" style={styles.statusIcon} />}
-        {part.text}
+        {part.icon && <img src={part.icon} alt="" style={part.size
+          ? { ...styles.statusIcon, width: part.size, height: part.size, objectFit: 'contain' } : styles.statusIcon} />}
+        {part.color ? <span style={{ color: part.color }}>{part.text}</span> : part.text}
       </span>
     )))
     : value;

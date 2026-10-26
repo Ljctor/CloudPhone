@@ -151,6 +151,14 @@ def find_emerald_mask(pixels, width, height, scale, channels=4, area=None):
             "height": (bottom - top + 1 + tail_rows) / scale + 2 * pad,
             "digitHeight": (bottom - top + 1) / scale,
         },
+        "kept": {
+            "pixels": {
+                "x": start,
+                "y": max(0, top - 1),
+                "width": max(0, comma - start),
+                "height": min(height - 1, bottom + 1) - max(0, top - 1) + 1,
+            },
+        },
         # The digits after the comma: where they are on screen, and the same
         # box in the search area's pixels (to copy them), one row of margin.
         "decimals": {

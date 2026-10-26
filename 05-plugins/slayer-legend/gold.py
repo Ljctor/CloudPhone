@@ -140,7 +140,8 @@ def parse(text):
         return None
     digits = "".join(groups)
     # Up to 3 digits read the same in both notations.
-    return {"value": float(digits), "step": 1.0, "full": len(digits) > 3}
+    # Keep every digit: a float loses small gains when the balance is huge.
+    return {"value": int(digits), "step": 1, "full": len(digits) > 3}
 
 
 # Signs the page needs to write the rate in the same font (drawn in the

@@ -14,7 +14,9 @@ rows = state["resources"]
 assert {row["field"] for row in rows} == expected
 assert len(rows) == len(expected)
 assert all("seen" in row and "verified" in row for row in rows)
-assert all(screen.get("path") for screen in state["screens"])
+assert all(screen.get("path") for screen in state["screens"] if screen["screen"] != "battle")
+assert next(screen for screen in state["screens"] if screen["screen"] == "battle")["path"] == []
+assert not {"top_menu", "top_ranking", "top_settings", "top_mail"} & {screen["screen"] for screen in state["screens"]}
 assert not any(row["field"] in expected for screen in state["screens"] for row in screen["fields"])
 print("Resource catalogue and game navigation paths: OK")
 '

@@ -21,6 +21,11 @@ const mib = (value) => (value === null || value === undefined ? '–'
   : value >= 1024 ? `${(value / 1024).toFixed(1)} ${tr('Go')}` : `${value} ${tr('Mo')}`);
 const memoryRow = (memory) => (memory?.total
   ? tr('{used} utilisés / {total}', { used: mib(memory.total - memory.available), total: mib(memory.total) }) : '–');
+const liveMemory = (memory) => (memory?.total
+  ? tr('{percent} % · {used} / {total}', {
+    percent: Math.round(100 * (memory.total - memory.available) / memory.total),
+    used: mib(memory.total - memory.available), total: mib(memory.total),
+  }) : '–');
 const swapRow = (memory) => (memory?.swapTotal ? `${mib(memory.swapUsed)} / ${mib(memory.swapTotal)}` : '–');
 
 // The Server tab: the state poll (server), the configured screen size
@@ -41,11 +46,12 @@ export function serverSections({ server, configured, display, stats }) {
       ['Appareils connectés', formatValue(server.value?.viewers)],
       ['Charge du serveur', load ? (load.cores ? tr('{load} tâches pour {cpus} threads ({cores} cœurs)', { load: load.one.toFixed(1), cpus: load.cpus, cores: load.cores })
         : tr('{load} tâches pour {cpus} threads', { load: load.one.toFixed(1), cpus: load.cpus })) : '–'],
+      ['CPU (en direct)', host?.cpu === null || host?.cpu === undefined ? '–'
+        : tr('{cpu} % de {cpus} threads', { cpu: host.cpu, cpus: host.cpus })],
+      ['Mémoire (en direct)', liveMemory(host?.memory)],
     ]],
     ['Machine', [
-      ['Processeur', host ? tr('{cpu} % de {cpus} threads', { cpu: host.cpu, cpus: host.cpus }) : '–'],
       ['Fréquence', host?.mhz ? `${host.mhz} MHz${host.governor ? ` (${host.governor})` : ''}` : '–'],
-      ['Mémoire', memoryRow(host?.memory)],
       ['Émulateur', emulator?.cpu === null || emulator?.cpu === undefined ? '–'
         : tr('{cores} cœurs · {memory}', { cores: (emulator.cpu / 100).toFixed(1), memory: mib(emulator.memory) })],
     ]],

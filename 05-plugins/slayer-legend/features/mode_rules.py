@@ -326,8 +326,8 @@ def tone(mode, state, hold, playing, watched=None, mine=None, engraving_off=Fals
         return "hold"
     if watched.get("repairing"):
         return "setup"
-    if state in ERROR_STATES or mine in ERROR_STATES or watched.get("blocked", level == "error") or engraving_off:
+    if state in ERROR_STATES or mine in ERROR_STATES or watched.get("blocked") is True:
         return "error"
-    if state in SETUP_STATES or (mine in SETUP_STATES and mode == "mine") or level:
+    if state in SETUP_STATES or (mine in SETUP_STATES and mode == "mine") or level or engraving_off:
         return "setup"
     return "ok"

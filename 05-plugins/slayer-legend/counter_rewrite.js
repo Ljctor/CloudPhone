@@ -1,7 +1,8 @@
 // The emerald and diamond counters' rewrite, on this screen only (nothing
 // is sent to Android): every 250 ms startEmeraldMask() finds a counter on
 // the video (or asks the gateway when the video cannot be read), then cuts
-// it at its comma or covers it and writes over it in the game's font
+// it at its comma by reading and redrawing the retained digits, or covers
+// it and writes over it in the game's font
 // (emerald_font.js). The finder is emerald_mask.js. Used by
 // page_counters.js.
 import { AREA, DIAMOND_AREA, findEmeraldMask } from './emerald_mask.js';
@@ -279,17 +280,7 @@ export function startEmeraldMask(api, state, counter = COUNTERS.emerald) {
   // answer the decimals' own pixels as base64 RGB.
   const show = (mask, problem, rgba = null, areaWidth = 0) => {
     const wanted = String(api.setting(counter.count) ?? '').replace(/\D/g, '').replace(/^0+(?=\d)/, '');
-    if (mask && modeOf(api, counter) === 'cut') {
-      const k = api.screenWidth() / 360;
-      copy.style.display = 'none';
-      // Half a pixel more on the left: the video's smoothing spreads the
-      // comma's edge into the next column.
-      const margin = 0.5 * (360 / (api.video()?.videoWidth || 360));
-      Object.assign(box.style, {
-        display: 'block', left: `${(mask.x - margin) * k}px`, top: `${mask.y * k}px`,
-        width: `${(mask.width + margin) * k}px`, height: `${mask.height * k}px`, background: mask.color,
-      });
-    } else if (mask?.number && mask.decimals) {
+    if (mask?.number && mask.decimals) {
       const k = api.screenWidth() / 360;
       const number = mask.number;
       // Digit height the game uses for 6 digits, then for the shown number.
@@ -303,7 +294,9 @@ export function startEmeraldMask(api, state, counter = COUNTERS.emerald) {
       });
       // The digits' bottom inside the box (the box has 1 px of margin).
       const baseline = (NUMBER_PAD + number.digitHeight) * k;
-      drawDecimals(mask, rgba, areaWidth, heightFor, k, baseline, wanted);
+      const cutting = modeOf(api, counter) === 'cut';
+      if (!drawDecimals(mask, rgba, areaWidth, heightFor, k, baseline,
+        cutting ? '' : wanted, cutting ? 'kept' : 'decimals', cutting)) box.style.display = 'none';
     } else {
       box.style.display = 'none';
     }
@@ -312,10 +305,10 @@ export function startEmeraldMask(api, state, counter = COUNTERS.emerald) {
     state.problem = problem;
     if (changed) api.refresh();
   };
-  // Copies the digits after the comma into `copy`, leading zeros dropped,
-  // scaled to the game's size for that many digits.
-  const drawDecimals = (mask, rgba, areaWidth, heightFor, k, baseline, wanted) => {
-    const box360 = mask.decimals.pixels;
+  // Reads and redraws the chosen digits at the game's size for their count.
+  const drawDecimals = (mask, rgba, areaWidth, heightFor, k, baseline, wanted, part = 'decimals', strict = false) => {
+    const box360 = mask[part]?.pixels;
+    if (!box360?.width) return false;
     let crop;
     if (box360.rgb) {
       const rgb = Uint8Array.from(atob(box360.rgb), (c) => c.charCodeAt(0));
@@ -331,7 +324,7 @@ export function startEmeraldMask(api, state, counter = COUNTERS.emerald) {
       }
     } else {
       copy.style.display = 'none';
-      return;
+      return false;
     }
     if (wanted) {
       // The game's font at its size for that many digits, in the colour of
@@ -347,19 +340,21 @@ export function startEmeraldMask(api, state, counter = COUNTERS.emerald) {
         height: `${(copy.height / FONT.scale) * k}px`,
         top: `${baseline - ((copy.height - below) / FONT.scale) * k}px`,
       });
-      return;
+      return true;
     }
     const { list, ink } = glyphs(crop, box360.width, box360.height);
     // The digits after the comma, read and written again in the game's font
     // at the right size (the game's 5-digit font is not its 6-digit one
     // enlarged); copied as pixels when they cannot be read.
     const read = list.length ? readDigits(list, ink, box360.height) : null;
-    if (read && !wanted) return drawDecimals(mask, rgba, areaWidth, heightFor, k, baseline, read.replace(/^0+(?=\d)/, ''));
+    if (read && !wanted) return drawDecimals(mask, rgba, areaWidth, heightFor, k, baseline,
+      read.replace(/^0+(?=\d)/, ''), part, strict);
+    if (strict) return false;
     let first = 0;
     while (first < list.length - 1 && isZero(list[first], ink, box360.height)) first++;
     if (!list.length) {
       copy.style.display = 'none';
-      return;
+      return false;
     }
     const from = list[first].from;
     const to = list[list.length - 1].to;
@@ -384,6 +379,7 @@ export function startEmeraldMask(api, state, counter = COUNTERS.emerald) {
       height: `${height}px`,
       top: `${baseline - height + (below / sourceScale) * zoom * k}px`,
     });
+    return true;
   };
   const capture = async (video, name, area) => {
     context.clearRect(0, 0, area.width, area.height);

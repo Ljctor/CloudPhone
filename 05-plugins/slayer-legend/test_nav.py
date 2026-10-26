@@ -38,6 +38,10 @@ class Graph(unittest.TestCase):
             ("shop_summon", "summon", (0.70, 0.60)),
             ("equipment_weapon", "batch_combine", (0.50, 0.905)),
             ("battle", "scroll", (0.94, 0.15)),
+            ("battle", "top_menu", (0.935, 0.025)),
+            ("top_menu", "ranking", (0.785, 0.027)),
+            ("top_menu", "settings", (0.86, 0.027)),
+            ("top_menu", "mail", (0.86, 0.068)),
             ("battle", "better_weapon_toast", (0.85, 0.345)),
             ("weapon_detail", "enhance", (0.3, 0.835)),
             ("weapon_detail", "equip", (0.7, 0.835)),
@@ -126,13 +130,13 @@ class Graph(unittest.TestCase):
         self.assertIn("forbidden", nav.guard("anr_dialog", "close", 0.5, 0.6))
         self.assertIn("forbidden", nav.guard("anr_dialog", "app_info", 0.5, 0.6))
 
-    def test_panels_close_with_their_own_tab(self):
+    def test_panels_close_through_visible_combat(self):
         for screen, x in [("character_enhance", 0.073), ("character_growth", 0.073), ("skill", 0.24),
                           ("equipment_weapon", 0.41), ("equipment_relic", 0.41), ("companion", 0.585),
                           ("adventure_map", 0.755), ("dungeon_map", 0.755), ("shop_summon", 0.925)]:
-            self.assertIsNone(nav.guard(screen, "close", x, 0.966), screen)
+            self.assertIsNone(nav.guard(screen, "close", 0.5, 0.18), screen)
             self.assertEqual(next(m for m in nav.connections(screen) if m["id"] == "close")["to"], "battle")
-        # Another tab's spot is not the panel's close.
+        # A bottom tab is not the panel's close action.
         self.assertIsNotNone(nav.guard("shop_summon", "close", 0.073, 0.966))
 
     def test_battle_controls(self):

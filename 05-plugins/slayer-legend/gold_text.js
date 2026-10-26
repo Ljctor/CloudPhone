@@ -4,6 +4,17 @@
 // colour. Used by page_gold.js.
 
 const ORANGE = '#ffa31a';
+// The game font has capitals and digits. These tiny lowercase glyphs are
+// only for the overlay's "défaut" / "default" label below the mode.
+const SMALL = {
+  a: ['.....', '.###.', '....#', '.####', '#...#', '.####', '.....'],
+  d: ['....#', '....#', '.####', '#...#', '#...#', '.####', '.....'],
+  e: ['.....', '.###.', '#...#', '#####', '#....', '.####', '.....'],
+  f: ['..###', '.#...', '####.', '.#...', '.#...', '.#...', '.....'],
+  l: ['.#...', '.#...', '.#...', '.#...', '.#...', '..##.', '.....'],
+  t: ['.#...', '.#...', '####.', '.#...', '.#...', '..###', '.....'],
+  u: ['.....', '#...#', '#...#', '#...#', '#..##', '.##.#', '.....'],
+};
 
 // Lines of text on a canvas, `cell` CSS pixels per game pixel; a line is
 // a text or { text, colour }. Letters without accents: the font has none.
@@ -11,7 +22,7 @@ export function drawText(canvas, font, lines, cell) {
   const plain = (text) => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const colours = lines.map((line) => (typeof line === 'string' ? ORANGE : line.colour ?? ORANGE));
   const glyphLines = lines.map((line) => [...plain(typeof line === 'string' ? line : line.text)]
-    .map((c) => font.glyphs[c]).filter(Boolean));
+    .map((c) => font.glyphs[c] ?? SMALL[c]).filter(Boolean));
   const rows = font.height;
   // A game pixel of space between glyphs, one round the text for the
   // outline, two between lines.

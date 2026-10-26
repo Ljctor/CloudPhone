@@ -29,8 +29,8 @@
 //   { type: 'log', match?(record) }               the server's log records match() keeps
 //                                                  ({time, level, source, text[, template,
 //                                                  params]}; all without it), with the level filter
-//   { type: 'section', key, label, folded?, icon? }   starts a foldable sub-section (folded: default;
-//                                                  icon: an image URL before its title)
+//   { type: 'section', key, label, folded?, icon?, depth? } starts a foldable section;
+//                                                  depth 1 by default, deeper sections nest under it
 //   { type: 'dialog', label, button?, title?, options: Option[], select? }   a button opening
 //                                                  these options in a dialog over the panel;
 //                                                  select: { key, value, default } puts a radio
