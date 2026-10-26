@@ -1,9 +1,9 @@
 """Keep one private PNG example of each reliably recognised game screen.
 
-The archive lives in the plugin data directory, survives deployments, and
-is never sent to the web page. Live readers still use fresh captures and
-their calibrated fixtures; these examples are the durable source material
-for adding readers and navigation nodes.
+The archive lives in the plugin data directory and survives deployments.
+The web page can request one named example at a time through the read-only
+examples route. Live readers still use fresh captures and their calibrated
+fixtures; these examples are durable material for readers and navigation.
 """
 
 import json

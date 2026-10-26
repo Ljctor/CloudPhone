@@ -53,6 +53,11 @@ const EN = {
   'Connexion au flux…': 'Connecting to the stream…',
   'Reconnexion…': 'Reconnecting…',
   'Fermer': 'Close',
+  'Capture': 'Capture',
+  'Capture principale': 'Main capture',
+  'Voir': 'View',
+  'Masquer': 'Hide',
+  'Ouvrir capture': 'Open capture',
   // Panels
   'Serveur': 'Server',
   'État': 'Status',

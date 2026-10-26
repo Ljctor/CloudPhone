@@ -46,11 +46,47 @@ function pluginSections(context, plugin) {
   return render(optionTree(plugin.instance.options));
 }
 
+function CapturePreview({ option }) {
+  const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState(0);
+  const examples = (resolved(option.examples) ?? []).filter((example) => example?.url);
+  if (!examples.length) return null;
+  const example = examples[Math.min(selected, examples.length - 1)];
+  return (
+    <div>
+      <div style={styles.infoRow}>
+        <span style={styles.infoLabel}>{tr(option.label ?? 'Capture')}</span>
+        <button style={styles.smallButton} onClick={() => setOpen(!open)}>
+          {tr(open ? 'Masquer' : 'Voir')}
+        </button>
+      </div>
+      {open && <div style={{ padding: '6px 10px 12px' }}>
+        {examples.length > 1 && <div style={{ display: 'flex', gap: 4, overflowX: 'auto', paddingBottom: 6 }}>
+          {examples.map((item, index) => <button key={`${item.url}-${index}`} style={styles.smallButton}
+            aria-pressed={index === selected} onClick={() => setSelected(index)}>
+            {tr(item.label ?? (index === 0 ? 'Capture principale' : `Capture ${index + 1}`))}
+          </button>)}
+        </div>}
+        <a href={example.url} target="_blank" rel="noreferrer" style={styles.link}>
+          <img src={example.url} alt={tr(example.label ?? option.label ?? 'Capture')}
+            style={{ display: 'block', maxWidth: '100%', maxHeight: 320, width: 'auto', height: 'auto',
+              imageRendering: 'pixelated', borderRadius: 4 }} />
+          {tr('Ouvrir capture')}
+        </a>
+        {example.captured && <div style={styles.infoNote}>
+          {new Date(example.captured * 1000).toLocaleString()}
+        </div>}
+      </div>}
+    </div>
+  );
+}
+
 function pluginOption(context, plugin, option, index) {
   const { settings, updateSettings, openDialog } = context;
   const setPluginOption = (id, key, value) => updateSettings(pluginOptionChange(settings, id, key, value));
   const key = `${plugin.id}-${index}`;
   if (!(option.visible?.() ?? true)) return null;
+  if (option.type === 'capture') return <CapturePreview key={key} option={option} />;
   if (option.type === 'toggle') {
     return (
       <label key={key} style={styles.infoRow}>

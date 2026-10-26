@@ -8,6 +8,8 @@
 - [x] Show the highest observed stage as a lower bound; gray later stages while keeping them selectable.
 - [x] Deploy and verify the engraving and stage fixes.
 - [ ] Capture and persist one reviewed example for every reachable screen in the navigation graph.
+- [x] Show archived examples and their observed details in the plugin's nested screen menus; remove empty `Données` rows.
+- [ ] Turn the historical details into live readers where a changing value matters; a dated capture is not a current value.
 - [ ] Calibrate the full-digit gold reader and restore gold/s measurement.
 - [ ] Replace remaining placeholder resource icons with verified game icons and add readers for the unread resources.
 - [ ] Alert in the web page and through ntfy when an expected overlay is absent.
@@ -25,6 +27,10 @@ route is historical and remains unvisited until a current entry is found.
 The later Adventure/Dungeon pass captured Story, quests, all five visible
 dungeon destinations, and Closed Mine through the feather choice; no
 episode, dungeon entry, or feather button was activated.
+Audit of the 100 archived PNGs: each is referenced by `screen_registry.json`
+and every `visit: true` node has an example. The Soul Weapon and Closed Mine
+list scrolls still need before/after images in this archive; their gesture
+coordinates come from the existing navigation graph.
 
 Tests of the black-box suite (`tests/e2e`) that fail on the current code,
 each with what is known. Owner: the agent maintaining the gateway and the

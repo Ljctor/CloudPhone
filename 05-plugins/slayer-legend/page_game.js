@@ -1,6 +1,5 @@
-// The game's state as the gateway keeps it (GET /game, features/game.py:
-// every capture scanned): the screens with readable values are nested by
-// their path through the game's menus, with resources in their own section.
+// The game's state and archived examples from GET /game are nested by their
+// path through the game's menus, with resources in their own section.
 // A value not read again since
 // the game was stopped or relaunched is greyed out. Asked at load, then
 // every 10 s while a row shows. rows(options, at): puts the sections into
@@ -18,7 +17,7 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
     if (row.shown === 'lower_bound') return `≥ ${value}`;
     if (row.shown === 'percent') return `${Math.round(value * 100)} %`;
     if (row.shown === 'switch') return api.tr(value === 'on' ? 'Activé' : 'Désactivé');
-    if (value && typeof value === 'object') return String(value.text ?? '');
+    if (value && typeof value === 'object') return String(value.text ?? '').replace(/^0+(?=\d)/, '');
     return String(value);
   };
   const text = (row) => {
@@ -38,8 +37,8 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
     });
   };
   // The current answer's row of field, read at each render.
-  const rowOf = (screen, field) => game.answer?.screens?.find((s) => s.screen === screen)
-    ?.fields.find((f) => f.field === field);
+  const screenOf = (screen) => game.answer?.screens?.find((row) => row.screen === screen);
+  const rowOf = (screen, field) => screenOf(screen)?.fields?.find((f) => f.field === field);
   const resourceRows = () => [
     { type: 'section', key: 'resources', label: 'Ressources', folded: false },
     ...(game.answer?.resources ?? []).map((field) => {
@@ -67,7 +66,7 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
     mine_list: ['Adventure', 'Dungeon', 'Closed Mine'],
   }[screen.screen] ?? (screen.path ?? [screen.label]).filter((part) => part !== 'Combat')
     .flatMap((part) => part.split(': ').filter(Boolean)));
-  const fieldRows = (screen) => screen.fields.map((field) => (field.shown === 'grid' ? {
+  const fieldRows = (screen) => (screen.fields ?? []).map((field) => (field.shown === 'grid' ? {
       type: 'grid', label: field.label,
       visible: () => {
         ask();
@@ -87,6 +86,30 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
         return Boolean(row && row.value !== null && !row.verified);
       },
     }));
+  const detailRows = (screen) => {
+    const details = (screen.details ?? []).flatMap((detail, index) => {
+      if (!detail.label || detail.value === null || detail.value === undefined || !String(detail.value).trim()) return [];
+      return [{
+        type: 'status', key: `scan-${screen.screen}-${index}`, label: detail.label,
+        value: () => screenOf(screen.screen)?.details?.[index]?.value ?? detail.value,
+      }];
+    });
+    if (!details.length) return details;
+    return [{ type: 'status', key: `scan-date-${screen.screen}`, label: 'Relevé historique',
+      value: () => {
+        const captured = screenOf(screen.screen)?.example?.captured;
+        return captured ? new Date(captured * 1000).toLocaleString() : 'Capture enregistrée';
+      } }, ...details];
+  };
+  const examplesOf = (screen) => {
+    const current = screenOf(screen.screen) ?? screen;
+    return current.examples?.length ? current.examples : current.example?.url ? [current.example] : [];
+  };
+  const captureRow = (screen) => ({
+    type: 'capture', key: `capture-${screen.screen}`, label: 'Capture',
+    examples: () => examplesOf(screen),
+    visible: () => { ask(); return examplesOf(screen).length > 0; },
+  });
   const sections = () => {
     const rows = [...resourceRows(),
       { type: 'section', key: 'analysis', label: 'Analyse', depth: 1, folded: true },
@@ -95,11 +118,9 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
       ...displayOptions.map((option) => option.type === 'section' ? { ...option, depth: 2 } : option),
       { type: 'section', key: 'game-state', label: 'État du jeu', depth: 1, folded: true }];
     const made = new Set();
-    const visit = new Set(['skill', 'companion', 'beast', 'companion_advancement', 'adventure_map']);
     for (const screen of game.answer?.screens ?? []) {
-      // A page with no reader has no game state to show. It should not
-      // become an empty menu; its place is retained when a reader arrives.
-      if (!screen.fields?.length && !visit.has(screen.screen)) continue;
+      // A scanned example is useful even when its OCR reader is pending.
+      if (!screen.fields?.length && !screen.example?.url && !screen.examples?.length && !screen.details?.length) continue;
       const path = accessPath(screen);
       path.forEach((label, index) => {
         const id = path.slice(0, index + 1).join('/');
@@ -110,15 +131,17 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
           icon: index === 0 ? SCREEN_ICONS[label.toLowerCase()] : undefined });
       });
       rows.push(...fieldRows(screen));
-      if (!screen.fields?.length) rows.push({ type: 'status', label: 'Données', value: () => 'never read' });
+      rows.push(...detailRows(screen));
+      if (screen.example?.url || screen.examples?.length) rows.push(captureRow(screen));
     }
     return rows;
   };
-  // The sections, once: readable screens and their fields are the gateway's.
+  // Rebuild when a newly captured screen appears; values keep reading the
+  // latest answer without losing the user's folded-section preferences.
   const place = () => {
-    if (!game.list || game.count || !game.answer) return;
+    if (!game.list || !game.answer) return;
     const made = sections();
-    game.list.splice(game.start, 0, ...made);
+    game.list.splice(game.start, game.count, ...made);
     game.count = made.length;
   };
   ask();

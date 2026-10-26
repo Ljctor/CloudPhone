@@ -8,7 +8,8 @@ Features read the state and ask for a fresh scan when they need a value
 newer than they have (api get, require, fresh).
 
 GET /game   {screens: [{screen, fields: [{field, label, shown, pending,
-            value, seen, verified, source}]}], playing, scans}
+            value, seen, verified, source}], example, examples, details}],
+            playing, scans}
 
 While the user plays (an input in the last minute with the game in
 front) a capture is scanned every rules.PLAYING_EVERY seconds, so that
@@ -146,7 +147,7 @@ def read_all(screens, rules, readers, shot, last_runs=None, now=0.0, timings=Non
     return look, readings, ran
 
 
-def game(ports, screens, rules, readers, archive=None):
+def game(ports, screens, rules, readers, archive=None, examples=None):
     """readers: reader_table's."""
     clock = ports.clock
     state = {"facts": rules.fresh(ports.store.saved.get("game"), clock.wall()), "saved_at": clock.monotonic(),
@@ -302,7 +303,8 @@ def game(ports, screens, rules, readers, archive=None):
         ports.spawn(watch())
 
     async def handle_game(request):
-        return ports.respond({**rules.answer(state["facts"]), "playing": state["playing"], "scans": state["scans"]})
+        answer = {**rules.answer(state["facts"]), "playing": state["playing"], "scans": state["scans"]}
+        return ports.respond(examples(answer) if examples else answer)
 
     if hasattr(ports, "on_capture"):
         ports.on_capture(saw)

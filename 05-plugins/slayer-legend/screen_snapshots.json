@@ -1,0 +1,137 @@
+{
+  "character_enhance": [
+    {"label": "Niveau", "value": "1941"},
+    {"label": "ATK", "value": "Lv.700200 · 3,501,000"},
+    {"label": "HP", "value": "Lv.699600 · 34,980,000"},
+    {"label": "HP Recovery", "value": "Lv.675000 · 3,375,000"}
+  ],
+  "character_growth": [
+    {"label": "STAT POINT", "value": "70"},
+    {"label": "STR", "value": "Lv.2050 · Max Lv.2050"},
+    {"label": "HP", "value": "Lv.650 · Max Lv.1750"},
+    {"label": "VIT", "value": "Lv.650 · Max Lv.1750"}
+  ],
+  "character_promotion": [
+    {"label": "Promotion affichée", "value": "Blue Abyss"},
+    {"label": "Stone", "value": "Complete"},
+    {"label": "Bronze", "value": "Complete"},
+    {"label": "Adamant", "value": "Complete"},
+    {"label": "Ether", "value": "Complete"},
+    {"label": "Dark Nox", "value": "Complete"},
+    {"label": "Blue Abyss", "value": "Complete"},
+    {"label": "Infinit", "value": "Challenge · Recommended Lv.2400"}
+  ],
+  "skill": [
+    {"label": "Skill Proficiency", "value": "Lv.32 · 4/20"},
+    {"label": "All Attributes Dmg", "value": "+240%"},
+    {"label": "Fire Slash", "value": "7/30"},
+    {"label": "Ice Stone", "value": "46/55"},
+    {"label": "Fire Sword", "value": "0/30"},
+    {"label": "Lightning Stroke", "value": "1/25"}
+  ],
+  "familiar": [
+    {"label": "Emplacements", "value": "Attribute Familiar · Battle Familiar · Weapon Familiar"},
+    {"label": "Preset sélectionné", "value": "4"},
+    {"label": "Presets visibles", "value": "1, 2, 3, 4, 5"}
+  ],
+  "skill_refinement_grounds": [
+    {"label": "Compétences visibles", "value": "Hellfire Slash ×3"},
+    {"label": "Emplacements verrouillés", "value": "2"},
+    {"label": "Skill Refinement Time", "value": "12:00"},
+    {"label": "Skill Refinement", "value": "1/1"}
+  ],
+  "skill_mastery": [
+    {"label": "Compteur bleu", "value": "20"},
+    {"label": "Nœud initial", "value": "0/1"},
+    {"label": "EXP", "value": "9/10"},
+    {"label": "Nœuds bleus visibles", "value": "1/1 · 10/10 · 10/10"}
+  ],
+  "skill_rave_mantra": [
+    {"label": "Compétences affichées", "value": "Rave · Mantra"}
+  ],
+  "equipment_weapon": [
+    {"label": "Onglet", "value": "Weapon"},
+    {"label": "Onglets voisins", "value": "Accessories · Relic · Spirit"},
+    {"label": "Armes visibles", "value": "Grades 4, 3, 2 et 1"},
+    {"label": "Niveau affiché sur les armes", "value": "+200"}
+  ],
+  "equipment_accessories": [
+    {"label": "Onglet", "value": "Accessories"},
+    {"label": "Accessoires visibles", "value": "+30 à +41"},
+    {"label": "Grades visibles", "value": "4, 3, 2 et 1"}
+  ],
+  "equipment_relic": [
+    {"label": "Onglet", "value": "Relic"},
+    {"label": "Giant's Right Hand", "value": "Lv.100/100 · Extra Dmg +2200%"},
+    {"label": "Demon Eye of Weakness", "value": "Lv.100/100 · CRIT Dmg +400%"},
+    {"label": "Oath of Immortality", "value": "Lv.100/100 · Extra HP +1400%"},
+    {"label": "Sacred Tree of Rebirth", "value": "Lv.100/100 · Extra HP Recovery +420%"},
+    {"label": "Ring of Lightning", "value": "Lv.50/50 · ATK SPD +35%"}
+  ],
+  "spirit": [
+    {"label": "Partner Spirit", "value": "3 équipés"},
+    {"label": "Niveaux des partenaires", "value": "132 · 135 · 130"},
+    {"label": "Preset sélectionné", "value": "3"},
+    {"label": "Collection", "value": "78/150"}
+  ],
+  "soul_weapon": [
+    {"label": "Arme sélectionnée", "value": "Relax"},
+    {"label": "Owned", "value": "1"},
+    {"label": "Eliminate monster", "value": "1000/1000"},
+    {"label": "Actions visibles", "value": "Harvest · Breakdown"}
+  ],
+  "soul_weapon_engraving": [
+    {"label": "Arme", "value": "Relax"},
+    {"label": "Completion Effect ATK", "value": "+39.5%"},
+    {"label": "Completion Effect HP", "value": "+175.4%"},
+    {"label": "Niveau", "value": "43"},
+    {"label": "Grille", "value": "5 × 5"}
+  ],
+  "black_orb": [
+    {"label": "Accessoires Mythic visibles", "value": "4"},
+    {"label": "Niveaux visibles", "value": "26 · 24 · 27 · 26"},
+    {"label": "Black Orb", "value": "Lv.27 · 77%"},
+    {"label": "Compteur sous l'orbe", "value": "5"}
+  ],
+  "black_orb_accessory": [
+    {"label": "Accessoire", "value": "Bracelet of Freedom"},
+    {"label": "Rareté et niveau", "value": "Mythic · Lv.26"},
+    {"label": "Wind Dmg", "value": "+6,388%"},
+    {"label": "Amplify All Attributes Dmg", "value": "7% sur trois lignes"},
+    {"label": "Amplify Fire Dmg", "value": "3%"}
+  ],
+  "companion": [
+    {"label": "Onglets visibles", "value": "Companion · Beast"},
+    {"label": "Section Companion", "value": "sélectionnée"}
+  ],
+  "companion_advancement": [
+    {"label": "Paliers", "value": "I · II · III · IV · V"},
+    {"label": "Palier I, première rangée", "value": "Elf · Tramp Swordsman · Looter · Trainee Magician"},
+    {"label": "Palier II, première rangée", "value": "Mystic Elf · Mystic Warrior · Mystic Log · Mystic Mage"},
+    {"label": "Palier III, première rangée", "value": "Fairy Light · Pride · Shadow Blossom · Ice Shard"},
+    {"label": "Palier IV, première rangée", "value": "New Elf · New Warrior · New Assassin · New Sorceress"},
+    {"label": "Palier V, première rangée", "value": "Arcane Elf · Mystic Canine · Arcane Walker · Arcane Shard"}
+  ],
+  "beast": [
+    {"label": "Navigation", "value": "Beast · Mount · Scouting · SHOP · Call"}
+  ],
+  "beast_mount": [
+    {"label": "Beast sélectionnée", "value": "Stone Rune Golem"},
+    {"label": "Type", "value": "Magic"},
+    {"label": "Affection", "value": "Lv.36 · 14/500"},
+    {"label": "Mount", "value": "1/1"}
+  ],
+  "beast_scouting": [
+    {"label": "Régions", "value": "Underground Cave · Red twilight · Rising Strata"},
+    {"label": "Changement de région", "value": "5d"},
+    {"label": "Scout Reward — Underground Cave", "value": "38"},
+    {"label": "Scout Reward — Red twilight", "value": "33"},
+    {"label": "Scout Reward — Rising Strata", "value": "41"},
+    {"label": "Durée affichée", "value": "08:00:00 dans chaque région"}
+  ],
+  "beast_scouting_info": [
+    {"label": "Fréquence", "value": "un scout par jour dans chaque région"},
+    {"label": "Bonus", "value": "étoiles plus élevées et Bonus Beast augmentent la récompense"},
+    {"label": "Rotation", "value": "la région change une fois par semaine"}
+  ]
+}

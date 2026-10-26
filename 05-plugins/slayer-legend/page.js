@@ -57,6 +57,9 @@ const ENGLISH = {
   'Agent mode': 'Agent mode',
   'Affichage': 'Display',
   'Analyse': 'Analysis',
+  'Capture': 'Capture',
+  'Capture enregistrée': 'Saved capture',
+  'Relevé historique': 'Historical reading',
   'Débits': 'Rates',
   'Trois compteurs/s': 'Three counters/s',
   'Gold/s': 'Gold/s',
@@ -116,7 +119,6 @@ const ENGLISH = {
   'Détection des diamants': 'Diamond detection',
   'Réessayer': 'Retry',
   'État du jeu': 'Game state',
-  'Données': 'Data',
   'vu à {time}': 'seen at {time}',
 };
 

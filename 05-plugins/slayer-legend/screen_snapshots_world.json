@@ -1,0 +1,142 @@
+{
+  "adventure_map": [
+    {"label": "Région affichée", "value": "Western Aslan"},
+    {"label": "Destinations visibles", "value": "Beginning Forest, Hill of Greed, Shadow Valley, Land of Desire, Black Forest, Red Mountain, Forgotten Castle, Frozen Wood, Land of Hate"}
+  ],
+  "adventure_quest": [
+    {"label": "Guilde", "value": "National Adventurers' Guild"},
+    {"label": "Région", "value": "Beginning Forest"},
+    {"label": "Quêtes visibles", "value": "I à X (10/10)"},
+    {"label": "Quête X sélectionnée", "value": "Eliminate Angry Boar · récompense 700 diamants et 140 émeraudes · Reward Claimed"},
+    {"label": "Quête I sélectionnée", "value": "Eliminate Wild Boar · récompense 100 diamants et 20 émeraudes · Reward Claimed"}
+  ],
+  "adventure_story_main": [
+    {"label": "Histoire principale", "value": "Easy, Normal, Hard"}
+  ],
+  "adventure_story_easy": [
+    {"label": "Épisodes visibles", "value": "1 Signs, 2 Hero, 3 Pursuit, 4 Key, 5 Harvest, 6 Vanishing"},
+    {"label": "État visible", "value": "Complete pour les épisodes 1 à 6"}
+  ],
+  "adventure_story_sub": [
+    {"label": "Histoires secondaires", "value": "Ellie, Zeke, Mino, quatrième verrouillée"}
+  ],
+  "adventure_story_ellie": [
+    {"label": "Épisode visible", "value": "Ellie's Memory · Complete"}
+  ],
+  "dungeon_map": [
+    {"label": "Carte affichée", "value": "Aslan"},
+    {"label": "Destinations visibles", "value": "Shelter of Sleeping flame, Dragon Valley, Dimensional Rift, Closed Mine, Forest of Circulation, Kingdom of Aslan, Training Cave"}
+  ],
+  "dungeon_shelter": [
+    {"label": "Récompenses proposées", "value": "Dragon Power ou Dragon Spark"},
+    {"label": "Compteur de plumes affiché", "value": "31"}
+  ],
+  "dungeon_rift": [
+    {"label": "Boss affiché", "value": "Devourtionist"},
+    {"label": "Difficulté", "value": "13 · bonus 55 %"},
+    {"label": "Entrée affichée", "value": "1 plume violette"},
+    {"label": "Compteur de plumes affiché", "value": "74"}
+  ],
+  "dungeon_forest": [
+    {"label": "Previous Entry History", "value": "162"},
+    {"label": "Niveaux visibles", "value": "156 à 165 après défilement"},
+    {"label": "CLEAR visible", "value": "156 à 162"}
+  ],
+  "dungeon_kingdom": [
+    {"label": "Choix affichés", "value": "Square 1 à Square 20"},
+    {"label": "État visible", "value": "Square 1 Normal · Square 2 à 20 Smooth"}
+  ],
+  "dungeon_training": [
+    {"label": "Exploration", "value": "Area 85 · Previous Entry History Area845"},
+    {"label": "Zones visibles", "value": "Area 841 à 850 après défilement"},
+    {"label": "État visible", "value": "Area 845 MAX CLEAR"}
+  ],
+  "mine_list": [
+    {"label": "Previous Entry History", "value": "165 Floor 2 Area"},
+    {"label": "Étages visibles", "value": "161 à 168"},
+    {"label": "Compteur de plumes affiché", "value": "31"}
+  ],
+  "mine_area": [
+    {"label": "Étage sélectionné", "value": "165 Floor"},
+    {"label": "Zones proposées", "value": "Area 1 à Area 5"}
+  ],
+  "mine_feathers": [
+    {"label": "Étage et zone", "value": "165 Floor · Area 2"},
+    {"label": "Choix de plumes", "value": "1, 2 ou 3 plumes blanches"},
+    {"label": "Avis affiché", "value": "Gold scroll not in use"}
+  ],
+  "guild_divine_beast": [
+    {"label": "Divine Beast", "value": "Lv.27"},
+    {"label": "Connection", "value": "5/5"}
+  ],
+  "guild_shop_normal": [
+    {"label": "Rayons visibles", "value": "Daily Item, Weekly Item, Monthly Item"},
+    {"label": "Articles visibles", "value": "Golden Blessing, Practice Blessing, Diamond Box, Elemental Stone Box, Feather Box, Light Shard, Emerald Box"}
+  ],
+  "guild_shop_appearance": [
+    {"label": "Rayon", "value": "Appearance Shop"},
+    {"label": "Apparences visibles", "value": "Unity, Guild Guardian, Secret, Agent, Bargain, Wandering Merchant, Excavation, Archaeologist, Invention, Engineer, Cooking, Chef"}
+  ],
+  "guild_request": [
+    {"label": "Progression affichée", "value": "60 940"},
+    {"label": "WANTED visibles", "value": "I à VI"}
+  ],
+  "guild_info_basic": [
+    {"label": "Niveau de guilde", "value": "27"},
+    {"label": "Membres", "value": "20/20"},
+    {"label": "Onglets", "value": "Basic Info, Guild Member"}
+  ],
+  "guild_info_members": [
+    {"label": "Liste", "value": "20 membres ; défilement vérifié jusqu'aux derniers membres"}
+  ],
+  "airfield": [
+    {"label": "Actions visibles", "value": "Recipes, Boarding Status, Overall Ranking"},
+    {"label": "Temps affiché", "value": "2 h avant la fin de l'embarquement"}
+  ],
+  "airfield_boarding_status": [
+    {"label": "Destinations observées", "value": "Lava Mountains, Ice Vale, Wasteland Plateau"}
+  ],
+  "airfield_recipes_appetizer": [
+    {"label": "Catégories", "value": "Appetizer, Main Dish, Dessert"},
+    {"label": "Recettes visibles", "value": "Egg Sandwich, Potato Salad, Tomato Soup, Cereal, Beef Porridge, Shrimp Dim Sum, Cheese Omelet, Shrimp Canape, Corn Cheese"}
+  ],
+  "airfield_recipes_main": [
+    {"label": "Recettes visibles", "value": "Pork Loin Katsu, Sukiyaki, Shrimp Burger, Omurice, Baked Cheese Spaghetti, Eggs in Hell, Bibimbap, Margherita, Malatang"}
+  ],
+  "airfield_recipes_dessert": [
+    {"label": "Recettes visibles", "value": "Plain Yogurt, Strawberry Cake, Egg Tart, Pudding, Fresh Strawberry Milk, Donut, Strawberry Tanghulu, Brownie, Cocoa, Chocolate Ice Cream, Chocolate Chip Cookie, Bread, Popcorn, Rice Cracker, Strawberry Ice Cream, Churros, Luna's Cotton Candy, Cheesecake, Tomato Basil Ade, PB&J, Honey Frozen Yogurt"}
+  ],
+  "shop_summon": [
+    {"label": "Onglets", "value": "Summon, Package, Goods, Golden Key, Event"},
+    {"label": "Sous-onglets", "value": "Equipment, Relic"}
+  ],
+  "shop_summon_relic": [
+    {"label": "Coût affiché", "value": "Summon Relic x1 : 500 diamants · x11 : 5 000 diamants"}
+  ],
+  "shop_goods": [
+    {"label": "Objets visibles", "value": "50 Diamonds, 10 Emeralds, 1400 Diamonds, 2600 Diamonds, 4900 Diamonds, 19000 Diamonds"}
+  ],
+  "shop_golden_key": [
+    {"label": "Solde affiché", "value": "2 120 Golden Keys"},
+    {"label": "Coffres visibles", "value": "Elemental Stone Box I, Hunter Support Chest, Diamond Box I, Emerald Box I"}
+  ],
+  "shop_event": [
+    {"label": "Événement visible", "value": "Halloween Event Package I, II et III · Purchased"}
+  ],
+  "quest_daily": [
+    {"label": "Quêtes visibles", "value": "Daily Quest Complete, Play time, Watch Ad, Summon Skill, Summon Equipment, Combine Equipment"},
+    {"label": "État visible", "value": "Quest completed"}
+  ],
+  "quest_repeat": [
+    {"label": "Quêtes visibles", "value": "Stage Clear, Play Time, Eliminate Monster, Summon Skill, Skill acquisition, Summon Equipment, Combine Equipment, Enhance ATK, Enhance HP, Enhance HP Recovery"}
+  ],
+  "quest_achievement": [
+    {"label": "Succès visibles", "value": "Lv up Character, Enhance Equipment, Enhance Relic, Enhance Skill, Combine Equipment, Promote Character"}
+  ],
+  "stage_select": [
+    {"label": "Région affichée", "value": "Land of Prophecy"},
+    {"label": "Stages visibles", "value": "961 à 973 après défilement"},
+    {"label": "Stage farmé lors de la capture", "value": "970 · Land of Prophecy X"},
+    {"label": "Région suivante", "value": "Story of the Stars verrouillée"}
+  ]
+}

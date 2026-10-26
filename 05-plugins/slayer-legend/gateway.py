@@ -73,10 +73,11 @@ def setup(context):
     screen_rules = feature("screen_rules")
     # The scan: every capture read once, the game's state for the features.
     game_feature = feature("game")
+    examples = feature("screen_examples").examples(context.directory, context.data_dir, context.prefix)
     game = game_feature.game(ports, screens, feature("game_rules"), game_feature.reader_table(
         screens, stage, module("stage_select"), module("gold"), module("soul_counters"), module("soul_weapon"),
         module("engraving_screen"), module("battle_controls"), screen_rules, table, engraving["api"]["table"]),
-        feature("screenshot_archive").archive(ports.data_path("screenshots")))
+        feature("screenshot_archive").archive(ports.data_path("screenshots")), examples["enrich"])
     ports.game = game["api"]
     mine = feature("mine").mine(ports, screens, module("mine"), feature("mine_rules"), timer, values)
     launch = feature("launch").launch(ports, screens, feature("launch_rules"))
@@ -98,6 +99,7 @@ def setup(context):
     mode["api"]["watched_by"](watchdog["api"]["look"])
     features = [
         game,
+        examples,
         feature("power").power(ports),
         feature("lease").lease(ports),
         feature("counters").counters(ports, module("emerald_mask")),

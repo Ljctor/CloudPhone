@@ -17,6 +17,8 @@
   "Durée écoulée pendant un redémarrage du gateway": "Time ran out during a gateway restart",
   "Durée écoulée pendant un redémarrage, combat de la mine pas vu en {minutes} minutes : « Repeat entry » est peut-être encore coché": "Time ran out during a restart, the mine's fight not seen in {minutes} minutes: \"Repeat entry\" may still be ticked",
   "Démarrage": "Starting",
+  "Défilement": "Scroll",
+  "Défilement observé": "Observed scroll",
   "En attente : {why}": "Waiting: {why}",
   "En pause : entrée dans le mode {mode}": "Paused: entering the mode {mode}",
   "En pause : l’utilisateur joue": "Paused: the user is playing",
