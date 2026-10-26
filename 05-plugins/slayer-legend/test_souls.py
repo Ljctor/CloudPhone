@@ -80,10 +80,15 @@ class SoulsRow(unittest.TestCase):
         self.assertIsNone(gold.read(fixtures.screen("gold_full")))
         for name, text, value in (
             ("gold_full_mid", "64,326,257,433,174,400,530", 64_326_257_433_174_400_530),
+            ("gold_full_mid_joined", "81,662,754,521,598,676,816", 81_662_754_521_598_676_816),
+            ("gold_full_mid_fused", "87,804,450,278,907,049,533", 87_804_450_278_907_049_533),
+            ("gold_full_mid_parked", "91,173,469,042,198,807,428", 91_173_469_042_198_807_428),
+            ("gold_full_mid_parked_b", "91,266,810,309,604,443,552", 91_266_810_309_604_443_552),
             ("gold_full_hi", "56,387,601,421,264,163,726", 56_387_601_421_264_163_726),
         ):
             with self.subTest(name=name):
-                reading = gold.read(fixtures.screen(name))
+                shades = (1.0, screens.PARKED_SHADE) if "parked" in name else (1.0,)
+                reading = gold.read(fixtures.screen(name), shades)
                 self.assertIsNotNone(reading)
                 self.assertEqual(reading["text"], text)
                 self.assertEqual(reading["value"], value)

@@ -33,7 +33,9 @@ GATES = [
     # Readings, not taps: full digits are read once a capture of them is a
     # fixture (the game's option on, the counters in full).
     ("gold", "FULL_DIGITS_CALIBRATED", ["gold_full"], "test_souls"),
-    ("gold", "HIGH_RES_FULL_DIGITS_CALIBRATED", ["gold_full_mid", "gold_full_hi"], "test_souls"),
+    ("gold", "HIGH_RES_FULL_DIGITS_CALIBRATED", ["gold_full_mid", "gold_full_mid_joined", "gold_full_mid_fused",
+                                                  "gold_full_mid_parked", "gold_full_mid_parked_b", "gold_full_hi"],
+     "test_souls"),
     ("soul_counters", "FULL_DIGITS_CALIBRATED", ["souls_full"], "test_souls"),
     ("engraving_screen", "PADLOCK_LEARNED", ["eg_cards_unlocked", "eg_cards_relocked"], "test_engraving_screen"),
     ("engraving_screen", "POPUP_LEARNED", ["eg_popup_locked", "eg_popup_unlocked", "eg_cards_relocked"],

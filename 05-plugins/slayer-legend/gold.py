@@ -115,6 +115,25 @@ LETTERS = {
 # above, the digits can be read separately.
 FULL_DIGITS_CALIBRATED = False
 HIGH_RES_FULL_DIGITS_CALIBRATED = True
+# Each 90-bit word is a 5x9, four-level ink grid of a real 720 px digit.
+# Source crops: gold_full_mid and gold_full_mid_joined. The extra shapes
+# distinguish small 4 from 8 when the game's font squeezes the balance.
+FULL_720_TEMPLATES = {
+    "0": (0x3fffff03c0f03c0f03ffcfc, 0xfcfff8be2f8be2f8bffcfc),
+    "1": (0x3ffffcb82e0b82e0bf2fcb8, 0x3fffebe0f83e0f83fafffe0),
+    "2": (0x3ffffc3f3f3f0f0303ffcfc, 0x3ffffc2f1f0f4f838bffcfc, 0x3ffabc0a0a0b4b8382fadfd),
+    "3": (0xfcfff8be03f4fd38bffcfc, 0x3fffff03f03f0fc303ffcfc),
+    "4": (0x1c0703fff7ddf7f5f87c1c0, 0x80657ffbac9b2b8b828080),
+    "5": (0x3fffff03f03ff3fc03fffff, 0xfcfff8be03ff3fc0bfffff,
+          0x1fdebf06d03aabfc5babfff, 0x1fdfaf82e03aabfc57aafff),
+    "6": (0x3fffff03f3fff3fc0f3f0f0, 0xfcfff8be2fff3fc2f3f0f4,
+          0x1fdfaf83e1fabbfc5b2b4f4, 0x1fdebf0bd2fabbfc6f2f4f4,
+          0x1fdebf0bd2fefbfc6f2f4f4),
+    "7": (0x741d0743d0e0f8380fffff, 0x300c0f03c3c0f0300fffff, 0x741d0b439280e0340eabff),
+    "8": (0x1fdfaf82e1fabfff97fadfd, 0x1fdfaf83e1fabfff97fadfd,
+          0x1fdfaf83e1feffff97fadfd),
+    "9": (0x7c7e3d0e57ffe5f83fadfd,),
+}
 # Separators between groups of 3 in full digits.
 SEPARATORS = re.compile("[,. \u00a0\u202f]")
 
@@ -222,6 +241,18 @@ def _glyphs(ink, top, bottom):
     return found
 
 
+def _digit_720(ink, glyph):
+    """Match a 720 px digit to the real-capture four-level ink grids."""
+    grid = stage._grid(ink, glyph, 5, 9)
+    values = [min(3, round(v * 3)) for row in grid for v in row]
+    scores = []
+    for name, templates in FULL_720_TEMPLATES.items():
+        distance = min(sum((value - ((template >> (2 * k)) & 3)) ** 2
+                           for k, value in enumerate(values)) / 405 for template in templates)
+        scores.append((distance, name))
+    return min(scores)
+
+
 def read(shot, shades=(1.0,)):
     """The counter as {text: "111F", value: 1.11e20, step, full (parse),
     box: [left, top, right, bottom] as fractions of the screen}, or None
@@ -276,7 +307,53 @@ def _read(shot, shade):
             reading = _read_group(shot, ink, group, x0, y0, top, bottom, line, shade)
             if reading:
                 return reading
+        if width >= 700 and HIGH_RES_FULL_DIGITS_CALIBRATED:
+            # In a long balance, a comma can touch the preceding digit at
+            # the baseline. Above the baseline only the digits remain, so
+            # cut them there and read their complete shapes on `ink`.
+            candidates = []
+            for fraction in (0.7, 0.6, 0.5):
+                upper = _glyphs(core, top, min(bottom, top + int(fraction * line)))
+                digits = []
+                for left, right, _, _ in upper:
+                    ys = [row for row in range(top, bottom + 1) if any(ink[row][left:right + 1])]
+                    if ys and ys[-1] - ys[0] + 1 >= 0.5 * line:
+                        digits.append((left, right, ys[0], ys[-1]))
+                candidates.append(digits)
+            most = max(map(len, candidates))
+            for digits in candidates:
+                if len(digits) != most or len(digits) < 7:
+                    continue
+                reading = (_read_full_720(shot, ink, digits, x0, y0, top, bottom, shade)
+                           if 700 <= width < 900 else
+                           _read_group(shot, ink, digits, x0, y0, top, bottom, line, shade))
+                if reading and reading["full"]:
+                    return reading
     return None
+
+
+def _read_full_720(shot, ink, digits, x0, y0, top, bottom, shade):
+    width, height, pixels = shot
+    left = x0 + digits[0][0]
+    coin = 0
+    for y in range(y0 + top, y0 + bottom + 1):
+        for x in range(max(0, left - 55), left):
+            i = (y * width + x) * 3
+            coin += _coin(pixels[i], pixels[i + 1], pixels[i + 2], shade)
+    if coin < 20:
+        return None
+    text = ""
+    for glyph in digits:
+        distance, name = _digit_720(ink, glyph)
+        if distance > 0.22:
+            return None
+        text += name
+    parsed = parse(text)
+    if not parsed or not parsed["full"]:
+        return None
+    box = [(x0 + digits[0][0]) / width, (y0 + top) / height,
+           (x0 + digits[-1][1] + 1) / width, (y0 + bottom + 1) / height]
+    return {"text": f"{parsed['value']:,}", **parsed, "box": box}
 
 
 def _read_group(shot, ink, group, x0, y0, top, bottom, line, shade=1.0):
@@ -299,7 +376,10 @@ def _read_group(shot, ink, group, x0, y0, top, bottom, line, shade=1.0):
             continue
         last = k == len(group) - 1
         shapes = DIGITS if last and full_group else LETTERS if last else DIGITS
-        name, distance = stage._best(ink, glyph, shapes)
+        if full_group and width >= 700 and glyph[1] - glyph[0] + 1 <= 0.35 * line:
+            name, distance = "1", 0.0
+        else:
+            name, distance = stage._best(ink, glyph, shapes)
         # Narrow 1 and 4 are slightly distorted by the game's high-res font.
         if distance > (0.24 if width >= 700 else 0.2):
             return None
@@ -309,7 +389,7 @@ def _read_group(shot, ink, group, x0, y0, top, bottom, line, shade=1.0):
         return None
     box = [(x0 + group[0][0]) / width, (y0 + top) / height, (x0 + group[-1][1] + 1) / width, (y0 + bottom + 1) / height]
     if parsed["full"] and width >= 700:
-        text = text.replace(".", ",")
+        text = text.replace(".", ",") if "." in text else f"{parsed['value']:,}"
     return {"text": normalize_text(text), **parsed, "box": box}
 
 

@@ -40,6 +40,9 @@ import json, sys
 state = json.load(sys.stdin)
 assert {"text", "value", "rate", "rate_text", "span", "window", "read", "box", "souls"} <= state.keys()
 assert state["window"] in (60, 300)
+assert (state["rate"] is None) == (state["rate_text"] is None)
+if state["rate"] is not None:
+    assert state["span"] > 0
 if state["rate_text"] is not None:
     assert "~" not in state["rate_text"]
 if state["value"] is not None and state["text"] and state["text"].isdigit() and len(state["text"]) > 3:
