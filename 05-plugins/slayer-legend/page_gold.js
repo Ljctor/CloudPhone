@@ -55,14 +55,15 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
   let drawn = '';
   let ratesDrawn = '';
   const showRates = (cell) => {
-    if (!cell || !gold.line) {
+    if (!cell || !gold.answer) {
       rateRows.forEach(({ row }) => row.remove());
       ratesDrawn = '';
       return;
     }
     const souls = gold.answer?.souls ?? {};
-    const entries = [gold.line, ...['green', 'blue', 'red'].map((colour) =>
-      typeof souls[colour]?.rate === 'number' ? `${FRENCH.format(souls[colour].rate)}/s` : '')];
+    const entries = [api.setting('goldOverlay') === 'off' ? '' : gold.line,
+      ...['green', 'blue', 'red'].map((colour) => api.setting('stonesOverlay') === 'off'
+        ? '' : typeof souls[colour]?.rate === 'number' ? `${FRENCH.format(souls[colour].rate)}/s` : '')];
     const colour = rateColour(gold.answer, (Date.now() - gold.at) / 1000);
     const key = `${entries.join('|')}@${cell}@${colour}`;
     if (key !== ratesDrawn) {
@@ -119,9 +120,10 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
     // Only while the counter was read lately: it moves with the game's
     // panels and Power Saving Mode hides it.
     const fresh = box && answer.read && Date.now() / 1000 - answer.read < 25;
-    gold.line = api.setting('goldOverlay') === 'off' || !fresh ? ''
-      : (answer.rate_text ? `${answer.rate_text}/s` : '...');
-    showLabel(Boolean(fresh && gold.font && enabled()));
+    const soulsFresh = Object.values(answer?.souls ?? {}).some((part) =>
+      part.read && Date.now() / 1000 - part.read < 25);
+    gold.line = !fresh ? '' : (answer.rate_text ? `${answer.rate_text}/s` : '...');
+    showLabel(Boolean((fresh || soulsFresh) && gold.font && enabled()));
   };
   const askGold = async () => {
     gold.answer = await api.get('/gold').catch(() => null);
@@ -136,17 +138,23 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
   return {
     // Draws again (or removes) after the plugin was turned on or off.
     update: () => showGold(),
-    options: [
-      { type: 'section', key: 'gold', label: 'Gold', icon: GOLD },
+    resourceOptions: [
       { type: 'status', label: 'Gold par seconde', value: goldText, look: 'game' },
       { type: 'status', label: 'Âmes par seconde', value: soulsValue, look: 'game' },
+    ],
+    displayOptions: [
+      { type: 'section', key: 'display-rates', label: 'Débits', folded: true, icon: GOLD },
       {
-        type: 'choice', key: 'goldOverlay', label: 'Overlay gold/s',
+        type: 'choice', key: 'goldOverlay', label: 'Gold/s',
+        choices: [{ value: 'on', label: 'Affiché' }, { value: 'off', label: 'Masqué' }],
+      },
+      {
+        type: 'choice', key: 'stonesOverlay', label: 'Trois compteurs/s',
         choices: [{ value: 'on', label: 'Affiché' }, { value: 'off', label: 'Masqué' }],
       },
     ],
     onSetting: (key) => {
-      if (key === 'goldOverlay') showGold();
+      if (key === 'goldOverlay' || key === 'stonesOverlay') showGold();
     },
     dispose: () => {
       window.clearTimeout(gold.timer);

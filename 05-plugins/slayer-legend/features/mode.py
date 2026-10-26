@@ -309,11 +309,11 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
             status["change"] = ports.spawn(set_stage(move[1], move[2]))
         elif move[0] == "choose":
             report("idle", t("Farming {name} : choisis le stage", name=f"mpw{move[1]}"))
-        elif move[0] == "free":
-            report("free", free_text())
+        elif move[0] in ("free", "agent"):
+            report("free", free_text() if name == "free" else t("Agent mode : agent autorisé à jouer"))
         else:
             report("mine", t("Mine"))
-        if move[0] in ("free", "mine") and "unpark" in farming:
+        if move[0] in ("free", "agent", "mine") and "unpark" in farming:
             status["change"] = ports.spawn(leave_park(name))
 
     async def leave_park(name):
@@ -500,7 +500,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
     async def resume(app):
         """At the gateway's start: the timed mode state.json kept goes on."""
         if rules.watched(status["mode"], status["default"]):
-            report(*{"free": ("free", free_text()),
+            report(*{"free": ("free", free_text()), "agent": ("free", t("Agent mode : agent autorisé à jouer")),
                      "mine": ("mine", t("Mine"))}.get(status["mode"], ("idle", t("Farming {name}", name=status["mode"]))))
             status["task"] = ports.spawn(watch())
 

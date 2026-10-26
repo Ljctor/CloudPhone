@@ -1,4 +1,5 @@
 {
+  "Agent mode : agent autorisé à jouer": "Agent mode: agent allowed to play",
   "Android ne répond pas": "Android does not answer",
   "Arme : attendu {expected}": "Weapon: expected {expected}",
   "Arme inconnue : id {id}": "Unknown weapon: id {id}",
@@ -90,6 +91,7 @@
   "bail tenu par {holder}": "lease held by {holder}",
   "bail toujours pris": "lease still taken",
   "barre de progression du stage immobile depuis {seconds} s (AUTO : {state})": "Stage progress bar stalled for {seconds} s (AUTO reads {state})",
+  "barre de progression du stage immobile depuis {seconds} s": "Stage progress bar stalled for {seconds} s",
   "cadenas illisible : n°{numbers}": "padlock unreadable: #{numbers}",
   "cadenas pas lu fermé : n°{numbers}": "padlock not read closed: #{numbers}",
   "changement de stage": "stage change",

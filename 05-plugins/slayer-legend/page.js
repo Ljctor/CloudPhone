@@ -44,9 +44,6 @@ const ENGLISH = {
   'Gold': 'Gold',
   'Gold par seconde': 'Gold per second',
   'Âmes par seconde': 'Souls per second',
-  'Overlay gold/s': 'Gold/s overlay',
-  'MISE EN PLACE...': 'SETTING UP...',
-  'EN ATTENTE': 'ON HOLD',
   '{mode} · en attente : tu joues · nouvel essai dans {seconds} s': '{mode} · on hold: you are playing · next try in {seconds} s',
   'Reprendre': 'Resume',
   'Affiché': 'Shown',
@@ -57,11 +54,15 @@ const ENGLISH = {
   'Farming mpw4': 'mpw4 farming',
   'Farming mpw18': 'mpw18 farming',
   'Jeu libre': 'Free play',
+  'Agent mode': 'Agent mode',
+  'Affichage': 'Display',
+  'Débits': 'Rates',
+  'Trois compteurs/s': 'Three counters/s',
+  'Gold/s': 'Gold/s',
   'Mine fermée': 'Closed Mine',
   'Stage mpw18': 'mpw18 stage',
   'Stage mpw4': 'mpw4 stage',
   '— choisir —': '— choose —',
-  'jamais atteint': 'never reached',
   'État': 'State',
   'Zone à farmer': 'Area to farm',
   'Temps restant': 'Time left',
@@ -113,9 +114,8 @@ const ENGLISH = {
   'Détection des émeraudes': 'Emerald detection',
   'Détection des diamants': 'Diamond detection',
   'Réessayer': 'Retry',
-  'lecteur en attente de capture': 'reader waiting for its capture',
   'État du jeu': 'Game state',
-  'jamais lu': 'never read',
+  'Données': 'Data',
   'vu à {time}': 'seen at {time}',
 };
 
@@ -139,11 +139,12 @@ export default function activate(api) {
   const goldPart = gold(api, { overlay: [modePart.overlay], enabled: powerPart.on });
   const drawers = [counterPart, goldPart];
   const tracePart = trace(api);
-  const gamePart = game(api, { resourceOptions: counterPart.options });
+  const gamePart = game(api, { resourceOptions: goldPart.resourceOptions,
+    displayOptions: [...counterPart.options, ...goldPart.displayOptions] });
   const parts = [powerPart, counterPart, screenPart, modePart, goldPart, tracePart, watchdogPart, gamePart];
   // ...and shown in this one, then « Debug & développement », last and
   // folded: the parts' developer rows and the plugin's log records.
-  const shown = [powerPart, modePart, goldPart];
+  const shown = [powerPart, modePart];
   const debug = [
     { type: 'section', key: 'debug', label: 'Debug & développement', folded: true },
     ...[screenPart, counterPart, watchdogPart, tracePart].flatMap((part) => part.debug ?? []),

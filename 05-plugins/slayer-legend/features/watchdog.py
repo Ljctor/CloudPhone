@@ -69,7 +69,7 @@ import random
 AVAILABLE = ("relaunch", "mine_relaunch")
 # Repairs by the stage change feature, and the switch that makes each real.
 FARMING = {"stage_change": "stage_change", "select_preset": "preset"}
-# Seconds between two readings of the preset and AUTO (each an unfold).
+# Seconds between two readings of the preset (each an unfold).
 CONTROLS_EVERY = 300
 # The farming modes (their own stage and preset).
 FARMED = ("mpw18", "mpw4")
@@ -81,18 +81,18 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
     the engraving feature's loadout of a farming mode ({stage, preset,
     soul_weapon}), read only; farming: the stage change feature's api (None:
     the relaunch only); gold: the gold feature's api (current: gold/s), whose
-    rate at 0 reads AUTO at once (rules.gold_zero)."""
+    rate at 0 raises an alert once confirmed (rules.gold_zero)."""
     memory = rules.fresh(ports.store.saved.get("watchdog"))
     status = {"text": ports.t("Démarrage"), "symptom": None, "paused": None, "repairing": None,
               "mode": None, "ended_at": None, "resumed": False, "anr_waited": False, "controls": None,
               "gold": rules.gold_fresh(),
-              "gold_due": False, "bar": rules.bar_fresh(), "relaunched_at": None}
+              "bar": rules.bar_fresh(), "relaunched_at": None}
     parking = bool(farming) and "park" in farming
     available = AVAILABLE + (tuple(FARMING) if farming else ()) + (("park",) if parking else ())
     ports.store.register("watchdog", lambda: rules.persisted(memory))
 
     def forget_controls(why):
-        """The game relaunched: the preset and AUTO are read again."""
+        """The game relaunched: the preset is read again."""
         status["controls"] = None
 
     if hasattr(ports, "on_relaunch"):
@@ -193,31 +193,25 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         return seen
 
     async def read_controls(seen):
-        """The preset and AUTO, read on one unfold at most every
-        CONTROLS_EVERY seconds on the battle screen (kept in between), or
-        at once when gold/s reads 0 (a trigger: AUTO may be off), viewers
-        or not. AUTO read on while gold/s stays at 0: one alert."""
+        """Read the preset periodically; report confirmed zero gold/s
+        without inspecting AUTO or unfolding controls for that alert."""
         if not farming or seen["screen"] != "battle" or status["mode"] not in FARMED:
             return
         now = ports.clock.monotonic()
         if gold:
             status["gold"], trigger = rules.gold_zero(status["gold"], gold["current"](), ports.clock.wall())
             if trigger:
-                ports.log("normal", "Watchdog: gold/s at 0, AUTO read at once")
-                status["gold_due"] = True
-        triggered, status["gold_due"] = status["gold_due"], False
+                status["gold"], alert = rules.gold_alert(status["gold"])
+                if alert:
+                    await ports.notify(say("warning", rules.GOLD_ALERT, {}, notify=True))
         kept = status["controls"]
-        if kept is None or triggered or now - kept[1] >= CONTROLS_EVERY:
+        if kept is None or now - kept[1] >= CONTROLS_EVERY:
             reading = await farming["read_controls"]()
             kept = status["controls"] = (reading, now) if reading else None
             if reading and game is not None:
-                game["note"]({"preset": reading["preset"], "auto": reading["auto"]})
-            if triggered:
-                status["gold"], alert = rules.gold_alert(status["gold"], reading and reading["auto"])
-                if alert:
-                    await ports.notify(say("warning", rules.GOLD_ALERT, {}, notify=True))
+                game["note"]({"preset": reading["preset"]})
         if kept:
-            seen["battle_settings"], seen["auto"] = kept[0]["preset"], kept[0]["auto"]
+            seen["battle_settings"] = kept[0]["preset"]
 
     async def notify_all(actions):
         for _, level, text, values, notify in actions:

@@ -578,13 +578,11 @@ class GoldAtZero(unittest.TestCase):
         kept, trigger = rules.gold_zero(kept, {"rate": 0, "span": 300, "last": EPOCH}, EPOCH + 16)
         self.assertEqual((kept["zeros"], trigger), (1, False))
 
-    def test_auto_on_is_one_alert_until_gold_is_back(self):
+    def test_zero_gold_is_one_alert_until_gold_is_back(self):
         kept, _ = self.zeros([(0, 300, 5)] * 2)
-        kept, alert = rules.gold_alert(kept, "on")
+        kept, alert = rules.gold_alert(kept)
         self.assertTrue(alert)
-        self.assertFalse(rules.gold_alert(kept, "on")[1], "said once")
-        self.assertFalse(rules.gold_alert(self.zeros([(0, 300, 5)] * 2)[0], "off")[1])
-        self.assertFalse(rules.gold_alert(self.zeros([(0, 300, 5)] * 2)[0], None)[1])
+        self.assertFalse(rules.gold_alert(kept)[1], "said once")
         kept, _ = rules.gold_zero(kept, {"rate": 3.0, "span": 300, "last": EPOCH + 100}, EPOCH + 101)
         self.assertFalse(kept["alerted"], "gold back: the next time is said again")
 
@@ -755,7 +753,7 @@ class GoldTrigger(unittest.TestCase):
         # The first look reads (nothing kept), the second zero at once (not
         # CONTROLS_EVERY later), then every CONTROLS_EVERY again.
         self.assertEqual(self.every, 300)
-        self.assertEqual(read, [1, 2, 2 + self.every // E])
+        self.assertEqual(read, [1, 1 + self.every // E])
         self.assertEqual(len(alerts), 1)
         self.assertIn(rules.GOLD_ALERT, alerts[0])
         self.assertEqual(other, [], "AUTO read on: nothing tapped")
@@ -767,7 +765,7 @@ class GoldTrigger(unittest.TestCase):
         self.assertNotIn("controls", self.state)
         for viewers in (lambda look: 1, lambda look: None):
             self.assertEqual(self.looks(6, "on", viewers=viewers), alone)
-        self.assertEqual(alone[0], [1, 2])
+        self.assertEqual(alone[0], [1])
 
     def test_the_stage_repair_passes_the_highest_seen(self):
         # Another stage read on battle: farm() gets mode's highest, as mode.set_stage does.
@@ -777,8 +775,8 @@ class GoldTrigger(unittest.TestCase):
 
     def test_auto_off_after_the_trigger_is_no_repair(self):
         read, alerts, other = self.looks(8, "off")
-        self.assertEqual(read[:2], [1, 2])
-        self.assertFalse([a for a in alerts if rules.GOLD_ALERT in a])
+        self.assertEqual(read[:2], [1])
+        self.assertEqual(len([a for a in alerts if rules.GOLD_ALERT in a]), 1)
         self.assertEqual((other, self.farmed), ([], []), "AUTO is never tapped")
 
 
@@ -880,7 +878,7 @@ class StageProgressBar(GoldTrigger):
     def test_a_45_s_stall_is_one_error_alert_and_no_tap(self):
         _, alerts, other = self.looks(12, "on", bar=lambda look: look * 0.27 % 1 if look <= 4 else 0.4)
         self.assertEqual(self.stalled(alerts),
-                         ["Farming mpw18: Stage progress bar stalled for 45 s (AUTO reads on)"])
+                         ["Farming mpw18: Stage progress bar stalled for 45 s"])
         self.assertEqual((other, self.farmed), ([], []))
         self.assertEqual(self.state["symptom"], "progress_stalled")
 
@@ -896,7 +894,7 @@ class StageProgressBar(GoldTrigger):
         _, alerts, _ = self.looks(11, "on", bar=bar)
         self.assertEqual(self.stalled(alerts), [])
         _, alerts, _ = self.looks(12, "on", bar=bar)
-        self.assertEqual(self.stalled(alerts), ["Farming mpw18: Stage progress bar stalled for 90 s (AUTO reads on)"])
+        self.assertEqual(self.stalled(alerts), ["Farming mpw18: Stage progress bar stalled for 90 s"])
 
     def test_another_screen_starts_the_count_over(self):
         # Power Saving Mode has no bar: unknown, and the count starts over.
@@ -930,9 +928,9 @@ class StageProgressBar(GoldTrigger):
         for look in range(1, 130):
             w.look({**BATTLE, "stalled": look * E, "auto": None})
         self.assertEqual([a for a in w.alerts() if "stalled" in a[1]],
-                         [("error", "Farming mpw18: Stage progress bar stalled for 15 s (AUTO reads unknown)"),
-                          ("error", "Farming mpw18: Stage progress bar stalled for 480 s (AUTO reads unknown)"),
-                          ("error", "Farming mpw18: Stage progress bar stalled for 1800 s (AUTO reads unknown)")])
+                         [("error", "Farming mpw18: Stage progress bar stalled for 15 s"),
+                          ("error", "Farming mpw18: Stage progress bar stalled for 480 s"),
+                          ("error", "Farming mpw18: Stage progress bar stalled for 1800 s")])
         w.looks(BATTLE, rules.RECOVERED_AFTER)
         self.assertEqual(w.alerts()[-1], ("normal", "Farming mpw18: recovered"))
 
@@ -996,7 +994,7 @@ class Parking(unittest.TestCase):
         _, alerts, _ = self.feature().looks(8, "on", park="real", screen=lambda look: "parked",
                                             bar=lambda look: 0.4)
         self.assertEqual([a for a in alerts if "Stage progress bar stalled" in a],
-                         ["Farming mpw18: Stage progress bar stalled for 45 s (AUTO reads unknown)"])
+                         ["Farming mpw18: Stage progress bar stalled for 45 s"])
         # The controls are never unfolded on the parking screen.
         self.assertEqual((self.harness.parks, self.harness.farmed), ([], []))
 

@@ -9,21 +9,22 @@ import { RESOURCE_ICONS } from './page_resources.js';
 const PIECE = '#d9a441';
 const EVERY = 10000;
 
-export default function gameFeature(api, { resourceOptions = [] } = {}) {
+export default function gameFeature(api, { resourceOptions = [], displayOptions = [] } = {}) {
   const game = { answer: null, at: 0, busy: false, list: null, start: 0, count: 0 };
   const time = (seen) => new Date(seen * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const shown = (row) => {
     const value = row.value;
+    if (row.shown === 'lower_bound') return `≥ ${value}`;
     if (row.shown === 'percent') return `${Math.round(value * 100)} %`;
     if (row.shown === 'switch') return api.tr(value === 'on' ? 'Activé' : 'Désactivé');
     if (value && typeof value === 'object') return String(value.text ?? '');
     return String(value);
   };
   const text = (row) => {
-    if (row.pending) return api.tr('lecteur en attente de capture');
-    if (row.value === null || row.value === undefined) return api.tr('jamais lu');
+    if (row.value === null || row.value === undefined) return 'never read';
     return `${shown(row)} · ${api.tr('vu à {time}', { time: time(row.seen) })}`;
   };
+  const resourceText = (row) => row.value === null || row.value === undefined ? 'never read' : shown(row);
   const ask = () => {
     if (game.busy || Date.now() - game.at < EVERY) return;
     game.busy = true;
@@ -43,16 +44,23 @@ export default function gameFeature(api, { resourceOptions = [] } = {}) {
     ...(game.answer?.resources ?? []).map((field) => {
       const current = () => game.answer?.resources?.find((row) => row.field === field.field) ?? field;
       return {
-        type: 'status', label: field.label,
+        type: 'status', label: field.label, icon: RESOURCE_ICONS[field.field],
+        compact: true,
+        title: () => current().seen ? api.tr('vu à {time}', { time: time(current().seen) }) : 'never read',
         visible: () => { ask(); return true; },
-        value: () => [{ icon: RESOURCE_ICONS[field.field], size: 12, text: text(current()) }],
-        muted: () => !current().verified,
+        value: () => resourceText(current()),
       };
     }),
-    ...resourceOptions.map((option) => option.type === 'section' ? { ...option, depth: 2 } : option),
+    ...resourceOptions,
   ];
   const accessPath = (screen) => ({
     battle: [],
+    skill: ['Skill'],
+    companion: ['Companion'],
+    beast: ['Companion', 'Beasts'],
+    companion_advancement: ['Companion', 'Advancement'],
+    adventure_map: ['Adventure'],
+    dungeon_map: ['Adventure', 'Dungeon'],
     stage_select: ['Select Region'],
     soul_weapon: ['Equipment', 'Weapon', 'Soul Weapon'],
     soul_weapon_engraving: ['Equipment', 'Weapon', 'Soul Weapon', 'Engraving'],
@@ -81,12 +89,15 @@ export default function gameFeature(api, { resourceOptions = [] } = {}) {
     }));
   const sections = () => {
     const rows = [...resourceRows(),
+      { type: 'section', key: 'display', label: 'Affichage', depth: 1, folded: true },
+      ...displayOptions.map((option) => option.type === 'section' ? { ...option, depth: 2 } : option),
       { type: 'section', key: 'game-state', label: 'État du jeu', depth: 1, folded: true }];
     const made = new Set();
+    const visit = new Set(['skill', 'companion', 'beast', 'companion_advancement', 'adventure_map']);
     for (const screen of game.answer?.screens ?? []) {
       // A page with no reader has no game state to show. It should not
       // become an empty menu; its place is retained when a reader arrives.
-      if (!screen.fields?.length) continue;
+      if (!screen.fields?.length && !visit.has(screen.screen)) continue;
       const path = accessPath(screen);
       path.forEach((label, index) => {
         const id = path.slice(0, index + 1).join('/');
@@ -96,6 +107,7 @@ export default function gameFeature(api, { resourceOptions = [] } = {}) {
           label, depth: index + 2, folded: true });
       });
       rows.push(...fieldRows(screen));
+      if (!screen.fields?.length) rows.push({ type: 'status', label: 'Données', value: () => 'never read' });
     }
     return rows;
   };

@@ -67,7 +67,7 @@ SCREENS = {
     "Select Region": (("battle_emerald", "title_select_region", "banner_giants_glass"), None,
                       {"region": "Giant's Glass"}),
     "Battle settings": (("battle_emerald", "settings_title", "settings_presets_iii"), None, {"preset": "III"}),
-    "the engraving": (("eg_title", "eg_grid"), (0, 0, 0), {"engraving": None}),
+    "the engraving": (("eg_title", "eg_grid", "eg_cards"), (0, 0, 0), {"engraving": None}),
     "Power Saving Mode without its number": (("saver_mode",), (0, 0, 0), {}),
     "the sign-in screen": (("sign_in_buttons",), (90, 60, 35), {}),
 }
@@ -109,6 +109,7 @@ class Mapping(unittest.TestCase):
         names, background, _ = SCREENS["the engraving"]
         _, readings, _ = game.read_all(screens, rules, READERS, screen(*names, background=background))
         cells = readings["engraving"]["cells"]
+        self.assertEqual(readings["engraving"]["weapon"], "Vision")
         self.assertEqual((len(cells), {len(row) for row in cells}), (5, {5}))
         self.assertTrue(readings["engraving"]["pieces"])
 

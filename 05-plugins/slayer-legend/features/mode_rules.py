@@ -16,12 +16,13 @@ def t(template, **params):
     return {"template": template, "params": params}
 
 
-MODES = ("mpw18", "mpw4", "free", "mine")
+MODES = ("mpw18", "mpw4", "free", "agent", "mine")
 DEFAULT = "mpw18"
 # What the default mode may be (never the mine: it ends by itself).
-DEFAULTS = ("mpw18", "mpw4", "free")
+DEFAULTS = ("mpw18", "mpw4", "free", "agent")
 # "back to ..." once a timed mode ends, per default mode (its alert).
-BACK_TO = {"mpw18": "back to farming mpw18", "mpw4": "back to farming mpw4", "free": "back to free play"}
+BACK_TO = {"mpw18": "back to farming mpw18", "mpw4": "back to farming mpw4",
+           "free": "back to free play", "agent": "back to agent mode"}
 # A timed mode chosen without an end time runs this long.
 TIMED_MINUTES = 30
 # Seconds between two checks of a timed mode.
@@ -322,7 +323,7 @@ def tone(mode, state, hold, playing, watched=None, mine=None, engraving_off=Fals
     then a confirmed block, and finally recovery or the reached instruction."""
     watched = watched or {}
     level = watched.get("level")
-    if hold or (playing and mode != "free"):
+    if hold or (playing and mode not in ("free", "agent")):
         return "hold"
     if watched.get("repairing"):
         return "setup"

@@ -170,7 +170,7 @@ SYMPTOMS = {
     "wrong_stage": "mauvais stage, pas le {stage}",
     "wrong_battle_settings": "mauvais préréglage de combat : pas le {preset}",
     "wrong_loadout": "mauvais équipement : {what}",
-    "progress_stalled": "barre de progression du stage immobile depuis {seconds} s (AUTO : {state})",
+    "progress_stalled": "barre de progression du stage immobile depuis {seconds} s",
     "unparked": "hors de l’écran Soul Weapon",
     "unexpected": "écran inconnu : {screen} ; farming bloqué",
     "mine_away": "le jeu n’est plus au premier plan",
@@ -291,7 +291,8 @@ def paused(mode, last_input, now, moving=False):
     playing, the game is relaunched), or None; moving:
     the mode's entry sequence runs (it holds the lease)."""
     if mode not in MODE_NAMES:
-        return "Jeu libre : rien n’est surveillé"
+        return ("Agent mode : automatisation en pause" if mode == "agent"
+                else "Jeu libre : rien n’est surveillé")
     if moving:
         return "En pause : entrée dans le mode {mode}"
     if last_input is not None and now - last_input < PAUSE_AFTER_INPUT:
@@ -402,7 +403,7 @@ def judge(seen, profile, numeral_of, last_input, resumed, memory, now, after_mod
             return "wrong_loadout", SYMPTOMS["wrong_loadout"], {"what": seen["loadout"]}, memory
         if seen.get("stalled") is not None:
             return "progress_stalled", SYMPTOMS["progress_stalled"], {
-                "seconds": round(seen["stalled"]), "state": AUTO_STATES.get(seen.get("auto"), AUTO_STATES[None])}, memory
+                "seconds": round(seen["stalled"])}, memory
         if profile.get("park") and seen["screen"] == "battle":
             return "unparked", SYMPTOMS["unparked"], {}, memory
         if number is not None and number == wanted:
@@ -632,7 +633,7 @@ GOLD_FULL = 290
 GOLD_SLACK = 10
 GOLD_FRESH = 30
 GOLD_ZEROS = 2
-GOLD_ALERT = "gold/s at 0 but AUTO on"
+GOLD_ALERT = "gold/s at 0 over a full measurement window"
 
 
 def gold_fresh():
@@ -657,10 +658,9 @@ def gold_zero(kept, gold, wall):
     return {**kept, "zeros": zeros}, zeros == GOLD_ZEROS
 
 
-def gold_alert(kept, auto):
-    """(kept, alert): the AUTO reading after a trigger. ON while gold/s is
-    at 0: one alert (GOLD_ALERT) until the rate is above 0 again."""
-    if auto == "on" and kept["zeros"] >= GOLD_ZEROS and not kept["alerted"]:
+def gold_alert(kept):
+    """(kept, alert): one alert after confirmed zero gold/s until it rises."""
+    if kept["zeros"] >= GOLD_ZEROS and not kept["alerted"]:
         return {**kept, "alerted": True}, True
     return kept, False
 
@@ -684,7 +684,6 @@ STALL_LOOKS = 3
 # No counting this long (seconds) after a relaunch: the game settles.
 BAR_SETTLE = 60
 # AUTO as the stall's alert says it (read on the controls, information only).
-AUTO_STATES = {"on": t("en marche"), "off": t("arrêté"), None: t("inconnu")}
 
 
 def bar_fresh():

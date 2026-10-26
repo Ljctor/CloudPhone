@@ -30,11 +30,10 @@ SOURCES = ("scan", "setup", "page")
 SCHEMA = {
     "battle": {"label": "Jeu · Combat", "fields": {
         "stage": {"label": "Stage", "shown": "number"},
-        "highest": {"label": "Stage le plus haut atteint", "shown": "number"},
+        "highest": {"label": "Stage le plus haut atteint", "shown": "lower_bound"},
         "progress": {"label": "Progression du stage", "shown": "percent"},
         "gold": {"label": "Gold", "shown": "text"},
         "preset": {"label": "Préréglage de combat", "shown": "text"},
-        "auto": {"label": "AUTO", "shown": "switch"},
         "emerald": {"label": "Émeraudes", "shown": "text", "pending": True},
         "diamond": {"label": "Diamants", "shown": "text", "pending": True},
         "stage_numeral": {"persist": False},
@@ -188,6 +187,8 @@ def fresh(saved, now):
         if not spec or not spec["persist"] or spec["pending"] or not isinstance(fact, dict):
             continue
         if fact.get("value") is None:
+            continue
+        if field == "engraving" and not (isinstance(fact["value"], dict) and fact["value"].get("weapon")):
             continue
         seen = fact.get("seen")
         facts[field] = {"value": fact["value"],

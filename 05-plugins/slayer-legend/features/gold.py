@@ -100,7 +100,7 @@ def gold(ports, screens, stage, counter, rules, souls=None):
         for colour in colours:
             status["souls"][colour], rate, samples, seconds = measured(status["souls"][colour], rules.SOULS_WINDOW)
             answer[colour] = {"text": status["souls"][colour]["text"], "rate": rate, "span": span(samples),
-                              "window": seconds}
+                              "window": seconds, "read": samples[-1][0] if samples else None}
         return answer
 
     def current():

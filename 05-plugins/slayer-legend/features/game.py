@@ -97,12 +97,22 @@ def reader_table(screens, stage, select, counter, souls, weapon, engraving, cont
                 "highest": max(opened) if opened else None}
 
     def engraving_grid(shot, base, overlays, plain):
+        selected = engraving.weapon(shot, weapon_names, weapon.CARD_FONT) if engraving else None
+        matching = [entry for entry in weapons["weapons"] if entry["name"] == selected] if selected else []
+        if len(matching) != 1 or matching[0].get("grid") != 5:
+            return {"engraving": None}
         read = engraving.grid(shot, 5) if engraving else None
         # No cell of the grid seen (another screen's pixels): nothing read.
         if not read or all(state == "none" for state in read["cells"].values()):
             return {"engraving": None}
-        cells = [[read["cells"][(row, col)] for col in range(5)] for row in range(5)]
-        return {"engraving": {"cells": cells, "pieces": [[list(cell) for cell in piece] for piece in read["pieces"]]}}
+        active = {tuple(cell) for cell in matching[0]["cells"]}
+        visible = {cell for cell, state in read["cells"].items() if state != "none"}
+        if visible != active:
+            return {"engraving": None}
+        cells = [[read["cells"][(row, col)] if (row, col) in active else "none"
+                  for col in range(5)] for row in range(5)]
+        return {"engraving": {"weapon": selected, "cells": cells,
+                              "pieces": [[list(cell) for cell in piece] for piece in read["pieces"]]}}
 
     return {"battle_stage": battle_stage, "progress": progress, "gold": gold, "saver_stage": saver_stage,
             "badge": badge, "battle_settings": battle_settings, "souls": souls_row, "soul_weapon": soul_weapon,
@@ -136,7 +146,7 @@ def read_all(screens, rules, readers, shot, last_runs=None, now=0.0, timings=Non
     return look, readings, ran
 
 
-def game(ports, screens, rules, readers):
+def game(ports, screens, rules, readers, archive=None):
     """readers: reader_table's."""
     clock = ports.clock
     state = {"facts": rules.fresh(ports.store.saved.get("game"), clock.wall()), "saved_at": clock.monotonic(),
@@ -199,6 +209,8 @@ def game(ports, screens, rules, readers):
             look, readings, ran = await ports.analyse(read_all, screens, rules, readers, shot,
                                                       dict(state["last_runs"]), now, None, tuple(force),
                                                       tuple(last["ran"]) if last else ())
+            if archive:
+                await ports.analyse(archive, look, shot, clock.wall())
             for reader in ran:
                 state["last_runs"][reader] = now
             state["scans"] += 1

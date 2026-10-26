@@ -470,17 +470,13 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         return ports.spawn(after_relaunch(mode))
 
     async def read_controls():
-        """{preset, auto} read on one unfold of the controls (the arrow's
-        tap, under the lease; AUTO only read, for the alerts), or None: the
-        preset switch is plan, the lease cannot be had, or anything
-        unexpected."""
+        """{preset} read on one guarded unfold, or None when unavailable."""
         if not real("preset"):
             return None
         try:
-            async with ports.leased(HOLDER, "reading the preset and AUTO", 30):
+            async with ports.leased(HOLDER, "reading the preset", 30):
                 first, second = await controls_look()
-                return {"preset": await badge_of(first, second),
-                        "auto": await ports.analyse(controls.auto, first, second)}
+                return {"preset": await badge_of(first, second)}
         except (Stop, RuntimeError):  # Busy included
             return None
 

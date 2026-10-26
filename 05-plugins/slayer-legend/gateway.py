@@ -75,7 +75,8 @@ def setup(context):
     game_feature = feature("game")
     game = game_feature.game(ports, screens, feature("game_rules"), game_feature.reader_table(
         screens, stage, module("stage_select"), module("gold"), module("soul_counters"), module("soul_weapon"),
-        module("engraving_screen"), module("battle_controls"), screen_rules, table, engraving["api"]["table"]))
+        module("engraving_screen"), module("battle_controls"), screen_rules, table, engraving["api"]["table"]),
+        feature("screenshot_archive").archive(ports.data_path("screenshots")))
     ports.game = game["api"]
     mine = feature("mine").mine(ports, screens, module("mine"), feature("mine_rules"), timer, values)
     launch = feature("launch").launch(ports, screens, feature("launch_rules"))

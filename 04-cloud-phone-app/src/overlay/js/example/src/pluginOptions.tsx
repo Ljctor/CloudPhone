@@ -78,7 +78,8 @@ function pluginOption(context, plugin, option, index) {
         <select style={styles.select} value={settings.plugins?.[plugin.id]?.[option.key] ?? choices[0]?.value ?? ''}
           onChange={(event) => setPluginOption(plugin.id, option.key, event.target.value)}>
           {choices.map((choice) => (
-            <option key={choice.value} value={choice.value}>{tr(choice.label)}</option>
+            <option key={choice.value} value={choice.value}
+              style={choice.muted ? { color: styles.infoNote.color } : undefined}>{tr(choice.label)}</option>
           ))}
         </select>
       </label>
@@ -178,6 +179,20 @@ function pluginOption(context, plugin, option, index) {
     // Inline buttons after the value, while button() gives one (or a list).
     const given = option.button?.();
     const buttons = (Array.isArray(given) ? given : [given]).filter(Boolean);
+    if (option.compact && !buttons.length) return (
+      <div key={key} title={resolved(option.title) ?? ''}
+        style={{ ...styles.infoRow, alignItems: 'center', minWidth: 0, whiteSpace: 'nowrap' }}>
+        <span style={{ ...styles.infoLabel, display: 'inline-flex', alignItems: 'center', minWidth: 0,
+          overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          <span style={{ display: 'inline-flex', width: 16, flex: '0 0 16px', alignItems: 'center' }}>
+            {option.icon && <img src={resolved(option.icon)} alt="" style={{ width: 12, height: 12,
+              objectFit: 'contain', imageRendering: 'pixelated' }} />}
+          </span>
+          {tr(option.label)}
+        </span>
+        <span style={{ flexShrink: 0, color: '#fff', fontVariantNumeric: 'tabular-nums' }}>{value}</span>
+      </div>
+    );
     return infoRow(tr(option.label), buttons.length ? (
       <>
         {shown}

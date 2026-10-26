@@ -22,7 +22,8 @@ const UNTIL = 'cloudphone-slayer-legend-mode-until';
 // A timed mode starts with this timer (then +30 … −30 to adjust it).
 const TIMED_MINUTES = 30;
 const DOTS = { green: '🟢', blue: '🔵', red: '🔴' };
-const MODE_NAMES = { mpw18: 'Farming mpw18', mpw4: 'Farming mpw4', free: 'Jeu libre', mine: 'Mine fermée' };
+const MODE_NAMES = { mpw18: 'Farming mpw18', mpw4: 'Farming mpw4', free: 'Jeu libre',
+  agent: 'Agent mode', mine: 'Mine fermée' };
 // The overlay's colour per tone (GET /mode).
 const TONES = { ok: '#4be04b', hold: '#ffa31a', error: '#ff4040', setup: '#409cff' };
 
@@ -132,8 +133,7 @@ export default function modeFeature(api, { known, watchdog, stage }) {
     api.refresh();
   };
   // Every mpw18 and mpw4 stage: the player may choose one beyond the
-  // stage last seen on the screen (marked « jamais atteint »: the switch
-  // tries it, and fails cleanly if the game does not open it).
+  // The last stage seen is only a lower bound for the highest unlocked one.
   const loadStages = async () => {
     farm.stages = await api.get('/stages').catch(() => null);
     api.refresh();
@@ -144,8 +144,8 @@ export default function modeFeature(api, { known, watchdog, stage }) {
       { value: '', label: api.tr('— choisir —') },
       ...(farm.stages?.[`mpw${mpw}`] ?? []).map((stage) => ({
         value: String(stage.number),
-        label: `${DOTS[stage.colour] ?? '⚪'} mpw${mpw} · ${stage.number}`
-          + (highest && stage.number > highest ? ` · ${api.tr('jamais atteint')}` : ''),
+        label: `${DOTS[stage.colour] ?? '⚪'} mpw${mpw} · ${stage.number}`,
+        muted: Boolean(highest && stage.number > highest),
       })),
     ];
   };
@@ -167,7 +167,7 @@ export default function modeFeature(api, { known, watchdog, stage }) {
     overlay: () => {
       const current = farm.answer?.mode ?? mode();
       const seconds = Math.max(0, Math.round((farm.answer?.until ?? 0) - Date.now() / 1000));
-      const tone = current !== 'free' && farm.inputUntil > Date.now() ? 'hold' : farm.answer?.tone;
+      const tone = !['free', 'agent'].includes(current) && farm.inputUntil > Date.now() ? 'hold' : farm.answer?.tone;
       const colour = TONES[tone] ?? TONES.setup;
       return [
         { text: api.tr(MODE_NAMES[current] ?? current).toUpperCase(), colour },
@@ -179,6 +179,11 @@ export default function modeFeature(api, { known, watchdog, stage }) {
       { type: 'section', key: 'mode', label: 'Mode et farming' },
       // One row per mode: a radio button chooses it, Configurer opens its
       // settings.
+      {
+        type: 'dialog', label: 'Jeu libre',
+        select: { key: 'mode', value: 'free', default: 'mpw18' },
+        options: [],
+      },
       {
         type: 'dialog', label: 'Farming mpw18',
         select: { key: 'mode', value: 'mpw18', default: 'mpw18' },
@@ -197,12 +202,6 @@ export default function modeFeature(api, { known, watchdog, stage }) {
         ],
       },
       {
-        // Nothing to configure: no Configurer button.
-        type: 'dialog', label: 'Jeu libre',
-        select: { key: 'mode', value: 'free', default: 'mpw18' },
-        options: [],
-      },
-      {
         type: 'dialog', label: 'Mine fermée',
         // Only once configured: its floor and area chosen.
         select: {
@@ -219,6 +218,11 @@ export default function modeFeature(api, { known, watchdog, stage }) {
         ],
       },
       {
+        type: 'dialog', label: 'Agent mode',
+        select: { key: 'mode', value: 'agent', default: 'mpw18' },
+        options: [],
+      },
+      {
         // Saved on change. mpw4 only once its stage is chosen (as its radio
         // button); never the mine.
         type: 'choice', key: 'defaultMode', label: 'Mode par défaut',
@@ -227,6 +231,7 @@ export default function modeFeature(api, { known, watchdog, stage }) {
           ...(Number(api.setting('stage4')) || defaultMode() === 'mpw4'
             ? [{ value: 'mpw4', label: api.tr('Farming mpw4') }] : []),
           { value: 'free', label: api.tr('Jeu libre') },
+          { value: 'agent', label: api.tr('Agent mode') },
         ],
       },
       {

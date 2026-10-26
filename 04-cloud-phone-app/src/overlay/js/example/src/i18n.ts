@@ -98,7 +98,6 @@ const EN = {
   'Afficher le curseur': 'Show the cursor',
   'Replier la barre 3 s après l’entrée en plein écran': 'Fold the bar 3 s after entering fullscreen',
   'Machine': 'Machine',
-  'Processeur': 'Processor',
   '{cpu} % de {cpus} threads': '{cpu} % of {cpus} threads',
   'CPU (en direct)': 'CPU (live)',
   'Mémoire (en direct)': 'Memory (live)',

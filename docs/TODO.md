@@ -1,5 +1,18 @@
 # Known bugs
 
+## CloudPhone Slayer Legend work in progress (2026-10-26)
+
+- [x] Deploy five modes, with Free play first and Agent mode last.
+- [x] Show `never read` for resources and screens without a reading.
+- [x] Bind each engraving grid to the weapon read on that capture; discard old grids without an identity and verify Relax's pattern.
+- [x] Show the highest observed stage as a lower bound; gray later stages while keeping them selectable.
+- [x] Deploy and verify the engraving and stage fixes.
+- [ ] Capture and persist one reviewed example for every reachable screen in the navigation graph.
+- [ ] Calibrate the full-digit gold reader and restore gold/s measurement.
+- [ ] Replace remaining placeholder resource icons with verified game icons and add readers for the unread resources.
+- [ ] Alert in the web page and through ntfy when an expected overlay is absent.
+- [ ] Let Agent mode explore approved screens between farming checks, then return to the selected mode under the navigation guard.
+
 Tests of the black-box suite (`tests/e2e`) that fail on the current code,
 each with what is known. Owner: the agent maintaining the gateway and the
 page; fix or explain each before the hexagonal refactor reaches its domain.
