@@ -48,6 +48,12 @@
     "pending": false
   },
   {
+    "field": "soul_white",
+    "label": "Âmes blanches",
+    "english": "White souls",
+    "pending": false
+  },
+  {
     "field": "dice",
     "label": "Dés",
     "english": "Dice",
@@ -118,11 +124,5 @@
     "label": "Black Mana",
     "english": "Black Mana",
     "pending": true
-  },
-  {
-    "field": "soul_white",
-    "label": "Âmes blanches",
-    "english": "White souls",
-    "pending": false
   }
 ]

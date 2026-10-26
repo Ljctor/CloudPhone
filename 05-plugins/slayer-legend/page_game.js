@@ -6,6 +6,7 @@
 // every 10 s while a row shows. rows(options, at): puts the sections into
 // the plugin's options list at index at, once the gateway answered.
 import { RESOURCE_ICONS } from './page_resources.js';
+import { SCREEN_ICONS } from './page_screen_icons.js';
 const PIECE = '#d9a441';
 const EVERY = 10000;
 
@@ -51,7 +52,6 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
         value: () => resourceText(current()),
       };
     }),
-    ...resourceOptions,
   ];
   const accessPath = (screen) => ({
     battle: [],
@@ -89,6 +89,8 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
     }));
   const sections = () => {
     const rows = [...resourceRows(),
+      { type: 'section', key: 'analysis', label: 'Analyse', depth: 1, folded: true },
+      ...resourceOptions,
       { type: 'section', key: 'display', label: 'Affichage', depth: 1, folded: true },
       ...displayOptions.map((option) => option.type === 'section' ? { ...option, depth: 2 } : option),
       { type: 'section', key: 'game-state', label: 'État du jeu', depth: 1, folded: true }];
@@ -104,7 +106,8 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
         if (made.has(id)) return;
         made.add(id);
         rows.push({ type: 'section', key: index === path.length - 1 ? `game-${screen.screen}` : `game-path-${id}`,
-          label, depth: index + 2, folded: true });
+          label, depth: index + 2, folded: true,
+          icon: index === 0 ? SCREEN_ICONS[label.toLowerCase()] : undefined });
       });
       rows.push(...fieldRows(screen));
       if (!screen.fields?.length) rows.push({ type: 'status', label: 'Données', value: () => 'never read' });

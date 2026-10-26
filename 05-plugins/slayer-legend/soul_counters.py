@@ -140,5 +140,5 @@ def read(shot):
         parsed = gold.parse(text) if text and "?" not in text else None
         if parsed and parsed["full"] and not FULL_DIGITS_CALIBRATED:
             parsed = None
-        counts[colour] = {"text": text, **parsed} if parsed else None
+        counts[colour] = {"text": gold.normalize_text(text), **parsed} if parsed else None
     return counts

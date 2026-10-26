@@ -30,6 +30,13 @@ C = 1000.0 ** 3
 
 
 class Notation(unittest.TestCase):
+    def test_leading_zero_display(self):
+        self.assertEqual(gold.normalize_text("02.0C"), "2.0C")
+        self.assertEqual(gold.normalize_text("00012"), "12")
+        self.assertEqual(gold.normalize_text("0.70C"), "0.70C")
+        self.assertEqual(gold.normalize_text("000.5C"), "0.5C")
+        self.assertEqual(gold.parse("02.0C")["value"], gold.parse("2.0C")["value"])
+
     def test_abbreviated(self):
         self.assertEqual(gold.parse("94.6C"), {"value": 94.6 * C, "step": 0.1 * C, "full": False})
         self.assertEqual(gold.parse("4.64C"), {"value": 4.64 * C, "step": 0.01 * C, "full": False})

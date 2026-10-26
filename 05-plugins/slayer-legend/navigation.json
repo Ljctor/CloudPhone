@@ -581,6 +581,13 @@
      "label": "Growth tab"
     },
     {
+     "id": "scroll",
+     "to": "character_promotion",
+     "swipe": [0.5, 0.87, 0.5, 0.67],
+     "label": "scroll the promotion list without opening a class or bonus page",
+     "precondition": "fresh capture shows the Promotion tab and list; gesture stays below its Class and Additional Ability buttons"
+    },
+    {
      "id": "class",
      "to": "unknown",
      "tap": [
@@ -694,9 +701,9 @@
      "id": "skill_plus",
      "to": "skill",
      "area": [
-      0.0,
+      0.07,
       0.64,
-      1.0,
+      0.92,
       0.95
      ],
      "label": "skill + (level up)",
@@ -705,44 +712,82 @@
     },
     {
      "id": "element_1",
-     "to": "skill",
+     "to": "familiar",
      "tap": [
       0.58,
       0.574
      ],
-     "label": "element tab 1 of the skill grid (a filter of the list)",
-     "source": "screens catalogue (skills/screens), not tapped yet"
+     "label": "Familiar icon",
+     "source": "seen on a real capture 2026-10-26"
     },
     {
      "id": "element_2",
-     "to": "skill",
+     "to": "skill_refinement_grounds",
      "tap": [
       0.665,
       0.574
      ],
-     "label": "element tab 2 of the skill grid (a filter of the list)",
-     "source": "screens catalogue (skills/screens), not tapped yet"
+     "label": "Skill Refinement Grounds icon",
+     "source": "seen on a real capture 2026-10-26"
     },
     {
      "id": "element_3",
-     "to": "skill",
+     "to": "skill_mastery",
      "tap": [
       0.76,
       0.574
      ],
-     "label": "element tab 3 of the skill grid (a filter of the list)",
-     "source": "screens catalogue (skills/screens), not tapped yet"
+     "label": "Skill Mastery icon",
+     "source": "seen on a real capture 2026-10-26"
     },
     {
      "id": "element_4",
-     "to": "skill",
+     "to": "skill_rave_mantra",
      "tap": [
       0.85,
       0.574
      ],
-     "label": "element tab 4 of the skill grid (a filter of the list)",
-     "source": "screens catalogue (skills/screens), not tapped yet"
+     "label": "Rave and Mantra panel icon",
+     "source": "seen on a real capture 2026-10-26"
     }
+   ]
+  },
+  "skill_refinement_grounds": {
+   "name": "Skill Refinement Grounds",
+   "recognise": "full-screen training room with three Hellfire Slash slots and Skill Refinement Time",
+   "source": "seen 2026-10-26",
+   "moves": [
+    {"id": "close", "to": "skill", "tap": [0.1, 0.955], "label": "red X at the lower left"},
+    {"id": "refine", "to": "skill_refinement_grounds", "area": [0.34, 0.86, 0.66, 0.96], "label": "Skill Refinement", "forbidden": true, "reason": "starts or changes a refinement; user choice only"}
+   ]
+  },
+  "skill_mastery": {
+   "name": "Skill Mastery",
+   "recognise": "full-screen mastery tree with connected nodes, blue currency counter and red X",
+   "source": "seen 2026-10-26",
+   "moves": [
+    {"id": "close", "to": "skill", "tap": [0.08, 0.95], "label": "red X at lower left"},
+    {"id": "node", "to": "skill_mastery", "area": [0.1, 0.2, 0.9, 0.9], "label": "mastery nodes", "forbidden": true, "reason": "may spend mastery currency; user choice only"}
+   ]
+  },
+  "skill_rave_mantra": {
+   "name": "Rave and Mantra skills",
+   "recognise": "dark skill panel with two gold skill icons labelled Rave and Mantra",
+   "source": "seen 2026-10-26",
+   "moves": [
+    {"id": "close", "to": "skill", "tap": [0.948, 0.563], "label": "white X at upper right of this panel"},
+    {"id": "plus", "to": "skill_rave_mantra", "area": [0.2, 0.67, 0.75, 0.81], "label": "Rave or Mantra +", "forbidden": true, "reason": "may spend resources; user choice only"}
+   ]
+  },
+  "familiar": {
+   "name": "Familiar",
+   "recognise": "purple Familiar screen with Attribute, Battle and Weapon familiars",
+   "source": "seen 2026-10-26",
+   "moves": [
+    {"id": "close", "to": "skill", "tap": [0.5, 0.955], "label": "purple X at bottom centre"},
+    {"id": "presets", "to": "familiar", "area": [0.27, 0.79, 0.75, 0.83], "label": "familiar presets", "forbidden": true, "reason": "changes the user's selected preset"},
+    {"id": "combine", "to": "familiar", "area": [0.03, 0.93, 0.27, 1.0], "label": "Combine Familiars", "forbidden": true, "reason": "consumes familiars"},
+    {"id": "summon", "to": "familiar", "area": [0.72, 0.93, 0.97, 1.0], "label": "Summon Familiar", "forbidden": true, "reason": "spends resources"}
    ]
   },
   "equipment_weapon": {
@@ -853,6 +898,13 @@
       0.445
      ],
      "label": "sword on a beige background: Soul Weapon (only once the Weapon tab reads active: on Accessories the same spot opens Black Orb); at 0.462 a scrolled weapon list's cell is under it and opens weapon_detail (seen 2026-10-21)"
+    },
+    {
+     "id": "scroll",
+     "to": "equipment_weapon",
+     "swipe": [0.27, 0.81, 0.27, 0.55],
+     "label": "scroll weapon grid through the gap between columns",
+     "precondition": "fresh capture shows Weapon tab and a clear gap between its first and second item columns"
     },
     {
      "id": "batch_combine",
@@ -997,6 +1049,13 @@
      "label": "Spirit tab"
     },
     {
+     "id": "scroll",
+     "to": "equipment_accessories",
+     "swipe": [0.27, 0.81, 0.27, 0.55],
+     "label": "scroll accessories through the gap between columns",
+     "precondition": "fresh capture shows Accessories tab and a clear gap between item columns"
+    },
+    {
      "id": "batch_combine",
      "to": "equipment_accessories",
      "tap": [
@@ -1104,6 +1163,13 @@
       0.414
      ],
      "label": "Spirit tab"
+    },
+    {
+     "id": "scroll",
+     "to": "equipment_relic",
+     "swipe": [0.5, 0.84, 0.5, 0.56],
+     "label": "scroll relic list through text between the icons and Enhance MAX buttons",
+     "precondition": "fresh capture shows Relic tab; gesture starts on text, clear of Enhance MAX"
     },
     {
      "id": "enhance",
@@ -1604,13 +1670,29 @@
     },
     {
      "id": "advancement",
-     "to": "unknown",
+     "to": "companion_advancement",
      "tap": [
       0.905,
       0.507
      ],
-     "label": "Advancement (open and look; inside not explored yet)"
+     "label": "Advancement class list"
     }
+   ]
+  },
+  "companion_advancement": {
+   "name": "Companion Advancement",
+   "recognise": "Companion panel with five Roman numeral tabs and class portrait grid",
+   "source": "seen 2026-10-26",
+   "moves": [
+    {"id": "close", "to": "companion", "tap": [0.12, 0.466], "label": "Companion tab"},
+    {"id": "tier_i", "to": "companion_advancement", "tap": [0.1, 0.505], "label": "tier I"},
+    {"id": "tier_ii", "to": "companion_advancement", "tap": [0.3, 0.505], "label": "tier II"},
+    {"id": "tier_iii", "to": "companion_advancement", "tap": [0.5, 0.505], "label": "tier III"},
+    {"id": "tier_iv", "to": "companion_advancement", "tap": [0.7, 0.505], "label": "tier IV"},
+    {"id": "tier_v", "to": "companion_advancement", "tap": [0.9, 0.505], "label": "tier V"},
+    {"id": "scroll", "to": "companion_advancement", "swipe": [0.27, 0.85, 0.27, 0.63],
+     "label": "scroll class portraits through the gap between columns",
+     "precondition": "fresh capture shows Advancement list and gap between portrait columns"}
    ]
   },
   "beast": {
@@ -1629,21 +1711,21 @@
     },
     {
      "id": "mount",
-     "to": "unknown",
+     "to": "beast_mount",
      "tap": [
       0.515,
       0.955
      ],
-     "label": "Mount (not explored)"
+     "label": "Mount tab"
     },
     {
      "id": "scouting",
-     "to": "unknown",
+     "to": "beast_scouting",
      "tap": [
       0.645,
       0.955
      ],
-     "label": "Scouting (not explored)"
+     "label": "Scouting tab"
     },
     {
      "id": "shop",
@@ -1667,6 +1749,33 @@
      "forbidden": true,
      "reason": "likely spends"
     }
+   ]
+  },
+  "beast_mount": {
+   "name": "Beast: Mount",
+   "recognise": "landscape with selected beast, Affection bar and orange Mount button",
+   "source": "seen on a real capture 2026-10-26",
+   "moves": [
+    {"id": "close", "to": "beast", "tap": [0.095, 0.955], "label": "red back arrow at lower left"},
+    {"id": "mount_action", "to": "beast_mount", "area": [0.36, 0.92, 0.64, 0.99], "label": "Mount (1/1)", "forbidden": true, "reason": "changes the user's mounted beast"}
+   ]
+  },
+  "beast_scouting": {
+   "name": "Beast: Scouting",
+   "recognise": "three fixed region blocks Underground Cave, Red twilight and Rising Strata",
+   "source": "seen on a real capture 2026-10-26",
+   "moves": [
+    {"id": "close", "to": "beast", "tap": [0.095, 0.955], "label": "red back arrow at lower left"},
+    {"id": "info", "to": "beast_scouting_info", "tap": [0.91, 0.078], "label": "magnifier at top right opens scouting instructions"},
+    {"id": "scout_action", "to": "beast_scouting", "area": [0.04, 0.14, 0.96, 0.82], "label": "Auto Registration, Scout Reward or Scout Complete", "forbidden": true, "reason": "starts a scout, changes beasts or claims rewards"}
+   ]
+  },
+  "beast_scouting_info": {
+   "name": "Beast: Scouting instructions",
+   "recognise": "dark overlay with five scouting explanation bullets",
+   "source": "seen on a real capture 2026-10-26",
+   "moves": [
+    {"id": "close", "to": "beast_scouting", "tap": [0.915, 0.855], "label": "tap clear background below the text"}
    ]
   },
   "adventure_map": {
@@ -1889,12 +1998,12 @@
     },
     {
      "id": "dragon_valley",
-     "to": "raid_camp",
+     "to": "airfield",
      "tap": [
       0.5,
       0.47
      ],
-     "label": "Dragon Valley (takes > 3 s)"
+     "label": "Dragon Valley label currently opens Airfield (verified twice 2026-10-26); wait for transition"
     },
     {
      "id": "closed_mine",
@@ -1955,7 +2064,7 @@
   "raid_camp": {
    "name": "Dragon Valley: Raid camp",
    "recognise": "title 'Raid', camp with other players, bottom Raid/Cooking/Special Dish/Bag",
-   "source": "explored 2026-10-18",
+   "source": "historical observation 2026-10-18; current Dragon Valley entry leads to Airfield instead",
    "moves": [
     {
      "id": "back",
@@ -2103,14 +2212,14 @@
   "stage_select": {
    "name": "Select Region (stage choice)",
    "recognise": "pop-up 'Select Region', region banner with arrows, stages with orange Move",
-   "source": "explored 2026-10-18",
+   "source": "seen again on a real capture 2026-10-26",
    "moves": [
     {
      "id": "close",
      "to": "battle",
      "tap": [
       0.5,
-      0.94
+      0.951
      ],
      "label": "red X"
     },
@@ -2136,12 +2245,12 @@
      "id": "scroll",
      "to": "stage_select",
      "swipe": [
-      0.5,
-      0.75,
-      0.5,
-      0.45
+      0.504,
+      0.766,
+      0.502,
+      0.472
      ],
-     "label": "scroll the stages"
+     "label": "scroll the stage rows from 961–963 down to 971–973, without touching Move"
     },
     {
      "id": "move",
@@ -2304,19 +2413,10 @@
      ],
      "label": "Adventure"
     },
-    {
-     "id": "tabs",
-     "to": "unknown",
-     "area": [
-      0.2,
-      0.42,
-      0.98,
-      0.455
-     ],
-     "label": "Package / Goods / Golden Key / Event",
-     "forbidden": true,
-     "reason": "purchases"
-    },
+    {"id": "package", "to": "shop_package", "tap": [0.315, 0.438], "label": "Package tab (view only)"},
+    {"id": "goods", "to": "shop_goods", "tap": [0.5, 0.438], "label": "Goods tab (view only)"},
+    {"id": "golden_key", "to": "shop_golden_key", "tap": [0.69, 0.438], "label": "Golden Key tab (view only)"},
+    {"id": "event", "to": "shop_event", "tap": [0.883, 0.438], "label": "Event tab (view only)"},
     {
      "id": "summon",
      "to": "unknown",
@@ -2379,6 +2479,57 @@
     }
    ]
   },
+  "shop_package": {
+   "name": "Shop: Package",
+   "recognise": "Package tab selected, featured and other package cards with prices",
+   "source": "seen on a real capture 2026-10-26",
+   "moves": [
+    {"id": "summon", "to": "shop_summon", "tap": [0.117, 0.438], "label": "Summon tab"},
+    {"id": "goods", "to": "shop_goods", "tap": [0.5, 0.438], "label": "Goods tab"},
+    {"id": "golden_key", "to": "shop_golden_key", "tap": [0.69, 0.438], "label": "Golden Key tab"},
+    {"id": "event", "to": "shop_event", "tap": [0.883, 0.438], "label": "Event tab"},
+    {"id": "scroll", "to": "shop_package", "swipe": [0.494, 0.822, 0.496, 0.509], "label": "scroll package cards through the centre gap", "precondition": "fresh capture shows Package tab and swipe avoids price buttons"},
+    {"id": "purchase", "to": "shop_package", "label": "priced package cards", "forbidden": true, "reason": "spends money"}
+   ]
+  },
+  "shop_goods": {
+   "name": "Shop: Goods",
+   "recognise": "Goods tab selected, diamond and emerald offers with ADS and prices",
+   "source": "seen on a real capture 2026-10-26",
+   "moves": [
+    {"id": "summon", "to": "shop_summon", "tap": [0.117, 0.438], "label": "Summon tab"},
+    {"id": "package", "to": "shop_package", "tap": [0.315, 0.438], "label": "Package tab"},
+    {"id": "golden_key", "to": "shop_golden_key", "tap": [0.69, 0.438], "label": "Golden Key tab"},
+    {"id": "event", "to": "shop_event", "tap": [0.883, 0.438], "label": "Event tab"},
+    {"id": "purchase", "to": "shop_goods", "label": "ADS or priced offers", "forbidden": true, "reason": "scan must not start ads or spend money"}
+   ]
+  },
+  "shop_golden_key": {
+   "name": "Shop: Golden Key",
+   "recognise": "Golden Key tab selected, special chest rewards and a key counter",
+   "source": "seen on a real capture 2026-10-26",
+   "moves": [
+    {"id": "summon", "to": "shop_summon", "tap": [0.117, 0.438], "label": "Summon tab"},
+    {"id": "package", "to": "shop_package", "tap": [0.315, 0.438], "label": "Package tab"},
+    {"id": "goods", "to": "shop_goods", "tap": [0.5, 0.438], "label": "Goods tab"},
+    {"id": "event", "to": "shop_event", "tap": [0.883, 0.438], "label": "Event tab"},
+    {"id": "open", "to": "shop_golden_key", "label": "open a chest", "forbidden": true, "reason": "spends Golden Keys"}
+   ]
+  },
+  "shop_event": {
+   "name": "Shop: Event",
+   "recognise": "Event tab selected in the higher tab row, event package cards",
+   "source": "seen on a real capture 2026-10-26",
+   "moves": [
+    {"id": "close", "to": "battle", "tap": [0.5, 0.163], "label": "tap the middle of visible combat to return to Battle"},
+    {"id": "quest", "to": "quest_panel", "tap": [0.935, 0.087], "label": "Quest at top right"},
+    {"id": "summon", "to": "shop_summon", "tap": [0.117, 0.269], "label": "Summon tab in higher tab row"},
+    {"id": "package", "to": "shop_package", "tap": [0.315, 0.269], "label": "Package tab in higher tab row"},
+    {"id": "goods", "to": "shop_goods", "tap": [0.5, 0.269], "label": "Goods tab in higher tab row"},
+    {"id": "golden_key", "to": "shop_golden_key", "tap": [0.69, 0.269], "label": "Golden Key tab in higher tab row"},
+    {"id": "purchase", "to": "shop_event", "label": "event packages", "forbidden": true, "reason": "spends money"}
+   ]
+  },
   "quest_panel": {
    "name": "Quest panel",
    "recognise": "dark overlay, title 'Quest', tabs Daily Quest / Repeat Quest / Achievement at y 0.225, rows with a reward button on the right",
@@ -2391,8 +2542,10 @@
       0.895,
       0.183
      ],
-     "label": "X"
+     "label": "X after opening Quest from Battle",
+     "precondition": "Quest was opened from Battle"
     },
+    {"id": "close_to_shop_event", "to": "shop_event", "tap": [0.895, 0.183], "label": "X after opening Quest from Shop Event", "precondition": "Quest was opened from Shop Event"},
     {
      "id": "daily",
      "to": "quest_panel",
@@ -2420,6 +2573,7 @@
      ],
      "label": "Achievement tab"
     },
+    {"id": "scroll_repeat", "to": "quest_panel", "swipe": [0.475, 0.843, 0.473, 0.43], "label": "scroll Repeat Quest rows through the progress bars", "precondition": "fresh capture shows Repeat Quest tab and swipe path clear of reward buttons"},
     {
      "id": "claim",
      "to": "quest_panel",
@@ -2447,7 +2601,7 @@
   "guild": {
    "name": "Guild (Utopia)",
    "recognise": "title 'Utopia', big tree, players",
-   "source": "seen 2026-10-17",
+   "source": "seen again on a real capture 2026-10-26",
    "moves": [
     {
      "id": "back",
@@ -2456,8 +2610,130 @@
       0.11,
       0.96
      ],
-     "label": "red back button"
-    }
+     "label": "red back button after entering from Adventure map's Guild tab",
+     "precondition": "navigation history shows Guild entered from Adventure tab"
+    },
+    {"id": "back_to_dungeon", "to": "dungeon_map", "tap": [0.11, 0.96], "label": "red back button after Airfield opened from Dungeon map", "precondition": "navigation history shows Airfield entered from Dungeon map Dragon Valley"},
+    {"id": "divine_beast", "to": "guild_divine_beast", "tap": [0.41, 0.955], "label": "Divine Beast"},
+    {"id": "shop", "to": "guild_shop_normal", "tap": [0.54, 0.955], "label": "Guild Shop"},
+    {"id": "request", "to": "guild_request", "tap": [0.665, 0.955], "label": "Guild Request"},
+    {"id": "airfield", "to": "airfield", "tap": [0.785, 0.955], "label": "Airfield"},
+    {"id": "info", "to": "guild_info_basic", "tap": [0.905, 0.955], "label": "Guild Info"}
+   ]
+  },
+  "guild_divine_beast": {
+   "name": "Guild: Divine Beast",
+   "recognise": "Divine Beast modal over Guild hall, beast level and Connection Reward",
+   "source": "seen on a real capture 2026-10-26",
+   "moves": [
+    {"id": "close", "to": "guild", "tap": [0.5, 0.926], "label": "red X below modal"},
+    {"id": "clean", "to": "guild_divine_beast", "tap": [0.5, 0.81], "label": "Clean", "forbidden": true, "reason": "changes Guild Divine Beast state"}
+   ]
+  },
+  "guild_shop_normal": {
+   "name": "Guild Shop: Normal Shop",
+   "recognise": "Sana at left, Today's Item, Daily and Weekly item cards",
+   "source": "seen on a real capture 2026-10-26",
+   "moves": [
+    {"id": "back", "to": "guild", "tap": [0.11, 0.96], "label": "red back arrow"},
+    {"id": "appearance", "to": "guild_shop_appearance", "tap": [0.735, 0.427], "label": "Appearance Shop tab"},
+    {"id": "scroll", "to": "guild_shop_normal", "swipe": [0.5, 0.837, 0.5, 0.478], "label": "scroll item list between purchase buttons", "precondition": "fresh capture shows Normal Shop and clear central gap for the full swipe"},
+    {"id": "purchase", "to": "guild_shop_normal", "label": "priced item buttons", "forbidden": true, "reason": "spends Guild currency"}
+   ]
+  },
+  "guild_shop_appearance": {
+   "name": "Guild Shop: Appearance Shop",
+   "recognise": "appearance item rows, equipped character, orange Guild coin price buttons",
+   "source": "seen on a real capture 2026-10-26",
+   "moves": [
+    {"id": "back", "to": "guild", "tap": [0.11, 0.96], "label": "red back arrow"},
+    {"id": "normal", "to": "guild_shop_normal", "tap": [0.25, 0.427], "label": "Normal Shop tab"},
+    {"id": "scroll", "to": "guild_shop_appearance", "swipe": [0.325, 0.82, 0.327, 0.485], "label": "scroll appearance list through text on the left", "precondition": "fresh capture shows Appearance Shop and the swipe path clear of priced buttons"},
+    {"id": "purchase", "to": "guild_shop_appearance", "label": "priced appearance buttons", "forbidden": true, "reason": "spends Guild currency"}
+   ]
+  },
+  "airfield": {
+   "name": "Guild: Airfield",
+   "recognise": "Airfield title and tall tree with branch platforms and portal",
+   "source": "seen on a real capture 2026-10-26",
+   "moves": [
+    {"id": "back", "to": "guild", "tap": [0.11, 0.96], "label": "red back arrow"},
+    {"id": "recipes", "to": "airfield_recipes_appetizer", "tap": [0.805, 0.96], "label": "open Recipes book without selecting or making a dish"},
+    {"id": "boarding", "to": "airfield_boarding_status", "tap": [0.91, 0.96], "label": "Boarding Status"}
+   ]
+  },
+  "airfield_recipes_appetizer": {
+   "name": "Airfield Recipes: Appetizer",
+   "recognise": "open cookbook with green Appetizer tab and recipe progress at bottom",
+   "source": "seen on a real capture 2026-10-26",
+   "moves": [
+    {"id": "back", "to": "airfield", "tap": [0.11, 0.96], "label": "red back arrow closes cookbook"},
+    {"id": "main", "to": "airfield_recipes_main", "tap": [0.5, 0.189], "label": "Main Dish tab"},
+    {"id": "dessert", "to": "airfield_recipes_dessert", "tap": [0.73, 0.189], "label": "Dessert tab"},
+    {"id": "make", "to": "airfield_recipes_appetizer", "label": "select or make a recipe", "forbidden": true, "reason": "recipe preparation is a user action"}
+   ]
+  },
+  "airfield_recipes_main": {
+   "name": "Airfield Recipes: Main Dish",
+   "recognise": "open cookbook with orange Main Dish tab",
+   "source": "seen on a real capture 2026-10-26",
+   "moves": [
+    {"id": "back", "to": "airfield", "tap": [0.11, 0.96], "label": "red back arrow closes cookbook"},
+    {"id": "appetizer", "to": "airfield_recipes_appetizer", "tap": [0.27, 0.189], "label": "Appetizer tab"},
+    {"id": "dessert", "to": "airfield_recipes_dessert", "tap": [0.73, 0.189], "label": "Dessert tab"},
+    {"id": "make", "to": "airfield_recipes_main", "label": "select or make a recipe", "forbidden": true, "reason": "recipe preparation is a user action"}
+   ]
+  },
+  "airfield_recipes_dessert": {
+   "name": "Airfield Recipes: Dessert",
+   "recognise": "open cookbook with yellow Dessert tab",
+   "source": "seen on a real capture 2026-10-26",
+   "moves": [
+    {"id": "back", "to": "airfield", "tap": [0.11, 0.96], "label": "red back arrow closes cookbook"},
+    {"id": "appetizer", "to": "airfield_recipes_appetizer", "tap": [0.27, 0.189], "label": "Appetizer tab"},
+    {"id": "main", "to": "airfield_recipes_main", "tap": [0.5, 0.189], "label": "Main Dish tab"},
+    {"id": "scroll", "to": "airfield_recipes_dessert", "swipe": [0.527, 0.588, 0.527, 0.303], "label": "scroll the dessert list through the gap between cards", "precondition": "fresh capture shows Dessert tab and swipe path clear of recipe selection"},
+    {"id": "make", "to": "airfield_recipes_dessert", "label": "select or make a recipe", "forbidden": true, "reason": "recipe preparation is a user action"}
+   ]
+  },
+  "airfield_boarding_status": {
+   "name": "Airfield: Boarding Status",
+   "recognise": "Boarding Status title and airship with left and right arrows",
+   "source": "seen on a real capture 2026-10-26",
+   "moves": [
+    {"id": "back", "to": "airfield", "tap": [0.11, 0.96], "label": "red back arrow"},
+    {"id": "next", "to": "airfield_boarding_status", "tap": [0.923, 0.463], "label": "next airship"},
+    {"id": "previous", "to": "airfield_boarding_status", "tap": [0.073, 0.463], "label": "previous airship"},
+    {"id": "my_location", "to": "airfield_boarding_status", "tap": [0.904, 0.968], "label": "My Location changes the airship currently displayed"}
+   ]
+  },
+  "guild_request": {
+   "name": "Guild: Request",
+   "recognise": "Guild Request title, reward milestones and six WANTED posters",
+   "source": "seen on a real capture 2026-10-26",
+   "moves": [
+    {"id": "back", "to": "guild", "tap": [0.11, 0.96], "label": "red back arrow"},
+    {"id": "wanted", "to": "guild_request", "area": [0.11, 0.47, 0.9, 0.81], "label": "WANTED posters", "forbidden": true, "reason": "may start a fight or change Guild request"},
+    {"id": "reward", "to": "guild_request", "area": [0.13, 0.2, 0.94, 0.32], "label": "Guild reward milestones", "forbidden": true, "reason": "claims a reward"}
+   ]
+  },
+  "guild_info_basic": {
+   "name": "Guild Info: Basic Info",
+   "recognise": "Guild Info modal, guild emblem, membership, Notice and Divine Blessing",
+   "source": "seen on a real capture 2026-10-26",
+   "moves": [
+    {"id": "close", "to": "guild", "tap": [0.5, 0.916], "label": "red X below modal"},
+    {"id": "members", "to": "guild_info_members", "tap": [0.695, 0.845], "label": "Guild Member tab"}
+   ]
+  },
+  "guild_info_members": {
+   "name": "Guild Info: Guild Member",
+   "recognise": "Guild Info modal with scrollable member list and Basic Info/Guild Member tabs",
+   "source": "seen on a real capture 2026-10-26",
+   "moves": [
+    {"id": "close", "to": "guild", "tap": [0.5, 0.916], "label": "red X below modal"},
+    {"id": "basic", "to": "guild_info_basic", "tap": [0.3, 0.845], "label": "Basic Info tab"},
+    {"id": "scroll", "to": "guild_info_members", "swipe": [0.498, 0.757, 0.496, 0.436], "label": "scroll member list down", "precondition": "fresh capture shows Guild Member list; swipe stays inside list and away from bottom tabs"}
    ]
   },
   "battle_settings": {
@@ -2659,8 +2935,9 @@
     {
      "id": "close",
      "to": "black_orb",
-     "key": "BACK",
-     "label": "Android Back closes the card (to check)"
+     "tap": [0.104, 0.43],
+     "label": "tap outside the card on the Black Orb title; Android Back opens Exit game instead",
+     "source": "seen on a real capture 2026-10-26"
     },
     {
      "id": "awaken",

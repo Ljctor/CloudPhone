@@ -186,6 +186,12 @@ for part in 02-wireguard-server 03-android-emulator 04-cloud-phone-app 05-plugin
 done
 # Plugins: every plugin directory as it is.
 cp -R "$ROOT"/05-plugins/*/ "$STAGE/05-plugins/"
+# Live game captures are private runtime data, kept in the plugin data
+# directory. Never bundle a local scan archive into a distributable release.
+rm -rf "$STAGE/05-plugins/slayer-legend/screenshots"
+while IFS= read -r -d '' local_file; do
+  rm -f "$STAGE/$local_file"
+done < <(git -C "$ROOT" ls-files --others --exclude-standard -z -- 05-plugins)
 mkdir -p "$STAGE/04-cloud-phone-app/dist/wheels"
 cp -R "$UPSTREAM/js/example/dist" "$STAGE/04-cloud-phone-app/dist/web"
 install -m 644 "$wheel" "$STAGE/04-cloud-phone-app/dist/wheels/"

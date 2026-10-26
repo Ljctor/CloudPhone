@@ -42,7 +42,7 @@ export default function counters(api, { enabled = () => true } = {}) {
         type: 'number', key: 'emeraldCount', label: 'Nombre affiché (vide : après la virgule)', placeholder: '86',
         visible: () => modeOf(api, COUNTERS.emerald) === 'rewrite',
       },
-      { type: 'section', key: 'diamond', label: 'Diamants', folded: true },
+      { type: 'section', key: 'diamond', label: 'Diamants', folded: true, icon: RESOURCE_ICONS.diamond },
       {
         type: 'choice', key: 'diamondMode', label: 'Compteur de diamants',
         choices: [

@@ -117,6 +117,15 @@ FULL_DIGITS_CALIBRATED = False
 SEPARATORS = re.compile("[,. \u00a0\u202f]")
 
 
+def normalize_text(text):
+    """Drop redundant integer zeros in a read counter, but keep 0.x.
+
+    This changes only the displayed OCR text; parsing and the full-digit
+    calibration gate still use the original reading.
+    """
+    return re.sub(r"^0+(?=\d)", "", text)
+
+
 def parse(text):
     """{value, step, full} of a counter's text: abbreviated, "94.6C"
     (94.6 x 1000^3, step 0.1C: one unit of its last digit), or in full
@@ -294,7 +303,7 @@ def _read_group(shot, ink, group, x0, y0, top, bottom, line, shade=1.0):
     if parsed is None or parsed["full"] and not FULL_DIGITS_CALIBRATED:
         return None
     box = [(x0 + group[0][0]) / width, (y0 + top) / height, (x0 + group[-1][1] + 1) / width, (y0 + bottom + 1) / height]
-    return {"text": text, **parsed, "box": box}
+    return {"text": normalize_text(text), **parsed, "box": box}
 
 
 def rate_text(per_second):

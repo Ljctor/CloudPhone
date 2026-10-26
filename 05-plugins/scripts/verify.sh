@@ -13,6 +13,8 @@ expected = {"diamond", "gold", "emerald", "cubes", "crystals", "dice",
 rows = state["resources"]
 assert {row["field"] for row in rows} == expected
 assert len(rows) == len(expected)
+fields = [row["field"] for row in rows]
+assert fields.index("soul_white") == fields.index("soul_red") + 1
 assert all("seen" in row and "verified" in row for row in rows)
 assert all(screen.get("path") for screen in state["screens"] if screen["screen"] != "battle")
 assert next(screen for screen in state["screens"] if screen["screen"] == "battle")["path"] == []

@@ -56,6 +56,7 @@ const ENGLISH = {
   'Jeu libre': 'Free play',
   'Agent mode': 'Agent mode',
   'Affichage': 'Display',
+  'Analyse': 'Analysis',
   'Débits': 'Rates',
   'Trois compteurs/s': 'Three counters/s',
   'Gold/s': 'Gold/s',

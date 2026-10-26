@@ -184,13 +184,14 @@ function pluginOption(context, plugin, option, index) {
         style={{ ...styles.infoRow, alignItems: 'center', minWidth: 0, whiteSpace: 'nowrap' }}>
         <span style={{ ...styles.infoLabel, display: 'inline-flex', alignItems: 'center', minWidth: 0,
           overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          <span style={{ display: 'inline-flex', width: 16, flex: '0 0 16px', alignItems: 'center' }}>
-            {option.icon && <img src={resolved(option.icon)} alt="" style={{ width: 12, height: 12,
-              objectFit: 'contain', imageRendering: 'pixelated' }} />}
-          </span>
           {tr(option.label)}
         </span>
-        <span style={{ flexShrink: 0, color: '#fff', fontVariantNumeric: 'tabular-nums' }}>{value}</span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0,
+          color: '#fff', fontVariantNumeric: 'tabular-nums' }}>
+          {option.icon && <img src={resolved(option.icon)} alt="" style={{ width: 12, height: 12,
+            objectFit: 'contain', imageRendering: 'pixelated' }} />}
+          {value}
+        </span>
       </div>
     );
     return infoRow(tr(option.label), buttons.length ? (
