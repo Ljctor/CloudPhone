@@ -8,7 +8,8 @@ const catalogue = JSON.parse(await readFile(new URL('./resources.json', import.m
 assert.equal(catalogue.length, 21);
 assert.equal(catalogue.findIndex((row) => row.field === 'soul_white'),
   catalogue.findIndex((row) => row.field === 'soul_red') + 1);
-for (const field of ['gold', 'emerald', 'soul_green', 'soul_blue', 'soul_red', 'soul_white']) {
+for (const field of ['gold', 'emerald', 'soul_green', 'soul_blue', 'soul_red', 'soul_white',
+  'feather_white', 'dragon_power', 'dragon_spark']) {
   assert.ok(RESOURCE_ICONS[field]?.startsWith('data:image/'), field);
 }
 assert.ok(RESOURCE_ICONS.diamond?.startsWith('data:image/png;base64,'), 'diamond icon comes from battle capture');

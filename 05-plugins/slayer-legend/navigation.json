@@ -1882,12 +1882,12 @@
     },
     {
      "id": "story",
-     "to": "unknown",
+     "to": "adventure_story_main",
      "tap": [
       0.12,
       0.851
      ],
-     "label": "Story (not explored)"
+     "label": "Story"
     }
    ]
   },
@@ -1901,10 +1901,12 @@
      "to": "adventure_map",
      "tap": [
       0.5,
-      0.94
+      0.944
      ],
      "label": "red X"
     },
+    {"id": "quest_i", "to": "adventure_quest", "tap": [0.18, 0.64], "label": "Quest List I; updates displayed WANTED quest only"},
+    {"id": "quest_x", "to": "adventure_quest", "tap": [0.82, 0.74], "label": "Quest List X; updates displayed WANTED quest only"},
     {
      "id": "start",
      "to": "unknown",
@@ -1916,6 +1918,49 @@
      "forbidden": true,
      "reason": "spends feathers; user's choice"
     }
+   ]
+  },
+  "adventure_story_main": {
+   "name": "Slayer Story: Main",
+   "recognise": "SLAYER STORY title, Main tab selected, Easy/Normal/Hard banners",
+   "source": "seen on a real capture 2026-10-26",
+   "moves": [
+    {"id": "close", "to": "adventure_map", "tap": [0.081, 0.944], "label": "red X at lower left"},
+    {"id": "sub", "to": "adventure_story_sub", "tap": [0.733, 0.267], "label": "Sub tab"},
+    {"id": "easy", "to": "adventure_story_easy", "tap": [0.504, 0.387], "label": "Easy episode list"},
+    {"id": "normal", "to": "unknown", "tap": [0.5, 0.5], "label": "Normal episode list (not yet captured)"},
+    {"id": "hard", "to": "unknown", "tap": [0.5, 0.615], "label": "Hard episode list (not yet captured)"}
+   ]
+  },
+  "adventure_story_easy": {
+   "name": "Slayer Story: Main Easy episodes",
+   "recognise": "SLAYER STORY Easy subtitle, list of Episode rows with COMPLETE",
+   "source": "seen on a real capture 2026-10-26",
+   "moves": [
+    {"id": "back", "to": "adventure_story_main", "tap": [0.081, 0.944], "label": "red back arrow"},
+    {"id": "scroll", "to": "adventure_story_easy", "swipe": [0.498, 0.823, 0.496, 0.382], "label": "scroll Easy episode rows through the centre", "precondition": "fresh capture shows Easy episode list and swipe does not open an episode"},
+    {"id": "start", "to": "adventure_story_easy", "label": "start an episode", "forbidden": true, "reason": "would change game progression; user choice only"}
+   ]
+  },
+  "adventure_story_sub": {
+   "name": "Slayer Story: Sub",
+   "recognise": "SLAYER STORY title, Sub tab selected, Ellie/Zeke/Milro banners",
+   "source": "seen on a real capture 2026-10-26",
+   "moves": [
+    {"id": "close", "to": "adventure_map", "tap": [0.081, 0.944], "label": "red X at lower left"},
+    {"id": "main", "to": "adventure_story_main", "tap": [0.26, 0.267], "label": "Main tab"},
+    {"id": "ellie", "to": "adventure_story_ellie", "tap": [0.5, 0.383], "label": "Ellie episode list"},
+    {"id": "zeke", "to": "unknown", "tap": [0.5, 0.5], "label": "Zeke episode list (not yet captured)"},
+    {"id": "milro", "to": "unknown", "tap": [0.5, 0.615], "label": "Milro episode list (not yet captured)"}
+   ]
+  },
+  "adventure_story_ellie": {
+   "name": "Slayer Story: Ellie episodes",
+   "recognise": "SLAYER STORY Ellie subtitle, Episode 1 Ellie's Memory",
+   "source": "seen on a real capture 2026-10-26",
+   "moves": [
+    {"id": "back", "to": "adventure_story_sub", "tap": [0.081, 0.944], "label": "red back arrow"},
+    {"id": "start", "to": "adventure_story_ellie", "label": "start an episode", "forbidden": true, "reason": "would change game progression; user choice only"}
    ]
   },
   "dungeon_map": {
@@ -2016,49 +2061,97 @@
     },
     {
      "id": "shelter",
-     "to": "unknown",
+     "to": "dungeon_shelter",
      "tap": [
       0.83,
       0.42
      ],
-     "label": "Shelter of Sleeping flame (not explored)"
+     "label": "Shelter of Sleeping flame"
     },
     {
      "id": "rift",
-     "to": "unknown",
+     "to": "dungeon_rift",
      "tap": [
       0.66,
       0.585
      ],
-     "label": "Dimensional Rift (not explored)"
+     "label": "Dimensional Rift"
     },
     {
      "id": "forest",
-     "to": "unknown",
+     "to": "dungeon_forest",
      "tap": [
       0.69,
       0.718
      ],
-     "label": "Forest of Circulation (not explored)"
+     "label": "Forest of Circulation"
     },
     {
      "id": "kingdom",
-     "to": "unknown",
+     "to": "dungeon_kingdom",
      "tap": [
       0.36,
       0.76
      ],
-     "label": "Kingdom of Aslan (not explored)"
+     "label": "Kingdom of Aslan"
     },
     {
      "id": "training",
-     "to": "unknown",
+     "to": "dungeon_training",
      "tap": [
       0.76,
       0.86
      ],
-     "label": "Training Cave (not explored)"
+     "label": "Training Cave"
     }
+   ]
+  },
+  "dungeon_shelter": {
+   "name": "Shelter of Sleeping flame",
+   "recognise": "Shelter title, Dragon Power and Dragon Spark choice",
+   "source": "seen on a real capture 2026-10-26",
+   "moves": [
+    {"id": "back", "to": "dungeon_map", "tap": [0.11, 0.96], "label": "red back arrow"},
+    {"id": "dragon_power", "to": "dungeon_shelter", "tap": [0.344, 0.49], "label": "Dragon Power choice", "forbidden": true, "reason": "may spend entry resources or change dungeon choice"},
+    {"id": "dragon_spark", "to": "dungeon_shelter", "tap": [0.66, 0.49], "label": "Dragon Spark choice", "forbidden": true, "reason": "may spend entry resources or change dungeon choice"}
+   ]
+  },
+  "dungeon_rift": {
+   "name": "Dimensional Rift",
+   "recognise": "purple Dimensional Rift screen, Devourtionist and difficulty number",
+   "source": "seen on a real capture 2026-10-26",
+   "moves": [
+    {"id": "back", "to": "dungeon_map", "tap": [0.11, 0.96], "label": "red back arrow"},
+    {"id": "enter", "to": "dungeon_rift", "tap": [0.5, 0.865], "label": "Enter", "forbidden": true, "reason": "spends feathers"}
+   ]
+  },
+  "dungeon_forest": {
+   "name": "Forest of Circulation",
+   "recognise": "dark cyan Forest of Circulation screen with numbered difficulty rows",
+   "source": "seen on a real capture 2026-10-26",
+   "moves": [
+    {"id": "back", "to": "dungeon_map", "tap": [0.11, 0.96], "label": "red back arrow"},
+    {"id": "scroll", "to": "dungeon_forest", "swipe": [0.5, 0.822, 0.5, 0.466], "label": "scroll difficulty rows down to 160–165", "precondition": "fresh capture shows Forest of Circulation list and swipe starts between row controls"},
+    {"id": "floor", "to": "dungeon_forest", "label": "choose a floor", "forbidden": true, "reason": "may spend feathers or change dungeon state"}
+   ]
+  },
+  "dungeon_kingdom": {
+   "name": "Kingdom of Aslan",
+   "recognise": "Select Square modal over Dungeon map with squares 1–20",
+   "source": "seen on a real capture 2026-10-26",
+   "moves": [
+    {"id": "close", "to": "dungeon_map", "tap": [0.902, 0.397], "label": "white X at modal upper right"},
+    {"id": "square", "to": "dungeon_kingdom", "area": [0.05, 0.42, 0.95, 0.62], "label": "Select Square 1–20", "forbidden": true, "reason": "changes dungeon selection"}
+   ]
+  },
+  "dungeon_training": {
+   "name": "Training Cave",
+   "recognise": "Training Cave screen with numbered Areas in a vertical list",
+   "source": "seen on a real capture 2026-10-26",
+   "moves": [
+    {"id": "back", "to": "dungeon_map", "tap": [0.11, 0.96], "label": "red back arrow"},
+    {"id": "scroll", "to": "dungeon_training", "swipe": [0.5, 0.823, 0.5, 0.473], "label": "scroll area rows down to 845–850", "precondition": "fresh capture shows Training Cave list and swipe path stays inside rows"},
+    {"id": "area", "to": "dungeon_training", "label": "select an Area", "forbidden": true, "reason": "may start a fight or change dungeon state"}
    ]
   },
   "raid_camp": {
@@ -2131,8 +2224,9 @@
   "mine_list": {
    "name": "Closed Mine: floor list",
    "recognise": "mine.floor_list(): 'Closed Mine' title, yellow '<n> Floor' rows",
-   "source": "plugin code (mine.py)",
+   "source": "plugin code (mine.py), verified on a real capture 2026-10-26",
    "moves": [
+    {"id": "back", "to": "dungeon_map", "tap": [0.11, 0.96], "label": "red back arrow"},
     {
      "id": "floor",
      "to": "mine_area",
@@ -2162,6 +2256,7 @@
    "recognise": "mine.area_popup(): five grey Area buttons",
    "source": "plugin code (mine.py)",
    "moves": [
+    {"id": "close", "to": "mine_list", "tap": [0.881, 0.761], "label": "small X on Area modal"},
     {
      "id": "area",
      "to": "mine_feathers",
@@ -2180,6 +2275,7 @@
    "recognise": "mine.feather_popup(): three orange feather buttons",
    "source": "plugin code (mine.py)",
    "moves": [
+    {"id": "close", "to": "mine_area", "tap": [0.921, 0.628], "label": "tap outside feather choice on the right"},
     {
      "id": "feathers",
      "to": "mine_fight",
