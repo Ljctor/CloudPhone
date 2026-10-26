@@ -21,7 +21,10 @@ assert next(screen for screen in state["screens"] if screen["screen"] == "battle
 assert not {"top_menu", "top_ranking", "top_settings", "top_mail"} & {screen["screen"] for screen in state["screens"]}
 assert not any(row["field"] in expected for screen in state["screens"] for row in screen["fields"])
 screens = {screen["screen"]: screen for screen in state["screens"]}
-assert next(row for row in screens["battle"]["fields"] if row["field"] == "highest")["shown"] == "lower_bound"
+battle = {row["field"]: row for row in screens["battle"]["fields"]}
+assert battle["highest"]["shown"] == "lower_bound"
+if isinstance(battle["stage"]["value"], int) and isinstance(battle["highest"]["value"], int):
+    assert battle["highest"]["value"] >= battle["stage"]["value"]
 engraving = next(row for row in screens["soul_weapon_engraving"]["fields"] if row["field"] == "engraving")
 assert engraving["value"] is None or engraving["value"].get("weapon")
 print("Resource catalogue and game navigation paths: OK")

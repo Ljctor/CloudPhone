@@ -133,6 +133,17 @@ class Mapping(unittest.TestCase):
         self.assertEqual(rules.readers_for(unknown, "other"), [])
         self.assertNotIn("progress", rules.readers_for(unknown, "menu"))
 
+    def test_selectable_region_rows_do_not_raise_the_highest_cleared_stage(self):
+        selectable = types.SimpleNamespace(
+            regions=lambda _: ["Land of Prophecy"],
+            view=lambda *_: {"region": 0, "rows": [{"stage": 973, "move": 0.5}]})
+        readers = game.reader_table(screens, load("stage"), selectable, load("gold"),
+                                    load("soul_counters"), load("soul_weapon"),
+                                    load("engraving_screen"), load("battle_controls"),
+                                    load("features/screen_rules"), TABLE, WEAPONS)
+        self.assertEqual(readers["region"](None, None, None, None), {"region": "Land of Prophecy"})
+        self.assertEqual(rules.READERS["region"]["fields"], ("region",))
+
 
 class Rules(unittest.TestCase):
     def test_the_highest_stage_only_goes_up_and_a_stage_raises_it(self):

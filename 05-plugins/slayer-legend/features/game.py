@@ -92,9 +92,9 @@ def reader_table(screens, stage, select, counter, souls, weapon, engraving, cont
 
     def region(shot, base, overlays, plain):
         view = select.view(shot, names)
-        opened = [row["stage"] for row in view["rows"] if row.get("move") is not None and row.get("stage")]
-        return {"region": names[view["region"]] if view["region"] is not None else None,
-                "highest": max(opened) if opened else None}
+        # A Move button means selectable, not cleared. Only an observed
+        # battle stage can raise the highest-stage lower bound.
+        return {"region": names[view["region"]] if view["region"] is not None else None}
 
     def engraving_grid(shot, base, overlays, plain):
         selected = engraving.weapon(shot, weapon_names, weapon.CARD_FONT) if engraving else None
