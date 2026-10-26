@@ -106,6 +106,13 @@ class Readings(unittest.TestCase):
         for name in ("battle_name_920", "battle_name_920_b"):
             self.assertEqual(select.battle_stage(screen(name), NAMES), 920, name)
 
+    def test_battle_stage_name_at_larger_capture_sizes(self):
+        for name in ("battle_name_970_720", "battle_name_970_960"):
+            shot = screen(name)
+            self.assertEqual(select.battle_stage(shot, NAMES), 970, name)
+            # A relaxed match must still reject a name when two regions fit.
+            self.assertIsNone(select.battle_stage(shot, NAMES + ["Land of Prophecy"]), name)
+
     def test_unfolded_controls(self):
         self.assertEqual(controls.badge(screen("controls_iii_auto_on")), "III")
         self.assertEqual(controls.badge(screen("controls_iv")), "IV")

@@ -70,9 +70,25 @@ class SoulsRow(unittest.TestCase):
         self.assertIsNone(souls.read(fixtures.screen("gold_parked")))
 
     def test_full_digits_gated(self):
-        # Until a capture of them is a fixture (test_gates.py: souls_full).
+        # The ordinary gold crop is too compressed for exact OCR. The
+        # high-resolution crop can be read; souls still lack a fixture.
         self.assertFalse(souls.FULL_DIGITS_CALIBRATED)
         self.assertFalse(gold.FULL_DIGITS_CALIBRATED)
+        self.assertTrue(gold.HIGH_RES_FULL_DIGITS_CALIBRATED)
+
+    def test_gold_full_digits_at_high_resolution(self):
+        self.assertIsNone(gold.read(fixtures.screen("gold_full")))
+        for name, text, value in (
+            ("gold_full_mid", "64,326,257,433,174,400,530", 64_326_257_433_174_400_530),
+            ("gold_full_hi", "56,387,601,421,264,163,726", 56_387_601_421_264_163_726),
+        ):
+            with self.subTest(name=name):
+                reading = gold.read(fixtures.screen(name))
+                self.assertIsNotNone(reading)
+                self.assertEqual(reading["text"], text)
+                self.assertEqual(reading["value"], value)
+                self.assertEqual(reading["step"], 1)
+                self.assertTrue(reading["full"])
 
     def test_the_glyphs_drawn_are_listed(self):
         # The cut ones come from the fixtures; the drawn ones wait for a
@@ -136,6 +152,25 @@ class Rates(unittest.TestCase):
         self.assertEqual(gold.parse(str(balance + 1234))["value"], balance + 1234)
         rate, _ = rules.rate([(0, balance), (10, balance + 12340), (20, balance + 24680)], 20, 60)
         self.assertAlmostEqual(rate, 1234)
+
+    def test_changing_full_digits_count_without_repeating(self):
+        balance = 10 ** 30
+        window = rules.empty()
+        for index in range(7):
+            text = str(balance + index * 12_340)
+            window = rules.counted(window, {"text": text, **gold.parse(text)}, index * 10)
+        self.assertEqual(len(window["samples"]), 7)
+        rate, _ = self.rate(window, 60)
+        self.assertAlmostEqual(rate, 1234)
+
+    def test_full_digits_start_fresh_after_abbreviated_counter(self):
+        window = rules.empty()
+        old = {"text": "117F", **gold.parse("117F")}
+        window = rules.counted(window, old, 0)
+        window = rules.counted(window, old, 10)
+        exact = {"text": "117513686517541891237", **gold.parse("117513686517541891237")}
+        window = rules.counted(window, exact, 20)
+        self.assertEqual(window["samples"], [(20, exact["value"])])
 
     def test_spending_souls_is_left_out(self):
         texts = ["10.0C", "10.1C", "10.2C", "2.00C", "2.10C", "2.20C"]

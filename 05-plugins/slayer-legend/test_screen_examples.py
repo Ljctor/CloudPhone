@@ -28,6 +28,10 @@ class ScreenExamples(unittest.TestCase):
             (code / "screen_snapshots.json").write_text(json.dumps({"forest": [
                 {"label": "Floor", "value": "162"}]}))
             (code / "screen_snapshots_world.json").write_text("{}")
+            (code / "screen_inventory.json").write_text(json.dumps({"forest": {
+                "kind": "weapons", "rows": [{"appearance": "blue", "grades": [4],
+                "enhancements": [200], "counts": [3], "source": "forest.png"}]},
+                "other": {"kind": "classes", "status": "never_read"}}))
             for name in ("forest", "forest_bottom", "orphan"):
                 (shots / (name + ".png")).write_bytes(b"\x89PNG\r\n\x1a\n")
             (shots / "manifest.json").write_text(json.dumps({name: {
@@ -40,9 +44,12 @@ class ScreenExamples(unittest.TestCase):
                              ["Capture principale", "Défilement 1"])
             self.assertEqual(forest["details"], [
                 {"label": "Floor", "value": "162"},
+                {"label": "Blue", "value": "Grade 4: +200, 3/5"},
                 {"label": "Défilement observé", "value": "156 → 165"}])
+            self.assertEqual(forest["inventory"]["kind"], "weapons")
             self.assertTrue(forest["observed"])
             self.assertEqual(other["examples"], [])
+            self.assertEqual(other["details"], [{"label": "Classes", "value": "never read"}])
             self.assertFalse(other["observed"])
 
 

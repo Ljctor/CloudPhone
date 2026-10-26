@@ -3,8 +3,9 @@ counter count, and the rate over the window. Pure: the window and a
 reading go in, the new window comes out (nothing is changed in place).
 
 The window is {samples: [(time, value)], pending, text, step, offset,
-place, number, odd}: samples are the values that count (a value counts
-once two readings in a row agree, pending is the last reading), all on
+place, number, odd}: samples are the values that count (an abbreviated
+value counts once two readings in a row agree; a full-digit value counts
+on each reading), all on
 the same stage; step is the last reading's resolution (one unit of its
 last digit, gold.parse), offset what was spent and left out (souls);
 place is the battle screen's stage name line (its ink) where they were
@@ -112,14 +113,21 @@ def where(window, kind, here):
 
 
 def counted(window, reading, now, long=WINDOW, spent="restart"):
-    """A reading on the window's stage: its value counts when the reading
-    before agreed. A drop is spending: "restart" starts the samples again
+    """A reading on the window's stage: a full-digit value counts at each
+    reading, since it can change between every scan; abbreviated values
+    count only when the previous reading agreed. A drop is spending:
+    "restart" starts the samples again
     (gold), "skip" leaves it out (souls: the samples go on from the last
     value, the drop kept in offset). long: the abbreviated window
     (window_for)."""
-    if window["pending"] == reading["value"]:
+    full = reading.get("full", False)
+    if full or window["pending"] == reading["value"]:
         samples = list(window["samples"])
         offset = window.get("offset", 0)
+        # The first exact value must establish a fresh baseline. Its
+        # difference from a rounded abbreviated value is not earnings.
+        if full and window["step"] is not None and window["step"] > 1:
+            samples, offset = [], 0
         value = reading["value"] + offset
         if samples and value < samples[-1][1]:
             if spent == "skip":

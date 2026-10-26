@@ -22,6 +22,9 @@ def examples(directory, data_directory, prefix):
     snapshots = {}
     for filename in ("screen_snapshots.json", "screen_snapshots_world.json"):
         snapshots.update(json.loads((root / filename).read_text(encoding="utf-8")))
+    inventory_path = root / "screen_inventory.json"
+    inventory = (json.loads(inventory_path.read_text(encoding="utf-8"))
+                 if inventory_path.exists() else {})
 
     def name_of(path):
         name = Path(path).stem
@@ -62,13 +65,34 @@ def examples(directory, data_directory, prefix):
             available.append({"url": f"{prefix}/examples/{name}", "captured": entry.get("captured"),
                               "label": label})
         details = list(snapshots.get(screen, []))
+        observed_inventory = inventory.get(screen)
+        if observed_inventory:
+            if observed_inventory.get("rows"):
+                for row in observed_inventory["rows"]:
+                    entries_text = [f"Grade {grade}: +{enhancement}, {count}/5"
+                                    for grade, enhancement, count in zip(
+                                        row["grades"], row["enhancements"], row["counts"])]
+                    details.append({"label": row["appearance"].capitalize(),
+                                    "value": " · ".join(entries_text)})
+                equipped = observed_inventory.get("equipped")
+                if equipped:
+                    details.append({"label": "Équipé", "value":
+                                    f"{equipped['appearance']} +{equipped['enhancement']} · "
+                                    f"{equipped['count']}/{equipped['capacity']}"})
+            elif observed_inventory.get("ranks"):
+                details.append({"label": "Promotions observées", "value":
+                                " · ".join(f"{rank['name']} ({rank['status']})"
+                                           for rank in observed_inventory["ranks"])})
+            elif observed_inventory.get("status") == "never_read":
+                details.append({"label": "Classes", "value": "never read"})
         for section in node.get("scroll", []):
             if section.get("measured") and section.get("captures"):
                 start, end = section.get("start"), section.get("end")
                 if start and end:
                     details.append({"label": "Défilement observé", "value": f"{start} → {end}"})
         return {"example": available[0] if available else None, "examples": available,
-                "details": details, "observed": bool(available)}
+                "details": details, "inventory": observed_inventory,
+                "observed": bool(available)}
 
     def enrich(answer):
         entries = manifest()

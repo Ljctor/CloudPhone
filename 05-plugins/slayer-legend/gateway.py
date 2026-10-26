@@ -73,7 +73,8 @@ def setup(context):
     screen_rules = feature("screen_rules")
     # The scan: every capture read once, the game's state for the features.
     game_feature = feature("game")
-    examples = feature("screen_examples").examples(context.directory, context.data_dir, context.prefix)
+    examples = feature("screen_examples").examples(
+        context.directory, context.data_dir, getattr(context, "prefix", "/api/v1/plugins/slayer-legend"))
     game = game_feature.game(ports, screens, feature("game_rules"), game_feature.reader_table(
         screens, stage, module("stage_select"), module("gold"), module("soul_counters"), module("soul_weapon"),
         module("engraving_screen"), module("battle_controls"), screen_rules, table, engraving["api"]["table"]),

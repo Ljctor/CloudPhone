@@ -35,3 +35,15 @@ engraving = next(row for row in screens["soul_weapon_engraving"]["fields"] if ro
 assert engraving["value"] is None or engraving["value"].get("weapon")
 print("Resource catalogue and game navigation paths: OK")
 '
+curl -fsS "${base%/}/api/v1/plugins/slayer-legend/gold" | python3 -c '
+import json, sys
+state = json.load(sys.stdin)
+assert {"text", "value", "rate", "rate_text", "span", "window", "read", "box", "souls"} <= state.keys()
+assert state["window"] in (60, 300)
+if state["rate_text"] is not None:
+    assert "~" not in state["rate_text"]
+if state["value"] is not None and state["text"] and state["text"].isdigit() and len(state["text"]) > 3:
+    assert isinstance(state["value"], int)
+    assert state["window"] == 60
+print("Gold rate endpoint: OK")
+'

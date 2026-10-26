@@ -179,6 +179,14 @@ def battle_stage(shot, names, shade=1.0):
         words = text.split(" ")
         numeral = font.roman(words[-1]) if len(words) >= 2 else None
         region = which(" ".join(words[:-1]), names) if numeral else None
+        if region is None and numeral and shot[0] >= 720:
+            # At larger capture sizes the game uses a different rasterisation
+            # of this tiny heading. Keep the looser match local to the battle
+            # heading; the Select Region popup still requires its usual read.
+            known = [name for name in names if name]
+            matched = font.close(" ".join(words[:-1]), known, most=0.32,
+                                 margin=REGION_MARGIN)
+            region = names.index(matched) if matched else None
         if region is not None and 1 <= numeral <= PER_REGION:
             return region * PER_REGION + numeral
     return None

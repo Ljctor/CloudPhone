@@ -110,9 +110,11 @@ LETTERS = {
           ".##.....", "##......", "##......", "########", "########", "########"],
 }
 
-# Full digits read only once a real capture of them is a fixture
-# (test_gates.py: fixtures/gold_full); until then such a reading is None.
+# The ordinary 480x1040 capture compresses a long balance to roughly 7 px
+# high, merging neighbouring glyphs. Keep that path gated. At 720x1560 or
+# above, the digits can be read separately.
 FULL_DIGITS_CALIBRATED = False
+HIGH_RES_FULL_DIGITS_CALIBRATED = True
 # Separators between groups of 3 in full digits.
 SEPARATORS = re.compile("[,. \u00a0\u202f]")
 
@@ -240,7 +242,7 @@ def _read(shot, shade):
     # Pure white only: the mid grey edges join neighbouring glyphs, so
     # glyphs are cut apart on this, and read on all the ink.
     core = _ink(shot, x0, y0, x1, y1, 245 * shade)
-    line = TEXT_HEIGHT * height
+    line = 15 if width >= 900 else 11 if width >= 700 else TEXT_HEIGHT * height
     counts = [sum(row) for row in ink]
     y = 0
     while y < len(ink):
@@ -288,21 +290,26 @@ def _read_group(shot, ink, group, x0, y0, top, bottom, line, shade=1.0):
             coin += _coin(pixels[i], pixels[i + 1], pixels[i + 2], shade)
     if coin < 0.6 * line * line * 0.3:
         return None
+    full_calibrated = FULL_DIGITS_CALIBRATED or (width >= 700 and HIGH_RES_FULL_DIGITS_CALIBRATED)
+    full_group = full_calibrated and (len(group) > 6 or any(g[3] - g[2] + 1 < 0.5 * line for g in group))
     text = ""
     for k, glyph in enumerate(group):
         if glyph[3] - glyph[2] + 1 < 0.5 * line:
             text += "."
             continue
         last = k == len(group) - 1
-        shapes = ({**LETTERS, **DIGITS} if FULL_DIGITS_CALIBRATED else LETTERS) if last else DIGITS
+        shapes = DIGITS if last and full_group else LETTERS if last else DIGITS
         name, distance = stage._best(ink, glyph, shapes)
-        if distance > 0.2:
+        # Narrow 1 and 4 are slightly distorted by the game's high-res font.
+        if distance > (0.24 if width >= 700 else 0.2):
             return None
         text += name
     parsed = parse(text)
-    if parsed is None or parsed["full"] and not FULL_DIGITS_CALIBRATED:
+    if parsed is None or parsed["full"] and not full_calibrated:
         return None
     box = [(x0 + group[0][0]) / width, (y0 + top) / height, (x0 + group[-1][1] + 1) / width, (y0 + bottom + 1) / height]
+    if parsed["full"] and width >= 700:
+        text = text.replace(".", ",")
     return {"text": normalize_text(text), **parsed, "box": box}
 
 
