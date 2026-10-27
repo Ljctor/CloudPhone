@@ -16,6 +16,8 @@ assert scan is None or {"size", "at", "screen", "overlays", "expected", "ran"} <
 if scan is not None:
     assert len(scan["size"]) == 2 and all(size > 0 for size in scan["size"])
     assert set(scan["ran"]) <= set(scan["expected"])
+    if scan["screen"] == "battle":
+        assert "cubes" in scan["expected"]
 assert {row["field"] for row in rows} == expected
 cube = next(row for row in rows if row["field"] == "cubes")
 assert cube["pending"] is False

@@ -41,6 +41,11 @@ class CubeBalance(unittest.TestCase):
         self.assertEqual(cubes.read((width, height, pixels)),
                          {"text": "2,875,027,398", "value": 2875027398})
 
+    def test_middle_bar_distinguishes_eight_from_zero(self):
+        width, height, pixels = captured_counter("cube_balance_720_c")
+        self.assertEqual(cubes.read((width, height, pixels)),
+                         {"text": "2,876,028,358", "value": 2876028358})
+
     def test_unreadable_digit_does_not_produce_a_balance(self):
         width, height, pixels = captured_counter("cube_balance_720_b")
         for y in range(433, 451):

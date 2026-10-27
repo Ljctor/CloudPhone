@@ -62,7 +62,17 @@ def _digit(mask):
         score = difference / (9 * target_width)
         scores.append((score, character))
     scores.sort()
-    if scores[0][0] > 0.17 or scores[1][0] - scores[0][0] < 0.035:
+    if scores[0][0] > 0.17:
+        return None
+    if scores[1][0] - scores[0][0] < 0.035:
+        # Antialiasing sometimes shifts the 8's middle bar by a scanline,
+        # making its template distance nearly equal to 0. Inspect the
+        # interior of that band instead of relaxing the ambiguity limit.
+        if {scores[0][1], scores[1][1]} == {"0", "8"}:
+            middle = range(height // 4, min(height, height * 2 // 3))
+            interior = range(width // 4, width * 3 // 4)
+            if any(sum(mask[y][x] for x in interior) >= max(3, width // 3) for y in middle):
+                return "8"
         return None
     return scores[0][1]
 
