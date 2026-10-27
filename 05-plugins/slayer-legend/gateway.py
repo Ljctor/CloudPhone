@@ -78,7 +78,7 @@ def setup(context):
     game = game_feature.game(ports, screens, feature("game_rules"), game_feature.reader_table(
         screens, stage, module("stage_select"), module("gold"), module("soul_counters"), module("soul_weapon"),
         module("engraving_screen"), module("battle_controls"), screen_rules, table, engraving["api"]["table"],
-        module("cube_balance")),
+        module("cube_balance"), module("top_currencies"), module("equipment_l3")),
         feature("screenshot_archive").archive(ports.data_path("screenshots")), examples["enrich"])
     ports.game = game["api"]
     mine = feature("mine").mine(ports, screens, module("mine"), feature("mine_rules"), timer, values)
@@ -106,8 +106,9 @@ def setup(context):
         feature("lease").lease(ports),
         feature("counters").counters(ports, module("emerald_mask")),
         feature("screen").screen(ports, screens, stage, screen_rules, values, table),
+        feature("navigation_debug").navigation_debug(ports, module("nav"), context.directory),
         launch,
-        feature("trace").trace(ports, screens, module("trace")),
+        feature("trace").trace(ports, screens, module("trace"), feature("screenshot_archive")),
         gold,
         mine,
         farming,

@@ -38,7 +38,8 @@ with open(os.path.join(HERE, "engravings.json"), encoding="utf-8") as f:
     WEAPONS = json.load(f)
 READERS = game.reader_table(screens, load("stage"), load("stage_select"), load("gold"), load("soul_counters"),
                             load("soul_weapon"), load("engraving_screen"), load("battle_controls"),
-                            load("features/screen_rules"), TABLE, WEAPONS)
+                            load("features/screen_rules"), TABLE, WEAPONS, load("cube_balance"),
+                            load("top_currencies"))
 W, H = 480, 1040
 BATTLE = ("battle_emerald", "battle_menu_labels", "battle_mana_bar")
 
@@ -74,6 +75,13 @@ SCREENS = {
 
 
 class Mapping(unittest.TestCase):
+    def test_real_top_bar_resources_are_scanned(self):
+        shot = screen("top_currencies_battle", "battle_menu_labels", "battle_mana_bar")
+        _, readings, ran = game.read_all(screens, rules, READERS, shot)
+        self.assertIn("currencies", ran)
+        self.assertEqual(readings["emerald"], {"text": "276,362", "value": 276362})
+        self.assertEqual(readings["diamond"], {"text": "984", "value": 984})
+
     def test_each_screen_gives_its_fields_and_only_those(self):
         timings = {}
         for case, (names, background, expected) in SCREENS.items():
@@ -174,6 +182,7 @@ class Rules(unittest.TestCase):
                  "preset": {"value": "II", "seen": "late", "source": "?"}}
         facts = rules.fresh(saved, 9.0)
         self.assertEqual(facts, {"stage": {"value": 920, "seen": 5.0, "verified": False, "source": "scan"},
+                                 "emerald": {"value": "12", "seen": 9.0, "verified": False, "source": "scan"},
                                  "preset": {"value": "II", "seen": 9.0, "verified": False, "source": "scan"}})
 
     def test_the_answer_groups_the_fields_by_screen(self):
@@ -183,7 +192,7 @@ class Rules(unittest.TestCase):
         rows = {row["field"]: row for row in battle["fields"]}
         resources = {row['field']: row for row in answer['resources']}
         self.assertEqual((rows["stage"]["value"], rows["highest"]["value"], resources["emerald"]["pending"]),
-                         (920, 920, True))
+                         (920, 920, False))
         self.assertNotIn('gold', rows)
         engraving = next(group for group in answer['screens'] if group['screen'] == 'soul_weapon_engraving')
         self.assertEqual(battle['path'], [])

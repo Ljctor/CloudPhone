@@ -51,7 +51,7 @@ PLACEHOLDER = re.compile(r"\{(\w+)\}")
 
 
 def french(text):
-    if text in DATA:
+    if text in DATA or text.startswith("data:image/"):
         return False
     return bool(ACCENTS.search(text)) or any(w.lower() in FRENCH_WORDS for w in WORD.findall(text))
 

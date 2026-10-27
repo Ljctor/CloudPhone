@@ -58,6 +58,12 @@ SCHEMA = {
         "mine_area": {"label": "Zone de la mine", "shown": "number"},
         "mine_feathers": {"label": "Plumes", "shown": "number", "pending": True},
     }},
+    "equipment_weapon": {"label": "Equipment: Weapon", "fields": {
+        "weapon_l3": {"label": "Armes L3", "shown": "number"},
+    }},
+    "equipment_accessories": {"label": "Equipment: Accessories", "fields": {
+        "accessory_l3": {"label": "Accessoires L3", "shown": "number"},
+    }},
 }
 
 # Resource counters have one home, independent of the screen that reads them.
@@ -109,12 +115,15 @@ READERS = {
     "gold": {"on": [("battle", "*"), ("saver", "*")], "fields": ("gold", "gold_reading", "gold_place"),
              "every": 10},
     "cubes": {"on": [("battle", "*")], "fields": ("cubes",), "every": 10},
+    "currencies": {"on": [("battle", "*")], "fields": ("emerald", "diamond"), "every": 10},
     "saver_stage": {"on": [("saver", "*")], "fields": ("stage",), "every": 0},
     "badge": {"on": [("battle", None), ("battle", "plain")], "fields": ("preset",), "every": 0},
     "battle_settings": {"on": [("battle", "battle_settings")], "fields": ("preset",), "every": 0},
     "souls": {"on": [("battle", "soul_weapon")], "fields": ("souls", "souls_reading"), "every": 10},
     "soul_weapon": {"on": [("battle", "soul_weapon")], "fields": ("soul_weapon_selected", "soul_weapon_equipped"),
                     "every": 10},
+    "equipment_l3": {"on": [("battle", "equipment_weapon")],
+                     "fields": ("weapon_l3", "accessory_l3"), "every": 10},
     "region": {"on": [("battle", "stage_select")], "fields": ("region",), "every": 5},
     "engraving": {"on": [("soul_weapon_engraving", None)], "fields": ("engraving",), "every": 5},
 }
@@ -170,7 +179,7 @@ def fields_of(readers):
 
 # Values that move on their own while the game farms: not the user's
 # changes, and written with the others at most every SAVE_EVERY seconds.
-VOLATILE = ("progress", "gold", "souls")
+VOLATILE = ("progress", "gold", "souls", "weapon_l3", "accessory_l3")
 
 
 def lasting(field):

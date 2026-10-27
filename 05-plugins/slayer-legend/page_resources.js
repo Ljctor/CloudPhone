@@ -1,6 +1,7 @@
 // Only icons cut from real Slayer Legend captures belong here. Unknown
 // icons stay absent until a capture of their actual screen is available.
 import { GOLD, SOULS } from './page_icons.js';
+import { STONE_ICONS } from './page_stone_icons.js';
 
 // Emerald icon, 22x20 pixels, from fixtures/battle_emerald.txt. Its dark
 // battle-bar background is made transparent; the shape is unchanged.
@@ -32,3 +33,4 @@ const CUBES_GAME = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACEAAAAhCAYAAA
 export const RESOURCE_ICONS = { gold: GOLD, emerald: EMERALD_GAME, diamond: DIAMOND_GAME, cubes: CUBES_GAME,
   feather_white: FEATHER_WHITE_GAME, feather_green: FEATHER_GREEN_GAME, feather_purple: FEATHER_PURPLE_GAME, dragon_power: DRAGON_POWER_GAME, dragon_spark: DRAGON_SPARK_GAME };
 for (const [colour, icon] of Object.entries(SOULS)) RESOURCE_ICONS[`soul_${colour}`] = icon;
+for (const [colour, icon] of Object.entries(STONE_ICONS)) RESOURCE_ICONS[`stone_${colour}`] = icon;

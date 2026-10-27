@@ -22,8 +22,8 @@ LEVELS = 16
 # screen. The battle screen moves (monsters, damage numbers): a guess, to
 # tune once there are recorded graphs to look at.
 MATCH = 0.06
-MAX_NODES = 500
-MAX_EDGES = 5000
+MAX_NODES = 2000
+MAX_EDGES = 20000
 # Taps on the same edge closer than this (fraction of the screen, on each
 # axis) are the same button: one edge, counted.
 TAP_MERGE = 0.03

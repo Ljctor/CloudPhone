@@ -22,9 +22,12 @@ if scan is not None:
     assert set(scan["ran"]) <= set(scan["expected"])
     if scan["screen"] == "battle":
         assert "cubes" in scan["expected"]
+        assert "currencies" in scan["expected"]
 assert {row["field"] for row in rows} == expected
 cube = next(row for row in rows if row["field"] == "cubes")
 assert cube["pending"] is False
+assert all(next(row for row in rows if row["field"] == field)["pending"] is False
+           for field in ("emerald", "diamond"))
 assert cube["value"] is None or (
     isinstance(cube["value"], dict)
     and isinstance(cube["value"].get("value"), int)
@@ -63,6 +66,11 @@ for screen_name in ("equipment_weapon", "equipment_accessories"):
     assert len({item["id"] for item in items}) == len(items)
     assert all(item["source"]["capture"] and item["source"]["box"] for item in items)
     assert all(item["displayed_fraction"]["denominator"] > 0 for item in items)
+for screen_name, field in (("equipment_weapon", "weapon_l3"),
+                           ("equipment_accessories", "accessory_l3")):
+    row = next(row for row in screens[screen_name]["fields"] if row["field"] == field)
+    assert row["pending"] is False
+    assert row["value"] is None or isinstance(row["value"], int) and row["value"] >= 0
 assert screens["character_class"]["inventory"]["status"] in ("never_read", "read")
 print("Resource catalogue, equipment inventory and game navigation: OK")
 '
@@ -86,4 +94,43 @@ curl -fsS "${base%/}/plugins/slayer-legend/page_numbers.js" | python3 -c '
 import sys
 assert "export function shortNumber" in sys.stdin.read()
 print("Abbreviated option counter asset: OK")
+'
+curl -fsS "${base%/}/plugins/slayer-legend/page_gold.js" | python3 -c '
+import sys
+script = sys.stdin.read()
+assert "page_cube_font.js" in script
+assert "stone_yellow" in script and "stone_blue" in script
+assert "weapon_l3" in script and "accessory_l3" in script
+assert "soul_white" not in script
+assert "* 3600" in script and "}/h" in script
+print("Hourly overlay counters: OK")
+'
+curl -fsS "${base%/}/plugins/slayer-legend/page_cube_font.js" | python3 -c '
+import sys
+script = sys.stdin.read()
+assert "export const CUBE_FONT" in script
+assert chr(34) + "," + chr(34) + ":" in script
+print("Cube counter font asset: OK")
+'
+curl -fsS "${base%/}/api/v1/plugins/slayer-legend/navigation-debug" | python3 -c '
+import json, sys
+state = json.load(sys.stdin)
+graph = state["graph"]
+assert "battle" in graph["screens"] and "equipment_weapon" in graph["screens"]
+assert graph["screens"]["battle"]["name"]
+assert any(move.get("swipe") for move in graph["screens"]["equipment_weapon"]["moves"])
+assert state["registry"]["tree"]["equipment_weapon"]["scroll"]
+print("Navigation debug geometry: OK")
+'
+curl -fsS "${base%/}/plugins/slayer-legend/page_navigation_debug.js" | python3 -c '
+import sys
+script = sys.stdin.read()
+assert "trace/arm" in script and "Écran : {screen}" in script
+print("Navigation debug overlay asset: OK")
+'
+curl -fsS "${base%/}/api/v1/plugins/slayer-legend/trace/manual" | python3 -c '
+import json, sys
+state = json.load(sys.stdin)
+assert isinstance(state["clicks"], list)
+print("Private manual click archive: OK")
 '

@@ -3,7 +3,7 @@
     "field": "diamond",
     "label": "Diamants",
     "english": "Diamonds",
-    "pending": true
+    "pending": false
   },
   {
     "field": "gold",
@@ -15,7 +15,7 @@
     "field": "emerald",
     "label": "Émeraudes",
     "english": "Emeralds",
-    "pending": true
+    "pending": false
   },
   {
     "field": "cubes",

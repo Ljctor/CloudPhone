@@ -34,6 +34,7 @@ import gold from './page_gold.js';
 import power from './page_power.js';
 import { SWORD } from './page_icons.js';
 import mode from './page_mode.js';
+import navigationDebug from './page_navigation_debug.js';
 import screen from './page_screen.js';
 import trace from './page_trace.js';
 import watchdog from './page_watchdog.js';
@@ -42,8 +43,21 @@ const ENGLISH = {
   'Étage à farmer': 'Floor to farm',
   'défaut': 'default',
   'Gold': 'Gold',
-  'Gold par seconde': 'Gold per second',
-  'Âmes par seconde': 'Souls per second',
+  'Gold par heure': 'Gold per hour',
+  'Âmes par heure': 'Souls per hour',
+  'Autres débits/h': 'Other rates/h',
+  'Zones de navigation': 'Navigation zones',
+  'Légende navigation': 'Navigation legend',
+  'Écran non identifié': 'Unidentified screen',
+  'Écran : {screen}': 'Screen: {screen}',
+  'Enregistrer un clic': 'Record a tap',
+  'Capture avant…': 'Capturing before…',
+  'Clique dans le jeu': 'Tap in the game',
+  'Capture après…': 'Capturing after…',
+  'Réessayer le clic': 'Retry recording',
+  'condition à vérifier': 'condition to check',
+  'Jaune : clic · bleu : vertical · violet : horizontal · pointillés : condition à vérifier':
+    'Yellow: tap · blue: vertical · purple: horizontal · dashed: condition to check',
   '{mode} · en attente : tu joues · nouvel essai dans {seconds} s': '{mode} · on hold: you are playing · next try in {seconds} s',
   'Reprendre': 'Resume',
   'Affiché': 'Shown',
@@ -61,8 +75,6 @@ const ENGLISH = {
   'Capture enregistrée': 'Saved capture',
   'Relevé historique': 'Historical reading',
   'Débits': 'Rates',
-  'Âmes/s': 'Souls/s',
-  'Gold/s': 'Gold/s',
   'Mine fermée': 'Closed Mine',
   'Stage mpw18': 'mpw18 stage',
   'Stage mpw4': 'mpw4 stage',
@@ -158,15 +170,18 @@ export default function activate(api) {
   const goldPart = gold(api, { overlay: [modePart.overlay], enabled: powerPart.on });
   const drawers = [counterPart, goldPart];
   const tracePart = trace(api);
+  const navigationDebugPart = navigationDebug(api, { enabled: powerPart.on });
+  drawers.push(navigationDebugPart);
   const gamePart = game(api, { resourceOptions: goldPart.resourceOptions,
     displayOptions: [...counterPart.options, ...goldPart.displayOptions] });
-  const parts = [powerPart, counterPart, screenPart, modePart, goldPart, tracePart, watchdogPart, gamePart];
+  const parts = [powerPart, counterPart, screenPart, modePart, goldPart, tracePart,
+    navigationDebugPart, watchdogPart, gamePart];
   // ...and shown in this one, then « Debug & développement », last and
   // folded: the parts' developer rows and the plugin's log records.
   const shown = [powerPart, modePart];
   const debug = [
     { type: 'section', key: 'debug', label: 'Debug & développement', folded: true },
-    ...[screenPart, counterPart, watchdogPart, tracePart].flatMap((part) => part.debug ?? []),
+    ...[screenPart, counterPart, watchdogPart, tracePart, navigationDebugPart].flatMap((part) => part.debug ?? []),
     { type: 'log', match: (record) => record.source === api.id },
   ];
   const options = [...shown.flatMap((part) => part.options), ...debug];

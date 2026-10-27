@@ -11,10 +11,15 @@ const SMALL = {
   d: ['....#', '....#', '.####', '#...#', '#...#', '.####', '.....'],
   e: ['.....', '.###.', '#...#', '#####', '#....', '.####', '.....'],
   f: ['..###', '.#...', '####.', '.#...', '.#...', '.#...', '.....'],
+  h: ['##....', '##....', '##....', '##....', '##....', '######', '#######',
+    '##...##', '##...##', '##...##', '##...##', '##...##', '##...##'],
   l: ['.#...', '.#...', '.#...', '.#...', '.#...', '..##.', '.....'],
   t: ['.#...', '.#...', '####.', '.#...', '.#...', '..###', '.....'],
   u: ['.....', '#...#', '#...#', '#...#', '#..##', '.##.#', '.....'],
 };
+// The counter font has a period but no thousands separator. Its comma
+// shares the period's stroke and sits below the baseline.
+const COMMA = ['..', '..', '..', '..', '..', '..', '..', '..', '..', '##', '##', '.#', '#.'];
 
 // Lines of text on a canvas, `cell` CSS pixels per game pixel; a line is
 // a text or { text, colour }. Letters without accents: the font has none.
@@ -22,7 +27,7 @@ export function drawText(canvas, font, lines, cell) {
   const plain = (text) => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const colours = lines.map((line) => (typeof line === 'string' ? ORANGE : line.colour ?? ORANGE));
   const glyphLines = lines.map((line) => [...plain(typeof line === 'string' ? line : line.text)]
-    .map((c) => font.glyphs[c] ?? SMALL[c]).filter(Boolean));
+    .map((c) => font.glyphs[c] ?? (c === ',' ? COMMA.slice(-font.height) : SMALL[c])).filter(Boolean));
   const rows = font.height;
   // A game pixel of space between glyphs, one round the text for the
   // outline, two between lines.

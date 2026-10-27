@@ -35,7 +35,7 @@ PLUGIN = ("launch", "mine", "watchdog", "mode", "stage_change")
 
 
 def reader_table(screens, stage, select, counter, souls, weapon, engraving, controls, screen_rules, table,
-                 weapons, cubes=None):
+                 weapons, cubes=None, currencies=None, equipment=None):
     """{reader id: fn(shot, base, overlays, plain) -> {field: value}}: the
     plugin's existing readers (stage.py, stage_select.py, gold.py,
     soul_counters.py, soul_weapon.py, engraving_screen.py,
@@ -72,6 +72,10 @@ def reader_table(screens, stage, select, counter, souls, weapon, engraving, cont
     def cube_row(shot, base, overlays, plain):
         return {"cubes": cubes.read(shot) if cubes else None}
 
+    def currency_bar(shot, base, overlays, plain):
+        return {field: currencies.read(shot, field) if currencies else None
+                for field in ("emerald", "diamond")}
+
     def saver_stage(shot, base, overlays, plain):
         _, number = screen_rules.answer(table, stage, "saver", stage.read_saver(shot), None)
         return {"stage": number}
@@ -93,6 +97,16 @@ def reader_table(screens, stage, select, counter, souls, weapon, engraving, cont
         tag, _ = weapon.tag(shot)
         equipped = selected if selected and tag == "Unequip" else None
         return {"soul_weapon_selected": selected, "soul_weapon_equipped": equipped}
+
+    def equipment_row(shot, base, overlays, plain):
+        if not equipment:
+            return {}
+        tab = weapon.tab(shot)
+        if tab == "weapon":
+            return {"weapon_l3": equipment.read(shot)}
+        if tab == "accessories":
+            return {"accessory_l3": equipment.read(shot)}
+        return {}
 
     def region(shot, base, overlays, plain):
         view = select.view(shot, names)
@@ -119,8 +133,10 @@ def reader_table(screens, stage, select, counter, souls, weapon, engraving, cont
                               "pieces": [[list(cell) for cell in piece] for piece in read["pieces"]]}}
 
     return {"battle_stage": battle_stage, "progress": progress, "gold": gold, "cubes": cube_row,
+            "currencies": currency_bar,
             "saver_stage": saver_stage,
             "badge": badge, "battle_settings": battle_settings, "souls": souls_row, "soul_weapon": soul_weapon,
+            "equipment_l3": equipment_row,
             "region": region, "engraving": engraving_grid}
 
 

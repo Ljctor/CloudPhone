@@ -1,25 +1,54 @@
-// Gold per second, measured by the gateway (a reading every 10 s, the
-// slope over a measured window), shown at the right edge below the top
-// bar. The mode remains at the left. Souls per second are read on the Soul
-// Weapon screen, where farming modes park. Values use the game's font and
-// real counter icons. Gold changes from light blue to white while its
-// measurement window fills.
+// Hourly gains at the right edge, below the top bar. Gold and souls are
+// measured by the gateway per second, then converted here. Other resource
+// gains need two verified snapshots. Gold changes from blue to white while
+// its measurement window fills.
 import { drawText } from './gold_text.js';
 import { GOLD, SOULS } from './page_icons.js';
 import { RESOURCE_ICONS } from './page_resources.js';
 import { shortNumber } from './page_numbers.js';
+import { CUBE_FONT } from './page_cube_font.js';
 
 // Keep the measured rates against the right edge, below Scroll (its label
 // ends around 17% of the screen). Each row keeps its own icon beside its value.
 const RATE_TOP = 19.5;
 const RATE_STEP = 2.4;
-const FRENCH = new Intl.NumberFormat('fr-FR', { maximumSignificantDigits: 3 });
+const RATE_FIELDS = [
+  ['gold', GOLD], ['cubes', RESOURCE_ICONS.cubes],
+  ['soul_green', SOULS.green], ['soul_blue', SOULS.blue], ['soul_red', SOULS.red],
+  ['stone_green', RESOURCE_ICONS.stone_green], ['stone_yellow', RESOURCE_ICONS.stone_yellow],
+  ['stone_red', RESOURCE_ICONS.stone_red], ['stone_blue', RESOURCE_ICONS.stone_blue],
+  ['weapon_l3', null], ['accessory_l3', null],
+];
+const RATE_NAMES = {
+  stone_green: 'Pierre verte', stone_yellow: 'Pierre jaune',
+  stone_red: 'Pierre rouge', stone_blue: 'Pierre bleue',
+  weapon_l3: 'Arme L3', accessory_l3: 'Accessoire L3',
+};
+
+function resourceNumber(value) {
+  const raw = typeof value === 'object' && value !== null ? (value.value ?? value.text) : value;
+  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null;
+  const text = String(raw ?? '').replaceAll(',', '');
+  return /^\d+(?:\.\d+)?$/.test(text) ? Number(text) : null;
+}
+
+// Snapshots are sparse: a rate exists only after two distinct scans of the
+// same counter. Spending resets the window instead of producing a fake loss.
+export function measureResourceRate(previous, row) {
+  if (!row?.verified) return previous ?? null;
+  const seen = Number(row?.seen);
+  const value = resourceNumber(row?.value);
+  if (!Number.isFinite(seen) || !seen || value === null) return previous ?? null;
+  if (!previous || seen <= previous.seen) return previous ?? { seen, value, hourly: null };
+  return { seen, value, hourly: value >= previous.value
+    ? (value - previous.value) * 3600 / (seen - previous.seen) : null };
+}
 
 // The colours measured, each its game icon and rate: [{ icon, text }];
 // [] for none.
 export function soulsParts(souls) {
-  return ['green', 'blue', 'red', 'white'].filter((colour) => typeof souls?.[colour]?.rate === 'number')
-    .map((colour) => ({ icon: SOULS[colour], text: shortNumber(souls[colour].rate) }));
+  return ['green', 'blue', 'red'].filter((colour) => typeof souls?.[colour]?.rate === 'number')
+    .map((colour) => ({ icon: SOULS[colour], text: `${shortNumber(souls[colour].rate * 3600)}/h` }));
 }
 
 // overlay: functions giving the lines written top left; enabled(): the
@@ -31,7 +60,7 @@ export function rateColour(answer, elapsed = 0) {
 }
 
 export default function goldFeature(api, { overlay, enabled = () => true }) {
-  const gold = { answer: null, at: 0, timer: null, font: null, line: '', cube: null };
+  const gold = { answer: null, at: 0, timer: null, font: null, line: '', cube: null, rates: {} };
   api.get('/gold-font').catch(() => null).then((font) => {
     gold.font = font;
     showGold();
@@ -56,9 +85,7 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
   let cubeDrawn = '';
   const showCube = () => {
     const cube = gold.cube;
-    const goldVisible = gold.answer?.box && gold.answer.read &&
-      Date.now() / 1000 - gold.answer.read < 25;
-    if (!cube?.seen || cube.value == null || !gold.font || !enabled() || !goldVisible) {
+    if (!cube?.seen || cube.value == null || !enabled()) {
       cubeRow.remove();
       cubeDrawn = '';
       return;
@@ -68,27 +95,34 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
     const age = Math.max(0, Date.now() / 1000 - cube.seen);
     const share = Math.min(1, age / 600);
     const colour = `rgb(${Math.round(255 - 80 * share)}, ${Math.round(255 - 34 * share)}, 255)`;
-    const cell = api.layer.offsetHeight / 1040 * 8 / gold.font.height;
+    // The Enhance Cube counter has its own 9-row digit shapes and a
+    // 21-game-pixel icon. The old gold font dropped its commas altogether.
+    const cell = api.layer.offsetHeight / 1040 * 14 / CUBE_FONT.height;
     const key = `${value}@${colour}@${cell}`;
     if (key === cubeDrawn) return;
     if (!cubeRow.isConnected) api.layer.append(cubeRow);
-    drawText(cubeValue, gold.font, [{ text: value, colour }], cell);
-    const size = gold.font.height * cell;
+    drawText(cubeValue, CUBE_FONT, [{ text: value, colour }], cell);
+    const size = api.layer.offsetHeight / 1040 * 21;
     cubeIcon.style.width = `${size}px`;
     cubeIcon.style.height = `${size}px`;
     cubeDrawn = key;
   };
-  const rateRows = [GOLD, SOULS.green, SOULS.blue, SOULS.red, SOULS.white].map((src, index) => {
+  const rateRows = RATE_FIELDS.map(([field, src], index) => {
     const row = document.createElement('div');
     row.style.cssText = `position:absolute;right:1%;top:${RATE_TOP + index * RATE_STEP}%;display:flex;align-items:center;gap:2px;pointer-events:none`;
-    const icon = document.createElement('img');
-    icon.src = src;
-    icon.alt = '';
+    const icon = document.createElement(src ? 'img' : 'span');
+    if (src) icon.src = src;
+    else {
+      icon.textContent = RATE_NAMES[field];
+      icon.style.cssText = `color:${({stone_green:'#53d977',stone_yellow:'#ffdb58',stone_red:'#ec6565',stone_blue:'#76bbff'})[field] ?? '#fff'};font: bold 10px sans-serif;text-align:right;white-space:nowrap`;
+    }
+    icon.alt = RATE_NAMES[field] ?? field;
+    icon.title = RATE_NAMES[field] ?? field;
     icon.style.imageRendering = 'pixelated';
     const value = document.createElement('canvas');
     value.style.imageRendering = 'pixelated';
     row.append(icon, value);
-    return { row, icon, value };
+    return { row, icon, value, field };
   });
   let drawn = '';
   let ratesDrawn = '';
@@ -99,9 +133,16 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
       return;
     }
     const souls = gold.answer?.souls ?? {};
-    const entries = [api.setting('goldOverlay') === 'off' ? '' : gold.line,
-      ...['green', 'blue', 'red', 'white'].map((colour) => api.setting('stonesOverlay') === 'off'
-        ? '' : typeof souls[colour]?.rate === 'number' ? `${FRENCH.format(souls[colour].rate)}/s` : '')];
+    const entries = RATE_FIELDS.map(([field]) => {
+      if (field === 'gold') return api.setting('goldOverlay') === 'off' ? '' : gold.line;
+      if (api.setting('stonesOverlay') === 'off') return '';
+      if (field.startsWith('soul_')) {
+        const rate = souls[field.slice(5)]?.rate;
+        return typeof rate === 'number' ? `${shortNumber(rate * 3600)}/h` : '.../h';
+      }
+      const hourly = gold.rates[field]?.hourly;
+      return typeof hourly === 'number' ? `${shortNumber(hourly)}/h` : '.../h';
+    });
     const colour = rateColour(gold.answer, (Date.now() - gold.at) / 1000);
     const key = `${entries.join('|')}@${cell}@${colour}`;
     if (key !== ratesDrawn) {
@@ -110,8 +151,10 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
         if (!row.isConnected) api.layer.append(row);
         drawText(value, gold.font, [{ text: entries[index], colour: index ? '#fff' : colour }], cell);
         const size = gold.font.height * cell;
-        icon.style.width = `${size}px`;
-        icon.style.height = `${size}px`;
+        if (icon.tagName === 'IMG') {
+          icon.style.width = `${size}px`;
+          icon.style.height = `${size}px`;
+        }
       });
       ratesDrawn = key;
     }
@@ -143,7 +186,7 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
   const goldText = () => {
     const answer = gold.answer;
     if (!answer) return '…';
-    if (answer.rate_text) return [{ icon: GOLD, text: `${shortNumber(answer.rate_text)}/s`,
+    if (typeof answer.rate === 'number') return [{ icon: GOLD, text: `${shortNumber(answer.rate * 3600)}/h`,
       color: rateColour(answer, (Date.now() - gold.at) / 1000) }];
     return answer.read ? api.tr('pas encore mesuré') : api.tr('non visible');
   };
@@ -161,7 +204,8 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
     const fresh = box && answer.read && Date.now() / 1000 - answer.read < 25;
     const soulsFresh = Object.values(answer?.souls ?? {}).some((part) =>
       part.read && Date.now() / 1000 - part.read < 25);
-    gold.line = !fresh ? '' : (answer.rate_text ? `${answer.rate_text}/s` : '...');
+    gold.line = !fresh ? '.../h' : (typeof answer.rate === 'number'
+      ? `${shortNumber(answer.rate * 3600)}/h` : '.../h');
     showLabel(Boolean((fresh || soulsFresh) && gold.font && enabled()));
     showCube();
   };
@@ -170,6 +214,10 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
       api.get('/gold').catch(() => null), api.get('/game').catch(() => null),
     ]);
     gold.answer = answer;
+    for (const row of state?.resources ?? []) {
+      if (RATE_FIELDS.some(([field]) => field === row.field))
+        gold.rates[row.field] = measureResourceRate(gold.rates[row.field], row);
+    }
     gold.cube = state?.resources?.find((row) => row.field === 'cubes') ?? gold.cube;
     gold.at = Date.now();
     showGold();
@@ -183,17 +231,17 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
     // Draws again (or removes) after the plugin was turned on or off.
     update: () => showGold(),
     resourceOptions: [
-      { type: 'status', label: 'Gold par seconde', value: goldText, look: 'game' },
-      { type: 'status', label: 'Âmes par seconde', value: soulsValue, look: 'game' },
+      { type: 'status', label: 'Gold par heure', value: goldText, look: 'game' },
+      { type: 'status', label: 'Âmes par heure', value: soulsValue, look: 'game' },
     ],
     displayOptions: [
       { type: 'section', key: 'display-rates', label: 'Débits', folded: true, icon: GOLD },
       {
-        type: 'choice', key: 'goldOverlay', label: 'Gold/s',
+        type: 'choice', key: 'goldOverlay', label: 'Gold/h',
         choices: [{ value: 'on', label: 'Affiché' }, { value: 'off', label: 'Masqué' }],
       },
       {
-        type: 'choice', key: 'stonesOverlay', label: 'Âmes/s',
+        type: 'choice', key: 'stonesOverlay', label: 'Autres débits/h',
         choices: [{ value: 'on', label: 'Affiché' }, { value: 'off', label: 'Masqué' }],
       },
     ],

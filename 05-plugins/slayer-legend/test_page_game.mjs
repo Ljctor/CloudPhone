@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import gameFeature from './page_game.js';
-import { soulsParts } from './page_gold.js';
+import { soulsParts, measureResourceRate } from './page_gold.js';
 import { shortNumber } from './page_numbers.js';
 import { RESOURCE_ICONS } from './page_resources.js';
 import { SCREEN_ICONS } from './page_screen_icons.js';
@@ -73,7 +73,12 @@ Object.assign(answer.resources.find((row) => row.field === 'cubes'),
   { value: { text: '2,876,335,558', value: 2876335558 } });
 assert.equal(options.find((row) => row.label === 'Cubes').value(), '2.88C');
 assert.equal(shortNumber('45.9E'), '45.9E');
-assert.equal(soulsParts({ green: { rate: 12345.6789 } })[0].text, '12.3A');
+assert.equal(soulsParts({ green: { rate: 12345.6789 } })[0].text, '44.4B/h');
+assert.equal(soulsParts({ white: { rate: 1 } }).length, 0);
+const firstCubes = measureResourceRate(null, { value: { value: 100 }, seen: 1000, verified: true });
+assert.equal(measureResourceRate(firstCubes, { value: { value: 112 }, seen: 1060, verified: true }).hourly, 720);
+assert.equal(measureResourceRate(firstCubes, { value: { value: 95 }, seen: 1060, verified: true }).hourly, null);
+assert.equal(measureResourceRate(firstCubes, { value: { value: 112 }, seen: 1060, verified: false }).hourly, null);
 answer.screens.push({ screen: 'guild_request', path: ['Combat', 'Adventure: Guild', 'Guild Request'],
   fields: [], observed: true, example: { url: '/api/v1/plugins/slayer-legend/examples/guild_request' } });
 game.rows(options, 0);
