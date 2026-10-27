@@ -33,7 +33,14 @@ if isinstance(battle["stage"]["value"], int) and isinstance(battle["highest"]["v
     assert battle["highest"]["value"] >= battle["stage"]["value"]
 engraving = next(row for row in screens["soul_weapon_engraving"]["fields"] if row["field"] == "engraving")
 assert engraving["value"] is None or engraving["value"].get("weapon")
-print("Resource catalogue and game navigation paths: OK")
+for screen_name in ("equipment_weapon", "equipment_accessories"):
+    items = screens[screen_name]["inventory"]["items"]
+    assert len(items) == 25
+    assert len({item["id"] for item in items}) == len(items)
+    assert all(item["source"]["capture"] and item["source"]["box"] for item in items)
+    assert all(item["displayed_fraction"]["denominator"] > 0 for item in items)
+assert screens["character_class"]["inventory"]["status"] in ("never_read", "read")
+print("Resource catalogue, equipment inventory and game navigation: OK")
 '
 curl -fsS "${base%/}/api/v1/plugins/slayer-legend/gold" | python3 -c '
 import json, sys

@@ -87,19 +87,107 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
       },
     }));
   const detailRows = (screen) => {
+    const summaries = new Set();
+    if (screen.inventory?.items?.length) {
+      ['Armes visibles', 'Accessoires visibles', 'Grades visibles', 'Niveau affiché sur les armes']
+        .forEach((label) => summaries.add(label));
+    }
+    if (screen.inventory?.kind === 'classes') summaries.add('Classes');
+    if (screen.inventory?.kind === 'promotion_ranks') {
+      summaries.add('Promotions observées');
+      summaries.add('Promotion affichée');
+      screen.inventory.ranks?.forEach((rank) => summaries.add(rank.name));
+    }
     const details = (screen.details ?? []).flatMap((detail, index) => {
-      if (!detail.label || detail.value === null || detail.value === undefined || !String(detail.value).trim()) return [];
+      if (!detail.label || summaries.has(detail.label) || detail.value === null ||
+          detail.value === undefined || !String(detail.value).trim()) return [];
       return [{
         type: 'status', key: `scan-${screen.screen}-${index}`, label: detail.label,
         value: () => screenOf(screen.screen)?.details?.[index]?.value ?? detail.value,
       }];
     });
     if (!details.length) return details;
+    if (screen.inventory?.items?.length || screen.inventory?.kind === 'promotion_ranks') return details;
     return [{ type: 'status', key: `scan-date-${screen.screen}`, label: 'Relevé historique',
       value: () => {
         const captured = screenOf(screen.screen)?.example?.captured;
         return captured ? new Date(captured * 1000).toLocaleString() : 'Capture enregistrée';
       } }, ...details];
+  };
+  const inventoryRows = (screen) => {
+    const inventory = screen.inventory;
+    if (!inventory) return [];
+    if (inventory.kind === 'classes' && inventory.status === 'never_read') {
+      return [{ type: 'status', key: `inventory-${screen.screen}-unread`, label: 'Classes',
+        value: () => 'never read', muted: () => true }];
+    }
+    if (inventory.kind === 'promotion_ranks' && inventory.ranks?.length) {
+      const rows = [
+        { type: 'status', key: `inventory-${screen.screen}-date`, label: 'Relevé historique',
+          muted: () => true,
+          value: () => {
+            const captured = screenOf(screen.screen)?.example?.captured;
+            return captured ? new Date(captured * 1000).toLocaleString() : 'Capture enregistrée';
+          } },
+        { type: 'status', key: `inventory-${screen.screen}-selected`,
+          label: 'Promotion sélectionnée', value: () => screenOf(screen.screen)?.inventory?.selected ??
+            inventory.selected ?? 'never read' },
+      ];
+      for (const rank of inventory.ranks) {
+        rows.push({ type: 'status', key: `inventory-${screen.screen}-${rank.name}`,
+          label: rank.name, compact: true,
+          value: () => {
+            const current = screenOf(screen.screen) ?? screen;
+            const status = current.inventory?.ranks?.find((row) => row.name === rank.name)?.status ?? rank.status;
+            const label = status === 'complete' ? api.tr('Terminé') :
+              status === 'challenge' ? api.tr('Défi') : status ?? 'never read';
+            const detail = current.details?.find((row) => row.label === rank.name)?.value;
+            const extra = typeof detail === 'string' ? detail.split(' · ').slice(1).join(' · ') : '';
+            return extra ? `${label} · ${extra}` : label;
+          } });
+      }
+      return rows;
+    }
+    if (!['weapons', 'accessories'].includes(inventory.kind) || !inventory.items?.length) return [];
+    const colours = { grey: 'Gris', green: 'Vert', orange: 'Orange', purple: 'Violet',
+      red: 'Rouge', blue: 'Bleu', gold: 'Or' };
+    const rows = [{ type: 'status', key: `inventory-${screen.screen}-date`, label: 'Relevé historique',
+      muted: () => true,
+      title: () => api.tr('x/5 : progression affichée par le jeu ; possession non confirmée'),
+      value: () => {
+        const captured = screenOf(screen.screen)?.example?.captured;
+        return captured ? new Date(captured * 1000).toLocaleString() : 'Capture enregistrée';
+      } }];
+    const groups = new Map();
+    for (const item of inventory.items) {
+      const appearance = item.appearance ?? 'unknown';
+      if (!groups.has(appearance)) groups.set(appearance, []);
+      groups.get(appearance).push(item);
+    }
+    for (const [appearance, items] of groups) {
+      rows.push({ type: 'section', key: `inventory-${screen.screen}-${appearance}`,
+        label: api.tr(colours[appearance] ?? appearance), depth: accessPath(screen).length + 2,
+        folded: true });
+      for (const item of items) {
+        const current = () => screenOf(screen.screen)?.inventory?.items?.find((row) => row.id === item.id) ?? item;
+        rows.push({ type: 'status', key: `inventory-${screen.screen}-${item.id}`,
+          label: item.name || (item.grade == null ? 'Case équipée' : `Grade ${item.grade}`),
+          compact: true,
+          title: () => api.tr('Relevé historique · x/5 : progression affichée, possession non confirmée'),
+          value: () => {
+            const found = current();
+            const progress = found.displayed_fraction;
+            const parts = [];
+            if (found.enhancement != null) parts.push(`+${found.enhancement}`);
+            if (progress?.numerator != null && progress?.denominator != null) {
+              parts.push(`${progress.numerator}/${progress.denominator}`);
+            }
+            if (found.equipped) parts.push(api.tr('Équipé'));
+            return parts.join(' · ') || 'never read';
+          } });
+      }
+    }
+    return rows;
   };
   const examplesOf = (screen) => {
     const current = screenOf(screen.screen) ?? screen;
@@ -117,23 +205,37 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
       { type: 'section', key: 'display', label: 'Affichage', depth: 1, folded: true },
       ...displayOptions.map((option) => option.type === 'section' ? { ...option, depth: 2 } : option),
       { type: 'section', key: 'game-state', label: 'État du jeu', depth: 1, folded: true }];
-    const made = new Set();
+    const root = { children: new Map(), screens: [] };
     for (const screen of game.answer?.screens ?? []) {
       // A scanned example is useful even when its OCR reader is pending.
-      if (!screen.fields?.length && !screen.example?.url && !screen.examples?.length && !screen.details?.length) continue;
+      if (!screen.fields?.length && !screen.example?.url && !screen.examples?.length &&
+          !screen.details?.length && !screen.inventory) continue;
       const path = accessPath(screen);
-      path.forEach((label, index) => {
-        const id = path.slice(0, index + 1).join('/');
-        if (made.has(id)) return;
-        made.add(id);
-        rows.push({ type: 'section', key: index === path.length - 1 ? `game-${screen.screen}` : `game-path-${id}`,
-          label, depth: index + 2, folded: true,
-          icon: index === 0 ? SCREEN_ICONS[label.toLowerCase()] : undefined });
-      });
+      let node = root;
+      for (const label of path) {
+        if (!node.children.has(label)) node.children.set(label, { label, children: new Map(), screens: [] });
+        node = node.children.get(label);
+      }
+      node.screens.push(screen);
+    }
+    const showScreen = (screen) => {
       rows.push(...fieldRows(screen));
       rows.push(...detailRows(screen));
+      rows.push(...inventoryRows(screen));
       if (screen.example?.url || screen.examples?.length) rows.push(captureRow(screen));
-    }
+    };
+    const showChildren = (node, path = []) => {
+      for (const child of node.children.values()) {
+        const at = [...path, child.label];
+        rows.push({ type: 'section', key: child.screens.length ? `game-${child.screens[0].screen}` :
+          `game-path-${at.join('/')}`, label: child.label, depth: at.length + 1, folded: true,
+        icon: at.length === 1 ? SCREEN_ICONS[child.label.toLowerCase()] : undefined });
+        child.screens.forEach(showScreen);
+        showChildren(child, at);
+      }
+    };
+    root.screens.forEach(showScreen);
+    showChildren(root);
     return rows;
   };
   // Rebuild when a newly captured screen appears; values keep reading the

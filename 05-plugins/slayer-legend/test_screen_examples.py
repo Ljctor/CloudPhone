@@ -29,8 +29,11 @@ class ScreenExamples(unittest.TestCase):
                 {"label": "Floor", "value": "162"}]}))
             (code / "screen_snapshots_world.json").write_text("{}")
             (code / "screen_inventory.json").write_text(json.dumps({"forest": {
-                "kind": "weapons", "rows": [{"appearance": "blue", "grades": [4],
-                "enhancements": [200], "counts": [3], "source": "forest.png"}]},
+                "kind": "weapons", "items": [{"id": "weapon-blue-grade-4", "name": None,
+                "appearance": "blue", "grade": 4, "enhancement": 200,
+                "displayed_fraction": {"numerator": 3, "denominator": 5},
+                "owned": None, "equipped": False,
+                "source": {"capture": "forest.png", "box": [0, 0, 10, 10]}}]},
                 "other": {"kind": "classes", "status": "never_read"}}))
             for name in ("forest", "forest_bottom", "orphan"):
                 (shots / (name + ".png")).write_bytes(b"\x89PNG\r\n\x1a\n")
@@ -44,13 +47,33 @@ class ScreenExamples(unittest.TestCase):
                              ["Capture principale", "Défilement 1"])
             self.assertEqual(forest["details"], [
                 {"label": "Floor", "value": "162"},
-                {"label": "Blue", "value": "Grade 4: +200, 3/5"},
                 {"label": "Défilement observé", "value": "156 → 165"}])
             self.assertEqual(forest["inventory"]["kind"], "weapons")
+            self.assertEqual(forest["inventory"]["items"][0]["source"]["box"], [0, 0, 10, 10])
             self.assertTrue(forest["observed"])
             self.assertEqual(other["examples"], [])
             self.assertEqual(other["details"], [{"label": "Classes", "value": "never read"}])
             self.assertFalse(other["observed"])
+
+    def test_captured_equipment_is_individual_and_does_not_guess_ownership(self):
+        inventory = json.loads((HERE / "screen_inventory.json").read_text(encoding="utf-8"))
+        registry = json.loads((HERE / "screen_registry.json").read_text(encoding="utf-8"))["tree"]
+        for screen in ("equipment_weapon", "equipment_accessories"):
+            items = inventory[screen]["items"]
+            node = registry[screen]
+            captures = {Path(node["example"]).name}
+            captures.update(Path(path).name for section in node.get("scroll", [])
+                            for path in section.get("captures", []))
+            self.assertEqual(len(items), 25)
+            self.assertEqual(len({item["id"] for item in items}), 25)
+            self.assertEqual(sum(item["equipped"] for item in items), 1)
+            self.assertTrue(all(item["owned"] is None for item in items if not item["equipped"]))
+            self.assertTrue(all(item["name"] is None and item["rarity"] is None for item in items))
+            for item in items:
+                source = item["source"]
+                self.assertIn(source["capture"], captures)
+                x0, y0, x1, y1 = source["box"]
+                self.assertTrue(0 <= x0 < x1 <= 480 and 0 <= y0 < y1 <= 1040)
 
 
 if __name__ == "__main__":

@@ -67,19 +67,7 @@ def examples(directory, data_directory, prefix):
         details = list(snapshots.get(screen, []))
         observed_inventory = inventory.get(screen)
         if observed_inventory:
-            if observed_inventory.get("rows"):
-                for row in observed_inventory["rows"]:
-                    entries_text = [f"Grade {grade}: +{enhancement}, {count}/5"
-                                    for grade, enhancement, count in zip(
-                                        row["grades"], row["enhancements"], row["counts"])]
-                    details.append({"label": row["appearance"].capitalize(),
-                                    "value": " · ".join(entries_text)})
-                equipped = observed_inventory.get("equipped")
-                if equipped:
-                    details.append({"label": "Équipé", "value":
-                                    f"{equipped['appearance']} +{equipped['enhancement']} · "
-                                    f"{equipped['count']}/{equipped['capacity']}"})
-            elif observed_inventory.get("ranks"):
+            if observed_inventory.get("ranks"):
                 details.append({"label": "Promotions observées", "value":
                                 " · ".join(f"{rank['name']} ({rank['status']})"
                                            for rank in observed_inventory["ranks"])})

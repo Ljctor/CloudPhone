@@ -1,53 +1,145 @@
 {
   "equipment_weapon": {
     "kind": "weapons",
-    "scope": "Catalogue des cases visibles, pas une liste de noms ni une lecture en temps réel",
-    "rows": [
-      {"appearance": "grey", "grades": [4, 3, 2, 1], "counts": [1, 4, 0, 4], "enhancements": [200, 200, 200, 200], "source": "equipment_weapon.png"},
-      {"appearance": "green", "grades": [4, 3, 2, 1], "counts": [1, 2, 0, 3], "enhancements": [200, 200, 200, 200], "source": "equipment_weapon.png"},
-      {"appearance": "orange", "grades": [4, 3, 2, 1], "counts": [1, 3, 4, 1], "enhancements": [200, 200, 200, 200], "source": "equipment_weapon.png"},
-      {"appearance": "purple", "grades": [4, 3, 2, 1], "counts": [1, 4, 1, 0], "enhancements": [200, 200, 200, 200], "source": "equipment_weapon_scroll_1.png"},
-      {"appearance": "red", "grades": [4, 3, 2, 1], "counts": [2, 3, 0, 3], "enhancements": [200, 200, 200, 200], "source": "equipment_weapon_scroll_1.png"},
-      {"appearance": "blue", "grades": [4, 3, 2, 1], "counts": [0, 3, 3, 2], "enhancements": [200, 200, 200, 200], "source": "equipment_weapon_scroll_2.png"}
-    ],
-    "equipped": {"appearance": "gold", "enhancement": 200, "count": 0, "capacity": 5, "source": "equipment_weapon_scroll_2.png"}
+    "scope": "captured_snapshot",
+    "limitations": "Les captures de la grille ne montrent aucun nom ni libellé de rareté. La fraction affichée ne prouve pas la possession.",
+    "items": [
+      {"id": "weapon-grey-grade-4", "name": null, "rarity": null, "appearance": "grey", "grade": 4, "enhancement": 200, "displayed_fraction": {"numerator": 1, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_weapon.png", "box": [35, 495, 112, 600]}},
+      {"id": "weapon-grey-grade-3", "name": null, "rarity": null, "appearance": "grey", "grade": 3, "enhancement": 200, "displayed_fraction": {"numerator": 4, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_weapon.png", "box": [146, 495, 223, 600]}},
+      {"id": "weapon-grey-grade-2", "name": null, "rarity": null, "appearance": "grey", "grade": 2, "enhancement": 200, "displayed_fraction": {"numerator": 0, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_weapon.png", "box": [258, 495, 335, 600]}},
+      {"id": "weapon-grey-grade-1", "name": null, "rarity": null, "appearance": "grey", "grade": 1, "enhancement": 200, "displayed_fraction": {"numerator": 4, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_weapon.png", "box": [369, 495, 446, 600]}},
+      {"id": "weapon-green-grade-4", "name": null, "rarity": null, "appearance": "green", "grade": 4, "enhancement": 200, "displayed_fraction": {"numerator": 1, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_weapon.png", "box": [35, 635, 112, 742]}},
+      {"id": "weapon-green-grade-3", "name": null, "rarity": null, "appearance": "green", "grade": 3, "enhancement": 200, "displayed_fraction": {"numerator": 2, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_weapon.png", "box": [146, 635, 223, 742]}},
+      {"id": "weapon-green-grade-2", "name": null, "rarity": null, "appearance": "green", "grade": 2, "enhancement": 200, "displayed_fraction": {"numerator": 0, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_weapon.png", "box": [258, 635, 335, 742]}},
+      {"id": "weapon-green-grade-1", "name": null, "rarity": null, "appearance": "green", "grade": 1, "enhancement": 200, "displayed_fraction": {"numerator": 3, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_weapon.png", "box": [369, 635, 446, 742]}},
+      {"id": "weapon-orange-grade-4", "name": null, "rarity": null, "appearance": "orange", "grade": 4, "enhancement": 200, "displayed_fraction": {"numerator": 1, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_weapon.png", "box": [35, 775, 112, 879]}},
+      {"id": "weapon-orange-grade-3", "name": null, "rarity": null, "appearance": "orange", "grade": 3, "enhancement": 200, "displayed_fraction": {"numerator": 3, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_weapon.png", "box": [146, 775, 223, 879]}},
+      {"id": "weapon-orange-grade-2", "name": null, "rarity": null, "appearance": "orange", "grade": 2, "enhancement": 200, "displayed_fraction": {"numerator": 4, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_weapon.png", "box": [258, 775, 335, 879]}},
+      {"id": "weapon-orange-grade-1", "name": null, "rarity": null, "appearance": "orange", "grade": 1, "enhancement": 200, "displayed_fraction": {"numerator": 1, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_weapon.png", "box": [369, 775, 446, 879]}},
+      {"id": "weapon-purple-grade-4", "name": null, "rarity": null, "appearance": "purple", "grade": 4, "enhancement": 200, "displayed_fraction": {"numerator": 1, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_weapon_scroll_1.png", "box": [35, 590, 112, 692]}},
+      {"id": "weapon-purple-grade-3", "name": null, "rarity": null, "appearance": "purple", "grade": 3, "enhancement": 200, "displayed_fraction": {"numerator": 4, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_weapon_scroll_1.png", "box": [146, 590, 223, 692]}},
+      {"id": "weapon-purple-grade-2", "name": null, "rarity": null, "appearance": "purple", "grade": 2, "enhancement": 200, "displayed_fraction": {"numerator": 1, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_weapon_scroll_1.png", "box": [258, 590, 335, 692]}},
+      {"id": "weapon-purple-grade-1", "name": null, "rarity": null, "appearance": "purple", "grade": 1, "enhancement": 200, "displayed_fraction": {"numerator": 0, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_weapon_scroll_1.png", "box": [369, 590, 446, 692]}},
+      {"id": "weapon-red-grade-4", "name": null, "rarity": null, "appearance": "red", "grade": 4, "enhancement": 200, "displayed_fraction": {"numerator": 2, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_weapon_scroll_1.png", "box": [35, 730, 112, 835]}},
+      {"id": "weapon-red-grade-3", "name": null, "rarity": null, "appearance": "red", "grade": 3, "enhancement": 200, "displayed_fraction": {"numerator": 3, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_weapon_scroll_1.png", "box": [146, 730, 223, 835]}},
+      {"id": "weapon-red-grade-2", "name": null, "rarity": null, "appearance": "red", "grade": 2, "enhancement": 200, "displayed_fraction": {"numerator": 0, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_weapon_scroll_1.png", "box": [258, 730, 335, 835]}},
+      {"id": "weapon-red-grade-1", "name": null, "rarity": null, "appearance": "red", "grade": 1, "enhancement": 200, "displayed_fraction": {"numerator": 3, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_weapon_scroll_1.png", "box": [369, 730, 446, 835]}},
+      {"id": "weapon-blue-grade-4", "name": null, "rarity": null, "appearance": "blue", "grade": 4, "enhancement": 200, "displayed_fraction": {"numerator": 0, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_weapon_scroll_2.png", "box": [35, 555, 112, 666]}},
+      {"id": "weapon-blue-grade-3", "name": null, "rarity": null, "appearance": "blue", "grade": 3, "enhancement": 200, "displayed_fraction": {"numerator": 3, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_weapon_scroll_2.png", "box": [146, 555, 223, 666]}},
+      {"id": "weapon-blue-grade-2", "name": null, "rarity": null, "appearance": "blue", "grade": 2, "enhancement": 200, "displayed_fraction": {"numerator": 3, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_weapon_scroll_2.png", "box": [258, 555, 335, 666]}},
+      {"id": "weapon-blue-grade-1", "name": null, "rarity": null, "appearance": "blue", "grade": 1, "enhancement": 200, "displayed_fraction": {"numerator": 2, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_weapon_scroll_2.png", "box": [369, 555, 446, 666]}},
+      {"id": "weapon-gold-equipped", "name": null, "rarity": null, "appearance": "gold", "grade": null, "enhancement": 200, "displayed_fraction": {"numerator": 0, "denominator": 5}, "owned": true, "equipped": true, "source": {"capture": "equipment_weapon_scroll_2.png", "box": [200, 700, 280, 810]}}
+    ]
   },
   "equipment_accessories": {
     "kind": "accessories",
-    "scope": "Catalogue des cases visibles, pas une liste de noms ni une lecture en temps réel",
-    "rows": [
-      {"appearance": "grey", "grades": [4, 3, 2, 1], "counts": [4, 4, 1, 2], "enhancements": [30, 31, 32, 33], "source": "equipment_accessories.png"},
-      {"appearance": "green", "grades": [4, 3, 2, 1], "counts": [3, 4, 1, 1], "enhancements": [34, 35, 36, 37], "source": "equipment_accessories.png"},
-      {"appearance": "orange", "grades": [4, 3, 2, 1], "counts": [1, 2, 4, 2], "enhancements": [38, 39, 40, 41], "source": "equipment_accessories.png"},
-      {"appearance": "purple", "grades": [4, 3, 2, 1], "counts": [2, 2, 0, 3], "enhancements": [42, 43, 44, 45], "source": "equipment_accessories_scroll_1.png"},
-      {"appearance": "red", "grades": [4, 3, 2, 1], "counts": [2, 24, 1, 4], "enhancements": [46, 47, 48, 49], "source": "equipment_accessories_scroll_1.png"},
-      {"appearance": "blue", "grades": [4, 3, 2, 1], "counts": [4, 3, 2, 0], "enhancements": [200, 200, 200, 200], "source": "equipment_accessories_scroll_2.png"}
-    ],
-    "equipped": {"appearance": "gold", "enhancement": 200, "count": 0, "capacity": 5, "source": "equipment_accessories_scroll_2.png"}
+    "scope": "captured_snapshot",
+    "limitations": "Les captures de la grille ne montrent aucun nom ni libellé de rareté. La fraction affichée ne prouve pas la possession.",
+    "items": [
+      {"id": "accessory-grey-grade-4", "name": null, "rarity": null, "appearance": "grey", "grade": 4, "enhancement": 30, "displayed_fraction": {"numerator": 4, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_accessories.png", "box": [35, 495, 112, 600]}},
+      {"id": "accessory-grey-grade-3", "name": null, "rarity": null, "appearance": "grey", "grade": 3, "enhancement": 31, "displayed_fraction": {"numerator": 4, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_accessories.png", "box": [146, 495, 223, 600]}},
+      {"id": "accessory-grey-grade-2", "name": null, "rarity": null, "appearance": "grey", "grade": 2, "enhancement": 32, "displayed_fraction": {"numerator": 1, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_accessories.png", "box": [258, 495, 335, 600]}},
+      {"id": "accessory-grey-grade-1", "name": null, "rarity": null, "appearance": "grey", "grade": 1, "enhancement": 33, "displayed_fraction": {"numerator": 2, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_accessories.png", "box": [369, 495, 446, 600]}},
+      {"id": "accessory-green-grade-4", "name": null, "rarity": null, "appearance": "green", "grade": 4, "enhancement": 34, "displayed_fraction": {"numerator": 3, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_accessories.png", "box": [35, 635, 112, 742]}},
+      {"id": "accessory-green-grade-3", "name": null, "rarity": null, "appearance": "green", "grade": 3, "enhancement": 35, "displayed_fraction": {"numerator": 4, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_accessories.png", "box": [146, 635, 223, 742]}},
+      {"id": "accessory-green-grade-2", "name": null, "rarity": null, "appearance": "green", "grade": 2, "enhancement": 36, "displayed_fraction": {"numerator": 1, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_accessories.png", "box": [258, 635, 335, 742]}},
+      {"id": "accessory-green-grade-1", "name": null, "rarity": null, "appearance": "green", "grade": 1, "enhancement": 37, "displayed_fraction": {"numerator": 1, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_accessories.png", "box": [369, 635, 446, 742]}},
+      {"id": "accessory-orange-grade-4", "name": null, "rarity": null, "appearance": "orange", "grade": 4, "enhancement": 38, "displayed_fraction": {"numerator": 1, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_accessories.png", "box": [35, 775, 112, 879]}},
+      {"id": "accessory-orange-grade-3", "name": null, "rarity": null, "appearance": "orange", "grade": 3, "enhancement": 39, "displayed_fraction": {"numerator": 2, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_accessories.png", "box": [146, 775, 223, 879]}},
+      {"id": "accessory-orange-grade-2", "name": null, "rarity": null, "appearance": "orange", "grade": 2, "enhancement": 40, "displayed_fraction": {"numerator": 4, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_accessories.png", "box": [258, 775, 335, 879]}},
+      {"id": "accessory-orange-grade-1", "name": null, "rarity": null, "appearance": "orange", "grade": 1, "enhancement": 41, "displayed_fraction": {"numerator": 2, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_accessories.png", "box": [369, 775, 446, 879]}},
+      {"id": "accessory-purple-grade-4", "name": null, "rarity": null, "appearance": "purple", "grade": 4, "enhancement": 42, "displayed_fraction": {"numerator": 2, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_accessories_scroll_1.png", "box": [35, 590, 112, 692]}},
+      {"id": "accessory-purple-grade-3", "name": null, "rarity": null, "appearance": "purple", "grade": 3, "enhancement": 43, "displayed_fraction": {"numerator": 2, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_accessories_scroll_1.png", "box": [146, 590, 223, 692]}},
+      {"id": "accessory-purple-grade-2", "name": null, "rarity": null, "appearance": "purple", "grade": 2, "enhancement": 44, "displayed_fraction": {"numerator": 0, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_accessories_scroll_1.png", "box": [258, 590, 335, 692]}},
+      {"id": "accessory-purple-grade-1", "name": null, "rarity": null, "appearance": "purple", "grade": 1, "enhancement": 45, "displayed_fraction": {"numerator": 3, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_accessories_scroll_1.png", "box": [369, 590, 446, 692]}},
+      {"id": "accessory-red-grade-4", "name": null, "rarity": null, "appearance": "red", "grade": 4, "enhancement": 46, "displayed_fraction": {"numerator": 2, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_accessories_scroll_1.png", "box": [35, 730, 112, 835]}},
+      {"id": "accessory-red-grade-3", "name": null, "rarity": null, "appearance": "red", "grade": 3, "enhancement": 47, "displayed_fraction": {"numerator": 24, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_accessories_scroll_1.png", "box": [146, 730, 223, 835]}},
+      {"id": "accessory-red-grade-2", "name": null, "rarity": null, "appearance": "red", "grade": 2, "enhancement": 48, "displayed_fraction": {"numerator": 1, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_accessories_scroll_1.png", "box": [258, 730, 335, 835]}},
+      {"id": "accessory-red-grade-1", "name": null, "rarity": null, "appearance": "red", "grade": 1, "enhancement": 49, "displayed_fraction": {"numerator": 4, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_accessories_scroll_1.png", "box": [369, 730, 446, 835]}},
+      {"id": "accessory-blue-grade-4", "name": null, "rarity": null, "appearance": "blue", "grade": 4, "enhancement": 200, "displayed_fraction": {"numerator": 4, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_accessories_scroll_2.png", "box": [35, 555, 112, 666]}},
+      {"id": "accessory-blue-grade-3", "name": null, "rarity": null, "appearance": "blue", "grade": 3, "enhancement": 200, "displayed_fraction": {"numerator": 3, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_accessories_scroll_2.png", "box": [146, 555, 223, 666]}},
+      {"id": "accessory-blue-grade-2", "name": null, "rarity": null, "appearance": "blue", "grade": 2, "enhancement": 200, "displayed_fraction": {"numerator": 2, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_accessories_scroll_2.png", "box": [258, 555, 335, 666]}},
+      {"id": "accessory-blue-grade-1", "name": null, "rarity": null, "appearance": "blue", "grade": 1, "enhancement": 200, "displayed_fraction": {"numerator": 0, "denominator": 5}, "owned": null, "equipped": false, "source": {"capture": "equipment_accessories_scroll_2.png", "box": [369, 555, 446, 666]}},
+      {"id": "accessory-gold-equipped", "name": null, "rarity": null, "appearance": "gold", "grade": null, "enhancement": 200, "displayed_fraction": {"numerator": 0, "denominator": 5}, "owned": true, "equipped": true, "source": {"capture": "equipment_accessories_scroll_2.png", "box": [200, 700, 280, 810]}}
+    ]
   },
   "character_promotion": {
     "kind": "promotion_ranks",
     "selected": "Blue Abyss",
     "source": "character_promotion.png → character_promotion_scroll_6.png",
     "ranks": [
-      {"name": "Stone", "status": "complete"},
-      {"name": "Bronze", "status": "complete"},
-      {"name": "Iron", "status": "complete"},
-      {"name": "Silver", "status": "complete"},
-      {"name": "Gold", "status": "complete"},
-      {"name": "Mithril", "status": "complete"},
-      {"name": "Orichalcum", "status": "complete"},
-      {"name": "Arcanite", "status": "complete"},
-      {"name": "Adamant", "status": "complete"},
-      {"name": "Ether", "status": "complete"},
-      {"name": "Black Mythril", "status": "complete"},
-      {"name": "Demon Metal", "status": "complete"},
-      {"name": "Dragonos", "status": "complete"},
-      {"name": "Ragnablood", "status": "complete"},
-      {"name": "Warfrost", "status": "complete"},
-      {"name": "Dark Nox", "status": "complete"},
-      {"name": "Blue Abyss", "status": "complete"},
-      {"name": "Infinaut", "status": "challenge"}
+      {
+        "name": "Stone",
+        "status": "complete"
+      },
+      {
+        "name": "Bronze",
+        "status": "complete"
+      },
+      {
+        "name": "Iron",
+        "status": "complete"
+      },
+      {
+        "name": "Silver",
+        "status": "complete"
+      },
+      {
+        "name": "Gold",
+        "status": "complete"
+      },
+      {
+        "name": "Mithril",
+        "status": "complete"
+      },
+      {
+        "name": "Orichalcum",
+        "status": "complete"
+      },
+      {
+        "name": "Arcanite",
+        "status": "complete"
+      },
+      {
+        "name": "Adamant",
+        "status": "complete"
+      },
+      {
+        "name": "Ether",
+        "status": "complete"
+      },
+      {
+        "name": "Black Mythril",
+        "status": "complete"
+      },
+      {
+        "name": "Demon Metal",
+        "status": "complete"
+      },
+      {
+        "name": "Dragonos",
+        "status": "complete"
+      },
+      {
+        "name": "Ragnablood",
+        "status": "complete"
+      },
+      {
+        "name": "Warfrost",
+        "status": "complete"
+      },
+      {
+        "name": "Dark Nox",
+        "status": "complete"
+      },
+      {
+        "name": "Blue Abyss",
+        "status": "complete"
+      },
+      {
+        "name": "Infinaut",
+        "status": "challenge"
+      }
     ]
   },
   "character_class": {
