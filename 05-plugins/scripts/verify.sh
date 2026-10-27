@@ -3,7 +3,7 @@
 set -euo pipefail
 base=${1:?Usage: verify.sh http://LISTEN_ADDRESS:WEB_PORT}
 curl -fsS "${base%/}/api/v1/plugins/slayer-legend/game" | python3 -c '
-import json, sys
+import json, re, sys
 state = json.load(sys.stdin)
 expected = {"diamond", "gold", "emerald", "cubes", "crystals", "dice",
             "soul_green", "soul_blue", "soul_red", "soul_white",
@@ -11,6 +11,10 @@ expected = {"diamond", "gold", "emerald", "cubes", "crystals", "dice",
             "feather_white", "feather_green", "feather_purple", "feather_black",
             "dragon_power", "dragon_spark", "black_mana"}
 rows = state["resources"]
+for row in rows:
+    value = row["value"]
+    if isinstance(value, dict) and re.fullmatch(r"\d{1,3}(?:,\d{3})+|\d+", value.get("text", "")):
+        assert int(value["text"].replace(",", "")) == value["value"]
 scan = state["scan"]
 assert scan is None or {"size", "at", "screen", "overlays", "expected", "ran"} <= scan.keys()
 if scan is not None:
