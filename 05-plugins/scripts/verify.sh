@@ -162,6 +162,7 @@ script = sys.stdin.read()
 assert "trace/arm" in script and "Écran : {screen}" in script
 assert "response.body" in script and "/trace/cancel" in script
 assert "data-capture-layout" in script and "page_navigation_tracking.js" in script
+assert "data-debug-drag-handle" in script and "data-debug-toggle" in script
 print("Navigation debug overlay asset: OK")
 '
 curl -fsS "${base%/}/api/v1/plugins/slayer-legend/trace/manual" | python3 -c '

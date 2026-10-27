@@ -95,6 +95,88 @@ export function annotationPoint(event, bounds) {
     y: Math.max(0, Math.min(1, (event.clientY - bounds.top) / bounds.height)) };
 }
 
+// Keep panel geometry separate from capture rendering: dragging or folding
+// never replaces an armed annotation surface or restarts its pointer gesture.
+export function floatingDebugPanel(viewport, stop) {
+  let position = null;
+  let minimised = false;
+  let current = null;
+  let drag = null;
+  let deferred = null;
+  const clamp = () => {
+    if (!current) return;
+    const bounds = viewport.getBoundingClientRect();
+    const size = current.panel.getBoundingClientRect();
+    if (!position) position = { x: bounds.width * .02,
+      y: current.compact ? bounds.height * .05 : bounds.height * .93 - size.height };
+    position.x = Math.max(0, Math.min(position.x, Math.max(0, bounds.width - size.width)));
+    position.y = Math.max(0, Math.min(position.y, Math.max(0, bounds.height - size.height)));
+    current.panel.style.left = `${position.x}px`;
+    current.panel.style.top = `${position.y}px`;
+  };
+  const paint = () => {
+    if (!current) return;
+    current.panel.style.width = minimised ? 'auto' : 'min(380px, 96%)';
+    current.content.style.display = minimised ? 'none' : '';
+    current.toggle.textContent = minimised ? '+' : '−';
+    current.toggle.setAttribute('aria-label', current.tr(minimised ? 'Agrandir le menu de navigation' : 'Réduire le menu de navigation'));
+    current.toggle.setAttribute('aria-expanded', String(!minimised));
+    current.panel.setAttribute('data-debug-minimised', String(minimised));
+    clamp();
+  };
+  return {
+    clamp,
+    get dragging() { return Boolean(drag); },
+    afterDrag(fn) { deferred = fn; },
+    attach(panel, content, compact, tr) {
+      const header = document.createElement('div');
+      header.setAttribute('data-debug-drag-handle', '');
+      header.style.cssText = 'display:flex;align-items:center;gap:8px;pointer-events:auto;touch-action:none;cursor:move;user-select:none';
+      const title = document.createElement('span');
+      title.textContent = `⠿ ${tr('Navigation')}`;
+      title.style.cssText = 'flex:1;font-weight:600';
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.setAttribute('data-debug-toggle', '');
+      toggle.style.cssText = 'pointer-events:auto;padding:1px 7px;border:1px solid #888;border-radius:3px;background:#292929;color:#fff;font:inherit;cursor:pointer;touch-action:none';
+      toggle.onpointerdown = stop;
+      toggle.onpointerup = stop;
+      toggle.onclick = (event) => { stop(event); minimised = !minimised; paint(); };
+      header.append(title); header.append(toggle);
+      header.onpointerdown = (event) => {
+        stop(event);
+        if (drag || (event.button !== undefined && event.button !== 0)) return;
+        clamp();
+        drag = { pointer: event.pointerId, ...position };
+        // Distinct client and panel coordinates are needed after clamping.
+        drag.clientX = event.clientX; drag.clientY = event.clientY;
+        header.setPointerCapture?.(event.pointerId);
+      };
+      header.onpointermove = (event) => {
+        stop(event);
+        if (!drag || drag.pointer !== event.pointerId) return;
+        position = { x: drag.x + event.clientX - drag.clientX,
+          y: drag.y + event.clientY - drag.clientY };
+        clamp();
+      };
+      const end = (event) => {
+        stop(event);
+        if (!drag || drag.pointer !== event.pointerId) return;
+        drag = null;
+        if (header.hasPointerCapture?.(event.pointerId)) header.releasePointerCapture(event.pointerId);
+        const done = deferred; deferred = null; done?.();
+      };
+      header.onpointerup = end;
+      header.onpointercancel = end;
+      header.onlostpointercapture = end;
+      panel.setAttribute('data-debug-panel', '');
+      panel.append(header); panel.append(content);
+      current = { panel, content, compact, toggle, tr };
+      paint();
+    },
+  };
+}
+
 export default function navigationDebug(api, { enabled = () => true } = {}) {
   const layer = document.createElement('div');
   layer.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:30';
@@ -116,6 +198,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
   const busy = () => ['arming', 'armed', 'saving', 'cancelling'].includes(captureState);
   const clear = () => { layer.replaceChildren(); layer.remove(); rendered = ''; };
   const stop = (event) => { event.preventDefault(); event.stopPropagation(); };
+  const floating = floatingDebugPanel(api.layer, stop);
   const finishTouch = (tap, synthetic = false) => {
     if (captureState !== 'armed') return;
     captureState = 'saving';
@@ -163,6 +246,8 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
 
   function render() {
     if (!active() || !graph || !registry) { clear(); return; }
+    floating.clamp();
+    if (floating.dragging) { floating.afterDrag(render); return; }
     const signature = JSON.stringify([screen, scan?.plain, scan?.overlays, captureState, captureId, captureKind, record]);
     renderZones();
     if (signature === rendered && layer.isConnected) return;
@@ -179,6 +264,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
     // Annotation gestures are consumed here, before they reach Android.
     if (captureState === 'armed' && captureKind !== 'navigation') {
       const surface = document.createElement('div');
+      surface.setAttribute('data-annotation-surface', '');
       surface.style.cssText = 'position:absolute;inset:0;pointer-events:auto;touch-action:none;cursor:crosshair';
       let start = null;
       let preview = null;
@@ -209,10 +295,11 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
     }
 
     const panel = document.createElement('div');
-    panel.style.cssText = `position:absolute;left:2%;right:2%;${busy() ? 'top:5%' : 'bottom:7%'};pointer-events:${busy() ? 'none' : 'auto'};z-index:2;padding:7px;border:1px solid #ffe100;border-radius:5px;background:#171717ed;color:#fff;font:12px sans-serif`;
+    panel.style.cssText = `position:absolute;max-width:96%;max-height:100%;box-sizing:border-box;overflow:auto;pointer-events:${busy() ? 'none' : 'auto'};z-index:2;padding:7px;border:1px solid #ffe100;border-radius:5px;background:#171717ed;color:#fff;font:12px sans-serif`;
     panel.setAttribute('data-capture-layout', busy() ? 'compact' : 'actions');
     panel.onpointerdown = (event) => event.stopPropagation();
     panel.onpointerup = (event) => event.stopPropagation();
+    const content = document.createElement('div');
     const actions = document.createElement('div');
     actions.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px';
     for (const action of busy() ? [] : ANNOTATIONS) {
@@ -237,7 +324,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
       };
       actions.append(button);
     }
-    panel.append(actions);
+    content.append(actions);
     const status = document.createElement('div');
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
@@ -250,7 +337,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
       failed: 'Échec de l’enregistrement', expired: 'Capture expirée · Choisis une action' })[captureState];
     status.textContent = api.tr(message);
     if (captureState !== 'idle') status.textContent = `${api.tr(ANNOTATIONS.find((item) => item.kind === captureKind)?.label ?? '')} · ${status.textContent}`;
-    panel.append(status);
+    content.append(status);
     if (busy()) {
       const cancel = document.createElement('button');
       cancel.type = 'button';
@@ -268,7 +355,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
         } catch { captureState = 'failed'; }
         captureId = null; record = null; render();
       };
-      panel.append(cancel);
+      content.append(cancel);
     }
     if (record && !busy()) {
       for (const [key, label] of [['before_url', 'Capture avant'], ['after_url', 'Capture après']]) {
@@ -277,15 +364,16 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
         link.href = record[key]; link.target = '_blank'; link.rel = 'noopener';
         link.textContent = api.tr(label);
         link.style.cssText = 'color:#ffe100;margin-right:12px';
-        panel.append(link);
+        content.append(link);
       }
       if (record.tap) {
         const coords = document.createElement('div');
         coords.textContent = `${record.id} · ${record.tap.x.toFixed(3)}, ${record.tap.y.toFixed(3)}${record.tap.end ? ` → ${record.tap.end.x.toFixed(3)}, ${record.tap.end.y.toFixed(3)}` : ''}`;
-        panel.append(coords);
+        content.append(coords);
       }
     }
     layer.append(panel);
+    floating.attach(panel, content, busy(), api.tr);
   }
 
   const update = async () => {
@@ -321,6 +409,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
     update();
   }).catch(() => clear());
   const timer = window.setInterval(update, 250);
+  window.addEventListener?.('resize', floating.clamp);
   let animation = null;
   let lastFrame = 0;
   const animate = (at) => {
@@ -340,6 +429,6 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
       value: () => api.tr('Jaune : clic · chevrons bleus : vertical · chevrons violets : horizontal · pointillés : condition à vérifier') }],
     onSetting: (key) => { if (key === 'navigationDebug') update(); },
     update,
-    dispose: () => { disposed = true; stopTap?.(); window.clearInterval(timer); window.cancelAnimationFrame?.(animation); tracker.reset(); clear(); },
+    dispose: () => { disposed = true; window.removeEventListener?.('resize', floating.clamp); stopTap?.(); window.clearInterval(timer); window.cancelAnimationFrame?.(animation); tracker.reset(); clear(); },
   };
 }

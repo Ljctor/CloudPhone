@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import trace from './page_trace.js';
-import navigationDebug, { ANNOTATIONS, annotationPoint, zonesFor, recognisedScreen } from './page_navigation_debug.js';
+import navigationDebug, { ANNOTATIONS, annotationPoint, floatingDebugPanel, zonesFor, recognisedScreen } from './page_navigation_debug.js';
 
 const graph = JSON.parse(readFileSync(new URL('./navigation.json', import.meta.url)));
 const registry = JSON.parse(readFileSync(new URL('./screen_registry.json', import.meta.url)));
@@ -59,7 +59,7 @@ globalThis.window = { setInterval(fn) { poll = fn; return 1; }, clearInterval() 
 const all = (node) => [node, ...node.children.flatMap(all)];
 const root = new Element('main'); root.root = true;
 const status = () => all(root).find((item) => item.attrs.role === 'status')?.textContent;
-const buttons = () => all(root).filter((item) => item.tagName === 'button');
+const buttons = () => all(root).filter((item) => item.tagName === 'button' && !('data-debug-toggle' in item.attrs));
 const event = (clientX = 30, clientY = 70) => ({ clientX, clientY, pointerId: 1,
   preventDefault() { this.prevented = true; }, stopPropagation() { this.stopped = true; } });
 const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
@@ -108,7 +108,7 @@ assert.match(status(), /Capture avant enregistrée/);
 archive.clicks = [{ id: 'capture-1', kind: 'forbidden', capture_status: 'armed', before_url: '/before' }];
 await poll();
 assert.match(status(), /Clique sur l’élément/, 'persisted armed capture remains ready for input');
-let surface = all(root).find((item) => item.onpointermove);
+let surface = all(root).find((item) => 'data-annotation-surface' in item.attrs);
 assert.ok(surface, 'forbidden annotation intercepts input');
 const down = event(); surface.onpointerdown(down);
 const up = event(); surface.onpointerup(up);
@@ -125,7 +125,7 @@ assert.match(status(), /Déclaration enregistrée/, 'completion remains visible'
 // Drawing a slider sends its extent, and ordinary polling preserves the
 // pointer surface so a long drag cannot be interrupted by a refresh.
 buttons()[3].onclick(event()); await flush(); armedReply(); await flush();
-surface = all(root).find((item) => item.onpointermove);
+surface = all(root).find((item) => 'data-annotation-surface' in item.attrs);
 surface.onpointerdown(event(20, 40));
 await poll();
 assert.ok(all(root).includes(surface));
@@ -171,7 +171,7 @@ for (const setting of ['on', 'off']) {
   traceTaps = setting;
   buttons()[0].onclick(event()); await flush(); armedReply(); await flush();
   assert.match(status(), /Clique sur l’élément/);
-  assert.ok(!all(root).some((item) => item.onpointermove), 'navigation keeps Android input available');
+  assert.ok(!all(root).some((item) => 'data-annotation-surface' in item.attrs), 'navigation keeps Android input available');
   const before = posts.length;
   const tap = { x: .4, y: .6, kind: 'tap' };
   for (const listener of tapListeners) listener(tap);
@@ -187,7 +187,7 @@ for (const setting of ['on', 'off']) {
 // plugins.ts; it must leave saving state and expose the failure.
 buttons()[2].onclick(event()); await flush(); armedReply(); await flush();
 traceResponse = { ok: false, status: 503, body: { error: 'storage unavailable' } };
-surface = all(root).find((item) => item.onpointermove);
+surface = all(root).find((item) => 'data-annotation-surface' in item.attrs);
 surface.onpointerdown(event()); surface.onpointerup(event());
 await flush();
 assert.match(status(), /Échec/);
@@ -223,4 +223,74 @@ assert.equal(buttons().length, 5);
 await poll();
 assert.match(status(), /Capture annulée/);
 ui.dispose();
-console.log('Navigation annotations, consumed gestures and persistent capture feedback: OK');
+// Drag and fold the actual armed panel without rebuilding the input
+// surface or sending a declaration. Polling retains both panel choices.
+archive = { clicks: [] };
+ui = navigationDebug(api); await flush();
+buttons()[1].onclick(event()); await flush(); armedReply(); await flush();
+const armedSurface = all(root).find((item) => 'data-annotation-surface' in item.attrs);
+const debugPanel = () => all(root).find((item) => 'data-debug-panel' in item.attrs);
+const handle = () => all(root).find((item) => 'data-debug-drag-handle' in item.attrs);
+const toggle = () => all(root).find((item) => 'data-debug-toggle' in item.attrs);
+const postsBeforePanelGesture = posts.length;
+const dragDown = event(10, 10); handle().onpointerdown(dragDown);
+const dragMove = event(40, 60); handle().onpointermove(dragMove);
+await poll();
+const dragUp = event(40, 60); handle().onpointerup(dragUp);
+for (const gesture of [dragDown, dragMove, dragUp]) assert.ok(gesture.prevented && gesture.stopped);
+assert.ok(all(root).includes(armedSurface));
+toggle().onclick(event());
+assert.equal(debugPanel().attrs['data-debug-minimised'], 'true');
+assert.equal(toggle().attrs['aria-expanded'], 'false');
+await poll();
+assert.equal(debugPanel().attrs['data-debug-minimised'], 'true');
+assert.ok(all(root).includes(armedSurface), 'folding keeps the annotation surface intact');
+assert.equal(posts.length, postsBeforePanelGesture, 'panel drag and fold never submit an annotation');
+toggle().onclick(event());
+assert.equal(debugPanel().attrs['data-debug-minimised'], 'false');
+buttons()[0].onclick(event()); await flush();
+ui.dispose();
+
+// Use measured panel sizes to verify both-axis movement, clamping on
+// resize, and retained coordinates across compact/full panel attachment.
+let viewportSize = { left: 0, top: 0, width: 720, height: 1000 };
+const viewport = new Element('div');
+viewport.getBoundingClientRect = () => viewportSize;
+const floating = floatingDebugPanel(viewport, (event) => { event.preventDefault(); event.stopPropagation(); });
+const attach = (compact = false) => {
+  const panel = new Element('div');
+  panel.getBoundingClientRect = () => ({ width: panel.style.width === 'auto' ? 100 : 380,
+    height: panel.style.width === 'auto' ? 30 : 180 });
+  const content = new Element('div');
+  floating.attach(panel, content, compact, (value) => value);
+  return { panel, content, header: panel.children[0], toggle: panel.children[0].children[1] };
+};
+let floatingUi = attach();
+const originalX = parseFloat(floatingUi.panel.style.left);
+const originalY = parseFloat(floatingUi.panel.style.top);
+floatingUi.header.onpointerdown(event(20, 20));
+floatingUi.header.onpointermove(event(120, -230));
+floatingUi.header.onpointerup(event(120, -230));
+assert.equal(parseFloat(floatingUi.panel.style.left), originalX + 100);
+assert.equal(parseFloat(floatingUi.panel.style.top), originalY - 250);
+floatingUi.toggle.onclick(event());
+assert.equal(floatingUi.content.style.display, 'none');
+const retained = { left: floatingUi.panel.style.left, top: floatingUi.panel.style.top };
+floatingUi = attach(true);
+assert.equal(floatingUi.panel.attrs['data-debug-minimised'], 'true');
+assert.equal(floatingUi.panel.style.left, retained.left);
+assert.equal(floatingUi.panel.style.top, retained.top);
+floatingUi.header.onpointerdown(event());
+floatingUi.header.onpointermove(event(3000, 3000));
+floatingUi.header.onpointercancel(event(3000, 3000));
+assert.equal(floating.dragging, false);
+assert.equal(floatingUi.panel.style.left, '620px');
+assert.equal(floatingUi.panel.style.top, '970px');
+viewportSize = { ...viewportSize, width: 200, height: 300 };
+floating.clamp();
+assert.equal(floatingUi.panel.style.left, '100px');
+assert.equal(floatingUi.panel.style.top, '270px');
+floatingUi.toggle.onclick(event());
+assert.equal(floatingUi.panel.style.left, '0px');
+assert.equal(floatingUi.panel.style.top, '120px');
+console.log('Navigation annotations, floating panel gestures and persistent capture feedback: OK');
