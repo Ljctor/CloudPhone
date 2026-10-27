@@ -155,7 +155,7 @@ assert "battle" in graph["screens"] and "equipment_weapon" in graph["screens"]
 assert graph["screens"]["battle"]["name"]
 assert any(move.get("swipe") for move in graph["screens"]["equipment_weapon"]["moves"])
 assert state["registry"]["tree"]["equipment_weapon"]["scroll"]
-assert "quest_panel" in state["registry"]["screens"]
+assert "quest_panel" in graph["screens"]
 print("Navigation debug geometry: OK")
 '
 curl -fsS "${base%/}/plugins/slayer-legend/page_navigation_debug.js" | python3 -c '
