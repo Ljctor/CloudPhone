@@ -6,7 +6,7 @@
 // the plugin's options list at index at, once the gateway answered.
 import { RESOURCE_ICONS } from './page_resources.js';
 import { SCREEN_ICONS } from './page_screen_icons.js';
-import { fullNumber } from './page_numbers.js';
+import { shortNumber } from './page_numbers.js';
 const PIECE = '#d9a441';
 const EVERY = 10000;
 
@@ -18,7 +18,7 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
     if (row.shown === 'lower_bound') return `≥ ${value}`;
     if (row.shown === 'percent') return `${Math.round(value * 100)} %`;
     if (row.shown === 'switch') return api.tr(value === 'on' ? 'Activé' : 'Désactivé');
-    if (value && typeof value === 'object') return fullNumber(value) ?? '';
+    if (value && typeof value === 'object') return shortNumber(value) ?? '';
     return String(value);
   };
   const text = (row) => {
@@ -26,7 +26,7 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
     return `${shown(row)} · ${api.tr('vu à {time}', { time: time(row.seen) })}`;
   };
   const resourceText = (row) => row.value === null || row.value === undefined ? 'never read' :
-    fullNumber(row.value) ?? 'never read';
+    shortNumber(row.value) ?? 'never read';
   const ask = () => {
     if (game.busy || Date.now() - game.at < EVERY) return;
     game.busy = true;

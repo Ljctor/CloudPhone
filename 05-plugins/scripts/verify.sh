@@ -82,3 +82,8 @@ if state["value"] is not None and state["text"] and state["text"].isdigit() and 
     assert state["window"] == 60
 print("Gold rate endpoint: OK")
 '
+curl -fsS "${base%/}/plugins/slayer-legend/page_numbers.js" | python3 -c '
+import sys
+assert "export function shortNumber" in sys.stdin.read()
+print("Abbreviated option counter asset: OK")
+'

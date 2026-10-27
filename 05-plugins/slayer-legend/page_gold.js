@@ -7,7 +7,7 @@
 import { drawText } from './gold_text.js';
 import { GOLD, SOULS } from './page_icons.js';
 import { RESOURCE_ICONS } from './page_resources.js';
-import { fullNumber } from './page_numbers.js';
+import { shortNumber } from './page_numbers.js';
 
 // Keep the measured rates against the right edge, below Scroll (its label
 // ends around 17% of the screen). Each row keeps its own icon beside its value.
@@ -19,7 +19,7 @@ const FRENCH = new Intl.NumberFormat('fr-FR', { maximumSignificantDigits: 3 });
 // [] for none.
 export function soulsParts(souls) {
   return ['green', 'blue', 'red', 'white'].filter((colour) => typeof souls?.[colour]?.rate === 'number')
-    .map((colour) => ({ icon: SOULS[colour], text: fullNumber(souls[colour].rate) }));
+    .map((colour) => ({ icon: SOULS[colour], text: shortNumber(souls[colour].rate) }));
 }
 
 // overlay: functions giving the lines written top left; enabled(): the
@@ -143,7 +143,7 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
   const goldText = () => {
     const answer = gold.answer;
     if (!answer) return '…';
-    if (answer.rate_text) return [{ icon: GOLD, text: `${fullNumber(answer.rate_text)}/s`,
+    if (answer.rate_text) return [{ icon: GOLD, text: `${shortNumber(answer.rate_text)}/s`,
       color: rateColour(answer, (Date.now() - gold.at) / 1000) }];
     return answer.read ? api.tr('pas encore mesuré') : api.tr('non visible');
   };

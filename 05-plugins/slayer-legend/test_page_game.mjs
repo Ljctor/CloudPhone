@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import gameFeature from './page_game.js';
 import { soulsParts } from './page_gold.js';
-import { fullNumber } from './page_numbers.js';
+import { shortNumber } from './page_numbers.js';
 import { RESOURCE_ICONS } from './page_resources.js';
 import { SCREEN_ICONS } from './page_screen_icons.js';
 import { readFile } from 'node:fs/promises';
@@ -64,13 +64,16 @@ Object.assign(answer.resources.find((row) => row.field === 'soul_green'),
   { value: { text: '02.0C' }, seen: 1, verified: true });
 Object.assign(answer.resources.find((row) => row.field === 'soul_blue'),
   { value: { text: '0.70C' }, seen: 1, verified: true });
-assert.equal(options.find((row) => row.label === 'Âmes vertes').value(), '2,000,000,000');
-assert.equal(options.find((row) => row.label === 'Âmes bleues').value(), '700,000,000');
+assert.equal(options.find((row) => row.label === 'Âmes vertes').value(), '2.0C');
+assert.equal(options.find((row) => row.label === 'Âmes bleues').value(), '0.70C');
 Object.assign(answer.resources.find((row) => row.field === 'gold'),
   { value: { text: '629,033,368,693,144,910,929', value: 6.290333686931449e20 } });
-assert.equal(gold.value(), '629,033,368,693,144,910,929');
-assert.equal(fullNumber('45.9E'), '45,900,000,000,000,000');
-assert.equal(soulsParts({ green: { rate: 12345.6789 } })[0].text, '12,345.6789');
+assert.equal(gold.value(), '629F');
+Object.assign(answer.resources.find((row) => row.field === 'cubes'),
+  { value: { text: '2,876,335,558', value: 2876335558 } });
+assert.equal(options.find((row) => row.label === 'Cubes').value(), '2.88C');
+assert.equal(shortNumber('45.9E'), '45.9E');
+assert.equal(soulsParts({ green: { rate: 12345.6789 } })[0].text, '12.3A');
 answer.screens.push({ screen: 'guild_request', path: ['Combat', 'Adventure: Guild', 'Guild Request'],
   fields: [], observed: true, example: { url: '/api/v1/plugins/slayer-legend/examples/guild_request' } });
 game.rows(options, 0);
