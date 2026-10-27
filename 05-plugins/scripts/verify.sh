@@ -12,6 +12,13 @@ expected = {"diamond", "gold", "emerald", "cubes", "crystals", "dice",
             "dragon_power", "dragon_spark", "black_mana"}
 rows = state["resources"]
 assert {row["field"] for row in rows} == expected
+cube = next(row for row in rows if row["field"] == "cubes")
+assert cube["pending"] is False
+assert cube["value"] is None or (
+    isinstance(cube["value"], dict)
+    and isinstance(cube["value"].get("value"), int)
+    and cube["value"].get("text", "").replace(",", "").isdigit()
+)
 assert len(rows) == len(expected)
 fields = [row["field"] for row in rows]
 assert fields.index("soul_white") == fields.index("soul_red") + 1
@@ -21,6 +28,11 @@ assert next(screen for screen in state["screens"] if screen["screen"] == "battle
 assert not {"top_menu", "top_ranking", "top_settings", "top_mail"} & {screen["screen"] for screen in state["screens"]}
 assert not any(row["field"] in expected for screen in state["screens"] for row in screen["fields"])
 screens = {screen["screen"]: screen for screen in state["screens"]}
+assert screens["skill"]["label"] == "Skill"
+assert screens["quest_panel"]["label"] == "Quest"
+assert screens["scroll"]["inventory"]["status"] == "never_read"
+assert screens["equipment_weapon"]["path"][-1] == "Equipment: Weapon"
+assert screens["black_orb"]["path"][-1] == "Black Orb"
 assert all("example" in screen and "examples" in screen and "details" in screen
            for screen in state["screens"])
 assert sum(bool(screen["details"]) for screen in state["screens"]) >= 50
@@ -46,6 +58,7 @@ curl -fsS "${base%/}/api/v1/plugins/slayer-legend/gold" | python3 -c '
 import json, sys
 state = json.load(sys.stdin)
 assert {"text", "value", "rate", "rate_text", "span", "window", "read", "box", "souls"} <= state.keys()
+assert {"green", "blue", "red", "white"} <= state["souls"].keys()
 assert state["window"] in (60, 300)
 assert (state["rate"] is None) == (state["rate_text"] is None)
 if state["rate"] is not None:

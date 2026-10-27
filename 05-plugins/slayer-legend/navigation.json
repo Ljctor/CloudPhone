@@ -900,6 +900,16 @@
      "label": "sword on a beige background: Soul Weapon (only once the Weapon tab reads active: on Accessories the same spot opens Black Orb); at 0.462 a scrolled weapon list's cell is under it and opens weapon_detail (seen 2026-10-21)"
     },
     {
+     "id": "inspect_weapon",
+     "to": "weapon_detail",
+     "tap": [
+      0.15,
+      0.52
+     ],
+     "label": "open the first visible weapon card to read its Enhance Cube balance; never Enhance, Equip or Batch Combine",
+     "precondition": "a fresh capture shows the Weapon tab selected and a weapon card centered at (0.15, 0.52), with no popup or purchase button there"
+    },
+    {
      "id": "scroll",
      "to": "equipment_weapon",
      "swipe": [0.27, 0.81, 0.27, 0.55],

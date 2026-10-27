@@ -139,6 +139,16 @@ class Graph(unittest.TestCase):
         # A bottom tab is not the panel's close action.
         self.assertIsNotNone(nav.guard("shop_summon", "close", 0.073, 0.966))
 
+    def test_weapon_card_can_be_inspected_without_enhancing(self):
+        move = next(m for m in nav.connections("equipment_weapon") if m["id"] == "inspect_weapon")
+        self.assertEqual(move["to"], "weapon_detail")
+        self.assertIn("check first", nav.guard("equipment_weapon", "inspect_weapon", 0.15, 0.52))
+        self.assertIsNone(nav.guard("equipment_weapon", "inspect_weapon", 0.15, 0.52, verified=True))
+        self.assertIsNotNone(nav.guard("equipment_weapon", "inspect_weapon", 0.5, 0.905, verified=True))
+        self.assertIn("forbidden", nav.guard("equipment_weapon", "batch_combine", 0.5, 0.905))
+        self.assertIsNone(nav.guard("weapon_detail", "close", 0.5, 0.955))
+        self.assertIn("forbidden", nav.guard("weapon_detail", "enhance", 0.3, 0.835))
+
     def test_battle_controls(self):
         # The arrow's spot is on the AUTO tile once unfolded: tapped only
         # once the controls read folded; AUTO never (the user, 2026-10-22).

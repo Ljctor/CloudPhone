@@ -52,20 +52,52 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
       };
     }),
   ];
-  const accessPath = (screen) => ({
-    battle: [],
-    skill: ['Skill'],
-    companion: ['Companion'],
-    beast: ['Companion', 'Beasts'],
-    companion_advancement: ['Companion', 'Advancement'],
-    adventure_map: ['Adventure'],
-    dungeon_map: ['Adventure', 'Dungeon'],
-    stage_select: ['Select Region'],
-    soul_weapon: ['Equipment', 'Weapon', 'Soul Weapon'],
-    soul_weapon_engraving: ['Equipment', 'Weapon', 'Soul Weapon', 'Engraving'],
-    mine_list: ['Adventure', 'Dungeon', 'Closed Mine'],
-  }[screen.screen] ?? (screen.path ?? [screen.label]).filter((part) => part !== 'Combat')
-    .flatMap((part) => part.split(': ').filter(Boolean)));
+  const accessPath = (screen) => {
+    const known = {
+      battle: [],
+      skill: ['Skill'],
+      companion: ['Companion'],
+      beast: ['Companion', 'Beasts'],
+      companion_advancement: ['Companion', 'Advancement'],
+      adventure_map: ['Adventure'],
+      dungeon_map: ['Adventure', 'Dungeon'],
+      stage_select: ['Select Region'],
+      scroll: ['Scroll'],
+      quest_panel: ['Quest'],
+      equipment_weapon: ['Equipment', 'Weapon'],
+      equipment_accessories: ['Equipment', 'Accessories'],
+      equipment_relic: ['Equipment', 'Relic'],
+      spirit: ['Equipment', 'Spirit'],
+      black_orb: ['Equipment', 'Accessories', 'Black Orb'],
+      black_orb_accessory: ['Equipment', 'Accessories', 'Black Orb', 'Accessory card'],
+      soul_weapon: ['Equipment', 'Weapon', 'Soul Weapon'],
+      soul_weapon_engraving: ['Equipment', 'Weapon', 'Soul Weapon', 'Engraving'],
+      mine_list: ['Adventure', 'Dungeon', 'Closed Mine'],
+      mine_area: ['Adventure', 'Dungeon', 'Closed Mine', 'Area'],
+      mine_feathers: ['Adventure', 'Dungeon', 'Closed Mine', 'Area', 'Feathers'],
+      mine_fight: ['Adventure', 'Dungeon', 'Closed Mine', 'Area', 'Feathers', 'Fight'],
+      adventure_story_ellie: ['Adventure', 'Slayer Story', 'Sub', 'Ellie episodes'],
+    }[screen.screen];
+    if (known) return known;
+    const aliases = { 'Skill panel': 'Skill', 'Quest panel': 'Quest', Beast: 'Beasts' };
+    const path = [];
+    for (const raw of screen.path ?? [screen.label]) {
+      if (raw === 'Combat') continue;
+      const [prefix, tail] = raw.split(': ', 2);
+      if (tail === undefined) {
+        const label = aliases[prefix] ?? prefix;
+        if (path.at(-1) !== label) path.push(label);
+        continue;
+      }
+      const parent = aliases[prefix] ?? prefix;
+      const seen = path.indexOf(parent);
+      if (seen >= 0) path.length = seen + 1;
+      else path.push(parent);
+      const label = aliases[tail] ?? tail;
+      if (label !== parent && path.at(-1) !== label) path.push(label);
+    }
+    return path;
+  };
   const fieldRows = (screen) => (screen.fields ?? []).map((field) => (field.shown === 'grid' ? {
       type: 'grid', label: field.label,
       visible: () => {
@@ -117,8 +149,9 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
   const inventoryRows = (screen) => {
     const inventory = screen.inventory;
     if (!inventory) return [];
-    if (inventory.kind === 'classes' && inventory.status === 'never_read') {
-      return [{ type: 'status', key: `inventory-${screen.screen}-unread`, label: 'Classes',
+    if (inventory.status === 'never_read') {
+      return [{ type: 'status', key: `inventory-${screen.screen}-unread`,
+        label: inventory.kind === 'classes' ? 'Classes' : screen.label,
         value: () => 'never read', muted: () => true }];
     }
     if (inventory.kind === 'promotion_ranks' && inventory.ranks?.length) {
@@ -227,9 +260,11 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
     const showChildren = (node, path = []) => {
       for (const child of node.children.values()) {
         const at = [...path, child.label];
+        const iconKey = { Quest: 'quest', Scroll: 'scroll', 'Select Region': 'stage_select',
+          Weapon: 'weapon', 'Black Orb': 'black_orb' }[child.label] ?? child.label.toLowerCase();
         rows.push({ type: 'section', key: child.screens.length ? `game-${child.screens[0].screen}` :
           `game-path-${at.join('/')}`, label: child.label, depth: at.length + 1, folded: true,
-        icon: at.length === 1 ? SCREEN_ICONS[child.label.toLowerCase()] : undefined });
+          icon: SCREEN_ICONS[iconKey] });
         child.screens.forEach(showScreen);
         showChildren(child, at);
       }

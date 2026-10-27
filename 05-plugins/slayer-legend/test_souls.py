@@ -73,8 +73,28 @@ class SoulsRow(unittest.TestCase):
         # The ordinary gold crop is too compressed for exact OCR. The
         # high-resolution crop can be read; souls still lack a fixture.
         self.assertFalse(souls.FULL_DIGITS_CALIBRATED)
+        self.assertTrue(souls.HIGH_RES_FULL_DIGITS_CALIBRATED)
         self.assertFalse(gold.FULL_DIGITS_CALIBRATED)
         self.assertTrue(gold.HIGH_RES_FULL_DIGITS_CALIBRATED)
+
+    def test_the_four_full_digit_counters_at_high_resolution(self):
+        reading = souls.read(fixtures.screen("souls_full_mid"))
+        self.assertEqual({colour: count["text"] for colour, count in reading.items()},
+                         {"green": "91,588,528,339", "blue": "10,075,243,128",
+                          "red": "11,336,196,667", "white": "370,988,194"})
+        for count in reading.values():
+            self.assertEqual(count["step"], 1)
+            self.assertTrue(count["full"])
+
+    def test_missing_full_digit_is_unread(self):
+        width, height, pixels = fixtures.screen("souls_full_mid")
+        pixels = bytearray(pixels)
+        # Hide one blue glyph. A partial capture must not be converted to
+        # a plausible but false souls-per-second value.
+        for y in range(748, 766):
+            for x in range(307, 317):
+                pixels[(y * width + x) * 3:(y * width + x) * 3 + 3] = bytes((25, 23, 21))
+        self.assertIsNone(souls.read((width, height, bytes(pixels)))["blue"])
 
     def test_gold_full_digits_at_high_resolution(self):
         self.assertIsNone(gold.read(fixtures.screen("gold_full")))

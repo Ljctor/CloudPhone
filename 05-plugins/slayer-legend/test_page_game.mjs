@@ -16,6 +16,13 @@ assert.ok(RESOURCE_ICONS.diamond?.startsWith('data:image/png;base64,'), 'diamond
 for (const screen of ['character', 'skill', 'equipment', 'companion', 'adventure', 'shop']) {
   assert.ok(SCREEN_ICONS[screen]?.startsWith('data:image/png;base64,'), screen);
 }
+for (const screen of ['quest', 'scroll', 'stage_select', 'weapon', 'black_orb']) {
+  const icon = SCREEN_ICONS[screen];
+  assert.ok(icon?.startsWith('data:image/png;base64,'), screen);
+  const png = Buffer.from(icon.slice(icon.indexOf(',') + 1), 'base64');
+  assert.ok(png.length > 1000 && png.subarray(1, 4).toString() === 'PNG', screen);
+  assert.ok(png.readUInt32BE(16) >= 24 && png.readUInt32BE(20) >= 24, screen);
+}
 const answer = {
   resources: catalogue.map((row) => ({ ...row, value: null, verified: false })),
   screens: [{ screen: 'soul_weapon', path: ['Combat', 'Equipment: Weapon', 'Soul Weapon'],
@@ -131,4 +138,31 @@ assert.equal(catalogueOptions.find((row) => row.key === 'inventory-character_pro
 assert.equal(catalogueOptions.filter((row) => row.key?.startsWith('inventory-character_promotion-')).length, 20);
 assert.equal(catalogueOptions.filter((row) => row.label === 'Promotions observées').length, 0);
 assert.equal(catalogueOptions.filter((row) => row.label === 'Infinaut').length, 1);
+const menuAnswer = { resources: [], screens: [
+  { screen: 'skill', path: ['Combat', 'Skill panel'], fields: [], example: { url: '/skill' } },
+  { screen: 'quest_daily', path: ['Combat', 'Quest panel: Daily'], fields: [], example: { url: '/quest' } },
+  { screen: 'stage_select', path: ['Combat', 'Select Region'], fields: [], example: { url: '/region' } },
+  { screen: 'equipment_weapon', path: ['Combat', 'Equipment: Weapon'], fields: [], example: { url: '/weapon' } },
+  { screen: 'equipment_accessories', path: ['Combat', 'Equipment: Accessories'], fields: [], example: { url: '/accessories' } },
+  { screen: 'black_orb', path: ['Combat', 'Equipment: Accessories', 'Black Orb'], fields: [], example: { url: '/orb' } },
+  { screen: 'scroll', label: 'Scroll', path: ['Combat', 'Scroll'], fields: [], inventory: { status: 'never_read' } },
+] };
+const menuOptions = [];
+gameFeature({ get: async () => menuAnswer, refresh() {}, tr: (value) => value }).rows(menuOptions, 0);
+await new Promise((resolve) => setImmediate(resolve));
+for (const [key, label, depth, icon] of [
+  ['game-skill', 'Skill', 2, SCREEN_ICONS.skill],
+  ['game-path-Quest', 'Quest', 2, SCREEN_ICONS.quest],
+  ['game-stage_select', 'Select Region', 2, SCREEN_ICONS.stage_select],
+  ['game-equipment_weapon', 'Weapon', 3, SCREEN_ICONS.weapon],
+  ['game-black_orb', 'Black Orb', 4, SCREEN_ICONS.black_orb],
+  ['game-scroll', 'Scroll', 2, SCREEN_ICONS.scroll],
+]) {
+  const row = menuOptions.find((item) => item.key === key);
+  assert.equal(row?.label, label, key);
+  assert.equal(row.depth, depth, key);
+  assert.equal(row.icon, icon, key);
+}
+assert.equal(menuOptions.find((row) => row.key === 'game-equipment_accessories').depth, 3);
+assert.equal(menuOptions.find((row) => row.key === 'inventory-scroll-unread').value(), 'never read');
 console.log('Resource icons, nested inventory, unknown values and live counter updates: OK');

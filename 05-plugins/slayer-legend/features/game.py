@@ -35,7 +35,7 @@ PLUGIN = ("launch", "mine", "watchdog", "mode", "stage_change")
 
 
 def reader_table(screens, stage, select, counter, souls, weapon, engraving, controls, screen_rules, table,
-                 weapons):
+                 weapons, cubes=None):
     """{reader id: fn(shot, base, overlays, plain) -> {field: value}}: the
     plugin's existing readers (stage.py, stage_select.py, gold.py,
     soul_counters.py, soul_weapon.py, engraving_screen.py,
@@ -68,6 +68,9 @@ def reader_table(screens, stage, select, counter, souls, weapon, engraving, cont
             place = ("battle", stage._ink(stage._crop(shot, stage.BATTLE_NAME)))
         return {"gold": {"text": reading["text"], "value": reading["value"]} if reading else None,
                 "gold_reading": reading, "gold_place": place}
+
+    def cube_row(shot, base, overlays, plain):
+        return {"cubes": cubes.read(shot) if cubes else None}
 
     def saver_stage(shot, base, overlays, plain):
         _, number = screen_rules.answer(table, stage, "saver", stage.read_saver(shot), None)
@@ -115,7 +118,8 @@ def reader_table(screens, stage, select, counter, souls, weapon, engraving, cont
         return {"engraving": {"weapon": selected, "cells": cells,
                               "pieces": [[list(cell) for cell in piece] for piece in read["pieces"]]}}
 
-    return {"battle_stage": battle_stage, "progress": progress, "gold": gold, "saver_stage": saver_stage,
+    return {"battle_stage": battle_stage, "progress": progress, "gold": gold, "cubes": cube_row,
+            "saver_stage": saver_stage,
             "badge": badge, "battle_settings": battle_settings, "souls": souls_row, "soul_weapon": soul_weapon,
             "region": region, "engraving": engraving_grid}
 

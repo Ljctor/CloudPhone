@@ -61,7 +61,7 @@ const ENGLISH = {
   'Capture enregistrée': 'Saved capture',
   'Relevé historique': 'Historical reading',
   'Débits': 'Rates',
-  'Trois compteurs/s': 'Three counters/s',
+  'Âmes/s': 'Souls/s',
   'Gold/s': 'Gold/s',
   'Mine fermée': 'Closed Mine',
   'Stage mpw18': 'mpw18 stage',

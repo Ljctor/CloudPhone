@@ -146,5 +146,10 @@
     "kind": "classes",
     "status": "never_read",
     "reason": "Le bouton Class est visible dans Promotion, mais son contenu n'a pas été capturé."
+  },
+  "scroll": {
+    "kind": "scroll",
+    "status": "never_read",
+    "reason": "Le bouton Scroll utilise des consommables ; aucun écran Scroll n'a été capturé."
   }
 }

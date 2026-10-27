@@ -6,10 +6,11 @@
 // measurement window fills.
 import { drawText } from './gold_text.js';
 import { GOLD, SOULS } from './page_icons.js';
+import { RESOURCE_ICONS } from './page_resources.js';
 
-// Keep the four measured rates against the right edge, below the game's
-// top bar. Each row keeps its own icon beside its value.
-const RATE_TOP = 8.8;
+// Keep the measured rates against the right edge, below Scroll (its label
+// ends around 17% of the screen). Each row keeps its own icon beside its value.
+const RATE_TOP = 19.5;
 const RATE_STEP = 2.4;
 const FRENCH = new Intl.NumberFormat('fr-FR', { maximumSignificantDigits: 3 });
 
@@ -29,7 +30,7 @@ export function rateColour(answer, elapsed = 0) {
 }
 
 export default function goldFeature(api, { overlay, enabled = () => true }) {
-  const gold = { answer: null, at: 0, timer: null, font: null, line: '' };
+  const gold = { answer: null, at: 0, timer: null, font: null, line: '', cube: null };
   api.get('/gold-font').catch(() => null).then((font) => {
     gold.font = font;
     showGold();
@@ -40,7 +41,43 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
   // pixels, so the lines take 9.2–11.1 %. Redo this if the banner moves.
   const label = document.createElement('canvas');
   label.style.cssText = 'position:absolute;image-rendering:pixelated;left:3%;top:9.2%';
-  const rateRows = [GOLD, SOULS.green, SOULS.blue, SOULS.red].map((src, index) => {
+  // Gold moves from 21% on Battle to 15.5% with a bottom panel. Cubes stay
+  // between those positions, above or below Gold in turn.
+  const cubeRow = document.createElement('div');
+  cubeRow.style.cssText = 'position:absolute;left:37%;top:17.8%;display:flex;align-items:center;gap:2px;pointer-events:none';
+  const cubeIcon = document.createElement('img');
+  cubeIcon.src = RESOURCE_ICONS.cubes ?? '';
+  cubeIcon.alt = '';
+  cubeIcon.style.imageRendering = 'pixelated';
+  const cubeValue = document.createElement('canvas');
+  cubeValue.style.imageRendering = 'pixelated';
+  cubeRow.append(cubeIcon, cubeValue);
+  let cubeDrawn = '';
+  const showCube = () => {
+    const cube = gold.cube;
+    const goldVisible = gold.answer?.box && gold.answer.read &&
+      Date.now() / 1000 - gold.answer.read < 25;
+    if (!cube?.seen || cube.value == null || !gold.font || !enabled() || !goldVisible) {
+      cubeRow.remove();
+      cubeDrawn = '';
+      return;
+    }
+    const value = typeof cube.value === 'number' ? cube.value.toLocaleString('en-US') :
+      String(cube.value?.text ?? cube.value);
+    const age = Math.max(0, Date.now() / 1000 - cube.seen);
+    const share = Math.min(1, age / 600);
+    const colour = `rgb(${Math.round(255 - 80 * share)}, ${Math.round(255 - 34 * share)}, 255)`;
+    const cell = api.layer.offsetHeight / 1040 * 8 / gold.font.height;
+    const key = `${value}@${colour}@${cell}`;
+    if (key === cubeDrawn) return;
+    if (!cubeRow.isConnected) api.layer.append(cubeRow);
+    drawText(cubeValue, gold.font, [{ text: value, colour }], cell);
+    const size = gold.font.height * cell;
+    cubeIcon.style.width = `${size}px`;
+    cubeIcon.style.height = `${size}px`;
+    cubeDrawn = key;
+  };
+  const rateRows = [GOLD, SOULS.green, SOULS.blue, SOULS.red, SOULS.white].map((src, index) => {
     const row = document.createElement('div');
     row.style.cssText = `position:absolute;right:1%;top:${RATE_TOP + index * RATE_STEP}%;display:flex;align-items:center;gap:2px;pointer-events:none`;
     const icon = document.createElement('img');
@@ -62,7 +99,7 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
     }
     const souls = gold.answer?.souls ?? {};
     const entries = [api.setting('goldOverlay') === 'off' ? '' : gold.line,
-      ...['green', 'blue', 'red'].map((colour) => api.setting('stonesOverlay') === 'off'
+      ...['green', 'blue', 'red', 'white'].map((colour) => api.setting('stonesOverlay') === 'off'
         ? '' : typeof souls[colour]?.rate === 'number' ? `${FRENCH.format(souls[colour].rate)}/s` : '')];
     const colour = rateColour(gold.answer, (Date.now() - gold.at) / 1000);
     const key = `${entries.join('|')}@${cell}@${colour}`;
@@ -99,6 +136,7 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
   };
   const tick = window.setInterval(() => {
     if (label.isConnected) showLabel(true);
+    if (cubeRow.isConnected) showCube();
     if (gold.answer?.rate_text) api.refresh();
   }, 1000);
   const goldText = () => {
@@ -124,9 +162,14 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
       part.read && Date.now() / 1000 - part.read < 25);
     gold.line = !fresh ? '' : (answer.rate_text ? `${answer.rate_text}/s` : '...');
     showLabel(Boolean((fresh || soulsFresh) && gold.font && enabled()));
+    showCube();
   };
   const askGold = async () => {
-    gold.answer = await api.get('/gold').catch(() => null);
+    const [answer, state] = await Promise.all([
+      api.get('/gold').catch(() => null), api.get('/game').catch(() => null),
+    ]);
+    gold.answer = answer;
+    gold.cube = state?.resources?.find((row) => row.field === 'cubes') ?? gold.cube;
     gold.at = Date.now();
     showGold();
     api.refresh();
@@ -149,7 +192,7 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
         choices: [{ value: 'on', label: 'Affiché' }, { value: 'off', label: 'Masqué' }],
       },
       {
-        type: 'choice', key: 'stonesOverlay', label: 'Trois compteurs/s',
+        type: 'choice', key: 'stonesOverlay', label: 'Âmes/s',
         choices: [{ value: 'on', label: 'Affiché' }, { value: 'off', label: 'Masqué' }],
       },
     ],
@@ -161,6 +204,7 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
       window.clearInterval(tick);
       label.remove();
       rateRows.forEach(({ row }) => row.remove());
+      cubeRow.remove();
     },
   };
 }

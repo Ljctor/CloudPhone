@@ -21,7 +21,7 @@
     "field": "cubes",
     "label": "Cubes",
     "english": "Cubes",
-    "pending": true
+    "pending": false
   },
   {
     "field": "crystals",
