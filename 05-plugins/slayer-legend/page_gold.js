@@ -5,6 +5,7 @@
 import { drawText } from './gold_text.js';
 import { GOLD, SOULS } from './page_icons.js';
 import { RESOURCE_ICONS } from './page_resources.js';
+import { EQUIPMENT_L3_ICONS } from './page_equipment_icons.js';
 import { shortNumber } from './page_numbers.js';
 
 // Keep the measured rates against the right edge, below Scroll (its label
@@ -16,7 +17,8 @@ const RATE_FIELDS = [
   ['soul_green', SOULS.green], ['soul_blue', SOULS.blue], ['soul_red', SOULS.red],
   ['stone_green', RESOURCE_ICONS.stone_green], ['stone_yellow', RESOURCE_ICONS.stone_yellow],
   ['stone_red', RESOURCE_ICONS.stone_red], ['stone_blue', RESOURCE_ICONS.stone_blue],
-  ['weapon_l3', null], ['accessory_l3', null],
+  ['weapon_l3', EQUIPMENT_L3_ICONS.weapon],
+  ['accessory_l3', EQUIPMENT_L3_ICONS.accessory],
 ];
 const RATE_NAMES = {
   stone_green: 'Pierre verte', stone_yellow: 'Pierre jaune',
@@ -89,9 +91,13 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
       cubeDrawn = '';
       return;
     }
-    const value = typeof cube.value === 'number' ? cube.value.toLocaleString('en-US') :
-      String(cube.value?.text ?? cube.value);
     const age = Math.max(0, Date.now() / 1000 - cube.seen);
+    const base = resourceNumber(cube.value);
+    const hourly = gold.rates.cubes?.hourly;
+    const estimated = base !== null && Number.isFinite(hourly) && hourly >= 0
+      ? Math.floor(base + hourly * age / 3600) : base;
+    const value = estimated !== null ? estimated.toLocaleString('en-US') :
+      String(cube.value?.text ?? cube.value);
     const share = Math.min(1, age / 600);
     const colour = `rgb(${Math.round(255 - 80 * share)}, ${Math.round(255 - 34 * share)}, 255)`;
     // Use the game's Gold counter font and its native 13-pixel height.
