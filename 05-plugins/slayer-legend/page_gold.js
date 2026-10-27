@@ -15,14 +15,10 @@ const RATE_STEP = 1.65;
 const RATE_FIELDS = [
   ['gold', GOLD], ['cubes', RESOURCE_ICONS.cubes],
   ['soul_green', SOULS.green], ['soul_blue', SOULS.blue], ['soul_red', SOULS.red],
-  ['stone_green', RESOURCE_ICONS.stone_green], ['stone_yellow', RESOURCE_ICONS.stone_yellow],
-  ['stone_red', RESOURCE_ICONS.stone_red], ['stone_blue', RESOURCE_ICONS.stone_blue],
   ['weapon_l3', EQUIPMENT_L3_ICONS.weapon],
   ['accessory_l3', EQUIPMENT_L3_ICONS.accessory],
 ];
 const RATE_NAMES = {
-  stone_green: 'Pierre verte', stone_yellow: 'Pierre jaune',
-  stone_red: 'Pierre rouge', stone_blue: 'Pierre bleue',
   weapon_l3: 'Arme L3', accessory_l3: 'Accessoire L3',
 };
 
@@ -115,12 +111,8 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
   const rateRows = RATE_FIELDS.map(([field, src], index) => {
     const row = document.createElement('div');
     row.style.cssText = `position:absolute;right:1%;top:${RATE_TOP + index * RATE_STEP}%;display:flex;align-items:center;gap:2px;pointer-events:none`;
-    const icon = document.createElement(src ? 'img' : 'span');
-    if (src) icon.src = src;
-    else {
-      icon.textContent = RATE_NAMES[field];
-      icon.style.cssText = `color:${({stone_green:'#53d977',stone_yellow:'#ffdb58',stone_red:'#ec6565',stone_blue:'#76bbff'})[field] ?? '#fff'};font: bold 10px sans-serif;text-align:right;white-space:nowrap`;
-    }
+    const icon = document.createElement('img');
+    icon.src = src;
     icon.alt = RATE_NAMES[field] ?? field;
     icon.title = RATE_NAMES[field] ?? field;
     icon.style.imageRendering = 'pixelated';

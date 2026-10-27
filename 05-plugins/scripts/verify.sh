@@ -101,7 +101,8 @@ script = sys.stdin.read()
 assert "drawText(cubeValue, gold.font" in script
 assert "const cell = api.layer.offsetHeight / 1040;" in script
 assert "hourly * age / 3600" in script
-assert "stone_yellow" in script and "stone_blue" in script
+assert "['stone_green'" not in script and "['stone_yellow'" not in script
+assert "['stone_red'" not in script and "['stone_blue'" not in script
 assert "weapon_l3" in script and "accessory_l3" in script
 assert "EQUIPMENT_L3_ICONS.weapon" in script and "EQUIPMENT_L3_ICONS.accessory" in script
 assert "soul_white" not in script
