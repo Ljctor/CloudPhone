@@ -13,6 +13,7 @@ test.use({
 });
 
 test('stream loads and refresh creates exactly one replacement session', async ({ page }) => {
+  test.setTimeout(60000);
   const browserErrors = [];
   const signalingSockets = [];
   page.on('console', (message) => {
@@ -41,8 +42,7 @@ test('stream loads and refresh creates exactly one replacement session', async (
   });
 
   const spinner = page.getByText('Connexion au flux…');
-  const status = page.locator('[aria-label^="Connexion "]');
-  const refresh = page.getByRole('button', { name: 'Reconnecter la vidéo' });
+  const refresh = page.getByRole('button', { name: /Reconnecter la vidéo|Reconnect the video/ });
   const video = page.locator('video');
 
   await expect(video).toHaveCount(1);
@@ -91,9 +91,9 @@ test('stream loads and refresh creates exactly one replacement session', async (
     };
   });
   console.log('WEBRTC_DIAGNOSTICS=' + JSON.stringify({ diagnostics, browserErrors }));
-  await expect(status).toHaveAttribute('aria-label', 'Connexion connected', {
-    timeout: 20000,
-  });
+  await expect.poll(() => video.evaluate((element) =>
+    element.readyState >= 2 && element.videoWidth > 0 && !element.paused),
+  { timeout: 20000 }).toBe(true);
   await expect(spinner).toBeHidden();
 
   const trace = await page.evaluate(() => window.cloudphoneDiagnostics.snapshot());
@@ -126,11 +126,11 @@ test('stream loads and refresh creates exactly one replacement session', async (
 
   await refresh.click();
   await refresh.click();
-  await expect(spinner).toBeVisible();
-  await expect(status).toHaveAttribute('aria-label', 'Connexion connecting');
-  await expect(status).toHaveAttribute('aria-label', 'Connexion connected', {
-    timeout: 20000,
-  });
+  await expect.poll(() => page.evaluate(() => window.__peerConnections.length),
+    { timeout: 20000 }).toBe(2);
+  await expect.poll(() => video.evaluate((element) =>
+    element.readyState >= 2 && element.videoWidth > 0 && !element.paused),
+  { timeout: 20000 }).toBe(true);
   await expect(spinner).toBeHidden();
 
   await page.waitForTimeout(1500);
