@@ -14,7 +14,7 @@ Rules:
   user: Slayer Legend's watchdog relaunches the game while the selected
   mode is mpw18 or mpw4 farming or the Closed Mine (backing off after each
   failure: 1, 2, 4, 8, 16, then 30 minutes between attempts; never in free
-  play or during a mode's entry, 10 s after a user input at the
+  play or during a mode's entry, 5 s after a user input at the
   earliest, under the shared lease). In the mine the relaunch is followed
   by the mine's own way back in (below). No launch
   ever kills the app (`am start` without `-S`, no force-stop). On Android's
@@ -39,7 +39,7 @@ Rules:
       its "Close app".
     - The right edge's arrow that unfolds the controls, to read the preset
       badge and AUTO (AUTO only read, for the alerts): at most every 5
-      minutes, whoever watches (only a user's input pauses it, 10 s),
+      minutes, whoever watches (only a user's input pauses it, 5 s),
       only while the preset switch is real.
     - Nothing for a stalled stage progress bar: an error alert only.
   - Stage change and preset (mode changes, a change of the running

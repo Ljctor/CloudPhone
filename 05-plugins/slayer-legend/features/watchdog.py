@@ -33,7 +33,7 @@ plan-only while its switch says so, see features/stage_change.py). On the
 battle screen the stage is read whole (region and numeral); the preset and
 AUTO are read on one unfold of the right edge's controls (the arrow's tap,
 under the lease) at most every CONTROLS_EVERY seconds, whoever watches the
-screen (only a user's input pauses it, 10 s). AUTO is never tapped
+screen (only a user's input pauses it, 5 s). AUTO is never tapped
 (the user's order, 2026-10-22): its reading is only said in the alerts.
 
 The stage progress bar (stage.progress, under the stage's name) is read
@@ -58,7 +58,7 @@ Soul Weapon icon), never a tap inside the panel.
 
 Free play suspends it, and so does a mode's entry while its sequence
 runs (the mode feature's state "moving", under the lease): the watchdog
-waits for it. A user input pauses it 10 s; another holder of the
+waits for it. A user input pauses it 5 s; another holder of the
 lease defers its repair. At the gateway's start it only observes its first
 looks; the repairs' hourly counts are kept in state.json ("watchdog").
 """
@@ -401,10 +401,38 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         return repaired
 
     async def watch():
+        # Poll only the input timestamp between regular looks. A fresh input
+        # is reflected at once, then the first look after the 5 s pause is
+        # scheduled at its expiry. Full game checks keep their 15 s cadence.
+        input_stamp = None
+        resume_at = None
+        next_look = ports.clock.monotonic() + rules.EVERY
+        monitor_input = callable(getattr(ports.lease, "last_input", None))
         while True:
-            await ports.clock.sleep(rules.EVERY)
             try:
-                await tick()
+                if not monitor_input:
+                    await ports.clock.sleep(rules.EVERY)
+                    await tick()
+                    continue
+                now = ports.clock.monotonic()
+                last = ports.last_input()
+                stamp = last["monotonic"] if last else None
+                if stamp != input_stamp:
+                    input_stamp = stamp
+                    if stamp is not None and now - stamp < rules.PAUSE_AFTER_INPUT:
+                        resume_at = stamp + rules.PAUSE_AFTER_INPUT
+                        await tick()
+                        next_look = ports.clock.monotonic() + rules.EVERY
+                now = ports.clock.monotonic()
+                if resume_at is not None and now >= resume_at:
+                    resume_at = None
+                    await tick()
+                    next_look = ports.clock.monotonic() + rules.EVERY
+                elif now >= next_look:
+                    await tick()
+                    next_look = ports.clock.monotonic() + rules.EVERY
+                now = ports.clock.monotonic()
+                await ports.clock.sleep(rules.input_wake_delay(now, next_look, resume_at))
             except asyncio.CancelledError:
                 raise
             except Exception as e:

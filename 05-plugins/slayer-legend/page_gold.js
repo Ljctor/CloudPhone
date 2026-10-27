@@ -71,7 +71,7 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
   // Gold moves from 21% on Battle to 15.5% with a bottom panel. Cubes stay
   // between those positions, above or below Gold in turn.
   const cubeRow = document.createElement('div');
-  cubeRow.style.cssText = 'position:absolute;left:37%;top:17.8%;display:flex;align-items:center;gap:2px;pointer-events:none';
+  cubeRow.style.cssText = 'position:absolute;left:36.1%;top:18.25%;transform:translateY(-50%);display:flex;align-items:center;gap:2px;pointer-events:none';
   const cubeIcon = document.createElement('img');
   cubeIcon.src = RESOURCE_ICONS.cubes ?? '';
   cubeIcon.alt = '';

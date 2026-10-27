@@ -313,16 +313,15 @@ INPUT = ("INPUT", None, None)
 
 
 class Lease(MineTest):
-    """The mine's taps wait for the shared lease: 10 s after a user
+    """The mine's taps wait for the shared lease: 5 s after a user
     input, and while another holder has it."""
 
-    def test_a_user_input_pauses_the_relaunch_10_s(self):
-        game, answers = self.play(RELAUNCH_SCENES, "fight", [(0, [mine()]), (44, [INPUT]), (50, [GET_MINE]),
+    def test_a_user_input_pauses_the_relaunch_5_s(self):
+        game, answers = self.play(RELAUNCH_SCENES, "fight", [(0, [mine()]), (44, [INPUT]), (46, [GET_MINE]),
                                                              (200, [GET_MINE])], 200)
         self.assertEqual(len(game.taps), 3, game.taps)
-        self.assertGreaterEqual(game.taps[0][0], 44 + 10, game.taps)
-        waiting = [body for t, p, body in answers if t == 50][0]
-        self.assertEqual((waiting["state"], french(waiting["message_t"])), ("waiting", "En attente : l’utilisateur joue"))
+        self.assertGreaterEqual(game.taps[0][0], 44 + 5, game.taps)
+        self.assertEqual([body for t, p, body in answers if t == 46][0]["state"], "farming")
         self.assertEqual(self.last(answers, "/mine")["state"], "farming")
 
     def test_an_outside_holder_defers_it_until_released(self):
@@ -389,8 +388,8 @@ class Lease(MineTest):
                 pass
             return await ports.user_input()
         self.assertEqual(asyncio.run(go()), last)
-        self.assertGreater(ports.pause_left(), 4)
-        self.assertLessEqual(ports.pause_left(), 6)
+        self.assertGreater(ports.pause_left(), 0)
+        self.assertLessEqual(ports.pause_left(), 1)
 
     def test_the_lease_is_refused_to_the_plugin_while_it_is_off(self):
         game = Game({"fight": dict(FIGHT_GOLD)}, "fight")

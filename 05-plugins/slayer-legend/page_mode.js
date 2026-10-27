@@ -5,9 +5,9 @@
 // farming" section. Overlay hook, called by page_gold.js while the
 // overlay applies: overlay(), only the mode and timer (or small "défaut")
 // on the game, top left; explanations stay in notifications and options. In the
-// colour of the gateway's tone: green when the instruction is reached,
-// orange during input and the rolling 10 s pause, red when blocked,
-// blue while returning to the instruction. A touch on the game asks the tone
+// colour of the gateway's tone: white when reached, blue during input
+// and the rolling 5 s pause, orange while returning, red when blocked.
+// The timer or "défaut" is green only when stable. A touch on the game asks the tone
 // again at once, and every 2 s while it holds. While a
 // switch is on hold, the État row says so with « Jeu libre » and
 // « Reprendre » inline (POST /mode/hold). The mpw18 and mpw4 dialogs
@@ -25,7 +25,9 @@ const DOTS = { green: '🟢', blue: '🔵', red: '🔴' };
 const MODE_NAMES = { mpw18: 'Farming mpw18', mpw4: 'Farming mpw4', free: 'Jeu libre',
   agent: 'Agent mode', mine: 'Mine fermée' };
 // The overlay's colour per tone (GET /mode).
-const TONES = { ok: '#4be04b', hold: '#ffa31a', error: '#ff4040', setup: '#409cff' };
+const TONES = { ok: '#ffffff', hold: '#409cff', error: '#ff4040', setup: '#ffa31a' };
+const TIMER_COLOUR = '#4be04b';
+const INPUT_PAUSE_MS = 5000;
 
 // Seconds as the game's timers write them: mm:ss, or h:mm:ss from an hour.
 const clock = (seconds) => {
@@ -104,7 +106,7 @@ export default function modeFeature(api, { known, watchdog, stage }) {
   };
   // A touch on the game: the gateway holds its taps from now, ask its tone.
   const untap = api.onTap?.(() => {
-    farm.inputUntil = Date.now() + 10000;
+    farm.inputUntil = Date.now() + INPUT_PAUSE_MS;
     api.refresh();
     window.clearTimeout(farm.timer);
     farm.timer = window.setTimeout(askMode, 300);
@@ -167,12 +169,12 @@ export default function modeFeature(api, { known, watchdog, stage }) {
     overlay: () => {
       const current = farm.answer?.mode ?? mode();
       const seconds = Math.max(0, Math.round((farm.answer?.until ?? 0) - Date.now() / 1000));
-      const tone = !['free', 'agent'].includes(current) && farm.inputUntil > Date.now() ? 'hold' : farm.answer?.tone;
+      const tone = farm.inputUntil > Date.now() ? 'hold' : farm.answer?.tone;
       const colour = TONES[tone] ?? TONES.setup;
       return [
         { text: api.tr(MODE_NAMES[current] ?? current).toUpperCase(), colour },
         { text: current === defaultMode() || !farm.answer?.until ? api.tr('défaut').toLowerCase() : clock(seconds),
-          colour },
+          colour: tone === 'ok' ? TIMER_COLOUR : colour },
       ];
     },
     options: [

@@ -38,7 +38,7 @@ answer gives each step's seconds (timings: stage, preset, soul_weapon).
 
 Every sequence holds the shared lease (holder "stage_change", reason
 "farm <mode>"): ports.Busy when another holder has it or the user played
-in the last 10 s (the caller waits for its next look), and a user input
+in the last 5 s (the caller waits for its next look), and a user input
 during it stops it at the next tap.
 
 - Park (last of all, inside the 60 s): the farming mode's idle place,
@@ -334,7 +334,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         """Runs steps ((name, step) pairs) under the lease: {result, text,
         timings: {name: seconds}}; ports.Busy when the lease cannot be had
         (the caller tries again shortly). A plan step is written to the log
-        and the next steps go on. force: the user's last 10 s are not
+        and the next steps go on. force: the user's last 5 s are not
         waited for (they asked to resume now)."""
         plans = []
         timings = {}

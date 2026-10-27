@@ -246,19 +246,21 @@ class Clock:
 
 
 class Tone(unittest.TestCase):
-    """Green at the instruction, orange for input, blue for recovery,
+    """White at the instruction, blue for input, orange for recovery,
     red when blocked."""
 
-    def test_green_when_it_runs_and_the_watchdog_sees_nothing(self):
-        for mode, state in (("mpw18", "farming"), ("mpw4", "farming"), ("free", "free"), ("mpw18", "plan")):
+    def test_stable_when_it_runs_and_the_watchdog_sees_nothing(self):
+        for mode, state in (("mpw18", "farming"), ("mpw4", "farming"), ("free", "free"),
+                            ("agent", "agent"), ("mpw18", "plan")):
             self.assertEqual(rules.tone(mode, state, False, False, {"level": None}), "ok", (mode, state))
         self.assertEqual(rules.tone("mine", "mine", False, False, None, "farming"), "ok")
 
-    def test_orange_while_the_user_plays(self):
+    def test_blue_while_the_user_plays(self):
         self.assertEqual(rules.tone("mpw18", "farming", False, True), "hold")
         self.assertEqual(rules.tone("mpw4", "waiting", True, True), "hold", "a switch on hold")
-        self.assertEqual(rules.tone("mpw4", "waiting", True, False), "hold", "its hold not over yet")
-        self.assertEqual(rules.tone("free", "free", False, True), "ok", "free play holds nothing")
+        self.assertEqual(rules.tone("mpw4", "waiting", True, False), "setup", "returning after the pause")
+        self.assertEqual(rules.tone("free", "free", False, True), "hold", "user input is shown in every mode")
+        self.assertEqual(rules.tone("agent", "agent", False, True), "hold")
 
     def test_red_only_on_confirmed_block(self):
         self.assertEqual(rules.tone("mpw18", "failed", False, False), "error", "a setup step failed")
@@ -267,7 +269,7 @@ class Tone(unittest.TestCase):
         self.assertEqual(rules.tone("mine", "mine", False, False, None, "blocked"), "error")
         self.assertEqual(rules.tone("mpw18", "failed", True, True), "hold", "user intervention takes priority")
 
-    def test_blue_while_set_up_or_repaired(self):
+    def test_orange_while_set_up_or_repaired(self):
         for state in ("moving", "waiting"):
             self.assertEqual(rules.tone("mpw4", state, False, False), "setup", state)
         self.assertEqual(rules.tone("mpw18", "farming", False, False, {"level": "warning"}), "setup")
@@ -275,7 +277,7 @@ class Tone(unittest.TestCase):
 
 
 class RecoveryTone(unittest.TestCase):
-    def test_a_repairable_error_stays_blue_until_confirmed_blocked(self):
+    def test_a_repairable_error_stays_orange_until_confirmed_blocked(self):
         self.assertEqual(rules.tone("mpw18", "farming", False, False,
                                     {"level": "error", "blocked": False}), "setup")
         self.assertEqual(rules.tone("mpw18", "failed", False, False,
@@ -285,27 +287,27 @@ class RecoveryTone(unittest.TestCase):
 
 
 class Pause(unittest.TestCase):
-    """ports.Lease: the user's 10 s, and a switch resumed within them."""
+    """ports.Lease: the user's 5 s, and a switch resumed within them."""
 
     def setUp(self):
         self.clock, self.last = Clock(), {"monotonic": 996.0, "wall": 0}
         self.lease = load("features/ports").Lease(self.clock, lambda: self.last)
 
     def test_the_time_left(self):
-        self.assertEqual(self.lease.pause_left(), 6)
-        self.clock.now = 1006
+        self.assertEqual(self.lease.pause_left(), 1)
+        self.clock.now = 1001
         self.assertEqual(self.lease.pause_left(), 0)
 
-    def test_each_input_starts_the_10_s_over(self):
-        self.clock.now = 1005
+    def test_each_input_starts_the_5_s_over(self):
+        self.clock.now = 1000
         self.assertEqual(self.lease.pause_left(), 1)
-        self.last = {"monotonic": 1005.0, "wall": 0}
-        self.assertEqual(self.lease.pause_left(), 10)
-        self.clock.now = 1015
+        self.last = {"monotonic": 1000.0, "wall": 0}
+        self.assertEqual(self.lease.pause_left(), 5)
+        self.clock.now = 1005
         self.assertEqual(self.lease.pause_left(), 0)
         self.assertIsNone(self.lease.take("stage_change", "farm mpw18", 60))
 
-    def test_resumed_now_it_is_taken_within_the_10_s(self):
+    def test_resumed_now_it_is_taken_within_the_5_s(self):
         self.assertEqual(self.lease.take("stage_change", "farm mpw18", 60)["template"], rules.USER_PLAYING)
         self.assertIsNone(self.lease.take("stage_change", "farm mpw18", 60, pause=False))
         self.lease.check("stage_change")

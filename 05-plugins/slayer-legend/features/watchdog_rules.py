@@ -13,7 +13,7 @@ are the mine feature's: the watchdog only owns its "game away" alert
 looks, one alert, no repair). Free play suspends it, and so does a mode's
 entry (paused(..., moving): the entry's sequence holds the lease). Every
 text names the mode (MODE_NAMES). When a mode ends, the watchdog looks at
-once, with no menu grace (still paused for 10 s after a user input).
+once, with no menu grace (still paused for 5 s after a user input).
 During free play the game may well be open on another device: nothing is
 checked then. When it ends, the game here may show a "connected on another device"
 screen or a choice of saves, not catalogued yet: for AFTER_MODE seconds
@@ -130,7 +130,13 @@ def t(template, **params):
 EVERY = 15
 MAX_AGE = 10
 # A user input (touch, key) pauses the watchdog this long (seconds).
-PAUSE_AFTER_INPUT = 10
+PAUSE_AFTER_INPUT = 5
+
+
+def input_wake_delay(now, regular_at, resume_at=None):
+    """Poll inputs cheaply, but wake no later than the pause's expiry."""
+    due = min(regular_at, resume_at) if resume_at is not None else regular_at
+    return max(0.05, min(1.0, due - now))
 # A game menu open this long (seconds) with no user input is a symptom.
 MENU_GRACE = 60
 ALERT_AFTER = 2

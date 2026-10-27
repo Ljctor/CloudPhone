@@ -106,6 +106,7 @@ script = sys.stdin.read()
 assert "drawText(cubeValue, gold.font" in script
 assert "api.layer.offsetHeight / 1040 * 7 / gold.font.height" in script
 assert "cubeRow.style.opacity" in script and "row.style.opacity" in script
+assert "left:36.1%;top:18.25%;transform:translateY(-50%)" in script
 assert "hourly * age / 3600" in script
 assert "['stone_green'" not in script and "['stone_yellow'" not in script
 assert "['stone_red'" not in script and "['stone_blue'" not in script
@@ -145,4 +146,11 @@ import json, sys
 state = json.load(sys.stdin)
 assert isinstance(state["clicks"], list)
 print("Private manual click archive: OK")
+'
+curl -fsS "${base%/}/plugins/slayer-legend/page_mode.js" | python3 -c '
+import sys
+script = sys.stdin.read()
+for token in ("ok: '\''#ffffff'\''", "hold: '\''#409cff'\''", "setup: '\''#ffa31a'\''", "error: '\''#ff4040'\''", "INPUT_PAUSE_MS = 5000", "tone === '\''ok'\'' ? TIMER_COLOUR : colour"):
+    assert token in script, token
+print("Mode overlay colours and user pause: OK")
 '

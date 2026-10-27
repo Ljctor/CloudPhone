@@ -189,19 +189,27 @@ class Level(unittest.TestCase):
 
 
 class Pauses(unittest.TestCase):
-    def test_an_input_pauses_10_s_from_the_last_one(self):
-        self.assertEqual(rules.PAUSE_AFTER_INPUT, 10)
+    def test_input_wake_targets_the_end_of_the_five_second_pause(self):
+        self.assertEqual(rules.input_wake_delay(103.7, 115, 105), 1)
+        self.assertAlmostEqual(rules.input_wake_delay(104.8, 115, 105), 0.2)
+        self.assertEqual(rules.input_wake_delay(105, 115, None), 1)
+
+    def test_an_input_pauses_5_s_from_the_last_one(self):
+        self.assertEqual(rules.PAUSE_AFTER_INPUT, 5)
+        self.assertEqual(rules.paused("mpw18", 100, 104.9), "En pause : l’utilisateur joue")
+        self.assertIsNone(rules.paused("mpw18", 100, 105))
+        self.assertEqual(rules.paused("mpw18", 104, 105), "En pause : l’utilisateur joue")
         w = Watch()
         w.looks(BATTLE, 4)
         w.tap()
         w.look(GONE)
-        self.assertEqual(w.paused, ["En pause : l’utilisateur joue"], "7.5 s after the input")
+        self.assertEqual(w.paused, [], "7.5 s after the input exceeds the pause")
         w.tap()
         w.look(GONE)
-        self.assertEqual(w.paused, ["En pause : l’utilisateur joue"] * 2, "another input starts the 10 s over")
+        self.assertEqual(w.paused, [], "the next look also follows the pause")
         w.look(GONE)
         self.assertEqual(w.symptoms[-1], "not_running", "looks again 22.5 s after the last input")
-        self.assertEqual(len(w.paused), 2)
+        self.assertEqual(len(w.paused), 0)
 
     def test_a_menu_is_a_disruption_after_60_s_with_no_input(self):
         w = Watch()

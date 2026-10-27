@@ -22,8 +22,8 @@ of the gateway, so what it may do to the game is all here.
 - lease, leased(holder, reason, seconds, user=False, pause=True), Busy:
   the one shared lease on the game's taps (see Lease); `async with
   leased(...)` runs a tapping sequence under it, Busy when another holder
-  has it or the user plays (an input in the last 10 s with the game in
-  front, looked at then: see Lease.playing; pause=False: the user's last 10 s are not
+  has it or the user plays (an input in the last 5 s with the game in
+  front, looked at then: see Lease.playing; pause=False: the user's last 5 s are not
   waited for, e.g. a switch the user asked to resume now; an input during
   the sequence still stops it).
 - pause_left(): the seconds left of the user-input pause (0: none).
@@ -291,7 +291,7 @@ class State:
 # The lease's longest time to live, and how long a user input pauses every
 # holder that did not come from the user's own press (seconds).
 LEASE_MAX = 15 * 60
-INPUT_PAUSE = 10
+INPUT_PAUSE = 5
 # Who holds the lease in the running task (and the tasks it spawns).
 HOLDER = contextvars.ContextVar("slayer_legend_lease_holder", default=None)
 
@@ -336,7 +336,7 @@ class Lease:
     taken on the user's own press (user=True), but only while the game is
     in front: an input on the launcher or another app, the game not
     running, is not playing (front: the focus last seen, saw_focus). pause=False takes it
-    within those 10 s (the user asked for it elsewhere), an input after
+    within those 5 s (the user asked for it elsewhere), an input after
     it still stopping the sequence."""
 
     def __init__(self, clock, last_input, enabled=lambda: True, log=None):
