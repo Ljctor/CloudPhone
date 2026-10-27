@@ -56,8 +56,17 @@
     "panel": {
       "kind": "overlay", "over": ["battle"], "status": "measured",
       "anchors": [
-        {"share": "MENU_LABELS", "test": "light", "below": 0.01}
+        {"share": "MENU_LABELS", "test": "light", "below": 0.01},
+        {"reader": "battle_panel"}
       ]
+    },
+    "quest_panel": {
+      "kind": "overlay", "over": ["battle"], "status": "registered",
+      "anchors": [
+        {"patch": "quest_title", "limit": 0.75},
+        {"reader": "quest_panel"}
+      ],
+      "fixtures": ["battle_emerald", "quest_title", "quest_tabs_daily", "quest_tabs_repeat", "quest_tabs_achievement"]
     },
     "soul_weapon": {
       "kind": "overlay", "over": ["battle"], "status": "registered",

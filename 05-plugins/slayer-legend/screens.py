@@ -406,6 +406,37 @@ def _share_margin(value, level, above):
 _engraving = None
 # The shares measured on the capture being looked at (two anchors may read one).
 _shares = {}
+_quest_patches = None
+
+
+def battle_panel(shot):
+    """Dark menu labels also occur on full battle; its blue mana bar
+    distinguishes that state from a bottom panel covering the skill grid."""
+    return share(shot, MANA_BAR, blue) <= 0.5
+
+
+def quest_tab(shot):
+    """Read only the selected Quest tab, calibrated on all three real
+    annotation captures. No reward/progress/claim reading is implied."""
+    global _quest_patches
+    if _quest_patches is None:
+        _quest_patches = (Patch("quest_title", limit=0.75), {
+            "daily": (Patch("quest_tabs_daily", (2, 0, 105, 18), limit=0.75), (55 / WIDTH, 224 / HEIGHT, 160 / WIDTH, 242 / HEIGHT)),
+            "repeat": (Patch("quest_tabs_repeat", (138, 0, 109, 18), limit=0.75), (191 / WIDTH, 224 / HEIGHT, 300 / WIDTH, 242 / HEIGHT)),
+            "achievement": (Patch("quest_tabs_achievement", (276, 0, 112, 18), limit=0.75), (329 / WIDTH, 224 / HEIGHT, 441 / WIDTH, 242 / HEIGHT)),
+        })
+    title, tabs = _quest_patches
+    if title.margin(shot) <= 0:
+        return None
+    selected = [name for name, (patch, area) in tabs.items()
+                if share(shot, area, white, step=1) > 0.1]
+    if len(selected) != 1 or tabs[selected[0]][0].margin(shot) <= 0:
+        return None
+    return selected[0]
+
+
+def quest_panel(shot):
+    return quest_tab(shot) is not None
 
 
 def _reader(name):
@@ -485,6 +516,8 @@ def look(shot):
     plain = screen == "battle" and share(shot, MANA_BAR, blue) > 0.5
     answer = {"screen": screen, "overlays": overlays, "margin": round(sure, 3), "plain": plain,
               "margins": {key: round(value, 3) for key, value in margins.items()}, "size": (width, height)}
+    if "quest_panel" in overlays:
+        answer["quest_tab"] = quest_tab(shot)
     _seen.insert(0, (pixels, answer))
     del _seen[CACHE:]
     return answer

@@ -330,6 +330,8 @@ def game(ports, screens, rules, readers, archive=None, examples=None):
                           "screen": last["look"]["screen"],
                           "overlays": sorted(last["look"].get("overlays") or ()),
                           "expected": sorted(last["shows"]), "ran": sorted(last["ran"])} if last else None)
+        if last and "quest_tab" in last["look"]:
+            answer["scan"]["quest_tab"] = last["look"]["quest_tab"]
         return ports.respond(examples(answer) if examples else answer)
 
     if hasattr(ports, "on_capture"):

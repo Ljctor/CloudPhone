@@ -5,6 +5,7 @@
 import { drawText } from './gold_text.js';
 import { GOLD_COUNTER_FONT } from './page_gold_counter_font.js';
 import { freshnessColour } from './page_freshness.js';
+import { getScreen } from './page_screen_scan.js';
 import { GOLD, SOULS } from './page_icons.js';
 import { RESOURCE_ICONS } from './page_resources.js';
 import { EQUIPMENT_L3_ICONS } from './page_equipment_icons.js';
@@ -58,8 +59,23 @@ export function rateColour(answer, elapsed = 0) {
   return `rgb(${Math.round(175 + 80 * share)}, ${Math.round(221 + 34 * share)}, 255)`;
 }
 
-export default function goldFeature(api, { overlay, enabled = () => true }) {
+// The base battle can remain recognisable behind a modal. Only the normal
+// battle and its bottom panels leave the combat counters visible. A missing
+// or expired classification hides them, regardless of old resource readings.
+export function combatCountersVisible(scan, now = Date.now() / 1000) {
+  const age = now - Number(scan?.at);
+  if (scan?.screen !== 'battle' || !Number.isFinite(age) || age < 0 || age > 2) return false;
+  if (typeof scan.plain !== 'boolean' || !Array.isArray(scan.overlays)) return false;
+  const allowed = new Set(['panel', 'equipment_weapon', 'equipment_accessories', 'better_weapon_toast']);
+  return scan.overlays.every((name) => allowed.has(name));
+}
+
+export default function goldFeature(api, { overlay, enabled = () => true, screenScan = null }) {
   const gold = { answer: null, at: 0, timer: null, font: null, line: '', cube: null, rates: {} };
+  let scan = null;
+  let screenPending = false;
+  let disposed = false;
+  const currentScan = () => screenScan ? screenScan() : scan;
   api.get('/gold-font').catch(() => null).then((font) => {
     gold.font = font;
     showGold();
@@ -80,11 +96,14 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
   cubeIcon.style.imageRendering = 'pixelated';
   const cubeValue = document.createElement('canvas');
   cubeValue.style.imageRendering = 'pixelated';
+  cubeValue.style.position = 'absolute';
+  cubeValue.style.top = '50%';
+  cubeValue.style.transform = 'translateY(-50%)';
   cubeRow.append(cubeIcon, cubeValue);
   let cubeDrawn = '';
   const showCube = () => {
     const cube = gold.cube;
-    if (!cube?.seen || cube.value == null || !enabled()) {
+    if (!cube?.seen || cube.value == null || !enabled() || !combatCountersVisible(currentScan())) {
       cubeRow.remove();
       cubeDrawn = '';
       return;
@@ -101,6 +120,13 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
     // Full-digit Gold has its own compact shapes, including its comma;
     // scaling the abbreviated 13-row font loses these strokes/proportions.
     const cell = api.layer.offsetHeight / 1560;
+    // The Gold reader's box starts at the number's ink, not its coin.
+    // Anchor Cube ink there separately, leaving the correctly placed icon.
+    const box = gold.answer?.box;
+    const left = Array.isArray(box) && box.length === 4
+      && Number.isFinite(box[0]) && box[0] >= .25 && box[0] <= .85
+      && Date.now() / 1000 - gold.answer.read < 25 ? box[0] : 298 / 720;
+    cubeValue.style.left = `${(left - .361) * api.layer.offsetWidth - 2 * cell}px`;
     const key = `${value}@${colour}@${cell}`;
     if (key === cubeDrawn) return;
     if (!cubeRow.isConnected) api.layer.append(cubeRow);
@@ -128,7 +154,7 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
   let drawn = '';
   let ratesDrawn = '';
   const showRates = (cell) => {
-    if (!cell || !gold.answer) {
+    if (!cell || !gold.answer || !enabled() || !combatCountersVisible(currentScan())) {
       rateRows.forEach(({ row }) => row.remove());
       ratesDrawn = '';
       return;
@@ -186,8 +212,8 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
     }
   };
   const tick = window.setInterval(() => {
-    if (label.isConnected) showLabel(true);
-    if (cubeRow.isConnected) showCube();
+    showGold();
+    askScreen();
     if (gold.answer?.rate_text) api.refresh();
   }, 1000);
   const goldText = () => {
@@ -216,6 +242,16 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
     showLabel(Boolean((fresh || soulsFresh) && gold.font && enabled()));
     showCube();
   };
+  const askScreen = async () => {
+    if (screenScan || disposed || screenPending || !enabled()) return;
+    screenPending = true;
+    try {
+      const answer = await getScreen(api).catch(() => null);
+      if (disposed) return;
+      scan = answer?.scan ?? null;
+      showGold();
+    } finally { screenPending = false; }
+  };
   const askGold = async () => {
     const [answer, state] = await Promise.all([
       api.get('/gold').catch(() => null), api.get('/game').catch(() => null),
@@ -233,6 +269,7 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
     gold.timer = window.setTimeout(askGold, 10000);
   };
   askGold();
+  askScreen();
 
   return {
     // Draws again (or removes) after the plugin was turned on or off.
@@ -256,6 +293,7 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
       if (key === 'goldOverlay' || key === 'stonesOverlay') showGold();
     },
     dispose: () => {
+      disposed = true;
       window.clearTimeout(gold.timer);
       window.clearInterval(tick);
       label.remove();

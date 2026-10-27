@@ -157,8 +157,12 @@ class Tree(unittest.TestCase):
                     screen, back = move_of(entry["back"])
                     self.assertEqual(screen, entry["screen"])
                     kind = "key" if "key" in back else "tap"
+                    # A combat return additionally consumes a fresh reading;
+                    # verified alone does not satisfy its visibility guard.
+                    seen = ({"look": {"screen": "battle", "plain": False, "overlays": ["panel"]},
+                             "combat_visible": True} if back.get("needs", {}).get("reduced_battle") else None)
                     self.assertIsNone(nav.guard(screen, back["id"], *(point_of(back) if kind == "tap" else (None, None)),
-                                                kind, verified=True))
+                                                kind, verified=True, seen=seen))
 
     def test_a_skipped_move_is_never_one_the_tour_sends(self):
         forbidden = [key for key, entry in screens.TREE.items() if entry["via"] and move_of(entry["via"])[1].get("forbidden")]
@@ -229,6 +233,43 @@ class Recognised(unittest.TestCase):
         self.assertIsNone(screens.known_name(screen()))
         self.assertTrue(screens.plain_battle(made("battle")))
         self.assertFalse(screens.plain_battle(made("soul_weapon")))
+
+
+class QuestAndBattle(unittest.TestCase):
+    def test_each_quest_tab_on_real_crops_at_multiple_sizes(self):
+        for tab in ("daily", "repeat", "achievement"):
+            shot = screen("battle_emerald", "quest_title", f"quest_tabs_{tab}")
+            for width, height in ((480, 1040), (360, 780), (720, 1560)):
+                with self.subTest(tab=tab, size=(width, height)):
+                    image = shot if width == 480 else scaled(shot, width, height)
+                    seen = screens.look(image)
+                    self.assertEqual(seen["screen"], "battle")
+                    self.assertIn("quest_panel", seen["overlays"])
+                    self.assertEqual(seen["quest_tab"], tab)
+
+    def test_title_and_unambiguous_active_tab_required(self):
+        for names in (("battle_emerald", "quest_title"), ("battle_emerald", "quest_tabs_daily"),
+                      ("battle_emerald", "settings_title")):
+            with self.subTest(crops=names):
+                shot = screen(*names)
+                self.assertIsNone(screens.quest_tab(shot))
+                self.assertNotIn("quest_panel", screens.look(shot)["overlays"])
+        width, height, data = screen("battle_emerald", "quest_title", "quest_tabs_daily")
+        pixels = bytearray(data)
+        for y in range(224, 242):
+            for x in range(191, 300):
+                i = (y * width + x) * 3
+                pixels[i:i + 3] = b"\xff\xff\xff"
+        ambiguous = width, height, bytes(pixels)
+        self.assertIsNone(screens.quest_tab(ambiguous), "two bright tabs are ambiguous")
+        self.assertNotIn("quest_panel", screens.look(ambiguous)["overlays"])
+
+    def test_full_battle_with_dark_menu_labels_is_not_a_panel(self):
+        for width, height in ((480, 1040), (360, 780), (720, 1560)):
+            seen = screens.look(scaled(made("battle"), width, height))
+            self.assertTrue(seen["plain"])
+            self.assertNotIn("panel", seen["overlays"])
+        self.assertIn("panel", screens.look(made("soul_weapon"))["overlays"])
 
 
 class Confusion(unittest.TestCase):

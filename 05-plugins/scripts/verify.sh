@@ -107,6 +107,7 @@ assert "drawText(cubeValue, GOLD_COUNTER_FONT" in script
 assert "api.layer.offsetHeight / 1560" in script
 assert "freshnessColour(age)" in script
 assert "outline: 2" in script
+assert "combatCountersVisible" in script
 assert "cubeRow.style.opacity" in script and "row.style.opacity" in script
 assert "left:36.1%;top:18.25%;transform:translateY(-50%)" in script
 assert "hourly * age / 3600" in script
@@ -154,6 +155,7 @@ assert "battle" in graph["screens"] and "equipment_weapon" in graph["screens"]
 assert graph["screens"]["battle"]["name"]
 assert any(move.get("swipe") for move in graph["screens"]["equipment_weapon"]["moves"])
 assert state["registry"]["tree"]["equipment_weapon"]["scroll"]
+assert "quest_panel" in state["registry"]["screens"]
 print("Navigation debug geometry: OK")
 '
 curl -fsS "${base%/}/plugins/slayer-legend/page_navigation_debug.js" | python3 -c '
@@ -163,6 +165,7 @@ assert "trace/arm" in script and "Écran : {screen}" in script
 assert "response.body" in script and "/trace/cancel" in script
 assert "data-capture-layout" in script and "page_navigation_tracking.js" in script
 assert "data-debug-drag-handle" in script and "data-debug-toggle" in script
+assert "data-capture-open" in script and "page_navigation_preview.js" in script
 print("Navigation debug overlay asset: OK")
 '
 curl -fsS "${base%/}/api/v1/plugins/slayer-legend/trace/manual" | python3 -c '
@@ -182,7 +185,7 @@ print("Fast screen recognition: OK")
 curl -fsS "${base%/}/plugins/slayer-legend/page_navigation_debug.js" | python3 -c '
 import sys
 script = sys.stdin.read()
-for token in ("/screen?quick=1", "Ajouter un bouton de navigation", "Déclarer un bouton de navigation interdit", "Marquer un élément scannable", "Marquer un slider vertical", "Marquer un slider horizontal", "❮", "❯"):
+for token in ("getScreen(api)", "Ajouter un bouton de navigation", "Déclarer un bouton de navigation interdit", "Marquer un élément scannable", "Marquer un slider vertical", "Marquer un slider horizontal", "❮", "❯"):
     assert token in script, token
 print("Navigation annotation controls: OK")
 '
@@ -199,4 +202,18 @@ import sys
 script = sys.stdin.read()
 assert "locatePatch" in script and "getImageData" in script
 print("Visual navigation tracking asset: OK")
+'
+
+curl -fsS "${base%/}/plugins/slayer-legend/page_navigation_preview.js" | python3 -c '
+import sys
+script = sys.stdin.read()
+for token in ("data-recorded-rect", "data-recorded-tap", "data-recorded-swipe", "data-capture-raw"):
+    assert token in script, token
+print("Annotated capture preview: OK")
+'
+
+curl -fsS "${base%/}/plugins/slayer-legend/page_screen_scan.js" | python3 -c '
+import sys
+assert "/screen?quick=1" in sys.stdin.read()
+print("Shared live screen scan: OK")
 '

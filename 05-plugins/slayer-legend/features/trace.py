@@ -35,17 +35,19 @@ def trace(ports, screens, graphs, images=None):
     recorded = {"graph": graphs.load(path) if path else None, "pending": None,
                 "armed": None, "lock": None}
 
-    def signature(shot):
-        return screens.classify(shot), graphs.thumbnail(shot)
+    def signature(shot, detailed=False):
+        return ((screens.classify(shot), graphs.thumbnail(shot)),
+                getattr(screens, "look", lambda shot: None)(shot) if detailed else None)
 
-    async def screen_now():
+    async def screen_now(detailed=False):
         """(screen name, thumbnail) of the screen now, or None when the game
         is not in front."""
         # Taken at once: a tap's screen, never one from before it.
         shot, focus = await asyncio.gather(ports.capture(max_age=0), ports.focused())
         if not shot or not focus:
             return None
-        return await ports.analyse(signature, shot), shot
+        identity, scan = await ports.analyse(signature, shot, detailed)
+        return identity, shot, scan
 
     def persist_manual(entry, side=None, frame=None):
         """Keep the before image as soon as armed, with atomic private metadata."""
@@ -95,6 +97,8 @@ def trace(ports, screens, graphs, images=None):
         now = ports.clock.wall()
         if entry:
             entry.update(at=now, tap=pending["tap"], after=after[0][0], capture_status="complete")
+            if isinstance(after[2], dict):
+                entry["after_scan"] = {key: after[2][key] for key in ("screen", "overlays", "plain", "quest_tab") if key in after[2]}
             if "after_stable" in pending:
                 entry["after_stable"] = pending["after_stable"]
             try:
@@ -124,7 +128,7 @@ def trace(ports, screens, graphs, images=None):
                 if recorded["pending"] is not pending:
                     return
                 try:
-                    frame = await screen_now()
+                    frame = await screen_now(bool(pending["manual"]))
                     entry = pending["manual"]
                     annotation_only = entry and entry["kind"] != "navigation"
                     stable = frame is not None and previous is not None and alike(previous, frame)
@@ -166,6 +170,11 @@ def trace(ports, screens, graphs, images=None):
                 recorded["pending"] = pending
                 if pending["manual"]:
                     pending["manual"].update(tap=tap, capture_status="pending")
+                    if pending["manual"]["kind"] == "scannable" and "end" in tap:
+                        pending["manual"]["rect"] = [min(tap["x"], tap["end"]["x"]),
+                                                     min(tap["y"], tap["end"]["y"]),
+                                                     max(tap["x"], tap["end"]["x"]),
+                                                     max(tap["y"], tap["end"]["y"])]
                     try:
                         persist_manual(pending["manual"])
                     except OSError as e:
@@ -185,6 +194,12 @@ def trace(ports, screens, graphs, images=None):
             return ports.respond({"error_t": ports.t("Attendu : {expected}, fractions de 0 à 1",
                                                      expected="{x, y, kind: tap|long|swipe[, end: {x, y}]}")},
                                  status=400)
+        armed = recorded["armed"]
+        if armed and armed["kind"] == "scannable" and ports.clock.wall() <= armed["until"]:
+            end = tap.get("end")
+            if (tap["kind"] != "swipe" or end is None
+                    or abs(end["x"] - tap["x"]) < .01 or abs(end["y"] - tap["y"]) < .01):
+                return ports.respond({"error": "scannable annotation requires a rectangle"}, status=400)
         if recorded["lock"] is None:
             recorded["lock"] = asyncio.Lock()
         ports.spawn(tap_made(tap))
@@ -203,12 +218,14 @@ def trace(ports, screens, graphs, images=None):
         if recorded["lock"] is None:
             recorded["lock"] = asyncio.Lock()
         async with recorded["lock"]:
-            before = await screen_now()
+            before = await screen_now(detailed=True)
             if before is None:
                 return ports.respond({"error": "game not visible"}, status=409)
             capture_id = uuid.uuid4().hex
             entry = {"id": capture_id, "kind": kind, "at": ports.clock.wall(),
                      "before": before[0][0], "capture_status": "armed"}
+            if isinstance(before[2], dict):
+                entry["before_scan"] = {key: before[2][key] for key in ("screen", "overlays", "plain", "quest_tab") if key in before[2]}
             try:
                 persist_manual(entry, "before", before)
             except OSError:

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import trace from './page_trace.js';
+import capturePreview, { archivedScreen } from './page_navigation_preview.js';
 import navigationDebug, { ANNOTATIONS, annotationPoint, floatingDebugPanel, zonesFor, recognisedScreen } from './page_navigation_debug.js';
 
 const graph = JSON.parse(readFileSync(new URL('./navigation.json', import.meta.url)));
@@ -14,11 +15,37 @@ assert.ok(!equipment.some((zone) => zone.id === 'batch_combine'));
 
 const centreY = (zone) => (zone.rect[1] + zone.rect[3]) / 2;
 const fullBattle = zonesFor('battle', graph, registry, { screen: 'battle', plain: true, overlays: [] });
-assert.equal(centreY(fullBattle.find((zone) => zone.id === 'preset_arrow')), .444);
+assert.equal(centreY(fullBattle.find((zone) => zone.id === 'preset_arrow')), 462.5 / 1040);
 const reducedBattle = zonesFor('soul_weapon', graph, registry, {
   screen: 'battle', plain: false, overlays: ['panel', 'equipment_weapon', 'soul_weapon'],
 });
-assert.equal(centreY(reducedBattle.find((zone) => zone.id === 'preset_arrow')), .355);
+assert.ok(Math.abs(centreY(reducedBattle.find((zone) => zone.id === 'preset_arrow')) - 553 / 1560) < 1e-12);
+const genericPanelScan = { screen: 'battle', plain: false, overlays: ['panel'] };
+assert.ok(zonesFor('battle', graph, registry, genericPanelScan)
+  .some((zone) => zone.id === 'preset_arrow'), 'every normal minimised bottom panel keeps the arrow');
+for (const [fixture, zones] of [['battle_arrow_full', fullBattle], ['battle_arrow_minimized', reducedBattle]]) {
+  const lines = readFileSync(new URL(`./fixtures/${fixture}.txt`, import.meta.url), 'utf8')
+    .split('\n').filter((line) => line && !line.startsWith('#'));
+  const [width, height, left, top, cropWidth] = lines[0].split(' ').map(Number);
+  const pixels = Buffer.from(lines.slice(1).join(''), 'hex');
+  const arrow = zones.find((zone) => zone.id === 'preset_arrow');
+  const centreX = Math.round((arrow.rect[0] + arrow.rect[2]) * width / 2);
+  const centreY = Math.round((arrow.rect[1] + arrow.rect[3]) * height / 2);
+  const index = ((centreY - top) * cropWidth + centreX - left) * 3;
+  const rgb = [...pixels.subarray(index, index + 3)];
+  assert.equal(rgb.length, 3);
+  assert.ok(Math.max(...rgb) - Math.min(...rgb) < 10 && Math.min(...rgb) > 65,
+    `${fixture}: zone centre falls on the actual grey arrow`);
+  assert.ok(arrow.rect[0] > .95 && arrow.rect[2] < 1 && arrow.rect[3] < .5,
+    'side arrow stays away from the top menu and other controls');
+}
+for (const trackedRect of [null, [.1, .1, .2, .2]]) {
+  const trackedArrow = zonesFor('battle', graph, registry,
+    { screen: 'battle', plain: true, overlays: [] }, new Map([['preset_arrow', trackedRect]]))
+    .find((zone) => zone.id === 'preset_arrow');
+  assert.deepEqual(trackedArrow.rect, fullBattle.find((zone) => zone.id === 'preset_arrow').rect,
+    'battle animation or scrolling never moves or hides this fixed side control');
+}
 assert.ok(!zonesFor('battle_settings', graph, registry, {
   screen: 'battle', plain: false, overlays: ['battle_settings'],
 }).some((zone) => zone.id === 'preset_arrow'));
@@ -53,18 +80,27 @@ class Element {
   getBoundingClientRect() { return { left: 0, top: 0, width: 100, height: 200 }; }
   setPointerCapture() {}
 }
-globalThis.document = { createElement: (tag) => new Element(tag) };
+globalThis.document = { createElement: (tag) => new Element(tag), createElementNS: (ns, tag) => new Element(tag) };
+const realDateNow = Date.now;
+let testNow = realDateNow();
+Date.now = () => testNow;
 let poll;
-globalThis.window = { setInterval(fn) { poll = fn; return 1; }, clearInterval() {} };
+globalThis.window = { setInterval(fn) {
+  poll = async () => { testNow += 251; await fn(); await flush(); };
+  return 1;
+}, clearInterval() {} };
 const all = (node) => [node, ...node.children.flatMap(all)];
 const root = new Element('main'); root.root = true;
 const status = () => all(root).find((item) => item.attrs.role === 'status')?.textContent;
 const buttons = () => all(root).filter((item) => item.tagName === 'button' && !('data-debug-toggle' in item.attrs));
 const event = (clientX = 30, clientY = 70) => ({ clientX, clientY, pointerId: 1,
   preventDefault() { this.prevented = true; }, stopPropagation() { this.stopped = true; } });
-const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
+// Yield one event-loop turn so shared request/finally chains settle without
+// coupling the fixture to the number of microtasks in the scan cache.
+const flush = () => new Promise((resolve) => setImmediate(resolve));
 let archive = { clicks: [] };
 let currentScreen = 'battle';
+let currentScanOverrides = {};
 let armedReply;
 let armResponse;
 const tapListeners = new Set();
@@ -79,7 +115,7 @@ const api = {
     if (path === '/navigation-debug') return { graph, registry };
     if (path === '/trace') return {};
     if (path === '/trace/manual') return archive;
-    if (path === '/screen?quick=1') return { scan: { screen: currentScreen, overlays: [], at: Date.now() / 1000 } };
+    if (path === '/screen?quick=1') return { scan: { screen: currentScreen, plain: true, overlays: [], at: Date.now() / 1000, ...currentScanOverrides } };
     throw Error(path);
   },
   post(path, body) {
@@ -95,6 +131,15 @@ assert.deepEqual(annotationPoint(event(200, -20), root.getBoundingClientRect()),
 let ui = navigationDebug(api);
 await flush();
 assert.equal(buttons().length, 5);
+currentScanOverrides = { plain: false, overlays: ['panel'] };
+await poll();
+assert.equal(all(root).filter((item) => item.title?.startsWith('preset_arrow')).length, 1,
+  'generic minimised panel renders its fixed side arrow even without a panel identity');
+assert.equal(all(root).filter((item) => item.title?.startsWith('menu_')).length, 0,
+  'unidentified panel never borrows Battle menu zones');
+assert.deepEqual(zonesFor(null, graph, registry, genericPanelScan).map((zone) => zone.id), ['preset_arrow']);
+currentScanOverrides = {};
+await poll();
 // Every slider is drawn with two chevrons, without the old rectangle.
 const chevron = all(root).find((item) => item.textContent === '⌃');
 assert.equal(chevron, undefined, 'battle has no calibrated vertical slider');
@@ -120,6 +165,20 @@ archive.clicks = [{ id: 'capture-1', kind: 'forbidden', capture_status: 'complet
 await poll();
 assert.match(status(), /Déclaration enregistrée/);
 assert.deepEqual(all(root).filter((item) => item.tagName === 'a').map((item) => item.href), ['/before', '/after']);
+const historicalLink = all(root).find((item) => item.attrs['data-capture-open'] === 'before');
+const modifiedClick = { ...event(), ctrlKey: true };
+historicalLink.onclick(modifiedClick);
+assert.equal(modifiedClick.prevented, undefined, 'modified link click keeps access to original image');
+historicalLink.onclick(event());
+let viewer = all(root).find((item) => 'data-capture-preview' in item.attrs);
+assert.ok(viewer);
+assert.ok(all(viewer).some((item) => 'data-recorded-tap' in item.attrs));
+assert.ok(all(viewer).some((item) => item.textContent?.includes('Écran historique non identifié')));
+assert.ok(!all(viewer).some((item) => item.title === 'menu_equipment'), 'unknown historical screens cannot borrow live battle zones');
+assert.equal(all(viewer).find((item) => item.attrs['data-capture-raw'] === 'before').href, '/before');
+all(viewer).find((item) => item.textContent === 'Fermer').onclick(event());
+assert.ok(!all(root).some((item) => 'data-capture-preview' in item.attrs));
+
 await poll();
 assert.match(status(), /Déclaration enregistrée/, 'completion remains visible');
 // Drawing a slider sends its extent, and ordinary polling preserves the
@@ -188,7 +247,7 @@ for (const setting of ['on', 'off']) {
 buttons()[2].onclick(event()); await flush(); armedReply(); await flush();
 traceResponse = { ok: false, status: 503, body: { error: 'storage unavailable' } };
 surface = all(root).find((item) => 'data-annotation-surface' in item.attrs);
-surface.onpointerdown(event()); surface.onpointerup(event());
+surface.onpointerdown(event(10, 20)); surface.onpointerup(event(40, 80));
 await flush();
 assert.match(status(), /Échec/);
 traceUi.dispose();
@@ -293,4 +352,61 @@ assert.equal(floatingUi.panel.style.top, '270px');
 floatingUi.toggle.onclick(event());
 assert.equal(floatingUi.panel.style.left, '0px');
 assert.equal(floatingUi.panel.style.top, '120px');
-console.log('Navigation annotations, floating panel gestures and persistent capture feedback: OK');
+// Scannable declarations consume a corner-to-corner drag, never a tap.
+archive = { clicks: [] };
+traceResponse = { ok: true, status: 202, body: { queued: true } };
+ui = navigationDebug(api); await flush();
+buttons()[2].onclick(event()); await flush(); armedReply(); await flush();
+surface = all(root).find((item) => 'data-annotation-surface' in item.attrs);
+const beforeRectangle = posts.length;
+surface.onpointerdown(event(80, 160)); surface.onpointerup(event(80, 160));
+assert.equal(posts.length, beforeRectangle, 'a click cannot declare a scannable rectangle');
+const rectangleDown = event(80, 160); surface.onpointerdown(rectangleDown);
+const rectangleMove = event(20, 40); surface.onpointermove(rectangleMove);
+assert.ok(all(surface).some((item) => item.style.cssText?.includes('#52e99a')), 'green drag preview');
+const rectangleUp = event(20, 40); surface.onpointerup(rectangleUp);
+for (const pointer of [rectangleDown, rectangleMove, rectangleUp]) assert.ok(pointer.prevented && pointer.stopped);
+assert.deepEqual(posts.at(-1).body, { x: .8, y: .8, kind: 'swipe', end: { x: .2, y: .2 } });
+ui.dispose();
+
+// The viewer resolves each archived side independently and shares the
+// image wrapper with its marker, zones, and swipe arrow.
+assert.equal(archivedScreen({ before_scan: { screen: 'battle', overlays: ['panel', 'equipment_weapon'] } }, 'before'), 'equipment_weapon');
+assert.equal(archivedScreen({ before_scan: { screen: 'battle', overlays: ['panel'] } }, 'before'), null);
+assert.equal(archivedScreen({ before: 'battle' }, 'before'), null, 'legacy identity cannot prove historical overlay geometry');
+const previewRecord = { before_url: '/historical-before', after_url: '/historical-after',
+  before_scan: { screen: 'battle', overlays: ['equipment_weapon'], plain: false },
+  after_scan: { screen: 'battle', overlays: [], plain: true },
+  tap: { x: .2, y: .3, kind: 'swipe', end: { x: .7, y: .8 } } };
+assert.equal(archivedScreen(previewRecord, 'after'), 'battle');
+const drawn = [];
+const closeViewer = capturePreview({ layer: root, record: previewRecord, side: 'before',
+  zones: [{ id: 'historical-scroll', rect: [.1, .2, .5, .8] }], drawZone: (zone, parent) => drawn.push({ zone, parent }) });
+viewer = all(root).find((item) => 'data-capture-preview' in item.attrs);
+assert.equal(viewer.attrs.role, 'dialog');
+const archivedImage = all(viewer).find((item) => item.tagName === 'img');
+assert.equal(archivedImage.src, '/historical-before');
+assert.equal(drawn[0].parent, archivedImage.parent);
+const recordedMarker = all(viewer).find((item) => 'data-recorded-tap' in item.attrs);
+assert.equal(recordedMarker.parent, archivedImage.parent);
+assert.match(recordedMarker.style.cssText, /left:20%;top:30%/);
+assert.equal(recordedMarker.children.length, 2, 'ring has a horizontal and vertical crosshair');
+const swipeLine = all(viewer).find((item) => item.tagName === 'line');
+assert.equal(swipeLine.attrs.x1, 20);
+assert.equal(swipeLine.attrs.y2, 80);
+assert.ok(all(viewer).some((item) => 'data-recorded-swipe-end' in item.attrs));
+const viewerPointer = event(); viewer.onpointerdown(viewerPointer);
+assert.ok(viewerPointer.stopped, 'viewer gestures never reach Android');
+closeViewer();
+assert.ok(!all(root).some((item) => 'data-capture-preview' in item.attrs));
+const closeRectanglePreview = capturePreview({ layer: root, side: 'after', record: {
+  ...previewRecord, kind: 'scannable', tap: { x: .8, y: .8, kind: 'swipe', end: { x: .2, y: .2 } }, rect: [.2, .2, .8, .8] } });
+viewer = all(root).find((item) => 'data-capture-preview' in item.attrs);
+const rectangleOverlay = all(viewer).find((item) => 'data-recorded-rect' in item.attrs);
+assert.ok(rectangleOverlay);
+assert.match(rectangleOverlay.style.cssText, /left:20%;top:20%/);
+assert.ok(!all(viewer).some((item) => 'data-recorded-swipe' in item.attrs), 'a scannable rectangle is not presented as a game swipe');
+closeRectanglePreview();
+
+Date.now = realDateNow;
+console.log('Navigation annotations, floating panel gestures and archived previews: OK');

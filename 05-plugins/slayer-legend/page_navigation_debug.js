@@ -2,6 +2,8 @@
 // Only the recognised screen's allowed moves are drawn. The navigation
 // guard still makes the decision before any actual plugin gesture.
 import visualTracker from './page_navigation_tracking.js';
+import { getScreen } from './page_screen_scan.js';
+import capturePreview, { archivedScreen } from './page_navigation_preview.js';
 const COLOURS = { tap: '#ffe100', vertical: '#168bff', horizontal: '#bb50ff' };
 
 function covers(move, x, y, tolerance) {
@@ -54,22 +56,25 @@ export function zonesFor(screen, graph, registry, scan = null, tracked = null) {
     // overlays can cover the controls, so do not draw through them.
     const visible = new Set(['panel', 'equipment_weapon', 'equipment_accessories', 'soul_weapon', 'better_weapon_toast']);
     const controlsVisible = scan.screen === 'battle'
-      && (scan.overlays ?? []).every((overlay) => visible.has(overlay))
-      && (!(scan.overlays ?? []).includes('panel') || (scan.overlays ?? []).some((overlay) =>
-        ['equipment_weapon', 'equipment_accessories', 'soul_weapon'].includes(overlay)));
+      && typeof scan.plain === 'boolean'
+      && (scan.overlays ?? []).every((overlay) => visible.has(overlay));
     const existing = zones.findIndex((zone) => zone.id === 'preset_arrow');
     if (existing >= 0) zones.splice(existing, 1);
     const arrow = graph?.screens?.battle?.moves?.find((move) => move.id === 'preset_arrow');
     const toastCoversReducedArrow = scan.plain === false && (scan.overlays ?? []).includes('better_weapon_toast');
     if (controlsVisible && !toastCoversReducedArrow && arrow && !arrow.forbidden) {
-      const x = arrow.tap[0];
-      const y = scan.plain === false ? 0.355 : arrow.tap[1];
+      // Exact folded-arrow bounds, with a small border around the triangle:
+      // fixtures/battle_arrow_full (480×1040), battle_arrow_minimized
+      // (720×1560). The side control is fixed to the battle viewport.
+      const rect = scan.plain
+        ? [460 / 480, 450 / 1040, 476 / 480, 475 / 1040]
+        : [691 / 720, 535 / 1560, 714 / 720, 571 / 1560];
       zones.push({ id: arrow.id, kind: 'tap', conditional: Boolean(arrow.precondition),
-        rect: [x - 0.025, y - 0.012, x + 0.025, y + 0.012] });
+        rect, fixed: true });
     }
   }
   return zones.flatMap((zone) => {
-    if (zone.kind !== 'tap' || !tracked?.has(zone.id)) return [zone];
+    if (zone.fixed || zone.kind !== 'tap' || !tracked?.has(zone.id)) return [zone];
     const rect = tracked.get(zone.id);
     return rect ? [{ ...zone, rect }] : [];
   });
@@ -194,9 +199,10 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
   let hiddenCheck = 0;
   let rendered = '';
   let armedUntil = 0;
+  let closePreview = null;
   const active = () => !disposed && enabled() && api.setting('navigationDebug') === 'on';
   const busy = () => ['arming', 'armed', 'saving', 'cancelling'].includes(captureState);
-  const clear = () => { layer.replaceChildren(); layer.remove(); rendered = ''; };
+  const clear = () => { closePreview?.(); closePreview = null; layer.replaceChildren(); layer.remove(); rendered = ''; };
   const stop = (event) => { event.preventDefault(); event.stopPropagation(); };
   const floating = floatingDebugPanel(api.layer, stop);
   const finishTouch = (tap, synthetic = false) => {
@@ -238,10 +244,12 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
 
   function renderZones() {
     if (!active() || !graph || !registry) return;
-    const zones = screen ? zonesFor(screen, graph, registry, scan) : [];
+    // An unidentified bottom panel still leaves the fixed battle arrow
+    // visible. With no identity zonesFor emits no panel or Battle moves.
+    const zones = zonesFor(screen, graph, registry, scan);
     const tracked = tracker.update(screen, zones, registry?.tree?.[screen]?.scroll ?? []);
     zoneLayer.replaceChildren();
-    for (const zone of screen ? zonesFor(screen, graph, registry, scan, tracked) : []) drawZone(zone, zoneLayer);
+    for (const zone of zonesFor(screen, graph, registry, scan, tracked)) drawZone(zone, zoneLayer);
   }
 
   function render() {
@@ -275,7 +283,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
       };
       surface.onpointermove = (event) => {
         stop(event);
-        if (!start || !['vertical', 'horizontal'].includes(captureKind)) return;
+        if (!start || !['vertical', 'horizontal', 'scannable'].includes(captureKind)) return;
         const end = annotationPoint(event, surface.getBoundingClientRect());
         preview?.remove();
         preview = drawZone({ id: captureKind, kind: captureKind, rect: [
@@ -286,8 +294,12 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
         if (!start) return;
         const end = annotationPoint(event, surface.getBoundingClientRect());
         const slider = ['vertical', 'horizontal'].includes(captureKind);
+        const area = captureKind === 'scannable';
+        if (area && (Math.abs(end.x - start.x) < 0.01 || Math.abs(end.y - start.y) < 0.01)) {
+          start = null; preview?.remove(); return;
+        }
         if (slider && Math.abs(end[captureKind === 'vertical' ? 'y' : 'x'] - start[captureKind === 'vertical' ? 'y' : 'x']) < 0.02) return;
-        finishTouch({ ...start, kind: slider ? 'swipe' : 'tap', ...(slider ? { end } : {}) }, true);
+        finishTouch({ ...start, kind: slider || area ? 'swipe' : 'tap', ...(slider || area ? { end } : {}) }, true);
         start = null;
       };
       surface.onpointercancel = (event) => { stop(event); start = null; preview?.remove(); };
@@ -331,7 +343,8 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
     status.style.cssText = 'margin-top:6px;line-height:1.5';
     const slider = ['vertical', 'horizontal'].includes(captureKind);
     const message = ({ idle: 'Choisis un élément à déclarer', arming: 'Capture avant…',
-      armed: slider ? 'Capture avant enregistrée · Trace le slider' : 'Capture avant enregistrée · Clique sur l’élément',
+      armed: captureKind === 'scannable' ? 'Capture avant enregistrée · Trace un rectangle autour de l’élément'
+        : slider ? 'Capture avant enregistrée · Trace le slider' : 'Capture avant enregistrée · Clique sur l’élément',
       saving: 'Capture avant enregistrée · Capture après…', saved: 'Captures avant et après enregistrées · Déclaration enregistrée',
       cancelling: 'Annulation…', cancelled: 'Capture annulée · Choisis une action',
       failed: 'Échec de l’enregistrement', expired: 'Capture expirée · Choisis une action' })[captureState];
@@ -362,6 +375,18 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
         if (!record[key]) continue;
         const link = document.createElement('a');
         link.href = record[key]; link.target = '_blank'; link.rel = 'noopener';
+        const side = key === 'before_url' ? 'before' : 'after';
+        link.setAttribute('data-capture-open', side);
+        link.onclick = (event) => {
+          // Modified clicks retain the browser's access to the original PNG.
+          if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+          stop(event); closePreview?.();
+          const identity = archivedScreen(record, side);
+          const historicalScan = record[`${side}_scan`];
+          const zones = identity ? zonesFor(identity, graph, registry,
+            { ...historicalScan, at: Date.now() / 1000 }) : [];
+          closePreview = capturePreview({ layer: api.layer, record, side, zones, drawZone, tr: api.tr });
+        };
         link.textContent = api.tr(label);
         link.style.cssText = 'color:#ffe100;margin-right:12px';
         content.append(link);
@@ -383,7 +408,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
     refreshing = true;
     try {
       const [state, archive] = await Promise.all([
-        api.get('/screen?quick=1').catch(() => null), api.get('/trace/manual').catch(() => null),
+        getScreen(api).catch(() => null), api.get('/trace/manual').catch(() => null),
       ]);
       if (!active()) { clear(); return; }
       scan = state?.scan;
@@ -429,6 +454,6 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
       value: () => api.tr('Jaune : clic · chevrons bleus : vertical · chevrons violets : horizontal · pointillés : condition à vérifier') }],
     onSetting: (key) => { if (key === 'navigationDebug') update(); },
     update,
-    dispose: () => { disposed = true; window.removeEventListener?.('resize', floating.clamp); stopTap?.(); window.clearInterval(timer); window.cancelAnimationFrame?.(animation); tracker.reset(); clear(); },
+    dispose: () => { disposed = true; closePreview?.(); window.removeEventListener?.('resize', floating.clamp); stopTap?.(); window.clearInterval(timer); window.cancelAnimationFrame?.(animation); tracker.reset(); clear(); },
   };
 }

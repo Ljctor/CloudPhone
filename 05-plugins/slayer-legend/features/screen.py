@@ -105,6 +105,8 @@ def screen(ports, screens, stage, rules, values, table):
             answer = {"screen": name, "panel": None,
                       "scan": {"screen": name, "overlays": overlays, "plain": plain,
                                "at": ports.clock.wall()}}
+            if shot and focused and "quest_tab" in seen:
+                answer["scan"]["quest_tab"] = seen["quest_tab"]
             quick_cache.update(time=ports.clock.monotonic(), value=answer)
             return answer
 

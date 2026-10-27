@@ -58,7 +58,7 @@ class Annotations(unittest.IsolatedAsyncioTestCase):
         self.restart()
 
     def restart(self):
-        api = feature.trace(self.ports, NS(classify=lambda shot: "battle"), graphs,
+        api = feature.trace(self.ports, NS(classify=lambda shot: "battle", look=lambda shot: {"screen": "battle", "overlays": [], "plain": True, "unneeded": "omitted"}), graphs,
                             NS(png=lambda shot: b"PNG"))
         self.routes = {(method, path): handler for method, path, handler in api["routes"]}
 
@@ -86,9 +86,9 @@ class Annotations(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(before.stat().st_mode & 0o777, 0o600)
             self.assertEqual((await self.call("GET", "/trace"))[0]["armed"]["kind"], kind)
             tap = {"x": .2, "y": .3, "kind": "tap"}
-            if kind in ("vertical", "horizontal"):
+            if kind in ("vertical", "horizontal", "scannable"):
                 tap.update(kind="swipe", end={"x": .2 if kind == "vertical" else .7,
-                                              "y": .8 if kind == "vertical" else .3})
+                                              "y": .8 if kind in ("vertical", "scannable") else .3})
             self.assertEqual((await self.call("POST", "/trace", tap))[1], 202)
             await self.advance()
             metadata = root / (armed["id"] + ".json")
@@ -98,6 +98,10 @@ class Annotations(unittest.IsolatedAsyncioTestCase):
             record = json.loads(metadata.read_text())
             self.assertEqual(record["kind"], kind)
             self.assertEqual(record["tap"], tap)
+            self.assertEqual(record["before_scan"], {"screen": "battle", "overlays": [], "plain": True})
+            self.assertEqual(record["after_scan"], record["before_scan"])
+            if kind == "scannable":
+                self.assertEqual(record["rect"], [.2, .3, .7, .8])
             self.assertEqual(record["capture_status"], "complete")
         self.assertEqual(sum(edge["count"] for edge in (await self.call("GET", "/trace/graph"))[0]["edges"]), 1)
         self.restart()
@@ -191,3 +195,19 @@ class Annotations(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("after_url", item)
         for body in ({}, [], {"id": "bad"}):
             self.assertEqual((await self.call("POST", "/trace/cancel", body))[1], 400)
+
+    async def test_scannable_requires_area_and_normalises_reverse_corners(self):
+        armed, _ = await self.call("POST", "/trace/arm", {"kind": "scannable"})
+        for tap in ({"x": .8, "y": .8},
+                    {"x": .8, "y": .8, "kind": "swipe", "end": {"x": .2, "y": .8}}):
+            self.assertEqual((await self.call("POST", "/trace", tap))[1], 400)
+        self.assertEqual((await self.call("GET", "/trace"))[0]["armed"]["id"], armed["id"])
+        tap = {"x": .8, "y": .8, "kind": "swipe", "end": {"x": .2, "y": .2}}
+        self.assertEqual((await self.call("POST", "/trace", tap))[1], 202)
+        await self.advance()
+        self.release.set()
+        await self.advance()
+        item = (await self.call("GET", "/trace/manual"))[0]["clicks"][0]
+        self.assertEqual(item["rect"], [.2, .2, .8, .8])
+        self.assertEqual(item["capture_status"], "complete")
+        self.assertEqual((await self.call("GET", "/trace/graph"))[0]["edges"], [])

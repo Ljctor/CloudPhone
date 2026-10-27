@@ -31,7 +31,8 @@ class QuickScreen(unittest.IsolatedAsyncioTestCase):
         ports = NS(clock=NS(monotonic=lambda: now[0], wall=lambda: now[0]), capture=capture,
                    focused=focused, analyse=analyse, respond=lambda value: value,
                    store=NS(saved={}), game={"scan": forbidden_scan})
-        screens = NS(look=lambda shot: {"screen": shot, "overlays": []})
+        screens = NS(look=lambda shot: {"screen": shot, "overlays": [], **(
+            {"quest_tab": "repeat"} if shot == "quest_panel" else {})})
         api = feature.screen(ports, screens, None, None, NS(number_or_none=lambda *args: None), None)
         route = next(handler for method, path, handler in api["routes"] if path == "/screen")
         request = NS(query={"quick": "1"})
@@ -44,3 +45,7 @@ class QuickScreen(unittest.IsolatedAsyncioTestCase):
         result = await route(request)
         self.assertEqual(result["scan"]["screen"], "equipment_weapon")
         self.assertEqual(len(captures), 2)
+        image[0] = "quest_panel"
+        now[0] += .26
+        result = await route(request)
+        self.assertEqual(result["scan"]["quest_tab"], "repeat")
