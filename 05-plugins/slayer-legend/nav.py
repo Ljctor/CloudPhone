@@ -57,6 +57,14 @@ def _needs(screen, move, x, y, seen):
     where = f"{screen}/{move['id']}"
     if not isinstance(seen, dict):
         return f"{where} needs what the fresh capture shows (seen)"
+    if needs.get("reduced_battle"):
+        look = seen.get("look") or {}
+        overlays = set(look.get("overlays") or [])
+        if (look.get("screen") != "battle" or look.get("plain") is not False
+                or not overlays.intersection(("panel", "equipment_weapon"))
+                or overlays.difference(("panel", "equipment_weapon", "better_weapon_toast"))
+                or seen.get("combat_visible") is not True):
+            return f"{where} needs a fresh reduced battle with uncovered central combat"
     if "tag" in needs and seen.get("tag") != needs["tag"]:
         return f"{where} needs the tag read {needs['tag']!r}, not {seen.get('tag')!r}"
     if needs.get("selected_is_target") and (not seen.get("selected") or seen.get("selected") != seen.get("target")):
@@ -120,6 +128,8 @@ def check():
             needs = move.get("needs") or {}
             seen = {"tags": [], "tag": needs.get("tag"), "selected": "target", "target": "target",
                     "tag_box": [point[0] - 0.01, point[1] - 0.01, point[0] + 0.01, point[1] + 0.01]} if point else None
+            if point and needs.get("reduced_battle"):
+                seen.update(look={"screen": "battle", "plain": False, "overlays": ["panel"]}, combat_visible=True)
             why = point and guard(name, move["id"], point[0], point[1], kind, verified=True, seen=seen)
             if why:
                 problems.append(f"{name}/{move['id']}: {why}")

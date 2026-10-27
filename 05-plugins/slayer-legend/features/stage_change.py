@@ -218,7 +218,9 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
                        screen=await ports.analyse(screens.classify, shot))
         if not may_tap:
             raise Plan("fermer le panneau ({panel})", panel=tab[1])
-        await tap(shot, tab[1], "close", BATTLE_RETURN)
+        reduced = await ports.analyse(screens.look, shot)
+        await tap(shot, tab[1], "close", BATTLE_RETURN, verified=True,
+                  seen={"look": reduced, "combat_visible": reduced["screen"] == "battle"})
         shot, plain = await settle(screens.plain_battle)
         if not plain:
             raise Stop("fermeture du panneau du menu du bas")

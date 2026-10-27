@@ -162,8 +162,8 @@ class Game:
             game.leases.append((holder, reason))
             yield
 
-        def guarded(screen, move, point, kind="tap", verified=False):
-            refusal = nav.guard(screen, move, point[0], point[1], kind, verified)
+        def guarded(screen, move, point, kind="tap", verified=False, seen=None):
+            refusal = nav.guard(screen, move, point[0], point[1], kind, verified, seen)
             if refusal:
                 raise RuntimeError(refusal)
 
@@ -173,8 +173,8 @@ class Game:
         async def analyse(fn, *args):
             return fn(*args)
 
-        async def tap(shot, screen, move, point, verified=False):
-            guarded(screen, move, point, verified=verified)
+        async def tap(shot, screen, move, point, verified=False, seen=None):
+            guarded(screen, move, point, verified=verified, seen=seen)
             game.moves.append((screen, move))
             game.apply(screen, move, point)
 
@@ -250,7 +250,9 @@ def readers(game):
             return None
         return "on" if second[2]["auto"] else "off"
 
-    fake_screens = SimpleNamespace(plain_battle=plain, open_tab=open_tab, TAB_TAP_Y=screens.TAB_TAP_Y,
+    fake_screens = SimpleNamespace(look=lambda shot: {"screen": shot[2]["screen"], "plain": plain(shot),
+                                                    "overlays": ["panel"] if open_tab(shot) else []},
+                                   plain_battle=plain, open_tab=open_tab, TAB_TAP_Y=screens.TAB_TAP_Y,
                                    classify=lambda shot: shot[2]["screen"], SAVER_TAP=screens.SAVER_TAP,
                                    SAVER_HOLD_MS=screens.SAVER_HOLD_MS)
     fake_select = SimpleNamespace(regions=select.regions, view=view_of, battle_stage=battle_stage,

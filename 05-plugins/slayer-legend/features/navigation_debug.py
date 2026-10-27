@@ -11,7 +11,7 @@ def navigation_debug(ports, navigation, directory):
         graph["screens"][screen] = {
             "name": node.get("name", screen),
             "moves": [{key: move[key] for key in
-                       ("id", "kind", "tap", "hold", "area", "swipe", "forbidden", "precondition", "needs", "assumed")
+                       ("id", "kind", "tap", "hold", "area", "swipe", "forbidden", "precondition", "needs", "assumed", "combat_return")
                        if key in move} for move in node.get("moves", [])],
         }
     scrolls = {screen: {"scroll": node.get("scroll", [])}

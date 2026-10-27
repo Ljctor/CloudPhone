@@ -306,8 +306,13 @@
       0.5,
       0.18
      ],
-     "label": "tap the middle of the visible combat area to return to Battle (user, 2026-10-26)",
-     "assumed": true
+     "label": "tap visible combat to return to unshaded Battle (8 skill slots)",
+     "assumed": true,
+     "combat_return": true,
+     "precondition": "fresh capture shows reduced battle behind this panel, with the central combat point uncovered; after the tap verify unshaded Battle with all 8 skill slots",
+     "needs": {
+      "reduced_battle": true
+     }
     },
     {
      "id": "menu_skill",
@@ -410,8 +415,13 @@
       0.5,
       0.18
      ],
-     "label": "tap the middle of the visible combat area to return to Battle (user, 2026-10-26)",
-     "assumed": true
+     "label": "tap visible combat to return to unshaded Battle (8 skill slots)",
+     "assumed": true,
+     "combat_return": true,
+     "precondition": "fresh capture shows reduced battle behind this panel, with the central combat point uncovered; after the tap verify unshaded Battle with all 8 skill slots",
+     "needs": {
+      "reduced_battle": true
+     }
     },
     {
      "id": "menu_skill",
@@ -514,8 +524,13 @@
       0.5,
       0.18
      ],
-     "label": "tap the middle of the visible combat area to return to Battle (user, 2026-10-26)",
-     "assumed": true
+     "label": "tap visible combat to return to unshaded Battle (8 skill slots)",
+     "assumed": true,
+     "combat_return": true,
+     "precondition": "fresh capture shows reduced battle behind this panel, with the central combat point uncovered; after the tap verify unshaded Battle with all 8 skill slots",
+     "needs": {
+      "reduced_battle": true
+     }
     },
     {
      "id": "menu_skill",
@@ -636,8 +651,13 @@
       0.5,
       0.18
      ],
-     "label": "tap the middle of the visible combat area to return to Battle (user, 2026-10-26)",
-     "assumed": true
+     "label": "tap visible combat to return to unshaded Battle (8 skill slots)",
+     "assumed": true,
+     "combat_return": true,
+     "precondition": "fresh capture shows reduced battle behind this panel, with the central combat point uncovered; after the tap verify unshaded Battle with all 8 skill slots",
+     "needs": {
+      "reduced_battle": true
+     }
     },
     {
      "id": "menu_character",
@@ -815,8 +835,13 @@
       0.5,
       0.18
      ],
-     "label": "tap the middle of the visible combat area to return to Battle (user, 2026-10-26)",
-     "assumed": true
+     "label": "tap visible combat to return to unshaded Battle (8 skill slots)",
+     "assumed": true,
+     "combat_return": true,
+     "precondition": "fresh capture shows reduced battle behind this panel, with the central combat point uncovered; after the tap verify unshaded Battle with all 8 skill slots",
+     "needs": {
+      "reduced_battle": true
+     }
     },
     {
      "id": "menu_character",
@@ -983,8 +1008,13 @@
       0.5,
       0.18
      ],
-     "label": "tap the middle of the visible combat area to return to Battle (user, 2026-10-26)",
-     "assumed": true
+     "label": "tap visible combat to return to unshaded Battle (8 skill slots)",
+     "assumed": true,
+     "combat_return": true,
+     "precondition": "fresh capture shows reduced battle behind this panel, with the central combat point uncovered; after the tap verify unshaded Battle with all 8 skill slots",
+     "needs": {
+      "reduced_battle": true
+     }
     },
     {
      "id": "menu_character",
@@ -1099,8 +1129,13 @@
       0.5,
       0.18
      ],
-     "label": "tap the middle of the visible combat area to return to Battle (user, 2026-10-26)",
-     "assumed": true
+     "label": "tap visible combat to return to unshaded Battle (8 skill slots)",
+     "assumed": true,
+     "combat_return": true,
+     "precondition": "fresh capture shows reduced battle behind this panel, with the central combat point uncovered; after the tap verify unshaded Battle with all 8 skill slots",
+     "needs": {
+      "reduced_battle": true
+     }
     },
     {
      "id": "menu_character",
@@ -1621,8 +1656,13 @@
       0.5,
       0.18
      ],
-     "label": "tap the middle of the visible combat area to return to Battle (user, 2026-10-26)",
-     "assumed": true
+     "label": "tap visible combat to return to unshaded Battle (8 skill slots)",
+     "assumed": true,
+     "combat_return": true,
+     "precondition": "fresh capture shows reduced battle behind this panel, with the central combat point uncovered; after the tap verify unshaded Battle with all 8 skill slots",
+     "needs": {
+      "reduced_battle": true
+     }
     },
     {
      "id": "menu_character",
@@ -1813,8 +1853,13 @@
       0.5,
       0.18
      ],
-     "label": "tap the middle of the visible combat area to return to Battle (user, 2026-10-26)",
-     "assumed": true
+     "label": "tap visible combat to return to unshaded Battle (8 skill slots)",
+     "assumed": true,
+     "combat_return": true,
+     "precondition": "fresh capture shows reduced battle behind this panel, with the central combat point uncovered; after the tap verify unshaded Battle with all 8 skill slots",
+     "needs": {
+      "reduced_battle": true
+     }
     },
     {
      "id": "menu_character",
@@ -1985,8 +2030,13 @@
       0.5,
       0.18
      ],
-     "label": "tap the middle of the visible combat area to return to Battle (user, 2026-10-26)",
-     "assumed": true
+     "label": "tap visible combat to return to unshaded Battle (8 skill slots)",
+     "assumed": true,
+     "combat_return": true,
+     "precondition": "fresh capture shows reduced battle behind this panel, with the central combat point uncovered; after the tap verify unshaded Battle with all 8 skill slots",
+     "needs": {
+      "reduced_battle": true
+     }
     },
     {
      "id": "menu_character",
@@ -2472,7 +2522,12 @@
       0.5,
       0.18
      ],
-     "label": "tap the middle of the visible combat area to return to Battle (user, 2026-10-26)"
+     "label": "tap visible combat to return to unshaded Battle (8 skill slots)",
+     "combat_return": true,
+     "precondition": "fresh capture shows reduced battle behind this panel, with the central combat point uncovered; after the tap verify unshaded Battle with all 8 skill slots",
+     "needs": {
+      "reduced_battle": true
+     }
     },
     {
      "id": "menu_character",
@@ -2627,7 +2682,20 @@
    "recognise": "Event tab selected in the higher tab row, event package cards",
    "source": "seen on a real capture 2026-10-26",
    "moves": [
-    {"id": "close", "to": "battle", "tap": [0.5, 0.163], "label": "tap the middle of visible combat to return to Battle"},
+    {
+     "id": "close",
+     "to": "battle",
+     "tap": [
+      0.5,
+      0.163
+     ],
+     "label": "tap visible combat to return to unshaded Battle (8 skill slots)",
+     "combat_return": true,
+     "precondition": "fresh capture shows reduced battle behind this panel, with the central combat point uncovered; after the tap verify unshaded Battle with all 8 skill slots",
+     "needs": {
+      "reduced_battle": true
+     }
+    },
     {"id": "quest", "to": "quest_panel", "tap": [0.935, 0.087], "label": "Quest at top right"},
     {"id": "summon", "to": "shop_summon", "tap": [0.117, 0.269], "label": "Summon tab in higher tab row"},
     {"id": "package", "to": "shop_package", "tap": [0.315, 0.269], "label": "Package tab in higher tab row"},

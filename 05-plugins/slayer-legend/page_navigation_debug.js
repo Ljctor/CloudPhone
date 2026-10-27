@@ -1,4 +1,4 @@
-// Optional, read-only map of navigation points on the live game image.
+// Navigation map and explicit, user-initiated annotations on the live image.
 // Only the recognised screen's allowed moves are drawn. The navigation
 // guard still makes the decision before any actual plugin gesture.
 const COLOURS = { tap: '#ffe100', vertical: '#168bff', horizontal: '#bb50ff' };
@@ -20,10 +20,12 @@ function eligible(move, moves, tolerance) {
   return Boolean(point) && !moves.some((other) => other.forbidden && covers(other, ...point, tolerance));
 }
 
-export function zonesFor(screen, graph, registry) {
+export function zonesFor(screen, graph, registry, scan = null) {
   const moves = graph?.screens?.[screen]?.moves ?? [];
   const tolerance = graph?.tolerance ?? 0.03;
-  const safe = moves.filter((move) => eligible(move, moves, tolerance));
+  const safe = moves.filter((move) => eligible(move, moves, tolerance)
+    && (!move.combat_return || (scan?.screen === 'battle' && scan.plain === false
+      && recognisedScreen(scan) === screen)));
   const zones = safe.filter((move) => move.tap || move.hold || (move.area && move.kind !== 'swipe'))
     .map((move) => ({ id: move.id, kind: 'tap', conditional: Boolean(move.precondition), rect: move.area ?? [
       (move.tap ?? move.hold)[0] - 0.025, (move.tap ?? move.hold)[1] - 0.012,
@@ -46,6 +48,25 @@ export function zonesFor(screen, graph, registry) {
       rect: known?.rect ?? [Math.min(x1, x2) - 0.025, Math.min(y1, y2) - 0.015,
         Math.max(x1, x2) + 0.025, Math.max(y1, y2) + 0.015] });
   }
+  if (scan) {
+    // The battle remains behind these measured bottom panels. Other
+    // overlays can cover the controls, so do not draw through them.
+    const visible = new Set(['panel', 'equipment_weapon', 'equipment_accessories', 'soul_weapon', 'better_weapon_toast']);
+    const controlsVisible = scan.screen === 'battle'
+      && (scan.overlays ?? []).every((overlay) => visible.has(overlay))
+      && (!(scan.overlays ?? []).includes('panel') || (scan.overlays ?? []).some((overlay) =>
+        ['equipment_weapon', 'equipment_accessories', 'soul_weapon'].includes(overlay)));
+    const existing = zones.findIndex((zone) => zone.id === 'preset_arrow');
+    if (existing >= 0) zones.splice(existing, 1);
+    const arrow = graph?.screens?.battle?.moves?.find((move) => move.id === 'preset_arrow');
+    const toastCoversReducedArrow = scan.plain === false && (scan.overlays ?? []).includes('better_weapon_toast');
+    if (controlsVisible && !toastCoversReducedArrow && arrow && !arrow.forbidden) {
+      const x = arrow.tap[0];
+      const y = scan.plain === false ? 0.355 : arrow.tap[1];
+      zones.push({ id: arrow.id, kind: 'tap', conditional: Boolean(arrow.precondition),
+        rect: [x - 0.025, y - 0.012, x + 0.025, y + 0.012] });
+    }
+  }
   return zones;
 }
 
@@ -56,99 +77,214 @@ export function recognisedScreen(scan) {
   return overlays.at(-1) ?? scan.screen;
 }
 
+export const ANNOTATIONS = [
+  { kind: 'navigation', label: 'Ajouter un bouton de navigation' },
+  { kind: 'forbidden', label: 'Déclarer un bouton de navigation interdit' },
+  { kind: 'scannable', label: 'Marquer un élément scannable' },
+  { kind: 'vertical', label: 'Marquer un slider vertical' },
+  { kind: 'horizontal', label: 'Marquer un slider horizontal' },
+];
+
+export function annotationPoint(event, bounds) {
+  return { x: Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width)),
+    y: Math.max(0, Math.min(1, (event.clientY - bounds.top) / bounds.height)) };
+}
+
 export default function navigationDebug(api, { enabled = () => true } = {}) {
   const layer = document.createElement('div');
   layer.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:30';
   let graph = null;
   let registry = null;
-  let last = '';
   let disposed = false;
   let captureState = 'idle';
   let captureId = null;
-  const stopTap = api.onTap?.((tap) => {
-    if (captureState !== 'armed') return;
-    if (api.setting('traceTaps') === 'off') api.post('/trace', tap).catch(() => null);
-    captureState = 'saving';
-    last = '';
-    update();
-    window.setTimeout(async () => {
-      const archive = await api.get('/trace/manual').catch(() => null);
-      captureState = archive?.clicks?.some((click) => click.id === captureId) ? 'saved' : 'failed';
-      last = '';
-      update();
-      if (captureState === 'saved') window.setTimeout(() => {
-        captureState = 'idle'; last = ''; update();
-      }, 2500);
-    }, 3000);
-  });
-  const clear = () => { layer.replaceChildren(); layer.remove(); last = ''; };
+  let captureKind = 'navigation';
+  let record = null;
+  let refreshing = false;
+  let hiddenCheck = 0;
+  let rendered = '';
+  let armedUntil = 0;
   const active = () => !disposed && enabled() && api.setting('navigationDebug') === 'on';
+  const busy = () => ['arming', 'armed', 'saving'].includes(captureState);
+  const clear = () => { layer.replaceChildren(); layer.remove(); rendered = ''; };
+  const stop = (event) => { event.preventDefault(); event.stopPropagation(); };
+  const finishTouch = (tap, synthetic = false) => {
+    if (captureState !== 'armed') return;
+    captureState = 'saving';
+    if (synthetic || api.setting('traceTaps') === 'off') {
+      api.post('/trace', tap).catch(() => { captureState = 'failed'; render(); });
+    }
+    render();
+  };
+  const stopTap = api.onTap?.((tap) => finishTouch(tap));
+  let screen = null;
+  let scan = null;
 
-  const paint = (zones, screen) => {
+  function drawZone(zone, parent = layer) {
+    const [left, top, right, bottom] = zone.rect.map((part) => Math.max(0, Math.min(1, part)));
+    const box = document.createElement('div');
+    const colour = zone.kind === 'forbidden' ? '#ff5353' : zone.kind === 'scannable' ? '#52e99a' : COLOURS[zone.kind];
+    const slider = zone.kind === 'vertical' || zone.kind === 'horizontal';
+    box.style.cssText = `position:absolute;left:${left * 100}%;top:${top * 100}%;width:${(right - left) * 100}%;height:${(bottom - top) * 100}%;box-sizing:border-box;color:${colour};pointer-events:none`;
+    if (slider) {
+      box.style.cssText += `;display:flex;flex-direction:${zone.kind === 'vertical' ? 'column' : 'row'};align-items:center;justify-content:space-between;font:bold 22px sans-serif;text-shadow:0 1px 3px #000`;
+      for (const glyph of zone.kind === 'vertical' ? ['⌃', '⌄'] : ['❮', '❯']) {
+        const chevron = document.createElement('span');
+        chevron.textContent = glyph;
+        if (zone.conditional) chevron.style.opacity = '0.65';
+        box.append(chevron);
+      }
+    } else {
+      box.style.cssText += `;border:2px ${zone.conditional ? 'dashed' : 'solid'} ${colour};background:${colour}33;border-radius:3px`;
+    }
+    box.title = zone.conditional ? `${zone.id} · ${api.tr('condition à vérifier')}` : zone.id;
+    parent.append(box);
+    return box;
+  }
+
+  function render() {
+    if (!active() || !graph || !registry) { clear(); return; }
+    const signature = JSON.stringify([screen, scan?.plain, scan?.overlays, captureState, captureId, captureKind, record]);
+    if (signature === rendered && layer.isConnected) return;
+    rendered = signature;
     if (!layer.isConnected) api.layer.append(layer);
     layer.replaceChildren();
     const name = document.createElement('div');
     const label = screen ? (graph.screens?.[screen]?.name ?? screen) : api.tr('Écran non identifié');
     name.textContent = api.tr('Écran : {screen}', { screen: label });
-    name.style.cssText = 'position:absolute;left:50%;top:1%;transform:translateX(-50%);max-width:90%;padding:3px 7px;border:1px solid #ffe100;border-radius:4px;background:#000c;color:#fff;font:600 12px sans-serif;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+    name.style.cssText = 'position:absolute;left:50%;top:1%;transform:translateX(-50%);max-width:90%;padding:3px 7px;border:1px solid #ffe100;border-radius:4px;background:#000c;color:#fff;font:600 12px sans-serif;text-align:center';
     layer.append(name);
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.textContent = api.tr(({ idle: 'Enregistrer un clic', arming: 'Capture avant…',
-      armed: 'Clique dans le jeu', saving: 'Capture après…', saved: 'Clic enregistré',
-      failed: 'Réessayer le clic' })[captureState]);
-    button.disabled = captureState === 'arming' || captureState === 'saving' || captureState === 'saved';
-    button.style.cssText = 'position:absolute;left:50%;bottom:7%;transform:translateX(-50%);pointer-events:auto;z-index:1;padding:7px 10px;border:2px solid #ffe100;border-radius:5px;background:#171717;color:#fff;font:600 12px sans-serif;white-space:nowrap;cursor:pointer';
-    button.onpointerdown = (event) => event.stopPropagation();
-    button.onpointerup = (event) => event.stopPropagation();
-    button.onclick = async (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      if (captureState !== 'idle' && captureState !== 'failed') return;
-      captureState = 'arming';
-      button.textContent = api.tr('Capture avant…');
-      button.disabled = true;
-      try {
-        const answer = await api.post('/trace/arm', {});
-        captureId = answer?.id ?? null;
-        captureState = answer?.armed ? 'armed' : 'failed';
-      } catch { captureState = 'failed'; }
-      last = '';
-      update();
-    };
-    layer.append(button);
-    for (const zone of zones) {
-      const [left, top, right, bottom] = zone.rect.map((part) => Math.max(0, Math.min(1, part)));
-      const box = document.createElement('div');
-      const colour = COLOURS[zone.kind];
-      box.style.cssText = `position:absolute;left:${left * 100}%;top:${top * 100}%;width:${(right - left) * 100}%;height:${(bottom - top) * 100}%;border:2px ${zone.conditional ? 'dashed' : 'solid'} ${colour};background:${colour}33;box-sizing:border-box;border-radius:3px`;
-      box.title = zone.conditional ? `${zone.id} · ${api.tr('condition à vérifier')}` : zone.id;
-      layer.append(box);
+    for (const zone of screen ? zonesFor(screen, graph, registry, scan) : []) drawZone(zone);
+
+    // Annotation gestures are consumed here, before they reach Android.
+    if (captureState === 'armed' && captureKind !== 'navigation') {
+      const surface = document.createElement('div');
+      surface.style.cssText = 'position:absolute;inset:0;pointer-events:auto;touch-action:none;cursor:crosshair';
+      let start = null;
+      let preview = null;
+      surface.onpointerdown = (event) => {
+        stop(event);
+        start = annotationPoint(event, surface.getBoundingClientRect());
+        surface.setPointerCapture?.(event.pointerId);
+      };
+      surface.onpointermove = (event) => {
+        stop(event);
+        if (!start || !['vertical', 'horizontal'].includes(captureKind)) return;
+        const end = annotationPoint(event, surface.getBoundingClientRect());
+        preview?.remove();
+        preview = drawZone({ id: captureKind, kind: captureKind, rect: [
+          Math.min(start.x, end.x), Math.min(start.y, end.y), Math.max(start.x, end.x), Math.max(start.y, end.y)] }, surface);
+      };
+      surface.onpointerup = (event) => {
+        stop(event);
+        if (!start) return;
+        const end = annotationPoint(event, surface.getBoundingClientRect());
+        const slider = ['vertical', 'horizontal'].includes(captureKind);
+        if (slider && Math.abs(end[captureKind === 'vertical' ? 'y' : 'x'] - start[captureKind === 'vertical' ? 'y' : 'x']) < 0.02) return;
+        finishTouch({ ...start, kind: slider ? 'swipe' : 'tap', ...(slider ? { end } : {}) }, true);
+        start = null;
+      };
+      surface.onpointercancel = (event) => { stop(event); start = null; preview?.remove(); };
+      layer.append(surface);
     }
-  };
+
+    const panel = document.createElement('div');
+    panel.style.cssText = 'position:absolute;left:2%;right:2%;bottom:7%;pointer-events:auto;z-index:2;padding:7px;border:1px solid #ffe100;border-radius:5px;background:#171717ed;color:#fff;font:12px sans-serif';
+    panel.onpointerdown = (event) => event.stopPropagation();
+    panel.onpointerup = (event) => event.stopPropagation();
+    const actions = document.createElement('div');
+    actions.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px';
+    for (const action of ANNOTATIONS) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = api.tr(action.label);
+      button.disabled = busy();
+      button.style.cssText = 'flex:1 1 130px;padding:5px;border:1px solid #888;border-radius:3px;background:#292929;color:#fff;font:inherit;cursor:pointer';
+      button.onclick = async (event) => {
+        stop(event);
+        if (busy()) return;
+        captureState = 'arming'; captureKind = action.kind; captureId = null; record = null;
+        render();
+        try {
+          const answer = await api.post('/trace/arm', { kind: action.kind });
+          captureId = answer?.id ?? null;
+          armedUntil = answer?.until ?? Date.now() / 1000 + (answer?.seconds ?? 30);
+          captureState = answer?.armed ? 'armed' : 'failed';
+        } catch { captureState = 'failed'; }
+        render();
+      };
+      actions.append(button);
+    }
+    panel.append(actions);
+    const status = document.createElement('div');
+    status.setAttribute('role', 'status');
+    status.setAttribute('aria-live', 'polite');
+    status.style.cssText = 'margin-top:6px;line-height:1.5';
+    const slider = ['vertical', 'horizontal'].includes(captureKind);
+    const message = ({ idle: 'Choisis un élément à déclarer', arming: 'Capture avant…',
+      armed: slider ? 'Capture avant enregistrée · Trace le slider' : 'Capture avant enregistrée · Clique sur l’élément',
+      saving: 'Capture avant enregistrée · Capture après…', saved: 'Captures avant et après enregistrées · Déclaration enregistrée',
+      failed: 'Échec de l’enregistrement', expired: 'Capture expirée · Choisis une action' })[captureState];
+    status.textContent = api.tr(message);
+    if (captureState !== 'idle') status.textContent = `${api.tr(ANNOTATIONS.find((item) => item.kind === captureKind)?.label ?? '')} · ${status.textContent}`;
+    panel.append(status);
+    if (record) {
+      for (const [key, label] of [['before_url', 'Capture avant'], ['after_url', 'Capture après']]) {
+        if (!record[key]) continue;
+        const link = document.createElement('a');
+        link.href = record[key]; link.target = '_blank'; link.rel = 'noopener';
+        link.textContent = api.tr(label);
+        link.style.cssText = 'color:#ffe100;margin-right:12px';
+        panel.append(link);
+      }
+      if (record.tap) {
+        const coords = document.createElement('div');
+        coords.textContent = `${record.id} · ${record.tap.x.toFixed(3)}, ${record.tap.y.toFixed(3)}${record.tap.end ? ` → ${record.tap.end.x.toFixed(3)}, ${record.tap.end.y.toFixed(3)}` : ''}`;
+        panel.append(coords);
+      }
+    }
+    layer.append(panel);
+  }
 
   const update = async () => {
     if (!active() || !graph || !registry) { clear(); return; }
-    const state = await api.get('/game').catch(() => null);
-    if (!active()) { clear(); return; }
-    const screen = recognisedScreen(state?.scan);
-    const key = `${screen}:${state?.scan?.at ?? ''}`;
-    if (key === last) return;
-    last = key;
-    paint(screen ? zonesFor(screen, graph, registry) : [], screen);
+    if (refreshing || (document.hidden && Date.now() - hiddenCheck < 2000)) return;
+    hiddenCheck = Date.now();
+    refreshing = true;
+    try {
+      const [state, archive] = await Promise.all([
+        api.get('/screen?quick=1').catch(() => null), api.get('/trace/manual').catch(() => null),
+      ]);
+      if (!active()) { clear(); return; }
+      scan = state?.scan;
+      screen = recognisedScreen(scan);
+      const clicks = archive?.clicks ?? [];
+      const found = captureId ? clicks.find((click) => click.id === captureId) : captureState === 'idle' ? clicks[0] : null;
+      if (found && captureState !== 'arming') {
+        record = found; captureId = found.id; captureKind = found.kind ?? 'navigation';
+        captureState = found.capture_status === 'armed' ? (captureState === 'saving' ? 'saving' : 'armed') : found.capture_status === 'error' ? 'failed' : found.capture_status === 'complete' || found.after_url ? 'saved' : 'saving';
+      } else if (captureState === 'armed' && Date.now() / 1000 > armedUntil) captureState = 'expired';
+      render();
+    } finally { refreshing = false; }
   };
   api.get('/navigation-debug').then((answer) => {
-    graph = answer?.graph;
-    registry = answer?.registry;
+    graph = answer?.graph; registry = answer?.registry;
+    return api.get('/trace').catch(() => null);
+  }).then((trace) => {
+    const pending = trace?.armed ?? trace?.pending;
+    if (pending) {
+      captureId = pending.id; captureKind = pending.kind ?? 'navigation';
+      armedUntil = pending.until ?? 0; captureState = trace.armed ? 'armed' : 'saving';
+    }
     update();
   }).catch(() => clear());
-  const timer = window.setInterval(update, 2000);
+  const timer = window.setInterval(update, 250);
 
   return {
     debug: [{ type: 'choice', key: 'navigationDebug', label: 'Zones de navigation',
       choices: [{ value: 'off', label: 'Désactivé' }, { value: 'on', label: 'Activé' }] },
     { type: 'status', label: 'Légende navigation',
-      value: () => api.tr('Jaune : clic · bleu : vertical · violet : horizontal · pointillés : condition à vérifier') }],
+      value: () => api.tr('Jaune : clic · chevrons bleus : vertical · chevrons violets : horizontal · pointillés : condition à vérifier') }],
     onSetting: (key) => { if (key === 'navigationDebug') update(); },
     update,
     dispose: () => { disposed = true; stopTap?.(); window.clearInterval(timer); clear(); },

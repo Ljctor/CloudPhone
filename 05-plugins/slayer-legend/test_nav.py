@@ -134,7 +134,16 @@ class Graph(unittest.TestCase):
         for screen, x in [("character_enhance", 0.073), ("character_growth", 0.073), ("skill", 0.24),
                           ("equipment_weapon", 0.41), ("equipment_relic", 0.41), ("companion", 0.585),
                           ("adventure_map", 0.755), ("dungeon_map", 0.755), ("shop_summon", 0.925)]:
-            self.assertIsNone(nav.guard(screen, "close", 0.5, 0.18), screen)
+            self.assertIsNone(nav.guard(screen, "close", 0.5, 0.18, verified=True,
+                                        seen={"look": {"screen": "battle", "plain": False, "overlays": ["panel"]},
+                                              "combat_visible": True}), screen)
+            self.assertIn("check first", nav.guard(screen, "close", 0.5, 0.18))
+            for look in ({"screen": "unknown", "plain": False, "overlays": ["panel"]},
+                         {"screen": "battle", "plain": True, "overlays": []},
+                         {"screen": "battle", "plain": False, "overlays": ["panel", "soul_weapon"]}):
+                self.assertIsNotNone(nav.guard(screen, "close", .5, .18, verified=True,
+                                               seen={"look": look, "combat_visible": True}))
+            self.assertIsNotNone(nav.guard(screen, "close", .5, .18, verified=True))
             self.assertEqual(next(m for m in nav.connections(screen) if m["id"] == "close")["to"], "battle")
         # A bottom tab is not the panel's close action.
         self.assertIsNotNone(nav.guard("shop_summon", "close", 0.073, 0.966))

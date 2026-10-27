@@ -1,7 +1,7 @@
 """The screen the game shows and the stage it farms, and the stages the
 mode can choose from.
 
-GET /screen[?known=N]   {screen, stage, panel}, from a screenshot at most every 2 s;
+GET /screen[?known=N]   {screen, stage, panel}, from a screenshot at most every 250 ms;
                         panel: the bottom tab whose panel is open on the
                         battle screen (screens.TABS' names), else None
 GET /stages[?known=N]   {highest, mpw18, mpw4}: every mpw18 and mpw4 stage,
@@ -18,11 +18,12 @@ in screen_rules.py.
 import asyncio
 
 # An answer this young is given again instead of a new screenshot.
-SECONDS = 2.0
+SECONDS = 0.25
 
 
 def screen(ports, screens, stage, rules, values, table):
     cache = {"time": 0.0, "value": None, "lock": None}
+    quick_cache = {"time": 0.0, "value": None, "lock": None}
     # The last stage number read in Power Saving Mode.
     farmed = {"number": None}
     # The highest stage seen farmed: the game only farms unlocked stages.
@@ -86,7 +87,30 @@ def screen(ports, screens, stage, rules, values, table):
             note_highest(number)
         return answer
 
+    async def quick_screen():
+        """Navigation geometry only, without waiting for numeric readers."""
+        if quick_cache["lock"] is None:
+            quick_cache["lock"] = asyncio.Lock()
+        async with quick_cache["lock"]:
+            if quick_cache["value"] is not None and ports.clock.monotonic() - quick_cache["time"] < SECONDS:
+                return quick_cache["value"]
+            shot, focused = await asyncio.gather(ports.capture(max_age=SECONDS), ports.focused())
+            if shot and focused:
+                seen = await ports.analyse(screens.look, shot)
+                name, overlays = seen["screen"], seen["overlays"]
+                plain = bool(seen.get("plain"))
+            else:
+                name, overlays = ("away" if not focused else "unknown"), []
+                plain = False
+            answer = {"screen": name, "panel": None,
+                      "scan": {"screen": name, "overlays": overlays, "plain": plain,
+                               "at": ports.clock.wall()}}
+            quick_cache.update(time=ports.clock.monotonic(), value=answer)
+            return answer
+
     async def handle_screen(request):
+        if request.query.get("quick") == "1":
+            return ports.respond(await quick_screen())
         remembered = rules.remembered(table, request.query.get("known", ""))
         if cache["lock"] is None:
             cache["lock"] = asyncio.Lock()

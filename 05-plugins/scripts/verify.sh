@@ -147,6 +147,21 @@ state = json.load(sys.stdin)
 assert isinstance(state["clicks"], list)
 print("Private manual click archive: OK")
 '
+curl -fsS "${base%/}/api/v1/plugins/slayer-legend/screen?quick=1" | python3 -c '
+import json, sys
+state = json.load(sys.stdin)
+assert {"screen", "scan"} <= state.keys()
+assert {"screen", "overlays", "plain", "at"} <= state["scan"].keys()
+assert isinstance(state["scan"]["overlays"], list)
+print("Fast screen recognition: OK")
+'
+curl -fsS "${base%/}/plugins/slayer-legend/page_navigation_debug.js" | python3 -c '
+import sys
+script = sys.stdin.read()
+for token in ("/screen?quick=1", "Ajouter un bouton de navigation", "Déclarer un bouton de navigation interdit", "Marquer un élément scannable", "Marquer un slider vertical", "Marquer un slider horizontal", "❮", "❯"):
+    assert token in script, token
+print("Navigation annotation controls: OK")
+'
 curl -fsS "${base%/}/plugins/slayer-legend/page_mode.js" | python3 -c '
 import sys
 script = sys.stdin.read()
