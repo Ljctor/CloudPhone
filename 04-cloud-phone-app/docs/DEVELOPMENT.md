@@ -60,6 +60,7 @@ the browser and the gateway; `App.tsx` only assembles them.
 | `gateway/src/videobridge_gateway/http/viewers.py` | `POST /api/v1/viewers/disconnect-others`, the viewer id of a request, sessions' arrivals and departures as log records |
 | `gateway/src/videobridge_gateway/core/display.py` | screen size and density limits, the last request's state, one change of either kind (size, settings) every 2 minutes (no I/O) |
 | `gateway/src/videobridge_gateway/http/display.py` | `GET`/`POST /api/v1/display`, the change limit as a 409 or 429 answer, refused changes as warning records |
+| `gateway/src/videobridge_gateway/core/stream_diagnostics.py` | bounded, address-free signalling and browser event history for `GET /api/v1/stream-diagnostics` |
 | `gateway/src/videobridge_gateway/core/settings.py` | renderers, the cores and memory the host allows, the last settings request's state, the settings in the emulator's command line (no I/O) |
 | `gateway/src/videobridge_gateway/http/settings.py` | `GET`/`POST /api/v1/emulator-settings`, sharing the screen size's change limit |
 | `gateway/src/videobridge_gateway/core/metrics.py` | the server panel's figures from `/proc`, cgroup and adb texts: load, CPU, memory, Android's frame rate (no I/O) |

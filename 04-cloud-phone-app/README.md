@@ -55,3 +55,17 @@ and runs `scripts/install.sh --listen 10.20.0.1`.
   action).
 - `↻` replaces the video session only; it never restarts Android or the
   foreground app.
+
+### Diagnosing an intermittent video stream
+
+`GET /api/v1/stream-diagnostics` gives the emulator and Android status,
+gRPC channel states, and the last 32 active and 32 closed signalling sessions.
+Each session has a short opaque ID, phase timings, counts of offer/answer/ICE
+messages, and bounded browser events (ICE state, incoming packets and decoded
+frames, playback and first-frame status). The browser also exposes
+`window.cloudphoneDiagnostics.snapshot()` for its current session. A Volume
+key event is recorded by kind and time so its effect on the first frame can
+be compared with the WebRTC counters. Raw SDP, ICE addresses and page tokens
+are never stored in these diagnostics. Media travels directly between the
+browser and emulator, so the gateway cannot count video frames itself; use
+the browser's `framesReceived` and `framesDecoded` fields for that distinction.

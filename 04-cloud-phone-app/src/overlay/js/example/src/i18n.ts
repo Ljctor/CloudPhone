@@ -90,6 +90,8 @@ const EN = {
   'Codec': 'Codec',
   'Affichage': 'Display',
   'Images affichées': 'Frames displayed',
+  'Images reçues / décodées': 'Frames received / decoded',
+  'Gels du décodeur': 'Decoder freezes',
   'Images perdues': 'Frames dropped',
   'Tampon vidéo': 'Video buffer',
   'Écran de l’appareil': 'Device screen',

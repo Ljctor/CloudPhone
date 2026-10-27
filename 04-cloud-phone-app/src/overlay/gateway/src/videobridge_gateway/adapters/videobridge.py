@@ -17,7 +17,7 @@ class Bridge:
         stun_server = ice_config.ice_servers.add()
         stun_server.urls.append(stun)
         response = await self.stub.RequestRtcStream(rtc.RtcStreamRequest(ice_server_config=ice_config),
-                                                    metadata=self.metadata)
+                                                    metadata=self.metadata, timeout=10)
         return response.id.guid
 
     async def messages(self, guid):
@@ -31,4 +31,4 @@ class Bridge:
         request = rtc.SendJsepMessageRequest()
         request.jsep_msg.id.guid = guid
         request.jsep_msg.message = text
-        await self.stub.SendJsepMessage(request, metadata=self.metadata)
+        await self.stub.SendJsepMessage(request, metadata=self.metadata, timeout=5)

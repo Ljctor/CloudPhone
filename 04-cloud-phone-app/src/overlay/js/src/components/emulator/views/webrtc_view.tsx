@@ -51,6 +51,7 @@ const EmulatorWebrtcView: React.FC<EmulatorWebrtcViewProps> = ({
   width,
   height,
 }) => {
+  const startedAt = useRef<number>(performance.now());
   const [audio, setAudio] = useState<boolean>(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const hasRenderedFrame = useRef<boolean>(false);
@@ -98,8 +99,10 @@ const EmulatorWebrtcView: React.FC<EmulatorWebrtcViewProps> = ({
     }
     try {
       await video.play();
+      jsep.diagnostic("play-resolved", { paused: video.paused, muted: video.muted, readyState: video.readyState });
       logger.debug("Automatic playback started!");
     } catch (error: any) {
+      jsep.diagnostic("play-rejected", { name: error?.name ?? "Error", muted: video.muted, readyState: video.readyState });
       if (error?.name !== "NotAllowedError" || !videoRef.current) {
         // AbortError: a new load interrupted this play(); canplay retries.
         onError(error);
@@ -173,12 +176,18 @@ const EmulatorWebrtcView: React.FC<EmulatorWebrtcViewProps> = ({
     // refused) is not connected: it waits for a gesture.
     const video = videoRef.current;
     if (!video || (blocked.current && video.paused)) return;
+    if (!hasRenderedFrame.current) jsep.diagnostic("first-frame", {
+      elapsedMs: Math.round(performance.now() - startedAt.current),
+      width: video.videoWidth, height: video.videoHeight, readyState: video.readyState,
+      paused: video.paused, muted: video.muted,
+    });
     blocked.current = false;
     hasRenderedFrame.current = true;
     setConnect("connected");
   };
 
   const onWaiting = () => {
+    jsep.diagnostic("video-waiting", { hadFrame: hasRenderedFrame.current });
     if (!hasRenderedFrame.current && !blocked.current) {
       setConnect("connecting");
     }
@@ -189,14 +198,32 @@ const EmulatorWebrtcView: React.FC<EmulatorWebrtcViewProps> = ({
   };
 
   useEffect(() => {
+    startedAt.current = performance.now();
     jsep.startStream({
       onConnected: onConnect,
       onDisconnected: onDisconnect,
     });
 
     setConnect("connecting");
+    const video = videoRef.current;
+    const onVideoEvent = (event: Event) => jsep.diagnostic(`video-${event.type}`, {
+      readyState: video?.readyState ?? 0, paused: video?.paused ?? true,
+      muted: video?.muted ?? true, hidden: document.hidden,
+    });
+    const events = ["loadedmetadata", "stalled", "suspend", "pause", "volumechange", "error"];
+    events.forEach((name) => video?.addEventListener(name, onVideoEvent));
+    const firstFrameTimer = window.setTimeout(() => {
+      if (!hasRenderedFrame.current) jsep.diagnostic("first-frame-timeout", {
+        elapsedMs: Math.round(performance.now() - startedAt.current),
+        readyState: video?.readyState ?? 0, paused: video?.paused ?? true,
+        width: video?.videoWidth ?? 0, hidden: document.hidden,
+      });
+    }, 5000);
 
     return () => {
+      window.clearTimeout(firstFrameTimer);
+      events.forEach((name) => video?.removeEventListener(name, onVideoEvent));
+      if (frameCallback.current !== null) (video as any)?.cancelVideoFrameCallback?.(frameCallback.current);
       jsep.disconnect();
     };
   }, []);

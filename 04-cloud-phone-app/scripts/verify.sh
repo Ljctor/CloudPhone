@@ -30,6 +30,10 @@ live_metrics() {
   curl -fsS --max-time 5 "http://$host:$WEB_PORT/api/v1/state?details=1" |
     python3 -c 'import json,sys; host=(json.load(sys.stdin).get("metrics") or {}).get("host") or {}; assert host.get("cpu") is not None and (host.get("memory") or {}).get("total")'
 }
+stream_diagnostics() {
+  curl -fsS --max-time 5 "http://$host:$WEB_PORT/api/v1/stream-diagnostics" |
+    python3 -c 'import json,sys; x=json.load(sys.stdin); assert x["schema_version"] == 1; assert {"emulator","android","channels","signalling","media"} <= x.keys(); assert {"active","recent","hardware_inputs"} <= x["signalling"].keys(); assert x["media"]["frames_observed"] is None'
+}
 listens_only_on() {
   local port=$1 addresses
   addresses=$(ss -Hltn | awk -v p=":$port" 'substr($4, length($4) - length(p) + 1) == p { print $4 }')
@@ -44,6 +48,7 @@ check "no separate cloudphone-web service is left" test ! -e /etc/systemd/system
 check "web page answers on $host:$WEB_PORT" answers "http://$host:$WEB_PORT/"
 check "gateway answers on $host:$WEB_PORT" answers "http://$host:$WEB_PORT/api/v1/emulator/status"
 check "gateway reports live CPU and memory" live_metrics
+check "gateway reports bounded stream diagnostics" stream_diagnostics
 check "gateway serves its log records" bash -c \
   "curl -fsS --max-time 5 http://$host:$WEB_PORT/api/v1/logs | grep -q '\"records\"'"
 check "gateway keeps its log records in $STATE/logs" bash -c \
@@ -57,6 +62,8 @@ check "gateway logs to the journal as cloudphone-gateway" bash -c \
 check "page carries a token" bash -c "curl -fsS --max-time 5 http://$host:$WEB_PORT/ | grep -q 'name=\"cloudphone-token\"'"
 check "a POST without the token is refused" bash -c \
   "[ \"\$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -X POST -d '{}' http://$host:$WEB_PORT/api/v1/emulator/key)\" = 403 ]"
+check "stream diagnostics POST without the token is refused" bash -c \
+  "[ \"\$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -X POST -H 'Content-Type: application/json' -d '{}' http://$host:$WEB_PORT/api/v1/stream-diagnostics/events)\" = 403 ]"
 check "a request from another origin is refused" bash -c \
   "[ \"\$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -H 'Origin: http://example.com' http://$host:$WEB_PORT/api/v1/state)\" = 403 ]"
 check "no CORS header is sent" bash -c \

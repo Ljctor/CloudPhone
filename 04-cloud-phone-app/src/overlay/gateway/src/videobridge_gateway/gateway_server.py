@@ -44,8 +44,10 @@ from .http import events
 from .http import notify
 from .http import page_settings
 from .http import session
+from .http import stream_diagnostics
 from .core import settings as settings_rules
 from .core.session import bearer
+from .core.stream_diagnostics import STREAMS
 from .core import metrics as host_metrics
 from .core import alerts as alert_rules
 from .core import texts
@@ -425,6 +427,29 @@ async def handle_state(request):
     return web.json_response(value, headers={"Cache-Control": "no-store"})
 
 
+async def handle_stream_diagnostics(request):
+    """Read-only stream evidence; no screenshots, probes, input or raw JSEP."""
+    unit, booted = await asyncio.gather(read_emulator_unit(), read_android_booted())
+
+    def channel_state(channel):
+        if channel is None:
+            return "unavailable"
+        try:
+            return channel.get_state(try_to_connect=False).name
+        except Exception:
+            return "unknown"
+
+    return web.json_response({
+        "schema_version": 1,
+        "emulator": unit,
+        "android": {"booted": booted},
+        "channels": {"emulator": channel_state(EMULATOR_CHANNEL),
+                     "videobridge": channel_state(VIDEOBRIDGE_CHANNEL)},
+        "signalling": STREAMS.snapshot(),
+        "media": {"frames_observed": None, "reason": "media_flows_directly_between_browser_and_emulator"},
+    }, headers={"Cache-Control": "no-store"})
+
+
 async def handle_logs(request):
     """
     GET /api/v1/logs?since=CURSOR: {cursor, records}, the gateway's log
@@ -643,6 +668,7 @@ async def handle_key(request):
             raise OSError(errors)
         if code:
             raise RuntimeError(errors.strip())
+        STREAMS.hardware_key(key)
         return web.json_response({"status": "success"})
     except Exception as e:
         logging.error(f"Error sending key: {e}. Check Android in Information → Server; if adb stays offline, "
@@ -700,6 +726,8 @@ def init_app(videobridge_token, plugins_dir="", plugin_data=""):
     app.router.add_get("/api/v1/display", display.get_display(
         lambda: {"width": DISPLAY_WIDTH, "height": DISPLAY_HEIGHT}, lambda: read_avd_config(AVD_DIR)))
     app.router.add_get("/api/v1/state", handle_state)
+    app.router.add_get("/api/v1/stream-diagnostics", handle_stream_diagnostics)
+    app.router.add_post("/api/v1/stream-diagnostics/events", stream_diagnostics.post_events)
     app.router.add_get("/api/v1/events", events.get_events(adb_output))
     app.router.add_get("/api/v1/logs", handle_logs)
     app.router.add_get("/api/v1/templates", lambda request: web.json_response(texts.TEMPLATES))

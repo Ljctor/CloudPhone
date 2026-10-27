@@ -5,6 +5,7 @@
 // warnings and errors also go to the browser's console at their level. See
 // logRecords.ts for the records.
 import { useEffect, useState } from 'react';
+import { onStreamDiagnostic } from '../../src/components/emulator/net/stream_diagnostics';
 import { language, tr } from './i18n';
 import { styles } from './styles';
 import {
@@ -26,6 +27,10 @@ export function pageLog(level, text, { toConsole = true } = {}) {
   if (toConsole) CONSOLE[level]?.(text);
   logChanged();
 }
+
+// Structured WebRTC milestones remain visible in the Client tab's existing log.
+onStreamDiagnostic((record) => pageLog('normal',
+  `WebRTC #${record.session} ${record.event} ${JSON.stringify(record.data)}`, { toConsole: false }));
 
 for (const [method, level] of [['warn', 'warning'], ['error', 'error']]) {
   const original = console[method].bind(console);

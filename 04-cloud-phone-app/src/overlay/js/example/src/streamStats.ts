@@ -12,7 +12,9 @@
 export const EMPTY_STATS = {
   ping: null, pingSource: null, server: null, phone: null, video: null,
   bitrate: null, packetsLost: null, jitter: null, bufferDelay: null,
-  framesDropped: null, codec: null, path: null, connection: null,
+  framesDropped: null, framesDecoded: null, framesReceived: null, bytesReceived: null,
+  packetsReceived: null, keyFramesDecoded: null, freezeCount: null, totalFreezesDuration: null,
+  codec: null, path: null, connection: null,
 };
 
 // What one sample reads: frames and bytes received, the ICE round trip
@@ -30,6 +32,10 @@ export function readReport(report, connectionState, sampleData) {
     if (entry.type === 'inbound-rtp' && (entry.kind ?? entry.mediaType) === 'video') {
       sampleData.received = entry.framesReceived ?? entry.framesDecoded ?? null;
       sampleData.bytes = entry.bytesReceived ?? null;
+      for (const key of ['framesDecoded', 'framesReceived', 'bytesReceived', 'packetsReceived',
+        'keyFramesDecoded', 'freezeCount', 'totalFreezesDuration']) {
+        sampleData.details[key] = entry[key] ?? null;
+      }
       sampleData.details.packetsLost = entry.packetsLost ?? null;
       sampleData.details.jitter = typeof entry.jitter === 'number' ? entry.jitter * 1000 : null;
       sampleData.details.framesDropped = entry.framesDropped ?? null;

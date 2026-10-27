@@ -3,6 +3,7 @@
 // network details.
 import { useEffect, useState } from 'react';
 import { activePeerConnection } from '../../src/components/emulator/net/ws_jsep_protocol_driver';
+import { streamDiagnostic } from '../../src/components/emulator/net/stream_diagnostics';
 import { EMPTY_STATS, emptySample, readReport, statsFrom } from './streamStats';
 
 const STATS_INTERVAL_MS = 1000;
@@ -12,6 +13,11 @@ export function useStreamStats(deviceRef, gatewayUrl) {
 
   useEffect(() => {
     let previous = null;
+    let previousConnection = null;
+    let sampledAt = 0;
+    let frozen = false;
+    let noPresentationSince = null;
+    let decodedBefore = null;
     let busy = false;
     let stopped = false;
     // Frames presented on screen, counted with requestVideoFrameCallback where
@@ -25,6 +31,7 @@ export function useStreamStats(deviceRef, gatewayUrl) {
       if (!video || video === watchedVideo || typeof video.requestVideoFrameCallback !== 'function') return;
       if (watchedVideo && frameCallback !== null) watchedVideo.cancelVideoFrameCallback(frameCallback);
       watchedVideo = video;
+      presented = 0;
       const onFrame = () => {
         presented += 1;
         if (!stopped && watchedVideo === video) frameCallback = video.requestVideoFrameCallback(onFrame);
@@ -48,6 +55,14 @@ export function useStreamStats(deviceRef, gatewayUrl) {
         }
         const sampleData = emptySample();
         const connection = activePeerConnection();
+        if (connection !== previousConnection) {
+          previous = null;
+          decodedBefore = null;
+          noPresentationSince = null;
+          frozen = false;
+          sampledAt = 0;
+          previousConnection = connection;
+        }
         if (connection) {
           try {
             readReport(await connection.getStats(), connection.connectionState, sampleData);
@@ -55,6 +70,7 @@ export function useStreamStats(deviceRef, gatewayUrl) {
             console.warn('Stream statistics:', error);
           }
         }
+        if (stopped) return;
         let pingSource = sampleData.ping === null ? null : 'ICE';
         if (sampleData.ping === null) {
           const start = performance.now();
@@ -65,6 +81,38 @@ export function useStreamStats(deviceRef, gatewayUrl) {
           } catch {
             sampleData.ping = null;
           }
+        }
+        if (stopped) return;
+        // An unchanged Android screen can legitimately send no frames. Only
+        // suspect presentation when decoding advances while presentation stops.
+        const decoded = sampleData.details.framesDecoded;
+        const presentationStopped = previous && shown !== null && previous.shown === shown;
+        if (!document.hidden && presentationStopped && decoded !== null && decoded > decodedBefore) {
+          noPresentationSince ??= now;
+        } else {
+          noPresentationSince = null;
+        }
+        const nextFrozen = noPresentationSince !== null && now - noPresentationSince >= 5000;
+        if (nextFrozen !== frozen) {
+          frozen = nextFrozen;
+          streamDiagnostic(frozen ? 'presentation-stalled' : 'presentation-resumed', {
+            framesDecoded: decoded ?? null, presented: shown, hidden: document.hidden,
+          });
+        }
+        decodedBefore = decoded;
+        if (connection && now - sampledAt >= 10000) {
+          sampledAt = now;
+          streamDiagnostic('stats', {
+            connection: connection.connectionState, ice: connection.iceConnectionState,
+            framesReceived: sampleData.received, framesDecoded: decoded ?? null,
+            bytesReceived: sampleData.bytes, presented: shown,
+            keyFramesDecoded: sampleData.details.keyFramesDecoded ?? null,
+            packetsLost: sampleData.details.packetsLost ?? null,
+            freezeCount: sampleData.details.freezeCount ?? null,
+            totalFreezesDuration: sampleData.details.totalFreezesDuration ?? null,
+            paused: video?.paused ?? true, readyState: video?.readyState ?? 0,
+            width: video?.videoWidth ?? 0, hidden: document.hidden,
+          });
         }
         const current = { time: now, received: sampleData.received, shown, bytes: sampleData.bytes };
         if (!stopped) {

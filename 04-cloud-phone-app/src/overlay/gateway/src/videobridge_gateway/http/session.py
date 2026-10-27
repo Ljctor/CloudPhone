@@ -21,6 +21,7 @@ from aiohttp import web
 from ..adapters import host_files
 from ..adapters.videobridge import Bridge
 from ..core import actions, session
+from ..core.stream_diagnostics import STREAMS
 from . import viewers
 
 TOKEN = secrets.token_urlsafe(32)
@@ -68,16 +69,19 @@ def signalling(channel):
     async def handle(request):
         ws = web.WebSocketResponse()
         await ws.prepare(request)
-        logging.debug("WebSocket connection opened for JSEP signaling.")
+        sid = STREAMS.begin()
         viewer = viewers.viewer_of(request)
         if await viewers.refuse_if_kicked(ws, viewer):
+            STREAMS.event(sid, "viewer_refused")
+            STREAMS.close(sid)
             return ws
 
         if not channel():
-            logging.error("No channel to Video Bridge. Restart the gateway (systemctl restart cloudphone-gateway).")
+            STREAMS.event(sid, "bridge_unavailable")
             await ws.close(
                 code=web.WSCloseCode.INTERNAL_ERROR, message=b"Video Bridge offline"
             )
+            STREAMS.close(sid)
             return ws
 
         bridge = Bridge(channel(), session.bearer(request.app["videobridge_token"]))
@@ -87,85 +91,54 @@ def signalling(channel):
         viewers.joined(ws, viewer)
 
         try:
-            # A new stream on the Video Bridge, with a public STUN server.
+            STREAMS.event(sid, "bridge_open_requested")
             guid = await bridge.open(session.STUN)
-            logging.debug(
-                f"Initialized WebRTC stream session with Video Bridge. Connection ID: {guid}"
-            )
+            STREAMS.event(sid, "bridge_opened")
 
-            # The emulator sends the authoritative start message on its JSEP
-            # stream. Sending a second synthetic start creates two peer
-            # connections and breaks both video input and hardware controls.
-
-            # Video Bridge -> browser, in the background.
             async def stream_to_client():
-                logging.debug(
-                    f"Starting stream_to_client background task for connection: {guid}"
-                )
+                STREAMS.event(sid, "bridge_subscribed")
                 try:
-                    logging.debug(
-                        f"Subscribing to JSEP message stream from Video Bridge for connection: {guid}"
-                    )
                     async for msg_text in bridge.messages(guid):
-                        logging.debug(
-                            f"Received JSEP message from Video Bridge gRPC stream: '{msg_text}'"
-                        )
                         if not msg_text:
-                            logging.debug(
-                                "Received empty JSEP message from Video Bridge. Stopping stream reader."
-                            )
+                            STREAMS.event(sid, "bridge_empty_message")
                             break
                         parsed_jsep = json.loads(msg_text)
-                        logging.debug(f"Forwarding JSEP message to browser: {parsed_jsep}")
-
-                        # If it's an SDP offer/answer, or an ICE candidate message
+                        STREAMS.message(sid, "to_browser", parsed_jsep)
+                        if isinstance(parsed_jsep, dict):
+                            parsed_jsep = {**parsed_jsep, "diagnostics": {"sessionId": sid}}
                         await ws.send_json(parsed_jsep)
-                    logging.debug("Video Bridge JSEP stream finished cleanly.")
+                    STREAMS.event(sid, "bridge_stream_ended")
+                    await ws.close()
                 except asyncio.CancelledError:
-                    logging.debug(f"stream_to_client task cancelled for connection: {guid}")
-                except Exception:
-                    logging.exception("Error in stream_to_client reader loop. Reload the video (↻) if it stopped:")
+                    raise
+                except Exception as error:
+                    # Exception text may contain gRPC metadata or JSEP: retain only its class.
+                    STREAMS.event(sid, "bridge_reader_error", error_type=type(error).__name__)
+                    await ws.close(code=web.WSCloseCode.INTERNAL_ERROR)
 
             stream_task = asyncio.create_task(stream_to_client())
-
-            # Browser -> Video Bridge.
             async for ws_msg in ws:
                 if ws_msg.type == web.WSMsgType.TEXT:
                     client_data = ws_msg.json()
-                    logging.debug(
-                        f"Received message from Client -> Video Bridge: {client_data}"
-                    )
+                    STREAMS.message(sid, "to_bridge", client_data)
                     await bridge.send(guid, json.dumps(client_data))
-                    logging.debug(
-                        f"Successfully forwarded JSEP message to Video Bridge for connection: {guid}"
-                    )
-
                     if session.is_bye(client_data):
                         bye_forwarded = True
-                        logging.debug(
-                            f"Received 'bye' signal from client. Tearing down connection: {guid}"
-                        )
+                        STREAMS.event(sid, "client_bye")
                         break
                 elif ws_msg.type == web.WSMsgType.ERROR:
-                    logging.error(f"WebSocket encountered error: {ws.exception()}. Reload the video (↻) if it stopped.")
-
-        except Exception:
-            logging.exception("Error in WebSocket session handler. Reload the video (↻) if it stopped:")
+                    STREAMS.event(sid, "websocket_error")
+        except Exception as error:
+            STREAMS.event(sid, "handler_error", error_type=type(error).__name__)
         finally:
             viewers.left(ws, viewer)
-            logging.debug(f"Closing signaling WebSocket session for ID: {guid}")
-            # Browsers do not always get a chance to send a final WebSocket
-            # frame when a tab is suspended or killed. Explicitly tear down
-            # the emulator participant so that the next viewer does not
-            # compete with an orphaned WebRTC session.
+            # A vanished tab cannot send bye: release its emulator participant.
             if guid and not bye_forwarded:
                 try:
                     await bridge.send(guid, session.BYE)
-                    logging.debug(
-                        f"Forwarded teardown for abandoned connection: {guid}"
-                    )
-                except Exception as e:
-                    logging.warning(f"Failed to tear down abandoned connection {guid}: {e!r}")
+                    STREAMS.event(sid, "teardown_sent")
+                except Exception as error:
+                    STREAMS.event(sid, "teardown_error", error_type=type(error).__name__)
             if stream_task:
                 stream_task.cancel()
                 try:
@@ -173,5 +146,6 @@ def signalling(channel):
                 except asyncio.CancelledError:
                     pass
             await ws.close()
+            STREAMS.close(sid)
         return ws
     return handle

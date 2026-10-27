@@ -4,6 +4,8 @@ const { test, expect } = require('@playwright/test');
 const PAGE_URL = process.env.CLOUDPHONE_URL || 'http://127.0.0.1:8000/';
 
 test.use({
+  // The labels below are the page's French ones: a French browser.
+  locale: 'fr-FR',
   viewport: { width: 360, height: 780 },
   launchOptions: {
     args: ['--autoplay-policy=no-user-gesture-required'],
@@ -93,6 +95,22 @@ test('stream loads and refresh creates exactly one replacement session', async (
     timeout: 20000,
   });
   await expect(spinner).toBeHidden();
+
+  const trace = await page.evaluate(() => window.cloudphoneDiagnostics.snapshot());
+  expect(trace.version).toBe(1);
+  expect(trace.records.length).toBeLessThanOrEqual(250);
+  expect(trace.records.some((entry) => entry.event === 'websocket-open')).toBe(true);
+  expect(trace.records.some((entry) => entry.event === 'track' && entry.data.kind === 'video')).toBe(true);
+  expect(trace.records.some((entry) => entry.event === 'first-frame')).toBe(true);
+  // Only known hardware key names are recorded, never arbitrary typed keys.
+  await page.evaluate(() => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'AudioVolumeUp' }));
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'private-input-text' }));
+  });
+  const keyTrace = await page.evaluate(() => window.cloudphoneDiagnostics.snapshot());
+  expect(keyTrace.records.some((entry) => entry.event === 'hardware-key'
+    && entry.data.key === 'AudioVolumeUp')).toBe(true);
+  expect(JSON.stringify(keyTrace)).not.toContain('private-input-text');
 
   const firstVideoState = await video.evaluate((element) => ({
     readyState: element.readyState,

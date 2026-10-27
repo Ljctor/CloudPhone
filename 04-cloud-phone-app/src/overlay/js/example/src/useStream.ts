@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { english } from './i18n';
 import { pageLog } from './logs';
+import { streamDiagnostic } from '../../src/components/emulator/net/stream_diagnostics';
 import {
   AUTO_RECONNECT_DELAY_MS, RECONNECT_FEEDBACK_MS, REMOUNT_DELAY_MS, STUCK_AFTER_S,
   autoReconnectDue, secondsSince, serverHealthy, streamStateLine,
@@ -33,6 +34,7 @@ export function useStream({ server, input }) {
   // Manual refresh: show that the click was taken into account until the new
   // stream displays its first frame.
   const manualReconnect = () => {
+    streamDiagnostic('manual-reconnect');
     // Disconnected by another viewer: a new page load is a new viewer.
     if (server.value?.kicked) {
       window.location.reload();
@@ -89,6 +91,7 @@ export function useStream({ server, input }) {
     let wasHidden = document.visibilityState === 'hidden';
 
     const visibilityChanged = () => {
+      streamDiagnostic('page-visibility', { state: document.visibilityState });
       if (document.visibilityState === 'hidden') {
         wasHidden = true;
       } else if (wasHidden) {
@@ -98,12 +101,27 @@ export function useStream({ server, input }) {
     };
 
     const pageShown = (event) => {
+      streamDiagnostic('page-shown', { persisted: event.persisted });
       if (event.persisted) reconnectStream();
     };
 
+    const focusChanged = (event) => streamDiagnostic(`page-${event.type}`);
+    // Hardware volume keys are not exposed on every mobile browser. Record
+    // only known volume/wake names; never capture typed text or other keys.
+    const hardwareKey = (event) => {
+      if (['AudioVolumeUp', 'AudioVolumeDown', 'AudioVolumeMute', 'WakeUp', 'Power'].includes(event.key)) {
+        streamDiagnostic('hardware-key', { key: event.key, trusted: event.isTrusted });
+      }
+    };
+    window.addEventListener('keydown', hardwareKey, true);
+    window.addEventListener('focus', focusChanged);
+    window.addEventListener('blur', focusChanged);
     document.addEventListener('visibilitychange', visibilityChanged);
     window.addEventListener('pageshow', pageShown);
     return () => {
+      window.removeEventListener('keydown', hardwareKey, true);
+      window.removeEventListener('focus', focusChanged);
+      window.removeEventListener('blur', focusChanged);
       document.removeEventListener('visibilitychange', visibilityChanged);
       window.removeEventListener('pageshow', pageShown);
       if (reconnectTimer.current !== null) {

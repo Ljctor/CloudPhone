@@ -30,6 +30,8 @@ export function clientSections({ stats, stream, inputPath, device }) {
     ]],
     ['Affichage', [
       ['Images affichées', `${formatValue(stats.phone)} /s`],
+      ['Images reçues / décodées', `${formatValue(stats.framesReceived)} / ${formatValue(stats.framesDecoded)}`],
+      ['Gels du décodeur', formatValue(stats.freezeCount)],
       ['Images perdues', formatValue(stats.framesDropped)],
       ['Tampon vidéo', stats.bufferDelay === null ? '–' : `${Math.round(stats.bufferDelay)} ms`],
       ...device,
