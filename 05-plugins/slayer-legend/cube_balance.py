@@ -8,27 +8,30 @@ return None, so a stale balance is never silently replaced by a guess.
 import re
 
 
-# Pixel-font shapes from the real counter. Each row is two screen pixels
-# high; the 0, 5 and 9 follow the observed font's strokes and are accepted
-# only when they are a close pixel match.
+# Pixel-font shapes from two real counter captures. Each row is about two
+# screen pixels high. All ten digits have now been observed.
 SHAPES = {
+    "0": ("..########.", "###########", "###......##", "###......##", "###......##", "###......##", "###......##", "###......##", "..########."),
     "1": ("..###..", "#####..", "#####..", "..###..", "..###..", "..###..", "..###..", "#######", "#######"),
     "2": ("..#######..", "###########", "###.....###", "......#####", "....#####..", "..#####....", "#####......", "###########", "###########"),
     "3": ("..#######..", "###########", "###.....###", "....#######", "....#######", "........###", "###.....###", "###########", "..#######.."),
     "4": ("........###..", "......#####..", "....#######..", "..#####.###..", "#####...###..", "#############", "#############", "........###..", "........###.."),
+    "5": ("###########", "###########", "####.......", "#########..", "###########", "........###", "####....###", "####....###", "..#######.."),
     "6": ("....#####..", "..#######..", "#####......", "#########..", "###########", "###.....###", "###.....###", "###########", "..#######.."),
     "7": ("###########", "###########", "........###", "......#####", "......###..", "....#####..", "....###....", "....###....", "....###...."),
     "8": ("..#######..", "###########", "###.....###", "###########", "###########", "###.....###", "###.....###", "###########", "..#######.."),
+    "9": ("..########.", "###########", "###......##", "###......##", "###########", "..#########", ".......####", ".......###.", "..######..."),
 }
-SHAPES["0"] = tuple(row if i not in (3, 4) else "###.....###" for i, row in enumerate(SHAPES["8"]))
-SHAPES["5"] = ("###########", "###########", "###........", "#########..", "###########",
-               "........###", "........###", "###########", "..#######..")
-SHAPES["9"] = tuple(row if i not in (5, 6) else "........###" for i, row in enumerate(SHAPES["8"]))
 
 
 def _purple(pixels, offset):
     red, green, blue = pixels[offset:offset + 3]
     return red > 95 and blue > green * 1.2 and red > green * 1.15
+
+
+def _core(pixels, offset):
+    red, green, blue = pixels[offset:offset + 3]
+    return red >= 230 and blue > green * 1.2 and red > green * 1.1
 
 
 def _runs(columns):
@@ -81,7 +84,11 @@ def read(shot):
                       zip((535, 430, 695, 452), (sx, sy, sx, sy)))
     mask = [[_purple(pixels, (y * width + x) * 3) for x in range(x0, x1)]
             for y in range(y0, y1)]
-    runs = _runs([any(row[x] for row in mask) for x in range(x1 - x0)])
+    # Pale antialiased edges can join neighbours. The bright core leaves a
+    # one-pixel gap even when two digits touch at their pink edges.
+    core = [[_core(pixels, (y * width + x) * 3) for x in range(x0, x1)]
+            for y in range(y0, y1)]
+    runs = _runs([any(row[x] for row in core) for x in range(x1 - x0)])
     if not 1 <= len(runs) <= 20:
         return None
     characters = []
@@ -90,7 +97,8 @@ def read(shot):
         used_y = [y for y, row in enumerate(glyph) if any(row)]
         if not used_y:
             return None
-        if len(used_y) < 9 * sy and right - left <= 7 * sx:
+        core_y = [y for y, row in enumerate(core) if any(row[left:right])]
+        if len(core_y) < 9 * sy and right - left <= 7 * sx:
             characters.append(",")
             continue
         digit = _digit(glyph[used_y[0]:used_y[-1] + 1])

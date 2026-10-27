@@ -19,8 +19,8 @@ cubes = load("cube_balance")
 rules = load("features/game_rules")
 
 
-def captured_counter():
-    with open(os.path.join(HERE, "fixtures/cube_balance_720.txt"), encoding="ascii") as source:
+def captured_counter(name="cube_balance_720"):
+    with open(os.path.join(HERE, f"fixtures/{name}.txt"), encoding="ascii") as source:
         lines = [line.strip() for line in source if not line.startswith("#")]
     width, height, x0, y0, w, h = map(int, lines[0].split())
     pixels = bytearray(bytes((20, 16, 14)) * width * height)
@@ -35,6 +35,18 @@ class CubeBalance(unittest.TestCase):
         width, height, pixels = captured_counter()
         self.assertEqual(cubes.read((width, height, pixels)),
                          {"text": "2,874,661,318", "value": 2874661318})
+
+    def test_later_counter_with_touching_digits_is_exact(self):
+        width, height, pixels = captured_counter("cube_balance_720_b")
+        self.assertEqual(cubes.read((width, height, pixels)),
+                         {"text": "2,875,027,398", "value": 2875027398})
+
+    def test_unreadable_digit_does_not_produce_a_balance(self):
+        width, height, pixels = captured_counter("cube_balance_720_b")
+        for y in range(433, 451):
+            for x in range(667, 678):
+                pixels[(y * width + x) * 3:(y * width + x + 1) * 3] = bytes((20, 16, 14))
+        self.assertIsNone(cubes.read((width, height, pixels)))
 
     def test_a_number_without_the_cube_icon_is_not_a_balance(self):
         width, height, pixels = captured_counter()

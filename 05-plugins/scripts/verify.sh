@@ -18,6 +18,7 @@ assert cube["value"] is None or (
     isinstance(cube["value"], dict)
     and isinstance(cube["value"].get("value"), int)
     and cube["value"].get("text", "").replace(",", "").isdigit()
+    and cube["value"]["text"] == format(cube["value"]["value"], ",")
 )
 assert len(rows) == len(expected)
 fields = [row["field"] for row in rows]
