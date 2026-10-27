@@ -34,6 +34,16 @@ stream_diagnostics() {
   curl -fsS --max-time 5 "http://$host:$WEB_PORT/api/v1/stream-diagnostics" |
     python3 -c 'import json,sys; x=json.load(sys.stdin); assert x["schema_version"] == 1; assert {"emulator","android","channels","signalling","media"} <= x.keys(); assert {"active","recent","hardware_inputs"} <= x["signalling"].keys(); assert x["media"]["frames_observed"] is None'
 }
+interactive_plugin_layer() {
+  python3 - "http://$host:$WEB_PORT" <<'PYCODE'
+import re, sys, urllib.request
+base = sys.argv[1]
+page = urllib.request.urlopen(base + "/", timeout=5).read().decode()
+scripts = re.findall(r'<script[^>]+src="([^"]+)"', page)
+assert any("data-plugin-layer" in urllib.request.urlopen(base + path, timeout=5).read().decode()
+           for path in scripts if path.startswith("/"))
+PYCODE
+}
 listens_only_on() {
   local port=$1 addresses
   addresses=$(ss -Hltn | awk -v p=":$port" 'substr($4, length($4) - length(p) + 1) == p { print $4 }')
@@ -46,6 +56,7 @@ check "cloudphone-gateway is enabled" systemctl is-enabled --quiet cloudphone-ga
 check "cloudphone-gateway is active" systemctl is-active --quiet cloudphone-gateway.service
 check "no separate cloudphone-web service is left" test ! -e /etc/systemd/system/cloudphone-web.service
 check "web page answers on $host:$WEB_PORT" answers "http://$host:$WEB_PORT/"
+check "page serves interactive plugin overlay" interactive_plugin_layer
 check "gateway answers on $host:$WEB_PORT" answers "http://$host:$WEB_PORT/api/v1/emulator/status"
 check "gateway reports live CPU and memory" live_metrics
 check "gateway reports bounded stream diagnostics" stream_diagnostics

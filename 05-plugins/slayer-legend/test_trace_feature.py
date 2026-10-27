@@ -160,3 +160,34 @@ class Annotations(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.captures, 10)
         self.assertGreater(sum(self.slept), 1)
         self.assertLess(sum(self.slept), 2)
+
+    async def test_cancel_disarms_only_the_requested_annotation(self):
+        armed, _ = await self.call("POST", "/trace/arm", {"kind": "navigation"})
+        await self.call("POST", "/trace/cancel", {"id": "0" * 32})
+        self.assertEqual((await self.call("GET", "/trace"))[0]["armed"]["id"], armed["id"])
+        await self.call("POST", "/trace/cancel", {"id": armed["id"]})
+        self.assertIsNone((await self.call("GET", "/trace"))[0]["armed"])
+        await self.call("POST", "/trace", {"x": .4, "y": .5})
+        await self.advance()
+        self.release.set()
+        await self.advance()
+        item = (await self.call("GET", "/trace/manual"))[0]["clicks"][0]
+        self.assertEqual(item["error"], "annotation cancelled")
+        self.assertEqual(item["capture_status"], "cancelled")
+        self.assertNotIn("tap", item)
+        self.assertNotIn("after_url", item)
+
+    async def test_cancel_pending_capture_stops_its_after_task(self):
+        armed, _ = await self.call("POST", "/trace/arm", {"kind": "forbidden"})
+        await self.call("POST", "/trace", {"x": .4, "y": .5})
+        await self.advance()
+        await self.call("POST", "/trace/cancel", {"id": armed["id"]})
+        self.release.set()
+        await self.advance()
+        self.assertIsNone((await self.call("GET", "/trace"))[0]["pending"])
+        item = (await self.call("GET", "/trace/manual"))[0]["clicks"][0]
+        self.assertEqual(item["error"], "annotation cancelled")
+        self.assertEqual(item["capture_status"], "cancelled")
+        self.assertNotIn("after_url", item)
+        for body in ({}, [], {"id": "bad"}):
+            self.assertEqual((await self.call("POST", "/trace/cancel", body))[1], 400)

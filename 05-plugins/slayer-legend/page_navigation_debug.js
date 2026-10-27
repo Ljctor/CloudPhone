@@ -1,6 +1,7 @@
 // Navigation map and explicit, user-initiated annotations on the live image.
 // Only the recognised screen's allowed moves are drawn. The navigation
 // guard still makes the decision before any actual plugin gesture.
+import visualTracker from './page_navigation_tracking.js';
 const COLOURS = { tap: '#ffe100', vertical: '#168bff', horizontal: '#bb50ff' };
 
 function covers(move, x, y, tolerance) {
@@ -20,7 +21,7 @@ function eligible(move, moves, tolerance) {
   return Boolean(point) && !moves.some((other) => other.forbidden && covers(other, ...point, tolerance));
 }
 
-export function zonesFor(screen, graph, registry, scan = null) {
+export function zonesFor(screen, graph, registry, scan = null, tracked = null) {
   const moves = graph?.screens?.[screen]?.moves ?? [];
   const tolerance = graph?.tolerance ?? 0.03;
   const safe = moves.filter((move) => eligible(move, moves, tolerance)
@@ -67,7 +68,11 @@ export function zonesFor(screen, graph, registry, scan = null) {
         rect: [x - 0.025, y - 0.012, x + 0.025, y + 0.012] });
     }
   }
-  return zones;
+  return zones.flatMap((zone) => {
+    if (zone.kind !== 'tap' || !tracked?.has(zone.id)) return [zone];
+    const rect = tracked.get(zone.id);
+    return rect ? [{ ...zone, rect }] : [];
+  });
 }
 
 export function recognisedScreen(scan) {
@@ -93,6 +98,9 @@ export function annotationPoint(event, bounds) {
 export default function navigationDebug(api, { enabled = () => true } = {}) {
   const layer = document.createElement('div');
   layer.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:30';
+  const zoneLayer = document.createElement('div');
+  zoneLayer.style.cssText = 'position:absolute;inset:0;pointer-events:none';
+  const tracker = visualTracker(api.video);
   let graph = null;
   let registry = null;
   let disposed = false;
@@ -105,14 +113,16 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
   let rendered = '';
   let armedUntil = 0;
   const active = () => !disposed && enabled() && api.setting('navigationDebug') === 'on';
-  const busy = () => ['arming', 'armed', 'saving'].includes(captureState);
+  const busy = () => ['arming', 'armed', 'saving', 'cancelling'].includes(captureState);
   const clear = () => { layer.replaceChildren(); layer.remove(); rendered = ''; };
   const stop = (event) => { event.preventDefault(); event.stopPropagation(); };
   const finishTouch = (tap, synthetic = false) => {
     if (captureState !== 'armed') return;
     captureState = 'saving';
     if (synthetic || api.setting('traceTaps') === 'off') {
-      api.post('/trace', tap).catch(() => { captureState = 'failed'; render(); });
+      api.post('/trace', tap).then((answer) => {
+        if (!answer?.ok) { captureState = 'failed'; render(); }
+      }).catch(() => { captureState = 'failed'; render(); });
     }
     render();
   };
@@ -127,6 +137,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
     const slider = zone.kind === 'vertical' || zone.kind === 'horizontal';
     box.style.cssText = `position:absolute;left:${left * 100}%;top:${top * 100}%;width:${(right - left) * 100}%;height:${(bottom - top) * 100}%;box-sizing:border-box;color:${colour};pointer-events:none`;
     if (slider) {
+      box.style.cssText += `;border:2px ${zone.conditional ? 'dashed' : 'solid'} ${colour};background:${colour}33;border-radius:3px`;
       box.style.cssText += `;display:flex;flex-direction:${zone.kind === 'vertical' ? 'column' : 'row'};align-items:center;justify-content:space-between;font:bold 22px sans-serif;text-shadow:0 1px 3px #000`;
       for (const glyph of zone.kind === 'vertical' ? ['⌃', '⌄'] : ['❮', '❯']) {
         const chevron = document.createElement('span');
@@ -142,19 +153,28 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
     return box;
   }
 
+  function renderZones() {
+    if (!active() || !graph || !registry) return;
+    const zones = screen ? zonesFor(screen, graph, registry, scan) : [];
+    const tracked = tracker.update(screen, zones, registry?.tree?.[screen]?.scroll ?? []);
+    zoneLayer.replaceChildren();
+    for (const zone of screen ? zonesFor(screen, graph, registry, scan, tracked) : []) drawZone(zone, zoneLayer);
+  }
+
   function render() {
     if (!active() || !graph || !registry) { clear(); return; }
     const signature = JSON.stringify([screen, scan?.plain, scan?.overlays, captureState, captureId, captureKind, record]);
+    renderZones();
     if (signature === rendered && layer.isConnected) return;
     rendered = signature;
     if (!layer.isConnected) api.layer.append(layer);
     layer.replaceChildren();
+    layer.append(zoneLayer);
     const name = document.createElement('div');
     const label = screen ? (graph.screens?.[screen]?.name ?? screen) : api.tr('Écran non identifié');
     name.textContent = api.tr('Écran : {screen}', { screen: label });
     name.style.cssText = 'position:absolute;left:50%;top:1%;transform:translateX(-50%);max-width:90%;padding:3px 7px;border:1px solid #ffe100;border-radius:4px;background:#000c;color:#fff;font:600 12px sans-serif;text-align:center';
     layer.append(name);
-    for (const zone of screen ? zonesFor(screen, graph, registry, scan) : []) drawZone(zone);
 
     // Annotation gestures are consumed here, before they reach Android.
     if (captureState === 'armed' && captureKind !== 'navigation') {
@@ -189,12 +209,13 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
     }
 
     const panel = document.createElement('div');
-    panel.style.cssText = 'position:absolute;left:2%;right:2%;bottom:7%;pointer-events:auto;z-index:2;padding:7px;border:1px solid #ffe100;border-radius:5px;background:#171717ed;color:#fff;font:12px sans-serif';
+    panel.style.cssText = `position:absolute;left:2%;right:2%;${busy() ? 'top:5%' : 'bottom:7%'};pointer-events:${busy() ? 'none' : 'auto'};z-index:2;padding:7px;border:1px solid #ffe100;border-radius:5px;background:#171717ed;color:#fff;font:12px sans-serif`;
+    panel.setAttribute('data-capture-layout', busy() ? 'compact' : 'actions');
     panel.onpointerdown = (event) => event.stopPropagation();
     panel.onpointerup = (event) => event.stopPropagation();
     const actions = document.createElement('div');
     actions.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px';
-    for (const action of ANNOTATIONS) {
+    for (const action of busy() ? [] : ANNOTATIONS) {
       const button = document.createElement('button');
       button.type = 'button';
       button.textContent = api.tr(action.label);
@@ -206,7 +227,8 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
         captureState = 'arming'; captureKind = action.kind; captureId = null; record = null;
         render();
         try {
-          const answer = await api.post('/trace/arm', { kind: action.kind });
+          const response = await api.post('/trace/arm', { kind: action.kind });
+          const answer = response?.ok ? response.body : null;
           captureId = answer?.id ?? null;
           armedUntil = answer?.until ?? Date.now() / 1000 + (answer?.seconds ?? 30);
           captureState = answer?.armed ? 'armed' : 'failed';
@@ -224,11 +246,31 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
     const message = ({ idle: 'Choisis un élément à déclarer', arming: 'Capture avant…',
       armed: slider ? 'Capture avant enregistrée · Trace le slider' : 'Capture avant enregistrée · Clique sur l’élément',
       saving: 'Capture avant enregistrée · Capture après…', saved: 'Captures avant et après enregistrées · Déclaration enregistrée',
+      cancelling: 'Annulation…', cancelled: 'Capture annulée · Choisis une action',
       failed: 'Échec de l’enregistrement', expired: 'Capture expirée · Choisis une action' })[captureState];
     status.textContent = api.tr(message);
     if (captureState !== 'idle') status.textContent = `${api.tr(ANNOTATIONS.find((item) => item.kind === captureKind)?.label ?? '')} · ${status.textContent}`;
     panel.append(status);
-    if (record) {
+    if (busy()) {
+      const cancel = document.createElement('button');
+      cancel.type = 'button';
+      cancel.textContent = api.tr('Annuler');
+      cancel.disabled = captureState === 'arming' || captureState === 'cancelling';
+      cancel.style.cssText = 'pointer-events:auto;float:right;padding:3px 7px;margin-left:6px;border:1px solid #888;border-radius:3px;background:#292929;color:#fff;font:inherit;cursor:pointer';
+      cancel.onclick = async (event) => {
+        stop(event);
+        if (cancel.disabled) return;
+        const id = captureId;
+        captureState = 'cancelling'; render();
+        try {
+          const answer = await api.post('/trace/cancel', { id });
+          captureState = answer?.ok ? 'cancelled' : 'failed';
+        } catch { captureState = 'failed'; }
+        captureId = null; record = null; render();
+      };
+      panel.append(cancel);
+    }
+    if (record && !busy()) {
       for (const [key, label] of [['before_url', 'Capture avant'], ['after_url', 'Capture après']]) {
         if (!record[key]) continue;
         const link = document.createElement('a');
@@ -260,9 +302,9 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
       screen = recognisedScreen(scan);
       const clicks = archive?.clicks ?? [];
       const found = captureId ? clicks.find((click) => click.id === captureId) : captureState === 'idle' ? clicks[0] : null;
-      if (found && captureState !== 'arming') {
+      if (found && !['arming', 'cancelling'].includes(captureState)) {
         record = found; captureId = found.id; captureKind = found.kind ?? 'navigation';
-        captureState = found.capture_status === 'armed' ? (captureState === 'saving' ? 'saving' : 'armed') : found.capture_status === 'error' ? 'failed' : found.capture_status === 'complete' || found.after_url ? 'saved' : 'saving';
+        captureState = found.capture_status === 'cancelled' ? 'cancelled' : found.capture_status === 'armed' ? (captureState === 'saving' ? 'saving' : 'armed') : found.capture_status === 'error' ? 'failed' : found.capture_status === 'complete' || found.after_url ? 'saved' : 'saving';
       } else if (captureState === 'armed' && Date.now() / 1000 > armedUntil) captureState = 'expired';
       render();
     } finally { refreshing = false; }
@@ -279,6 +321,17 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
     update();
   }).catch(() => clear());
   const timer = window.setInterval(update, 250);
+  let animation = null;
+  let lastFrame = 0;
+  const animate = (at) => {
+    if (disposed) return;
+    if (at - lastFrame >= 100 && !document.hidden) {
+      lastFrame = at;
+      renderZones();
+    }
+    animation = window.requestAnimationFrame?.(animate);
+  };
+  animation = window.requestAnimationFrame?.(animate);
 
   return {
     debug: [{ type: 'choice', key: 'navigationDebug', label: 'Zones de navigation',
@@ -287,6 +340,6 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
       value: () => api.tr('Jaune : clic · chevrons bleus : vertical · chevrons violets : horizontal · pointillés : condition à vérifier') }],
     onSetting: (key) => { if (key === 'navigationDebug') update(); },
     update,
-    dispose: () => { disposed = true; stopTap?.(); window.clearInterval(timer); clear(); },
+    dispose: () => { disposed = true; stopTap?.(); window.clearInterval(timer); window.cancelAnimationFrame?.(animation); tracker.reset(); clear(); },
   };
 }

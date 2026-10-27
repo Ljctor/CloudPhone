@@ -3,6 +3,7 @@ screen before and after each, as a graph (trace.py). Nothing is ever
 replayed.
 
 POST /trace/arm     {kind: navigation|forbidden|scannable|vertical|horizontal}; captures the screen before the next user gesture
+POST /trace/cancel  {id}; cancels only that armed or pending annotation
 POST /trace         {x, y, kind[, end: {x, y}]}: a tap the user just made; 202 at once
 GET  /trace         {enabled, nodes, edges, taps, last}
 GET  /trace/graph   {nodes, edges}
@@ -72,10 +73,10 @@ def trace(ports, screens, graphs, images=None):
         finally:
             temporary.unlink(missing_ok=True)
 
-    def manual_error(entry, reason):
+    def manual_error(entry, reason, status="error"):
         if entry is None:
             return
-        entry.update(capture_status="error", error=reason)
+        entry.update(capture_status=status, error=reason)
         try:
             persist_manual(entry)
         except OSError as e:
@@ -218,6 +219,28 @@ def trace(ports, screens, graphs, images=None):
                                  "screen": before, "until": ports.clock.wall() + ARM_SECONDS}
         return ports.respond({"armed": True, "id": capture_id, "kind": kind, "seconds": ARM_SECONDS})
 
+    async def handle_cancel(request):
+        try:
+            body = await request.json()
+        except ValueError:
+            return ports.respond({"error": "expected annotation id"}, status=400)
+        capture_id = body.get("id") if isinstance(body, dict) else None
+        if not isinstance(capture_id, str) or not re.fullmatch(r"[0-9a-f]{32}", capture_id):
+            return ports.respond({"error": "expected annotation id"}, status=400)
+        if recorded["lock"] is None:
+            recorded["lock"] = asyncio.Lock()
+        async with recorded["lock"]:
+            armed = recorded["armed"]
+            if armed and armed["id"] == capture_id:
+                recorded["armed"] = None
+                manual_error(armed["entry"], "annotation cancelled", status="cancelled")
+            pending = recorded["pending"]
+            if pending and (pending["manual"] or {}).get("id") == capture_id:
+                recorded["pending"] = None
+                pending["task"].cancel()
+                manual_error(pending["manual"], "annotation cancelled", status="cancelled")
+        return ports.respond({"cancelled": True, "id": capture_id})
+
     async def handle_state(request):
         graph = recorded["graph"]
         return ports.respond({
@@ -274,6 +297,7 @@ def trace(ports, screens, graphs, images=None):
         return web.FileResponse(path, headers={"Cache-Control": "private, no-store"})
 
     return {"routes": [("POST", "/trace/arm", handle_arm),
+                       ("POST", "/trace/cancel", handle_cancel),
                        ("POST", "/trace", handle_tap), ("GET", "/trace", handle_state),
                        ("GET", "/trace/graph", handle_graph),
                        ("GET", "/trace/manual", handle_manual),

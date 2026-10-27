@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import trace from './page_trace.js';
 import navigationDebug, { ANNOTATIONS, annotationPoint, zonesFor, recognisedScreen } from './page_navigation_debug.js';
 
 const graph = JSON.parse(readFileSync(new URL('./navigation.json', import.meta.url)));
@@ -66,12 +67,14 @@ let archive = { clicks: [] };
 let currentScreen = 'battle';
 let armedReply;
 let armResponse;
-let taps;
+const tapListeners = new Set();
+let traceTaps = 'on';
+let traceResponse = { ok: true, status: 202, body: { queued: true } };
 let nextId = 0;
 const posts = [];
 const api = {
-  layer: root, tr: (text) => text, setting: () => 'on',
-  onTap(fn) { taps = fn; return () => { taps = null; }; },
+  layer: root, tr: (text) => text, setting: (key) => key === 'traceTaps' ? traceTaps : 'on',
+  onTap(fn) { tapListeners.add(fn); return () => tapListeners.delete(fn); },
   async get(path) {
     if (path === '/navigation-debug') return { graph, registry };
     if (path === '/trace') return {};
@@ -81,8 +84,9 @@ const api = {
   },
   post(path, body) {
     posts.push({ path, body });
-    if (path === '/trace/arm') return new Promise((resolve) => { armedReply = () => resolve(armResponse ?? { armed: true, id: `capture-${++nextId}`, until: Date.now() / 1000 + 30 }); });
-    if (path === '/trace') return Promise.resolve({});
+    if (path === '/trace/arm') return new Promise((resolve) => { armedReply = () => resolve(armResponse ?? { ok: true, status: 200, body: { armed: true, id: `capture-${++nextId}`, seconds: 30 } }); });
+    if (path === '/trace') return Promise.resolve(traceResponse);
+    if (path === '/trace/cancel') return Promise.resolve({ ok: true, status: 200, body: { cancelled: true } });
     throw Error(path);
   },
 };
@@ -96,7 +100,9 @@ const chevron = all(root).find((item) => item.textContent === '⌃');
 assert.equal(chevron, undefined, 'battle has no calibrated vertical slider');
 buttons()[1].onclick(event()); await flush();
 assert.match(status(), /Capture avant…/);
-assert.ok(buttons().every((button) => button.disabled));
+assert.equal(buttons().length, 1, 'large declaration panel hides immediately during arming');
+assert.equal(buttons()[0].textContent, 'Annuler');
+assert.ok(buttons()[0].disabled);
 armedReply(); await flush();
 assert.match(status(), /Capture avant enregistrée/);
 archive.clicks = [{ id: 'capture-1', kind: 'forbidden', capture_status: 'armed', before_url: '/before' }];
@@ -138,15 +144,83 @@ assert.match(status(), /slider vertical/);
 currentScreen = 'equipment_weapon'; await poll();
 assert.ok(all(root).some((item) => item.textContent === '⌃'));
 assert.ok(all(root).some((item) => item.textContent === '⌄'));
-armResponse = { armed: false };
+const equipmentSlider = all(root).find((item) => item.textContent === '⌃').parent;
+assert.match(equipmentSlider.style.cssText, /#168bff/);
+assert.match(equipmentSlider.style.cssText, /border:/);
+assert.match(equipmentSlider.style.cssText, /background:/);
+armResponse = { ok: false, status: 409, body: { error: 'game not visible' } };
 buttons()[0].onclick(event()); await flush(); armedReply(); await flush();
 assert.match(status(), /Échec/);
 await poll();
 assert.match(status(), /Échec/, 'old archived capture must not hide an arm failure');
-armResponse = { armed: true, id: 'expired-capture', until: 1 };
+armResponse = { ok: true, status: 200, body: { armed: true, id: 'expired-capture', until: 1 } };
 buttons()[0].onclick(event()); await flush(); armedReply(); await flush();
 await poll();
 assert.match(status(), /Capture expirée/);
 assert.ok(buttons().every((button) => !button.disabled));
+ui.dispose();
+// Run both real onTap consumers with the gateway API's actual response
+// envelope. Navigation must pass through Android's input surface and submit
+// exactly once, including when background trace recording is disabled.
+archive = { clicks: [] };
+armResponse = undefined;
+ui = navigationDebug(api);
+const traceUi = trace(api);
+await flush();
+for (const setting of ['on', 'off']) {
+  traceTaps = setting;
+  buttons()[0].onclick(event()); await flush(); armedReply(); await flush();
+  assert.match(status(), /Clique sur l’élément/);
+  assert.ok(!all(root).some((item) => item.onpointermove), 'navigation keeps Android input available');
+  const before = posts.length;
+  const tap = { x: .4, y: .6, kind: 'tap' };
+  for (const listener of tapListeners) listener(tap);
+  await flush();
+  assert.deepEqual(posts.slice(before), [{ path: '/trace', body: tap }]);
+  assert.match(status(), /Capture après…/);
+  archive.clicks.unshift({ id: `capture-${nextId}`, kind: 'navigation', capture_status: 'complete',
+    before_url: '/before', after_url: '/after', tap });
+  await poll();
+  assert.match(status(), /Déclaration enregistrée/);
+}
+// A rejected annotation POST is returned as a resolved HTTP envelope by
+// plugins.ts; it must leave saving state and expose the failure.
+buttons()[2].onclick(event()); await flush(); armedReply(); await flush();
+traceResponse = { ok: false, status: 503, body: { error: 'storage unavailable' } };
+surface = all(root).find((item) => item.onpointermove);
+surface.onpointerdown(event()); surface.onpointerup(event());
+await flush();
+assert.match(status(), /Échec/);
+traceUi.dispose();
+ui.dispose();
+assert.equal(tapListeners.size, 0);
+archive = { clicks: [] };
+traceResponse = { ok: true, status: 202, body: { queued: true } };
+ui = navigationDebug(api); await flush();
+for (const kind of ['navigation', 'forbidden', 'vertical']) {
+  buttons()[ANNOTATIONS.findIndex((action) => action.kind === kind)].onclick(event());
+  await flush(); armedReply(); await flush();
+  const compact = all(root).find((item) => item.attrs['data-capture-layout'] === 'compact');
+  assert.ok(compact);
+  assert.match(compact.style.cssText, /pointer-events:none/);
+  assert.equal(buttons().length, 1, 'only the small cancel control remains while armed');
+  assert.equal(buttons()[0].textContent, 'Annuler');
+  assert.match(buttons()[0].style.cssText, /pointer-events:auto/);
+  assert.ok(!all(compact).some((item) => item.tagName === 'a'), 'capture links cannot cover game targets');
+  const id = `capture-${nextId}`;
+  buttons()[0].onclick(event()); await flush();
+  assert.deepEqual(posts.at(-1), { path: '/trace/cancel', body: { id } });
+  assert.match(status(), /Capture annulée/);
+  assert.equal(buttons().length, 5, 'cancel returns the action panel');
+  await poll();
+  assert.match(status(), /Capture annulée/, 'polling cannot restore a cancelled declaration');
+}
+ui.dispose();
+archive = { clicks: [{ id: 'cancelled-reload', kind: 'navigation', capture_status: 'cancelled', before_url: '/before' }] };
+ui = navigationDebug(api); await flush();
+assert.match(status(), /Capture annulée/, 'reloading a cancelled declaration restores its final status');
+assert.equal(buttons().length, 5);
+await poll();
+assert.match(status(), /Capture annulée/);
 ui.dispose();
 console.log('Navigation annotations, consumed gestures and persistent capture feedback: OK');

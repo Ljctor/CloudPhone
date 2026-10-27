@@ -106,6 +106,7 @@ script = sys.stdin.read()
 assert "drawText(cubeValue, GOLD_COUNTER_FONT" in script
 assert "api.layer.offsetHeight / 1560" in script
 assert "freshnessColour(age)" in script
+assert "outline: 2" in script
 assert "cubeRow.style.opacity" in script and "row.style.opacity" in script
 assert "left:36.1%;top:18.25%;transform:translateY(-50%)" in script
 assert "hourly * age / 3600" in script
@@ -117,7 +118,7 @@ assert "soul_white" not in script
 assert "* 3600" in script and "}/h" in script
 assert "const RATE_TOP = 18.5" in script
 assert "const RATE_STEP = 1.65" in script
-assert "right:1%;width:20%" in script
+assert "row.style.width =" in script and "gap:2px" in script
 print("Hourly overlay counters: OK")
 '
 curl -fsS "${base%/}/plugins/slayer-legend/page_gold_counter_font.js" | python3 -c '
@@ -159,6 +160,8 @@ curl -fsS "${base%/}/plugins/slayer-legend/page_navigation_debug.js" | python3 -
 import sys
 script = sys.stdin.read()
 assert "trace/arm" in script and "Écran : {screen}" in script
+assert "response.body" in script and "/trace/cancel" in script
+assert "data-capture-layout" in script and "page_navigation_tracking.js" in script
 print("Navigation debug overlay asset: OK")
 '
 curl -fsS "${base%/}/api/v1/plugins/slayer-legend/trace/manual" | python3 -c '
@@ -188,4 +191,11 @@ script = sys.stdin.read()
 for token in ("ok: '\''#ffffff'\''", "hold: '\''#409cff'\''", "setup: '\''#ffa31a'\''", "error: '\''#ff4040'\''", "INPUT_PAUSE_MS = 5000", "tone === '\''ok'\'' ? TIMER_COLOUR : colour"):
     assert token in script, token
 print("Mode overlay colours and user pause: OK")
+'
+
+curl -fsS "${base%/}/plugins/slayer-legend/page_navigation_tracking.js" | python3 -c '
+import sys
+script = sys.stdin.read()
+assert "locatePatch" in script and "getImageData" in script
+print("Visual navigation tracking asset: OK")
 '

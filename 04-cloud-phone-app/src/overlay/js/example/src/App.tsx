@@ -99,7 +99,7 @@ function App() {
           )}
           <StatusCover problem={problem} stream={state} reconnecting={reconnecting} />
           <Banner problem={problem} dismissed={dismissed} dismiss={setDismissed} />
-          <div ref={pluginLayer} style={styles.pluginLayer} aria-hidden="true" />
+          <div ref={pluginLayer} style={styles.pluginLayer} data-plugin-layer="true" />
           {panel && (
             <InfoPanel panel={panel} infoTab={infoTab} setInfoTab={setInfoTab} close={() => setPanel(null)}>
               {panel === 'info' && infoTab === 'server' && (

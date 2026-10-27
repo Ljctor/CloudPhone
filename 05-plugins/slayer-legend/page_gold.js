@@ -104,7 +104,7 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
     const key = `${value}@${colour}@${cell}`;
     if (key === cubeDrawn) return;
     if (!cubeRow.isConnected) api.layer.append(cubeRow);
-    drawText(cubeValue, GOLD_COUNTER_FONT, [{ text: value, colour }], cell);
+    drawText(cubeValue, GOLD_COUNTER_FONT, [{ text: value, colour }], cell, { outline: 2 });
     const size = api.layer.offsetHeight / 1040 * 18;
     cubeIcon.style.width = `${size}px`;
     cubeIcon.style.height = `${size}px`;
@@ -112,7 +112,7 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
   };
   const rateRows = RATE_FIELDS.map(([field, src], index) => {
     const row = document.createElement('div');
-    row.style.cssText = `position:absolute;right:1%;width:20%;top:${RATE_TOP + index * RATE_STEP}%;display:flex;align-items:center;gap:2px;pointer-events:none`;
+    row.style.cssText = `position:absolute;right:1%;top:${RATE_TOP + index * RATE_STEP}%;display:flex;align-items:center;gap:2px;pointer-events:none`;
     const icon = document.createElement('img');
     icon.src = src;
     icon.alt = RATE_NAMES[field] ?? field;
@@ -121,7 +121,7 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
     icon.style.flexShrink = '0';
     const value = document.createElement('canvas');
     value.style.imageRendering = 'pixelated';
-    value.style.marginLeft = 'auto';
+    value.style.flexShrink = '0';
     row.append(icon, value);
     return { row, icon, value, field };
   });
@@ -158,6 +158,11 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
           icon.style.height = `${size}px`;
         }
       });
+      // One compact column, sized from the longest visible value. Each value
+      // starts immediately after its icon, even when another row is longer.
+      const width = Math.max(0, ...rateRows.map(({ value }, index) =>
+        entries[index] ? parseFloat(value.style.width) : 0)) + gold.font.height * cell + 2;
+      rateRows.forEach(({ row }) => { row.style.width = `${width}px`; });
       ratesDrawn = key;
     }
   };

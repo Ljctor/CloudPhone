@@ -46,7 +46,8 @@ export const styles = {
   loadingText: {
     color: '#d8dde5', fontSize: '13px', fontFamily: 'system-ui, sans-serif',
   },
-  pluginLayer: { position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none' },
+  // Interactive plugin children must be above the Android touch surface.
+  pluginLayer: { position: 'absolute', inset: 0, zIndex: 3, pointerEvents: 'none' },
   // A plugin's dialog, over the options panel.
   pluginDialog: {
     position: 'absolute', left: '20px', right: '20px', top: '48px', zIndex: 5,
