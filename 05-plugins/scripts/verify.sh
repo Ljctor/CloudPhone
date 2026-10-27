@@ -11,6 +11,11 @@ expected = {"diamond", "gold", "emerald", "cubes", "crystals", "dice",
             "feather_white", "feather_green", "feather_purple", "feather_black",
             "dragon_power", "dragon_spark", "black_mana"}
 rows = state["resources"]
+scan = state["scan"]
+assert scan is None or {"size", "at", "screen", "overlays", "expected", "ran"} <= scan.keys()
+if scan is not None:
+    assert len(scan["size"]) == 2 and all(size > 0 for size in scan["size"])
+    assert set(scan["ran"]) <= set(scan["expected"])
 assert {row["field"] for row in rows} == expected
 cube = next(row for row in rows if row["field"] == "cubes")
 assert cube["pending"] is False

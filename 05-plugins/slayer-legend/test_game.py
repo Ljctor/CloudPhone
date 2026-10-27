@@ -333,3 +333,5 @@ class Feature(unittest.TestCase):
             asyncio.run(run())
             answer = asyncio.run(built["routes"][0][2](None))
             self.assertEqual(answer["scans"], 1)
+            self.assertEqual(answer["scan"]["size"], [shot[0], shot[1]])
+            self.assertIn("battle_settings", answer["scan"]["ran"])

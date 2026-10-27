@@ -223,7 +223,8 @@ def game(ports, screens, rules, readers, archive=None, examples=None):
                 readings = {**last["readings"], **{k: v for k, v in readings.items()
                                                    if v is not None or k not in last["readings"]}}
                 ran = list(last["ran"]) + ran
-            state["last"] = {"pixels": shot[2], "readings": readings, "ran": set(ran), "look": look,
+            state["last"] = {"pixels": shot[2], "size": [shot[0], shot[1]], "at": clock.wall(),
+                             "readings": readings, "ran": set(ran), "look": look,
                              "shows": set(rules.readers_for(look, look["classified"]))}
             note(readings)
             return readings
@@ -308,6 +309,11 @@ def game(ports, screens, rules, readers, archive=None, examples=None):
 
     async def handle_game(request):
         answer = {**rules.answer(state["facts"]), "playing": state["playing"], "scans": state["scans"]}
+        last = state["last"]
+        answer["scan"] = ({"size": last["size"], "at": last["at"],
+                          "screen": last["look"]["screen"],
+                          "overlays": sorted(last["look"].get("overlays") or ()),
+                          "expected": sorted(last["shows"]), "ran": sorted(last["ran"])} if last else None)
         return ports.respond(examples(answer) if examples else answer)
 
     if hasattr(ports, "on_capture"):

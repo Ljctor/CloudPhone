@@ -59,6 +59,7 @@ class CubeBalance(unittest.TestCase):
         self.assertFalse(rules.FIELDS["cubes"]["pending"])
         self.assertEqual(rules.TREE["weapon_detail"]["via"], "equipment_weapon/inspect_weapon")
         self.assertIn("cubes", rules.readers_for({"screen": "battle", "overlays": ["panel"]}))
+        self.assertIn("cubes", rules.readers_for({"screen": "battle", "overlays": [], "plain": True}))
         read = cubes.read(captured_counter())
         facts, _ = rules.noted({}, {"cubes": read}, 1234.0)
         row = next(row for row in rules.answer(facts)["resources"] if row["field"] == "cubes")
