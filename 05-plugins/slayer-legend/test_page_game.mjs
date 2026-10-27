@@ -1,10 +1,17 @@
 import assert from 'node:assert/strict';
 import gameFeature from './page_game.js';
 import { soulsParts, measureResourceRate } from './page_gold.js';
+import { freshnessColour } from './page_freshness.js';
 import { shortNumber } from './page_numbers.js';
 import { RESOURCE_ICONS } from './page_resources.js';
 import { SCREEN_ICONS } from './page_screen_icons.js';
 import { readFile } from 'node:fs/promises';
+
+assert.equal(freshnessColour(0), 'rgb(255, 255, 255)');
+assert.equal(freshnessColour(300), 'rgb(215, 238, 255)');
+assert.equal(freshnessColour(600), 'rgb(175, 221, 255)');
+assert.equal(freshnessColour(900), freshnessColour(600));
+assert.equal(freshnessColour(-10), freshnessColour(0));
 
 const catalogue = JSON.parse(await readFile(new URL('./resources.json', import.meta.url)));
 assert.equal(catalogue.length, 21);
@@ -53,13 +60,28 @@ assert.equal(options.find((row) => row.key === 'game-path-Equipment/Weapon').dep
 assert.equal(options.find((row) => row.key === 'game-soul_weapon').depth, 4);
 assert.equal(options.find((row) => row.key === 'game-dungeon_forest').label, 'Forest of Circulation');
 assert.equal(options.find((row) => row.label === 'Étages vus').value(), '156–165');
+assert.equal(options.find((row) => row.label === 'Étages vus').timestamp(),
+  new Date(1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+assert.equal(options.find((row) => row.label === 'Étages vus').color(), freshnessColour(600));
 assert.equal(options.find((row) => row.label === 'Relevé historique').value(), new Date(1000).toLocaleString());
 assert.equal(options.find((row) => row.key === 'capture-dungeon_forest').examples().length, 2);
 assert.equal(options.filter((row) => row.label === 'Données').length, 0);
 const gold = options.find((row) => row.label === 'Gold');
 assert.equal(gold.value(), 'never read');
+assert.equal(gold.timestamp(), '');
+assert.equal(gold.color(), '#8a919c');
 Object.assign(answer.resources.find((row) => row.field === 'gold'), { value: 0, seen: 1, verified: true });
 assert.equal(gold.value(), '0');
+assert.equal(gold.timestamp(), new Date(1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+assert.equal(gold.color(), freshnessColour(600));
+const originalNow = Date.now;
+Date.now = () => 301000;
+assert.equal(gold.color(), freshnessColour(300));
+Date.now = originalNow;
+const weapon = options.find((row) => row.type === 'status' && row.label === 'Weapon');
+assert.equal(weapon.value(), 'Vision');
+assert.equal(weapon.timestamp(), gold.timestamp());
+assert.equal(weapon.color(), freshnessColour(600));
 Object.assign(answer.resources.find((row) => row.field === 'soul_green'),
   { value: { text: '02.0C' }, seen: 1, verified: true });
 Object.assign(answer.resources.find((row) => row.field === 'soul_blue'),
@@ -117,6 +139,9 @@ assert.ok(atKey('game-equipment_weapon') < atKey('game-soul_weapon'));
 assert.ok(atKey('game-soul_weapon') < atKey('game-equipment_accessories'));
 assert.equal(inventoryOptions.find((row) => row.key === 'inventory-equipment_weapon-grey').depth, 4);
 assert.equal(inventoryOptions.find((row) => row.key === 'inventory-equipment_weapon-weapon-grey-4').value(), '+200 · 1/5');
+assert.equal(inventoryOptions.find((row) => row.key === 'inventory-equipment_weapon-weapon-grey-4').timestamp(),
+  new Date(1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+assert.equal(inventoryOptions.find((row) => row.key === 'inventory-equipment_weapon-weapon-grey-4').color(), freshnessColour(600));
 assert.equal(inventoryOptions.find((row) => row.key === 'inventory-equipment_weapon-weapon-grey-3').value(), '+200 · 0/5');
 assert.equal(inventoryOptions.find((row) => row.key === 'inventory-equipment_weapon-weapon-gold').value(), '+200 · 0/5 · Équipé');
 assert.equal(inventoryOptions.find((row) => row.key === 'inventory-equipment_accessories-accessory-grey-4').value(), '+30 · 4/5');

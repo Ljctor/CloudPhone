@@ -211,23 +211,29 @@ function pluginOption(context, plugin, option, index) {
     const href = option.href?.();
     const linked = href ? <a href={href} target="_blank" rel="noreferrer" style={styles.link}>{value}</a> : value;
     // muted(): a value not checked lately, greyed.
-    const shown = option.muted?.() ? <span data-muted="true" style={{ color: styles.infoNote.color }}>{linked}</span> : linked;
+    const color = resolved(option.color) ?? (option.muted?.() ? styles.infoNote.color : undefined);
+    const shown = color ? <span data-muted={option.muted?.() || undefined} style={{ color }}>{linked}</span> : linked;
+    const timestamp = resolved(option.timestamp);
     // Inline buttons after the value, while button() gives one (or a list).
     const given = option.button?.();
     const buttons = (Array.isArray(given) ? given : [given]).filter(Boolean);
-    if (option.compact && !buttons.length) return (
+    if ((option.compact || option.timestamp) && !buttons.length) return (
       <div key={key} title={resolved(option.title) ?? ''}
-        style={{ ...styles.infoRow, alignItems: 'center', minWidth: 0, whiteSpace: 'nowrap' }}>
-        <span style={{ ...styles.infoLabel, display: 'inline-flex', alignItems: 'center', minWidth: 0,
-          overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        style={{ ...styles.infoRow, display: 'grid', alignItems: 'center', minWidth: 0,
+          gridTemplateColumns: option.compact
+            ? 'minmax(0, 1fr) 14px minmax(0, 9ch) 5ch' : 'minmax(0, 1fr) 14px minmax(0, auto) 5ch',
+          columnGap: 6 }}>
+        <span style={{ ...styles.infoLabel, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {tr(option.label)}
         </span>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0,
-          color: '#fff', fontVariantNumeric: 'tabular-nums' }}>
-          {option.icon && <img src={resolved(option.icon)} alt="" style={{ width: 12, height: 12,
+        <span style={{ width: 14, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+          {option.icon && <img src={resolved(option.icon)} alt="" style={{ width: 14, height: 14,
             objectFit: 'contain', imageRendering: 'pixelated' }} />}
-          {value}
         </span>
+        <span style={{ minWidth: 0, textAlign: 'right', overflowWrap: 'anywhere',
+          color: color ?? '#fff', fontVariantNumeric: 'tabular-nums' }}>{shown}</span>
+        <span data-timestamp="true" style={{ color: styles.infoNote.color, textAlign: 'right',
+          whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', fontSize: '0.85em' }}>{timestamp}</span>
       </div>
     );
     return infoRow(tr(option.label), buttons.length ? (

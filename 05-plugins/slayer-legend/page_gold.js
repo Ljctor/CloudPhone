@@ -3,6 +3,8 @@
 // gains need two verified snapshots. Gold changes from blue to white while
 // its measurement window fills.
 import { drawText } from './gold_text.js';
+import { GOLD_COUNTER_FONT } from './page_gold_counter_font.js';
+import { freshnessColour } from './page_freshness.js';
 import { GOLD, SOULS } from './page_icons.js';
 import { RESOURCE_ICONS } from './page_resources.js';
 import { EQUIPMENT_L3_ICONS } from './page_equipment_icons.js';
@@ -82,7 +84,7 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
   let cubeDrawn = '';
   const showCube = () => {
     const cube = gold.cube;
-    if (!cube?.seen || cube.value == null || !gold.font || !enabled()) {
+    if (!cube?.seen || cube.value == null || !enabled()) {
       cubeRow.remove();
       cubeDrawn = '';
       return;
@@ -94,17 +96,15 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
       ? Math.floor(base + hourly * age / 3600) : base;
     const value = estimated !== null ? estimated.toLocaleString('en-US') :
       String(cube.value?.text ?? cube.value);
-    const share = Math.min(1, age / 600);
-    const colour = `rgb(${Math.round(255 - 80 * share)}, ${Math.round(255 - 34 * share)}, 255)`;
+    const colour = freshnessColour(age);
     cubeRow.style.opacity = String(gold.answer?.shade ?? 1);
-    // The Gold font template has 13 rows at 480x1040, but the live 720x1560
-    // Gold counter is only about 10-11 physical pixels tall. Scale the same
-    // glyphs to that measured visual size; drawText supplies the comma.
-    const cell = api.layer.offsetHeight / 1040 * 7 / gold.font.height;
+    // Full-digit Gold has its own compact shapes, including its comma;
+    // scaling the abbreviated 13-row font loses these strokes/proportions.
+    const cell = api.layer.offsetHeight / 1560;
     const key = `${value}@${colour}@${cell}`;
     if (key === cubeDrawn) return;
     if (!cubeRow.isConnected) api.layer.append(cubeRow);
-    drawText(cubeValue, gold.font, [{ text: value, colour }], cell);
+    drawText(cubeValue, GOLD_COUNTER_FONT, [{ text: value, colour }], cell);
     const size = api.layer.offsetHeight / 1040 * 18;
     cubeIcon.style.width = `${size}px`;
     cubeIcon.style.height = `${size}px`;
@@ -112,14 +112,16 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
   };
   const rateRows = RATE_FIELDS.map(([field, src], index) => {
     const row = document.createElement('div');
-    row.style.cssText = `position:absolute;right:1%;top:${RATE_TOP + index * RATE_STEP}%;display:flex;align-items:center;gap:2px;pointer-events:none`;
+    row.style.cssText = `position:absolute;right:1%;width:20%;top:${RATE_TOP + index * RATE_STEP}%;display:flex;align-items:center;gap:2px;pointer-events:none`;
     const icon = document.createElement('img');
     icon.src = src;
     icon.alt = RATE_NAMES[field] ?? field;
     icon.title = RATE_NAMES[field] ?? field;
     icon.style.imageRendering = 'pixelated';
+    icon.style.flexShrink = '0';
     const value = document.createElement('canvas');
     value.style.imageRendering = 'pixelated';
+    value.style.marginLeft = 'auto';
     row.append(icon, value);
     return { row, icon, value, field };
   });

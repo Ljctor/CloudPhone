@@ -103,8 +103,9 @@ print("Abbreviated option counter asset: OK")
 curl -fsS "${base%/}/plugins/slayer-legend/page_gold.js" | python3 -c '
 import sys
 script = sys.stdin.read()
-assert "drawText(cubeValue, gold.font" in script
-assert "api.layer.offsetHeight / 1040 * 7 / gold.font.height" in script
+assert "drawText(cubeValue, GOLD_COUNTER_FONT" in script
+assert "api.layer.offsetHeight / 1560" in script
+assert "freshnessColour(age)" in script
 assert "cubeRow.style.opacity" in script and "row.style.opacity" in script
 assert "left:36.1%;top:18.25%;transform:translateY(-50%)" in script
 assert "hourly * age / 3600" in script
@@ -116,7 +117,26 @@ assert "soul_white" not in script
 assert "* 3600" in script and "}/h" in script
 assert "const RATE_TOP = 18.5" in script
 assert "const RATE_STEP = 1.65" in script
+assert "right:1%;width:20%" in script
 print("Hourly overlay counters: OK")
+'
+curl -fsS "${base%/}/plugins/slayer-legend/page_gold_counter_font.js" | python3 -c '
+import sys
+script = sys.stdin.read()
+assert "export const GOLD_COUNTER_FONT" in script
+assert "export const GOLD_COUNTER_SOURCES" in script
+print("Gold-matched Cube font asset: OK")
+'
+curl -fsS "${base%/}/plugins/slayer-legend/page_freshness.js" | python3 -c '
+import sys
+assert "export function freshnessColour" in sys.stdin.read()
+print("Shared value freshness colour: OK")
+'
+curl -fsS "${base%/}/plugins/slayer-legend/page_game.js" | python3 -c '
+import sys
+script = sys.stdin.read()
+assert "timestamp: ()" in script and "freshnessColour(" in script
+print("Resource timestamps and freshness: OK")
 '
 curl -fsS "${base%/}/plugins/slayer-legend/page_cube_font.js" | python3 -c '
 import sys

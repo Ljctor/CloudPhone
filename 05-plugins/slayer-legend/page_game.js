@@ -1,12 +1,13 @@
 // The game's state and archived examples from GET /game are nested by their
 // path through the game's menus, with resources in their own section.
-// A value not read again since
-// the game was stopped or relaunched is greyed out. Asked at load, then
-// every 10 s while a row shows. rows(options, at): puts the sections into
+// Values fade from white to light blue with observation age; timestamps
+// stay separate so the settings renderer can keep them grey at the right.
+// Asked at load, then every 10 s while a row shows. rows(options, at): puts the sections into
 // the plugin's options list at index at, once the gateway answered.
 import { RESOURCE_ICONS } from './page_resources.js';
 import { SCREEN_ICONS } from './page_screen_icons.js';
 import { shortNumber } from './page_numbers.js';
+import { freshnessColour } from './page_freshness.js';
 const PIECE = '#d9a441';
 const EVERY = 10000;
 
@@ -23,10 +24,15 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
   };
   const text = (row) => {
     if (row.value === null || row.value === undefined) return 'never read';
-    return `${shown(row)} · ${api.tr('vu à {time}', { time: time(row.seen) })}`;
+    return shown(row);
   };
   const resourceText = (row) => row.value === null || row.value === undefined ? 'never read' :
     shortNumber(row.value) ?? 'never read';
+  const observed = (current) => ({
+    timestamp: () => current().seen ? time(current().seen) : '',
+    color: () => current().value == null ? '#8a919c' :
+      freshnessColour(current().seen ? Date.now() / 1000 - current().seen : 600),
+  });
   const ask = () => {
     if (game.busy || Date.now() - game.at < EVERY) return;
     game.busy = true;
@@ -48,6 +54,7 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
       return {
         type: 'status', label: field.label, icon: RESOURCE_ICONS[field.field],
         compact: true,
+        ...observed(current),
         title: () => current().seen ? api.tr('vu à {time}', { time: time(current().seen) }) : 'never read',
         visible: () => { ask(); return true; },
         value: () => resourceText(current()),
@@ -115,11 +122,11 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
         return true;
       },
       value: () => text(rowOf(screen.screen, field.field) ?? field),
-      muted: () => {
-        const row = rowOf(screen.screen, field.field);
-        return Boolean(row && row.value !== null && !row.verified);
-      },
+      ...observed(() => rowOf(screen.screen, field.field) ?? field),
     }));
+  const archived = (screen) => observed(() => ({
+    value: true, seen: (screenOf(screen.screen) ?? screen).example?.captured,
+  }));
   const detailRows = (screen) => {
     const summaries = new Set();
     if (screen.inventory?.items?.length) {
@@ -137,6 +144,7 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
           detail.value === undefined || !String(detail.value).trim()) return [];
       return [{
         type: 'status', key: `scan-${screen.screen}-${index}`, label: detail.label,
+        ...archived(screen),
         value: () => screenOf(screen.screen)?.details?.[index]?.value ?? detail.value,
       }];
     });
@@ -165,12 +173,12 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
             return captured ? new Date(captured * 1000).toLocaleString() : 'Capture enregistrée';
           } },
         { type: 'status', key: `inventory-${screen.screen}-selected`,
-          label: 'Promotion sélectionnée', value: () => screenOf(screen.screen)?.inventory?.selected ??
+          label: 'Promotion sélectionnée', ...archived(screen), value: () => screenOf(screen.screen)?.inventory?.selected ??
             inventory.selected ?? 'never read' },
       ];
       for (const rank of inventory.ranks) {
         rows.push({ type: 'status', key: `inventory-${screen.screen}-${rank.name}`,
-          label: rank.name, compact: true,
+          label: rank.name, compact: true, ...archived(screen),
           value: () => {
             const current = screenOf(screen.screen) ?? screen;
             const status = current.inventory?.ranks?.find((row) => row.name === rank.name)?.status ?? rank.status;
@@ -207,7 +215,7 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
         const current = () => screenOf(screen.screen)?.inventory?.items?.find((row) => row.id === item.id) ?? item;
         rows.push({ type: 'status', key: `inventory-${screen.screen}-${item.id}`,
           label: item.name || (item.grade == null ? 'Case équipée' : `Grade ${item.grade}`),
-          compact: true,
+          compact: true, ...archived(screen),
           title: () => api.tr('Relevé historique · x/5 : progression affichée, possession non confirmée'),
           value: () => {
             const found = current();
