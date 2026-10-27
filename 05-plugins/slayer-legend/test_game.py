@@ -230,6 +230,16 @@ class Rules(unittest.TestCase):
         self.assertEqual(len(rows), len(expected))
         self.assertTrue(all(row['value'] is None for row in rows))
 
+    def test_character_exp_remains_unread_until_both_numbers_are_calibrated(self):
+        answer = rules.answer({})
+        character = next(screen for screen in answer["screens"] if screen["screen"] == "character_enhance")
+        exp = next(field for field in character["fields"] if field["field"] == "exp")
+        self.assertEqual((exp["label"], exp["value"], exp["pending"]), ("EXP", None, True))
+        self.assertEqual(character["path"], ["Character: Enhance"])
+        self.assertTrue(rules.FIELDS["feather_black"]["pending"])
+        self.assertFalse(rules.TREE["black_orb_obtain"]["visit"])
+        self.assertEqual(rules.TREE["black_orb_obtain"]["resource"], "feather_black")
+
 
 class Clock:
     def __init__(self):

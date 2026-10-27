@@ -48,6 +48,10 @@ assert screens["quest_panel"]["label"] == "Quest"
 assert screens["scroll"]["inventory"]["status"] == "never_read"
 assert screens["equipment_weapon"]["path"][-1] == "Equipment: Weapon"
 assert screens["black_orb"]["path"][-1] == "Black Orb"
+assert any(field["field"] == "exp" and field["value"] is None and field["pending"]
+           for field in screens["character_enhance"]["fields"])
+assert screens["black_orb_obtain"]["pending"] is True
+assert next(row for row in rows if row["field"] == "feather_black")["pending"] is True
 assert all("example" in screen and "examples" in screen and "details" in screen
            for screen in state["screens"])
 assert sum(bool(screen["details"]) for screen in state["screens"]) >= 50
@@ -77,7 +81,8 @@ print("Resource catalogue, equipment inventory and game navigation: OK")
 curl -fsS "${base%/}/api/v1/plugins/slayer-legend/gold" | python3 -c '
 import json, sys
 state = json.load(sys.stdin)
-assert {"text", "value", "rate", "rate_text", "span", "window", "read", "box", "souls"} <= state.keys()
+assert {"text", "value", "rate", "rate_text", "span", "window", "read", "box", "shade", "souls"} <= state.keys()
+assert 0.2 <= state["shade"] <= 1.0
 assert {"green", "blue", "red", "white"} <= state["souls"].keys()
 assert state["window"] in (60, 300)
 assert (state["rate"] is None) == (state["rate_text"] is None)
@@ -99,7 +104,8 @@ curl -fsS "${base%/}/plugins/slayer-legend/page_gold.js" | python3 -c '
 import sys
 script = sys.stdin.read()
 assert "drawText(cubeValue, gold.font" in script
-assert "const cell = api.layer.offsetHeight / 1040;" in script
+assert "api.layer.offsetHeight / 1040 * 7 / gold.font.height" in script
+assert "cubeRow.style.opacity" in script and "row.style.opacity" in script
 assert "hourly * age / 3600" in script
 assert "['stone_green'" not in script and "['stone_yellow'" not in script
 assert "['stone_red'" not in script and "['stone_blue'" not in script

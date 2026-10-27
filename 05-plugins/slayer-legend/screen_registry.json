@@ -22,7 +22,7 @@
         {"share": "TOP_EMERALD", "test": "green", "above": 0.15},
         {"patch": "battle_emerald", "limit": 0.6}
       ],
-      "fixtures": ["battle_emerald", "battle_menu_labels", "battle_mana_bar"]
+      "fixtures": ["battle_emerald", "battle_menu_labels", "battle_mana_bar", "top_currencies_battle", "top_currencies_equipment", "top_currencies_shaded"]
     },
     "saver": {
       "kind": "screen", "status": "registered", "legacy": "saver",
@@ -112,7 +112,7 @@
     }
   },
   "tree": {
-    "character_enhance": {"name": "Character: Enhance", "parent": "battle", "screen": "character_enhance", "via": "battle/menu_character", "back": "character_enhance/close", "look": "panel", "visit": true, "example": "screenshots/character_enhance.png"},
+    "character_enhance": {"name": "Character: Enhance", "parent": "battle", "screen": "character_enhance", "via": "battle/menu_character", "back": "character_enhance/close", "look": "panel", "visit": true, "example": "screenshots/character_enhance.png", "readings": {"exp": {"box": [110, 627, 278, 639], "format": "current / required", "status": "never_read", "fixtures": ["fixtures/character_exp_enhance.txt", "fixtures/character_exp_growth.txt"], "why": "small digits touch; existing pixel_font reader returns unknown glyphs"}}},
     "character_growth": {"name": "Character: Growth", "parent": "character_enhance", "screen": "character_growth", "via": "character_enhance/growth", "back": "character_growth/enhance", "look": "panel", "visit": true, "example": "screenshots/character_growth.png"},
     "character_growth_icon_1": {"name": "Character: Growth, first sub-tab icon", "parent": "character_growth", "screen": null, "via": null, "look": "panel", "visit": false, "why": "not explored: what it does is not known, so the tour does not tap it (icon at 0.48, 0.632)"},
     "character_growth_icon_2": {"name": "Character: Growth, second sub-tab icon", "parent": "character_growth", "screen": null, "via": null, "look": "panel", "visit": false, "why": "not explored: what it does is not known, so the tour does not tap it (icon at 0.615, 0.632)"},
@@ -132,6 +132,7 @@
     "spirit": {"name": "Spirit", "parent": "equipment_weapon", "screen": "spirit", "via": "equipment_weapon/spirit", "back": "spirit/close", "look": "screen", "visit": true, "example": "screenshots/spirit.png", "scroll": [{"rect": [0.03, 0.5, 0.97, 0.9], "direction": "vertical", "content": "grid of spirits", "measured": false, "why": "the grid is the forbidden spirit +/- area"}]},
     "equipment_accessories": {"name": "Equipment: Accessories", "parent": "equipment_weapon", "screen": "equipment_accessories", "via": "equipment_weapon/accessories", "back": "equipment_accessories/weapon", "look": "panel", "visit": true, "example": "screenshots/equipment_accessories.png", "scroll": [{"move": "equipment_accessories/scroll", "rect": [0.03, 0.48, 0.97, 0.88], "direction": "vertical", "content": "grid of accessories", "measured": true, "gesture": [0.27, 0.81, 0.27, 0.55], "start": "first grade rows visible", "end": "single equipped gold accessory at bottom", "captures": ["equipment_accessories_scroll_1.png", "equipment_accessories_scroll_2.png"]}]},
     "black_orb": {"name": "Black Orb", "parent": "equipment_accessories", "screen": "black_orb", "via": "equipment_accessories/black_orb", "back": "black_orb/close", "look": "screen", "visit": true, "example": "screenshots/black_orb.png"},
+    "black_orb_obtain": {"name": "Obtain: Black Feathers", "parent": "black_orb", "screen": null, "via": "black_orb/obtain", "look": "screen", "visit": false, "resource": "feather_black", "why": "button is forbidden in navigation.json because it may spend Black Orb; no Obtain screen capture exists, so the black-feather balance cannot be calibrated"},
     "black_orb_accessory": {"name": "Black Orb: accessory card", "parent": "black_orb", "screen": "black_orb_accessory", "via": "black_orb/accessory_left", "back": "black_orb_accessory/close", "look": "panel", "visit": true, "example": "screenshots/black_orb_accessory.png"},
     "equipment_relic": {"name": "Equipment: Relic", "parent": "equipment_weapon", "screen": "equipment_relic", "via": "equipment_weapon/relic", "back": "equipment_relic/weapon", "look": "panel", "visit": true, "example": "screenshots/equipment_relic.png", "scroll": [{"move": "equipment_relic/scroll", "rect": [0.03, 0.48, 0.7, 0.95], "direction": "vertical", "content": "list of relics", "measured": true, "gesture": [0.5, 0.84, 0.5, 0.56], "start": "Giant's Right Hand at top", "end": "Crown of the Great Mountain at bottom", "captures": ["equipment_relic_scroll_1.png", "equipment_relic_scroll_2.png"]}]},
     "equipment_relic_icon_1": {"name": "Equipment: Relic, gold diamond icon", "parent": "equipment_relic", "screen": null, "via": null, "look": "panel", "visit": false, "why": "not explored: what it does is not known, so the tour does not tap it (icon at 0.79, 0.462)"},

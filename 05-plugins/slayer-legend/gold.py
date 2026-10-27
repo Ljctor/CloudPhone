@@ -261,6 +261,16 @@ def read(shot, shades=(1.0,)):
     for shade in shades:
         reading = _read(shot, shade)
         if reading:
+            width, height, pixels = shot
+            x0, y0, x1, y1 = reading["box"]
+            brightest = 0
+            for y in range(round(y0 * height), round(y1 * height)):
+                for x in range(round(x0 * width), round(x1 * width)):
+                    i = (y * width + x) * 3
+                    r, g, b = pixels[i:i + 3]
+                    if max(r, g, b) - min(r, g, b) < 30:
+                        brightest = max(brightest, min(r, g, b))
+            reading["shade"] = max(0.2, min(1.0, brightest / 255)) if brightest else shade
             return reading
     return None
 

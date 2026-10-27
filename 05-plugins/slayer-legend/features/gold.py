@@ -25,7 +25,7 @@ def gold(ports, screens, stage, counter, rules, souls=None):
     """souls: soul_counters.py (None: no souls rates)."""
     colours = souls.COLOURS if souls else ()
     game = getattr(ports, "game", None)
-    status = {"window": rules.empty(), "read": None, "box": None, "asked": 0.0, "task": None,
+    status = {"window": rules.empty(), "read": None, "box": None, "shade": 1.0, "asked": 0.0, "task": None,
               "souls": {colour: rules.empty() for colour in colours}}
 
     def gold_facts(shot):
@@ -60,6 +60,7 @@ def gold(ports, screens, stage, counter, rules, souls=None):
                     if reading:
                         status["read"] = ports.clock.wall()
                         status["box"] = reading["box"]
+                        status["shade"] = reading.get("shade", 1.0)
                     window, counts = rules.where(status["window"], kind, here)
                     if counts and reading:
                         window = rules.counted(window, reading, ports.clock.wall())
@@ -122,6 +123,7 @@ def gold(ports, screens, stage, counter, rules, souls=None):
             "window": seconds,
             "read": status["read"],
             "box": status["box"],
+            "shade": status["shade"],
             "souls": souls_now(),
         })
 

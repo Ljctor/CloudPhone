@@ -64,6 +64,11 @@ SCHEMA = {
     "equipment_accessories": {"label": "Equipment: Accessories", "fields": {
         "accessory_l3": {"label": "Accessoires L3", "shown": "number"},
     }},
+    "character_enhance": {"label": "Character: Enhance", "fields": {
+        # The full current/required counters need a calibrated OCR. A
+        # percentage alone is not a substitute for the two exact values.
+        "exp": {"label": "EXP", "shown": "text", "pending": True},
+    }},
 }
 
 # Resource counters have one home, independent of the screen that reads them.

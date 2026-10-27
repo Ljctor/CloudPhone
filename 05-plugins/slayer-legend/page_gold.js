@@ -96,9 +96,11 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
       String(cube.value?.text ?? cube.value);
     const share = Math.min(1, age / 600);
     const colour = `rgb(${Math.round(255 - 80 * share)}, ${Math.round(255 - 34 * share)}, 255)`;
-    // Use the game's Gold counter font and its native 13-pixel height.
-    // drawText supplies the comma missing from the Gold font response.
-    const cell = api.layer.offsetHeight / 1040;
+    cubeRow.style.opacity = String(gold.answer?.shade ?? 1);
+    // The Gold font template has 13 rows at 480x1040, but the live 720x1560
+    // Gold counter is only about 10-11 physical pixels tall. Scale the same
+    // glyphs to that measured visual size; drawText supplies the comma.
+    const cell = api.layer.offsetHeight / 1040 * 7 / gold.font.height;
     const key = `${value}@${colour}@${cell}`;
     if (key === cubeDrawn) return;
     if (!cubeRow.isConnected) api.layer.append(cubeRow);
@@ -141,6 +143,7 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
       return typeof hourly === 'number' ? `${shortNumber(hourly)}/h` : '.../h';
     });
     const colour = rateColour(gold.answer, (Date.now() - gold.at) / 1000);
+    rateRows.forEach(({ row }) => { row.style.opacity = String(gold.answer?.shade ?? 1); });
     const key = `${entries.join('|')}@${cell}@${colour}`;
     if (key !== ratesDrawn) {
       rateRows.forEach(({ row, icon, value }, index) => {
