@@ -54,6 +54,7 @@ const ENGLISH = {
   'Capture avant…': 'Capturing before…',
   'Clique dans le jeu': 'Tap in the game',
   'Capture après…': 'Capturing after…',
+  'Clic enregistré': 'Tap recorded',
   'Réessayer le clic': 'Retry recording',
   'condition à vérifier': 'condition to check',
   'Jaune : clic · bleu : vertical · violet : horizontal · pointillés : condition à vérifier':

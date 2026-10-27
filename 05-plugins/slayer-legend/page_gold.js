@@ -10,8 +10,8 @@ import { CUBE_FONT } from './page_cube_font.js';
 
 // Keep the measured rates against the right edge, below Scroll (its label
 // ends around 17% of the screen). Each row keeps its own icon beside its value.
-const RATE_TOP = 19.5;
-const RATE_STEP = 2.4;
+const RATE_TOP = 18.5;
+const RATE_STEP = 1.65;
 const RATE_FIELDS = [
   ['gold', GOLD], ['cubes', RESOURCE_ICONS.cubes],
   ['soul_green', SOULS.green], ['soul_blue', SOULS.blue], ['soul_red', SOULS.red],

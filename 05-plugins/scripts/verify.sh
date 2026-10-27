@@ -103,6 +103,8 @@ assert "stone_yellow" in script and "stone_blue" in script
 assert "weapon_l3" in script and "accessory_l3" in script
 assert "soul_white" not in script
 assert "* 3600" in script and "}/h" in script
+assert "const RATE_TOP = 18.5" in script
+assert "const RATE_STEP = 1.65" in script
 print("Hourly overlay counters: OK")
 '
 curl -fsS "${base%/}/plugins/slayer-legend/page_cube_font.js" | python3 -c '

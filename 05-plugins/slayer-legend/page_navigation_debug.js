@@ -64,13 +64,22 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
   let last = '';
   let disposed = false;
   let captureState = 'idle';
+  let captureId = null;
   const stopTap = api.onTap?.((tap) => {
     if (captureState !== 'armed') return;
     if (api.setting('traceTaps') === 'off') api.post('/trace', tap).catch(() => null);
     captureState = 'saving';
     last = '';
     update();
-    window.setTimeout(() => { captureState = 'idle'; last = ''; update(); }, 2600);
+    window.setTimeout(async () => {
+      const archive = await api.get('/trace/manual').catch(() => null);
+      captureState = archive?.clicks?.some((click) => click.id === captureId) ? 'saved' : 'failed';
+      last = '';
+      update();
+      if (captureState === 'saved') window.setTimeout(() => {
+        captureState = 'idle'; last = ''; update();
+      }, 2500);
+    }, 3000);
   });
   const clear = () => { layer.replaceChildren(); layer.remove(); last = ''; };
   const active = () => !disposed && enabled() && api.setting('navigationDebug') === 'on';
@@ -86,8 +95,9 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
     const button = document.createElement('button');
     button.type = 'button';
     button.textContent = api.tr(({ idle: 'Enregistrer un clic', arming: 'Capture avant…',
-      armed: 'Clique dans le jeu', saving: 'Capture après…', failed: 'Réessayer le clic' })[captureState]);
-    button.disabled = captureState === 'arming' || captureState === 'saving';
+      armed: 'Clique dans le jeu', saving: 'Capture après…', saved: 'Clic enregistré',
+      failed: 'Réessayer le clic' })[captureState]);
+    button.disabled = captureState === 'arming' || captureState === 'saving' || captureState === 'saved';
     button.style.cssText = 'position:absolute;left:50%;bottom:7%;transform:translateX(-50%);pointer-events:auto;z-index:1;padding:7px 10px;border:2px solid #ffe100;border-radius:5px;background:#171717;color:#fff;font:600 12px sans-serif;white-space:nowrap;cursor:pointer';
     button.onpointerdown = (event) => event.stopPropagation();
     button.onpointerup = (event) => event.stopPropagation();
@@ -100,6 +110,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
       button.disabled = true;
       try {
         const answer = await api.post('/trace/arm', {});
+        captureId = answer?.id ?? null;
         captureState = answer?.armed ? 'armed' : 'failed';
       } catch { captureState = 'failed'; }
       last = '';

@@ -1,8 +1,9 @@
 """Conservative OCR of the emerald and diamond balances in the game's top bar.
 
-The icon positions and the 480x1040 text are measured on real battle and
-equipment captures. The ten digit shapes come from real cube counter crops
-using the same game font; an uncertain glyph leaves its counter unread.
+The icon positions are measured on real 480x1040 battle and equipment
+captures; text glyphs are read at the screenshot's native resolution,
+including 720x1560. The ten digit shapes come from real cube counter
+crops using the same game font. An uncertain glyph leaves its counter unread.
 """
 
 import importlib.util
@@ -15,6 +16,23 @@ _spec = importlib.util.spec_from_file_location(
     os.path.join(os.path.dirname(__file__), "cube_balance.py"))
 _cubes = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_cubes)
+
+# Captured at 720x1560 in the game's top bar. Native glyphs distinguish
+# its 8 and 5, and the two shapes that look similar at reduced resolution.
+OBSERVED_720 = {
+    "8": ("..######.", "#########", "###....##", "###....##", "###....##",
+          "..######.", "#########", "###....##", "###....##", "###....##",
+          "###....##", "#########", "..######.", "..######."),
+    "5": ("#########", "#########", "###......", "###......", "###......",
+          "########.", "#########", ".......##", ".......##", ".......##",
+          "###....##", "#########", "..######.", "..######."),
+    "6": ("...####..", "...####..", "..##.....", "####.....", "##.......",
+          "#######..", "#######..", "##.....##", "##.....##", "##.....##",
+          "##.....##", "#########", "..#####..", "..#####.."),
+    "3": (".######.", ".######.", "##....##", "##....##", "......##",
+          "...#####", "...####.", "......##", "......##", "......##",
+          "##....##", "########", ".######.", ".######."),
+}
 
 COUNTERS = {
     "emerald": {"icon": (180, 18, 197, 35), "text": (200, 19, 255, 34)},
@@ -44,13 +62,18 @@ def _icon(shot, field, shade):
 
 
 def _glyphs(shot, field, shade):
+    width, height, pixels = shot
+    scale_x, scale_y = width / 480, height / 1040
     x0, y0, x1, y1 = COUNTERS[field]["text"]
+    x0, x1 = round(x0 * scale_x), round(x1 * scale_x)
+    y0, y1 = round(y0 * scale_y), round(y1 * scale_y)
+    level = 200 * shade
     rows = []
     for y in range(y0, y1):
         row = []
         for x in range(x0, x1):
-            r, g, b = _at(shot, x, y)
-            row.append(min(r, g, b) >= 170 * shade and max(r, g, b) - min(r, g, b) < 45)
+            r, g, b = pixels[(y * width + x) * 3:(y * width + x) * 3 + 3]
+            row.append(min(r, g, b) >= level and max(r, g, b) - min(r, g, b) < 45)
         rows.append(row)
     columns = [any(row[x] for row in rows) for x in range(x1 - x0)]
     runs, start = [], None
@@ -83,13 +106,15 @@ def _distance(glyph, shape):
     return different / 63
 
 
-def _character(glyph):
+def _character(glyph, scale=1.0):
     height, width = len(glyph), len(glyph[0])
-    if height <= 4 and width <= 3:
+    if height <= 4 * scale and width <= 3 * scale:
         return ","
-    if not 8 <= height <= 11 or not 3 <= width <= 8:
+    if not 8 <= height / scale <= 11 or not 3 <= width / scale <= 8:
         return None
-    scores = sorted((_distance(glyph, shape), char) for char, shape in _cubes.SHAPES.items())
+    scores = sorted((min(_distance(glyph, shape),
+                         _distance(glyph, OBSERVED_720[char]) if char in OBSERVED_720 else 1.0), char)
+                    for char, shape in _cubes.SHAPES.items())
     score, char = scores[0]
     if score > 0.20:
         return None
@@ -114,7 +139,7 @@ def read(shot, field):
         glyphs = _glyphs(shot, field, shade)
         if not 1 <= len(glyphs) <= 11:
             continue
-        characters = [_character(glyph) for glyph in glyphs]
+        characters = [_character(glyph, width / 480) for glyph in glyphs]
         if None in characters:
             continue
         text = "".join(characters)

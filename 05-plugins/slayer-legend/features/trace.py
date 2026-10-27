@@ -43,12 +43,11 @@ def trace(ports, screens, graphs, images=None):
             return None
         return await ports.analyse(signature, shot), shot
 
-    def keep_manual(before, after, tap, now):
+    def keep_manual(capture_id, before, after, tap, now):
         """A debug-button tap keeps both complete screenshots, even if the graph is full."""
         if image_dir is None:
             return
         image_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-        capture_id = uuid.uuid4().hex
         for side, frame in (("before", before), ("after", after)):
             target = image_dir / f"{capture_id}-{side}.png"
             temporary = image_dir / f"{capture_id}-{side}.png.tmp"
@@ -82,7 +81,7 @@ def trace(ports, screens, graphs, images=None):
         now = ports.clock.wall()
         if pending["manual"]:
             try:
-                keep_manual(pending["before"], after, pending["tap"], now)
+                keep_manual(pending["manual"], pending["before"], after, pending["tap"], now)
             except OSError as e:
                 ports.log("warning", f"Manual click screenshots not saved: {e!r}")
         if recorded["graph"].record(pending["before"][0], after[0], pending["tap"], now):
@@ -119,7 +118,8 @@ def trace(ports, screens, graphs, images=None):
                 if previous is not None:
                     previous["task"].cancel()
                     finish(previous, now)
-                pending = {"tap": tap, "before": now, "manual": bool(armed and now is armed["screen"]),
+                pending = {"tap": tap, "before": now,
+                           "manual": armed["id"] if armed and now is armed["screen"] else None,
                            "task": None}
                 recorded["pending"] = pending
                 pending["task"] = ports.spawn(after(pending))
@@ -151,8 +151,9 @@ def trace(ports, screens, graphs, images=None):
             before = await screen_now()
             if before is None:
                 return ports.respond({"error": "game not visible"}, status=409)
-            recorded["armed"] = {"screen": before, "until": ports.clock.wall() + ARM_SECONDS}
-        return ports.respond({"armed": True, "seconds": ARM_SECONDS})
+            capture_id = uuid.uuid4().hex
+            recorded["armed"] = {"id": capture_id, "screen": before, "until": ports.clock.wall() + ARM_SECONDS}
+        return ports.respond({"armed": True, "id": capture_id, "seconds": ARM_SECONDS})
 
     async def handle_state(request):
         graph = recorded["graph"]

@@ -35,6 +35,20 @@ def shot(tab, include_row=True):
     return 480, 1040, bytes(pixels)
 
 
+def scaled_720(capture):
+    """Geometry check from the real 480 crop; this is not a native 720 capture."""
+    _, _, source = capture
+    pixels = bytearray(720 * 1560 * 3)
+    for y in range(1560):
+        source_row = (2 * y // 3) * 480 * 3
+        target_row = y * 720 * 3
+        for x in range(720):
+            start = target_row + x * 3
+            from_x = source_row + (2 * x // 3) * 3
+            pixels[start:start + 3] = source[from_x:from_x + 3]
+    return 720, 1560, bytes(pixels)
+
+
 class EquipmentL3(unittest.TestCase):
     def test_real_weapon_and_accessory_counts(self):
         with (HERE / "stages.json").open(encoding="utf-8") as f:
@@ -45,11 +59,11 @@ class EquipmentL3(unittest.TestCase):
                                     None, equipment=equipment)
         for tab, field, value in (("weapon", "weapon_l3", 3),
                                   ("accessories", "accessory_l3", 24)):
-            capture = shot(tab)
-            self.assertEqual(weapon.tab(capture), tab)
-            self.assertEqual(equipment.read(capture), value)
-            self.assertEqual(readers["equipment_l3"](capture, "battle", {"equipment_weapon"}, False),
-                             {field: value})
+            for capture in (shot(tab), scaled_720(shot(tab))):
+                self.assertEqual(weapon.tab(capture), tab)
+                self.assertEqual(equipment.read(capture), value)
+                self.assertEqual(readers["equipment_l3"](capture, "battle", {"equipment_weapon"}, False),
+                                 {field: value})
             facts, _ = rules.noted({}, {field: value}, 1000.0)
             group = next(row for row in rules.answer(facts)["screens"]
                          if row["screen"] == "equipment_" + ("weapon" if tab == "weapon" else "accessories"))
@@ -59,6 +73,7 @@ class EquipmentL3(unittest.TestCase):
         self.assertIsNone(equipment.read(shot("weapon", include_row=False)))
         capture = shot("weapon")
         self.assertIsNone(equipment.read((960, 2080, capture[2])))
+        self.assertIsNone(equipment.read(scaled_720(shot("weapon", include_row=False))))
         pixels = bytearray(capture[2])
         # Erase the counter while keeping the red frame: it must not
         # turn into a fabricated zero.
