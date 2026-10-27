@@ -98,7 +98,8 @@ print("Abbreviated option counter asset: OK")
 curl -fsS "${base%/}/plugins/slayer-legend/page_gold.js" | python3 -c '
 import sys
 script = sys.stdin.read()
-assert "page_cube_font.js" in script
+assert "drawText(cubeValue, gold.font" in script
+assert "const cell = api.layer.offsetHeight / 1040;" in script
 assert "stone_yellow" in script and "stone_blue" in script
 assert "weapon_l3" in script and "accessory_l3" in script
 assert "soul_white" not in script

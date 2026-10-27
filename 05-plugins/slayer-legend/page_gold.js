@@ -6,7 +6,6 @@ import { drawText } from './gold_text.js';
 import { GOLD, SOULS } from './page_icons.js';
 import { RESOURCE_ICONS } from './page_resources.js';
 import { shortNumber } from './page_numbers.js';
-import { CUBE_FONT } from './page_cube_font.js';
 
 // Keep the measured rates against the right edge, below Scroll (its label
 // ends around 17% of the screen). Each row keeps its own icon beside its value.
@@ -85,7 +84,7 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
   let cubeDrawn = '';
   const showCube = () => {
     const cube = gold.cube;
-    if (!cube?.seen || cube.value == null || !enabled()) {
+    if (!cube?.seen || cube.value == null || !gold.font || !enabled()) {
       cubeRow.remove();
       cubeDrawn = '';
       return;
@@ -95,14 +94,14 @@ export default function goldFeature(api, { overlay, enabled = () => true }) {
     const age = Math.max(0, Date.now() / 1000 - cube.seen);
     const share = Math.min(1, age / 600);
     const colour = `rgb(${Math.round(255 - 80 * share)}, ${Math.round(255 - 34 * share)}, 255)`;
-    // The Enhance Cube counter has its own 9-row digit shapes and a
-    // 21-game-pixel icon. The old gold font dropped its commas altogether.
-    const cell = api.layer.offsetHeight / 1040 * 14 / CUBE_FONT.height;
+    // Use the game's Gold counter font and its native 13-pixel height.
+    // drawText supplies the comma missing from the Gold font response.
+    const cell = api.layer.offsetHeight / 1040;
     const key = `${value}@${colour}@${cell}`;
     if (key === cubeDrawn) return;
     if (!cubeRow.isConnected) api.layer.append(cubeRow);
-    drawText(cubeValue, CUBE_FONT, [{ text: value, colour }], cell);
-    const size = api.layer.offsetHeight / 1040 * 21;
+    drawText(cubeValue, gold.font, [{ text: value, colour }], cell);
+    const size = api.layer.offsetHeight / 1040 * 18;
     cubeIcon.style.width = `${size}px`;
     cubeIcon.style.height = `${size}px`;
     cubeDrawn = key;
