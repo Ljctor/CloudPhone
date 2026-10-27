@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { makePatch, locatePatch, scrollViewport } from './page_navigation_tracking.js';
+import visualTracker, { makePatch, locatePatch, scrollViewport } from './page_navigation_tracking.js';
 import { zonesFor } from './page_navigation_debug.js';
 
 const width = 96; const height = 160;
@@ -34,6 +34,8 @@ const duplicate = { ...frame, pixels: frame.pixels.slice() };
 for (const [x, y, value] of patch.samples) duplicate.pixels[(patch.cy + y + 30) * width + patch.cx + x] = value;
 assert.equal(locatePatch(patch, duplicate, 'vertical'), null, 'repeated rows cannot establish identity');
 assert.equal(makePatch({ ...frame, pixels: new Uint8Array(width * height) }, rect, viewport), null, 'flat content is untrackable');
+const clippedRect = [.4, .15, .6, .3];
+assert.deepEqual(locatePatch(makePatch(frame, clippedRect, viewport), frame, 'vertical'), [.4, .2, .6, .3], 'rectangle clips at viewport edge');
 const scrolls = [{ rect: viewport, direction: 'vertical' }];
 assert.equal(scrollViewport({ kind: 'vertical', rect }, scrolls), null, 'slider viewport itself stays fixed');
 assert.equal(scrollViewport({ kind: 'tap', rect: [0, 0, .1, .1] }, scrolls), null, 'fixed chrome stays fixed');
@@ -41,4 +43,30 @@ assert.equal(scrollViewport({ kind: 'tap', rect }, scrolls), scrolls[0]);
 const graph = { screens: { test: { moves: [{ id: 'item', tap: [.5, .5] }, { id: 'close', tap: [.95, .05] }] } } };
 assert.equal(zonesFor('test', graph, {}, null, new Map([['item', null]])).length, 1);
 assert.deepEqual(zonesFor('test', graph, {}, null, new Map([['item', rect]]))[0].rect, rect);
+// Exercise decoded-frame caching and canvas failure: a blocked/unreadable
+// video must remove tracked rectangles instead of freezing stale positions.
+let draws = 0;
+let failed = false;
+const rgba = new Uint8Array(192 * 320 * 4);
+for (let i = 0; i < rgba.length / 4; i++) {
+  const value = frame.pixels[Math.floor(i / 192 / 2) * width + Math.floor(i % 192 / 2)];
+  rgba[i * 4] = value; rgba[i * 4 + 1] = value; rgba[i * 4 + 2] = value;
+}
+globalThis.document = { createElement: () => ({ getContext: () => ({
+  drawImage() { draws++; if (failed) throw Error('unreadable frame'); },
+  getImageData: () => ({ data: rgba }),
+}) }) };
+const video = { videoWidth: 192, videoHeight: 320, readyState: 2, currentTime: 1 };
+const tracker = visualTracker(() => video);
+const trackedZone = [{ id: 'item', kind: 'tap', rect }];
+assert.deepEqual(tracker.update('test', trackedZone, scrolls).get('item'), rect);
+tracker.update('test', trackedZone, scrolls);
+assert.equal(draws, 1, 'one read per decoded video frame');
+video.currentTime++;
+failed = true;
+assert.equal(tracker.update('test', trackedZone, scrolls).get('item'), null);
+failed = false; video.currentTime++;
+assert.deepEqual(tracker.update('test', trackedZone, scrolls).get('item'), rect);
+tracker.reset();
+assert.equal(tracker.update('other', [], []).size, 0, 'screen changes discard old identities');
 console.log('Visual scroll tracking: actual movement, boundaries, disappearance, ambiguity and fixed chrome: OK');

@@ -71,8 +71,14 @@ export default function visualTracker(video) {
     reset() { screen = null; patches.clear(); rects.clear(); lastTime = null; },
     update(name, zones, scrolls) {
       if (name !== screen) { screen = name; patches = new Map(); rects = new Map(); lastTime = null; }
+      const moving = zones.map((zone) => ({ zone, viewport: scrollViewport(zone, scrolls) }))
+        .filter((item) => item.viewport);
+      if (!moving.length) return rects;
       const source = video?.();
-      if (!source?.videoWidth || !source?.videoHeight || source.readyState < 2) return rects;
+      if (!source?.videoWidth || !source?.videoHeight || source.readyState < 2) {
+        if (video) for (const { zone } of moving) rects.set(zone.id, null);
+        return rects;
+      }
       if (source.currentTime === lastTime) return rects;
       lastTime = source.currentTime;
       try {
@@ -85,15 +91,13 @@ export default function visualTracker(video) {
         const pixels = new Uint8Array(canvas.width * canvas.height);
         for (let i = 0; i < pixels.length; i++) pixels[i] = (rgba[i * 4] + rgba[i * 4 + 1] + rgba[i * 4 + 2]) / 3;
         const frame = { width: canvas.width, height: canvas.height, pixels };
-        for (const zone of zones) {
-          const viewport = scrollViewport(zone, scrolls);
-          if (!viewport) continue;
+        for (const { zone, viewport } of moving) {
           // The navigation graph has geometry, not visual identity. This first
           // frame establishes a session baseline, never an automation reading.
           if (!patches.has(zone.id)) patches.set(zone.id, makePatch(frame, zone.rect, viewport.rect));
           rects.set(zone.id, locatePatch(patches.get(zone.id), frame, viewport.direction));
         }
-      } catch { for (const id of patches.keys()) rects.set(id, null); }
+      } catch { for (const { zone } of moving) rects.set(zone.id, null); }
       return rects;
     },
   };
