@@ -12,6 +12,7 @@ def load(name):
     module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module); return module
 
 feature, rules, engravings = load('features/mode'), load('features/mode_rules'), load('features/engraving')
+timer_rules = load('features/timer_rules')
 
 class SetupStatus(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
@@ -45,7 +46,7 @@ class SetupStatus(unittest.IsolatedAsyncioTestCase):
                         'soul_weapon_switch': lambda: self.soul}
         self.mines = {'state': lambda: {'enabled': self.mine_active, 'state': 'farming' if self.mine_active else 'off'}, 'ended': False,
                       'start': lambda *a: None, 'stop': lambda: None, 'set_until': lambda *a: None}
-        self.part = feature.mode(self.ports, rules, None, NS(time_or_none=lambda v: v, number_or_none=lambda v, n: v),
+        self.part = feature.mode(self.ports, rules, timer_rules, NS(time_or_none=lambda v: v, number_or_none=lambda v, n: v),
             self.mines, None, NS(fresh=lambda: {'gold': None}), self.loadouts, self.farming)
 
     async def asyncTearDown(self):
@@ -79,7 +80,7 @@ class SetupStatus(unittest.IsolatedAsyncioTestCase):
 
     async def test_free_play_does_not_inherit_a_farm_engraving_blocker(self):
         self.ports.store.saved['mode'] = {'mode': 'free', 'default': 'free', 'configured': True}
-        free = feature.mode(self.ports, rules, None, NS(time_or_none=lambda v: v, number_or_none=lambda v, n: v),
+        free = feature.mode(self.ports, rules, timer_rules, NS(time_or_none=lambda v: v, number_or_none=lambda v, n: v),
             self.mines, None, NS(fresh=lambda: {'gold': None}), self.loadouts, self.farming)
         self.assertIsNone(free['api']['state']()['setup_blocker_t'])
         self.assertNotEqual(free['api']['state']()['tone'], 'error')
@@ -185,3 +186,44 @@ class SetupStatus(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(code, 409)
         self.assertEqual(len(self.farm_calls), 1)
         self.assertFalse(self.tasks[-1].cancelled(), 'a duplicate request cannot cancel the running setup')
+
+    async def test_timer_subtraction_expires_instead_of_making_nondefault_unlimited(self):
+        self.ports.store.saved['mode'] = {'mode': 'agent', 'default': 'mpw18', 'configured': True,
+                                          'until': self.now + 60}
+        part = feature.mode(self.ports, rules, timer_rules, NS(time_or_none=lambda v: v, number_or_none=lambda v, n: v),
+            self.mines, None, NS(fresh=lambda: {'gold': None}), self.loadouts, self.farming)
+        handler = next(handler for method, route, handler in part['routes'] if route == '/mode/timer')
+        async def subtract(): return {'add': -30}
+        answer, code = await handler(NS(json=subtract))
+        self.assertEqual(code, 200)
+        self.assertEqual(answer['until'], self.now)
+        self.assertEqual(rules.due(answer['mode'], answer['until'], {}, self.now), 'timer')
+
+    async def test_default_timer_adjustment_cannot_create_a_deadline(self):
+        handler = next(handler for method, route, handler in self.part['routes'] if route == '/mode/timer')
+        async def extend(): return {'add': 30}
+        answer, code = await handler(NS(json=extend))
+        self.assertEqual(code, 200)
+        self.assertEqual(answer['mode'], answer['default'])
+        self.assertIsNone(answer['until'])
+
+    async def test_nondefault_mode_returns_to_default_after_its_deadline(self):
+        self.ports.store.saved['mode'] = {'mode': 'agent', 'default': 'mpw18', 'configured': True,
+                                          'until': self.now + 1}
+        part = feature.mode(self.ports, rules, timer_rules, NS(time_or_none=lambda v: v, number_or_none=lambda v, n: v),
+            self.mines, None, NS(fresh=lambda: {'gold': None}), self.loadouts, self.farming)
+        await part['startup'][0](None)
+        await self.settle()
+        answer = part['api']['state']()
+        self.assertEqual(answer['mode'], 'mpw18')
+        self.assertIsNone(answer['until'])
+
+    async def test_restored_mine_receives_its_normalised_finite_deadline(self):
+        self.mine_active = True
+        deadlines = []
+        self.mines['set_until'] = deadlines.append
+        self.ports.store.saved['mode'] = {'mode': 'mine', 'default': 'mpw18', 'configured': True, 'until': None}
+        part = feature.mode(self.ports, rules, timer_rules, NS(time_or_none=lambda v: v, number_or_none=lambda v, n: v),
+            self.mines, None, NS(fresh=lambda: {'gold': None}), self.loadouts, self.farming)
+        self.assertEqual(part['api']['state']()['until'], self.now + 1800)
+        self.assertEqual(deadlines, [self.now + 1800])

@@ -12,6 +12,10 @@ const TURN = ['#e0453a', '#3b82f6', '#9b5de5', '#3fb950', '#f2c230', '#f08c2e', 
 const DOTS = { green: '🟢', blue: '🔵', red: '🔴' };
 
 const ENGLISH = {
+  'Réessayer cette configuration': 'Retry this configuration',
+  'Recharger la cible': 'Reload target',
+  'Soul Weapon et gravure vérifiées · huit cartes verrouillées': 'Soul Weapon and engraving verified · eight cards locked',
+  'Configuration vérifiée': 'Configuration verified',
   "Configuration demandée non vérifiée": "Requested configuration unverified",
   "Cible": "Target",
   "Acceptée": "Accepted",
@@ -54,7 +58,7 @@ const ENGLISH = {
 
 };
 
-export default function loadoutFeature(api, { onApplied = () => {}, execution = () => null } = {}) {
+export default function loadoutFeature(api, { onApplied = () => {}, execution = () => null, onExecute = null } = {}) {
   api.addTranslations(ENGLISH);
   const data = { list: null, weapons: {}, asking: new Set(), failed: new Set(), saved: null, disposed: false, writes: 0, readAfterWrite: false, farming: null };
   const edits = { mpw18: {}, mpw4: {} };
@@ -78,6 +82,7 @@ export default function loadoutFeature(api, { onApplied = () => {}, execution = 
       }
     }
     api.refresh();
+    return Boolean(answer?.loadouts);
   };
   loadList();
   loadSaved();
@@ -180,27 +185,29 @@ export default function loadoutFeature(api, { onApplied = () => {}, execution = 
       : api.tr('Cible acceptée · équipement en jeu à vérifier');
   };
 
-  const currentFailure = (mode) => {
+  const currentResult = (mode) => {
     const observed = execution();
     const result = observed?.setup_result;
     const accepted = data.saved?.[mode];
     const age = Date.now() / 1000 - Number(result?.at);
-    if (observed?.mode !== mode || result?.mode !== mode || result?.result !== 'failed'
+    if (observed?.mode !== mode || result?.mode !== mode
         || !accepted?.revision || result.revision !== accepted.revision
         || !Number.isFinite(age) || age < 0 || age > 120
         || !same(result.target, { stage: accepted.stage ?? null, preset: accepted.preset ?? null,
           soul_weapon: accepted.soul_weapon ?? null })) return null;
-    return result.message_t;
+    return result;
   };
 
   const evidence = (mode) => {
     const part = data.saved?.[mode];
     const target = part?.soul_weapon;
     if (!target) return api.tr('Sans Soul Weapon demandée');
-    const failure = currentFailure(mode);
-    if (failure) return api.tr(failure);
+    const result = currentResult(mode);
+    if (result?.result === 'failed' && result.message_t) return api.tr(result.message_t);
     const observed = execution();
     if (observed?.mode === mode && observed.setup_blocker_t) return api.tr(observed.setup_blocker_t);
+    if (result?.result === 'done') return api.tr(part?.automation?.engraving_required === true
+      ? 'Soul Weapon et gravure vérifiées · huit cartes verrouillées' : 'Configuration vérifiée');
     const soul = data.farming?.soul_weapon;
     if (!soul) return api.tr('Cible acceptée · équipement en jeu à vérifier');
     const gate = soul.switch === 'off' ? api.tr('Changement automatique de Soul Weapon désactivé')
@@ -255,7 +262,7 @@ export default function loadoutFeature(api, { onApplied = () => {}, execution = 
     const revision = data.saved?.[mode]?.revision;
     data.writes += 1;
     state[mode].submitted = submitted;
-    state[mode].busy = true; state[mode].error = null; state[mode].uncertain = false; api.refresh();
+    state[mode].busy = true; state[mode].error = null; state[mode].conflict = false; state[mode].uncertain = false; api.refresh();
     try {
       let timedOut = false;
       const result = await withDeadline(api.post('/loadout', { mode, ...submitted,
@@ -269,6 +276,7 @@ export default function loadoutFeature(api, { onApplied = () => {}, execution = 
       if (data.disposed) return;
       if (confirmed?.[mode]) data.saved = confirmed;
       if (result?.status === 409) {
+        state[mode].conflict = true;
         state[mode].error = result.body?.error_t ?? 'Configuration modifiée ailleurs : recharge la cible avant d’appliquer';
       } else if (!confirmed?.[mode] || !same(confirmed[mode], submitted)) {
         state[mode].uncertain = timedOut || !confirmed?.[mode];
@@ -297,12 +305,34 @@ export default function loadoutFeature(api, { onApplied = () => {}, execution = 
         api.adopt?.(`${mode}Variant`, '');
       }
       state[mode].error = null;
+      state[mode].conflict = false;
       api.refresh();
     }
   };
   const retry = () => {
     data.failed.clear();
     loadSaved(); loadList();
+  };
+  const reloadTarget = async (mode) => {
+    if (await loadSaved()) {
+      state[mode].conflict = false;
+      state[mode].error = null;
+      api.refresh();
+    }
+  };
+  const setupRequest = (mode) => {
+    const request = execution()?.setup_request;
+    return onExecute && !execution()?.hold && !state[mode].busy && !state[mode].executing && !invalid(mode)
+      && same(data.saved?.[mode], target(mode)) && request?.mode === mode
+      && Boolean(data.saved?.[mode]?.revision)
+      && request.if_revision === data.saved?.[mode]?.revision ? request : null;
+  };
+  const execute = async (mode) => {
+    const request = setupRequest(mode);
+    if (!request) return;
+    state[mode].executing = true; api.refresh();
+    try { await onExecute(request); }
+    finally { state[mode].executing = false; api.refresh(); }
   };
 
   return {
@@ -326,6 +356,7 @@ export default function loadoutFeature(api, { onApplied = () => {}, execution = 
       { type: 'status', label: 'Cible', value: () => `${api.tr('Acceptée')} : ${accepted(mode)}` },
       { type: 'status', label: 'État', value: () => {
         if (state[mode].busy) return api.tr('Enregistrement de la cible…');
+        if (state[mode].executing) return api.tr('Application demandée…');
         if (state[mode].error) return `${api.tr('Application non confirmée')} : ${api.tr(state[mode].error)}`;
         const problem = invalid(mode);
         if (problem) return api.tr(problem);
@@ -336,7 +367,9 @@ export default function loadoutFeature(api, { onApplied = () => {}, execution = 
         if (data.saved?.[mode]?.automation?.supported === false && data.saved?.[mode]?.soul_weapon) return acceptedState(mode);
         return evidence(mode);
       }, button: () => !data.saved || !data.list || data.failed.size ? { label: 'Réessayer', run: retry }
-        : state[mode].uncertain ? { label: 'Vérifier', run: loadSaved } : null },
+        : state[mode].conflict ? { label: 'Recharger la cible', run: () => reloadTarget(mode) }
+          : state[mode].uncertain ? { label: 'Vérifier', run: loadSaved }
+            : setupRequest(mode) ? { label: 'Réessayer cette configuration', run: () => execute(mode) } : null },
       { type: 'action', label: 'Appliquer la configuration', button: 'Appliquer', run: () => save(mode),
         disabled: () => state[mode].busy || Boolean(invalid(mode)) || same(data.saved?.[mode], target(mode)) },
     ],

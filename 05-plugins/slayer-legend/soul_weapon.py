@@ -290,6 +290,12 @@ def _red(rgb):
     return r > 140 and g < 60 and b < 60
 
 
+def _owned_frame(rgb):
+    """Observed owned/equipped border phases, including their antialiasing."""
+    return any(max(abs(a - b) for a, b in zip(rgb, colour)) <= 2
+               for colour in ((83, 60, 26), (121, 87, 53)))
+
+
 @calibrated
 def rows(shot):
     """The list's whole cells, top to bottom: [{top, bottom, selected}]
@@ -305,7 +311,7 @@ def rows(shot):
                           # Actual native borders: equipped gold and the
                           # brighter unselected owned Relax brown. Border
                           # colour only finds cells, never equipment state.
-                          or (x >= right0 and _pixel(shot, x, y) in ((83, 60, 26), (121, 87, 53)))
+                          or (x >= right0 and _owned_frame(_pixel(shot, x, y)))
                           for x in edges))
     cells, start = [], None
     for i, on in enumerate(inside + [False]):
@@ -321,6 +327,11 @@ def rows(shot):
                 cells.append({"top": first / height, "bottom": (last + 1) / height,
                               "selected": red >= 0.7 * 3 * len(xs)})
             start = None
+    # Selectors count consecutive list entries. A missing interior cell
+    # would silently shift every index after it; refuse the list instead.
+    # Real cells are spaced about 66 px on this lattice (including gaps).
+    if any(b["top"] - a["top"] > 0.08 for a, b in zip(cells, cells[1:])):
+        return []
     return cells
 
 

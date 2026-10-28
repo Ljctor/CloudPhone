@@ -21,8 +21,10 @@ Plugins share one screenshot: context.screenshot(max_age=S) gives the last
 capture when it is younger than S seconds, or joins the capture under way,
 instead of asking the emulator again. The captures each plugin started are
 counted (GET /api/v1/state?details=1, "plugins"). Pixel analysis goes
-through context.analyse(fn, *args), in a worker thread, so that the gateway
-keeps answering while it runs.
+through context.analyse(fn, *args), in two bounded resource workers.
+context.detect(fn, *args) uses one separate bounded detector worker so resource
+readers cannot occupy its executor slots. Python threads still share the GIL.
+Both pools belong to the gateway application and are joined on cleanup.
 
 What the user does: context.last_input() is the last touch, swipe or key
 from any page ({monotonic, wall} seconds, None since the gateway started;
@@ -52,7 +54,6 @@ behind the same origin and page-token checks as the rest of the API.
 
 import asyncio
 import concurrent.futures
-import functools
 import importlib.util
 import json
 import logging
@@ -70,24 +71,102 @@ from .core import actions as action_tokens
 API_VERSION = 1
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
 SCRIPT_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}\.js$")
-# Worker threads for the plugins' pixel analysis, shared by every plugin.
-ANALYSIS = concurrent.futures.ThreadPoolExecutor(max_workers=2, thread_name_prefix="plugin-analysis")
+class AnalysisLane:
+    """An app-owned pool with no executor backlog. Cancellation of an
+    awaiter cannot free a slot while its Python function is still running.
+    Threads isolate scheduling lanes, not Python's GIL; latency is measured."""
+
+    def __init__(self, workers, name):
+        self._pool = concurrent.futures.ThreadPoolExecutor(max_workers=workers, thread_name_prefix=name)
+        self._slots = asyncio.Semaphore(workers)
+        self._closed = False
+        self._running = set()
+        self._waiting = 0
+        self.completed = self.errors = 0
+        self.last_wait_seconds = self.last_run_seconds = None
+
+    async def run(self, fn, *args):
+        began = time.monotonic()
+        self._waiting += 1
+        try:
+            await self._slots.acquire()
+        finally:
+            self._waiting -= 1
+        if self._closed:
+            self._slots.release()
+            raise RuntimeError("plugin analysis is closed")
+        loop = asyncio.get_running_loop()
+        self.last_wait_seconds = time.monotonic() - began
+        started = time.monotonic()
+        try:
+            future = self._pool.submit(fn, *args)
+        except BaseException:
+            self._slots.release()
+            raise
+        wrapped = asyncio.wrap_future(future, loop=loop)
+        self._running.add(wrapped)
+
+        def done(value):
+            self._running.discard(value)
+            self._slots.release()
+            self.last_run_seconds = time.monotonic() - started
+            self.completed += 1
+            if not value.cancelled() and value.exception() is not None:
+                self.errors += 1
+
+        wrapped.add_done_callback(done)
+        return await asyncio.shield(wrapped)
+
+    def stats(self):
+        return {"running": len(self._running), "waiting": self._waiting,
+                "completed": self.completed, "errors": self.errors,
+                "last_wait_seconds": self.last_wait_seconds, "last_run_seconds": self.last_run_seconds}
+
+    async def close(self):
+        self._closed = True
+        if self._running:
+            await asyncio.gather(*tuple(self._running), return_exceptions=True)
+        # All submitted functions have finished; joining threads cannot block
+        # on plugin work and does not leave an executor alive after cleanup.
+        self._pool.shutdown(wait=True, cancel_futures=True)
+
+
+class Analysis:
+    def __init__(self):
+        self.detector = AnalysisLane(1, "plugin-detector")
+        self.resources = AnalysisLane(2, "plugin-analysis")
+
+    async def close(self):
+        await asyncio.gather(self.detector.close(), self.resources.close())
+
+    def stats(self):
+        return {"detector": self.detector.stats(), "resources": self.resources.stats()}
 
 
 class Screenshots:
-    """Android's screen, shared by every plugin. A caller accepting a
-    capture max_age seconds old gets the last one if it is that young, or
-    joins the capture under way if it started that recently; otherwise a
-    new capture starts. A plugin's own touch (adb shell input) makes the
-    earlier captures stale. Counts the captures each plugin started."""
+    """One physical capture at a time, shared by all plugins.
 
-    def __init__(self, capture):
+    max_age=0 never reuses a completed capture, but joins an in-flight
+    capture in the current input generation. Positive max_age also permits
+    a completed capture or flight whose acquisition start is younger than
+    that age. An old/invalidated flight finishes before a replacement starts:
+    callers wait rather than creating an unbounded capture queue. Cancelling
+    a waiter never cancels the shared producer. Timestamps mark acquisition
+    start, conservatively, rather than completion or analysis time.
+    """
+
+    def __init__(self, capture, last_input=None):
         self._capture = capture
+        self._last_input = last_input
+        self._input_mark = None
         self._generation = 0
-        self._last = None      # (start, generation, value)
-        self._flight = None    # (start, generation, task)
+        self._last = None      # (monotonic acquisition start, generation, value)
+        self._flight = None    # (monotonic acquisition start, generation, task)
+        self._closed = False
         self.counts = {}
         self._times = deque(maxlen=4)
+        self.requests = self.cache_hits = self.joins = self.errors = self.completed = 0
+        self.last_latency_seconds = None
 
     def captured_at(self, shot):
         """Acquisition start (Unix seconds), never analysis completion time."""
@@ -96,31 +175,74 @@ class Screenshots:
     def stale(self):
         self._generation += 1
 
+    def _refresh_input(self):
+        value = self._last_input() if self._last_input else None
+        mark = value.get("monotonic") if value else None
+        if mark is not None and mark != self._input_mark:
+            self._input_mark = mark
+            self.stale()
+
     def _young(self, entry, now, max_age):
         return entry is not None and entry[1] == self._generation and now - entry[0] < max_age
 
     async def get(self, plugin_id, max_age=0):
+        self.requests += 1
         loop = asyncio.get_running_loop()
-        now = loop.time()
-        if self._young(self._last, now, max_age):
-            return self._last[2]
-        if self._young(self._flight, now, max_age):
-            return await asyncio.shield(self._flight[2])
-        started = time.time()
-        entry = (now, self._generation, loop.create_task(self._capture()))
-        self._flight = entry
-        self.counts[plugin_id] = self.counts.get(plugin_id, 0) + 1
+        while not self._closed:
+            self._refresh_input()
+            now = loop.time()
+            if self._young(self._last, now, max_age):
+                self.cache_hits += 1
+                return self._last[2]
+            flight = self._flight
+            if flight is not None:
+                usable = flight[1] == self._generation and (max_age == 0 or self._young(flight, now, max_age))
+                self.joins += 1
+                value = await asyncio.shield(flight[2])
+                self._refresh_input()
+                if usable and flight[1] == self._generation:
+                    return value
+                continue
+            started = time.time()
+            entry = (now, self._generation, loop.create_task(self._capture()))
+            self._flight = entry
+            self.counts[plugin_id] = self.counts.get(plugin_id, 0) + 1
 
-        def done(task):
-            if self._flight is entry:
-                self._flight = None
-            if not task.cancelled() and task.exception() is None and task.result():
+            def done(task):
+                if self._flight is entry:
+                    self._flight = None
+                self.last_latency_seconds = loop.time() - entry[0]
+                self.completed += 1
+                if task.cancelled():
+                    return
+                if task.exception() is not None or not task.result():
+                    self.errors += 1
+                    return
                 self._times.append((task.result(), started))
                 if self._last is None or self._last[0] <= entry[0]:
                     self._last = (entry[0], entry[1], task.result())
 
-        entry[2].add_done_callback(done)
-        return await asyncio.shield(entry[2])
+            entry[2].add_done_callback(done)
+            value = await asyncio.shield(entry[2])
+            self._refresh_input()
+            if entry[1] == self._generation:
+                return value
+        raise RuntimeError("plugin capture is closed")
+
+    def stats(self):
+        now = time.monotonic()
+        return {"requests": self.requests, "completed": self.completed, "errors": self.errors,
+                "cache_hits": self.cache_hits, "joins": self.joins, "in_flight": self._flight is not None,
+                "last_latency_seconds": self.last_latency_seconds,
+                "last_age_seconds": now - self._last[0] if self._last else None,
+                "last_valid": self._last is not None and self._last[1] == self._generation}
+
+    async def close(self):
+        self._closed = True
+        if self._flight:
+            task = self._flight[2]
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
 
 
 class PluginContext:
@@ -135,7 +257,10 @@ class PluginContext:
         # belongs to root), or None.
         self.data_dir = data_dir
         self.prefix = f"/api/v1/plugins/{plugin_id}"
-        self._screenshots = screenshots or Screenshots(screenshot)
+        self._screenshots = screenshots or Screenshots(screenshot, activity.last if activity else None)
+        self._analysis = app.get("plugin_analysis")
+        if self._analysis is None:
+            self._analysis = app["plugin_analysis"] = Analysis()
         self._adb = adb
         self._notify = notify
         self._title = title or plugin_id
@@ -168,10 +293,14 @@ class PluginContext:
 
     async def adb(self, *args, timeout=10):
         """Runs `adb -s <emulator> ARGS...`; returns (exit code, stdout)."""
+        changes_screen = args[:2] == ("shell", "input") or (
+            len(args) == 2 and args[0] == "shell" and re.search(r"(?:^|;)\s*input\s", args[1]) is not None)
+        if changes_screen:
+            self._screenshots.stale()
         try:
             return await self._adb(*args, timeout=timeout)
         finally:
-            if args[:2] == ("shell", "input"):
+            if changes_screen:
                 # The screen is about to change: no capture from before.
                 self._screenshots.stale()
 
@@ -180,7 +309,11 @@ class PluginContext:
         loop (pixel loops over a screenshot): the gateway keeps answering
         meanwhile. fn must not touch the event loop nor shared state the
         plugin's handlers change; it returns what it found."""
-        return await asyncio.get_running_loop().run_in_executor(ANALYSIS, functools.partial(fn, *args))
+        return await self._analysis.resources.run(fn, *args)
+
+    async def detect(self, fn, *args):
+        """Screen detection on a bounded lane separate from resource readers."""
+        return await self._analysis.detector.run(fn, *args)
 
     async def notify(self, text, actions=None):
         """Sends text to the user's phone when they turned alerts on (ntfy,
@@ -272,8 +405,15 @@ def load_plugins(app, plugins_dir, screenshot, adb, notify=None, data_dir=None, 
     activity: last() and viewers(), the user's activity (http/activity.py).
     actions: the one-time action tokens the guard accepts (http/session.py)."""
     loaded = []
-    screenshots = Screenshots(screenshot)
+    screenshots = Screenshots(screenshot, activity.last if activity else None)
     app["plugin_screenshots"] = screenshots
+    analysis = app["plugin_analysis"] = Analysis()
+
+    async def cleanup(application):
+        await screenshots.close()
+        await analysis.close()
+
+    app.on_cleanup.append(cleanup)
     if not plugins_dir or not os.path.isdir(plugins_dir):
         return loaded
     for name in sorted(os.listdir(plugins_dir)):
@@ -323,7 +463,9 @@ def plugin_stats(app):
     gateway started."""
     screenshots = app.get("plugin_screenshots")
     counts = screenshots.counts if screenshots else {}
-    return {plugin_id: {"screenshots": counts[plugin_id]} for plugin_id in sorted(counts)}
+    analysis = app.get("plugin_analysis")
+    return {plugin_id: {"screenshots": counts[plugin_id], "capture": screenshots.stats(),
+                        "analysis": analysis.stats() if analysis else {}} for plugin_id in sorted(counts)}
 
 
 def page_handler(path):

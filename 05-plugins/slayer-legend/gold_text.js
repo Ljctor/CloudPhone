@@ -5,7 +5,7 @@
 
 const ORANGE = '#ffa31a';
 // The game font has capitals and digits. These tiny lowercase glyphs are
-// only for the overlay's "défaut" / "default" label below the mode.
+// only for the overlay's lowercase "défaut" / "default" label below the mode.
 const SMALL = {
   a: ['.....', '.###.', '....#', '.####', '#...#', '.####', '.....'],
   d: ['....#', '....#', '.####', '#...#', '#...#', '.####', '.....'],
@@ -29,7 +29,15 @@ export function drawText(canvas, font, lines, cell, { outline = 1 } = {}) {
   const plain = (text) => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const colours = lines.map((line) => (typeof line === 'string' ? ORANGE : line.colour ?? ORANGE));
   const glyphLines = lines.map((line) => [...plain(typeof line === 'string' ? line : line.text)]
-    .map((c) => font.glyphs[c] ?? (c === ',' ? COMMA.slice(-font.height) : SMALL[c])).filter(Boolean));
+    .map((c) => {
+      if (font.glyphs[c]) return font.glyphs[c];
+      if (c === ',') return COMMA.slice(-font.height);
+      const small = SMALL[c];
+      // Keep lowercase labels as tall as the game font, including when the
+      // gateway's native glyphs have thirteen rows instead of seven.
+      return small && Array.from({ length: font.height }, (_, y) =>
+        small[Math.floor(y * small.length / font.height)]);
+    }).filter(Boolean));
   const rows = font.height;
   // A game pixel between glyphs; reserve the complete outline on every
   // edge so the last digit and the comma's descender are never clipped.

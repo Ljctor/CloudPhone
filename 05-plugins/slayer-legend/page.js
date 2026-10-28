@@ -120,7 +120,6 @@ const ENGLISH = {
   'Temps restant': 'Time left',
   'Ajuster (minutes)': 'Adjust (minutes)',
   'plus de parchemin doré': 'no gold scroll',
-  'Sans limite': 'No limit',
   'reste {time}': '{time} left',
   'Mine': 'Mine',
   'Choisis l’étage et la zone': 'Choose the floor and the area',

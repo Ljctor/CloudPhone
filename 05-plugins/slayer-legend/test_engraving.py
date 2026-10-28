@@ -559,7 +559,7 @@ class Routes(unittest.TestCase):
             raise AssertionError("no Android here")
 
         context = SimpleNamespace(
-            app=SimpleNamespace(on_startup=[]), id="slayer-legend", directory=HERE, data_dir=data_dir,
+            app=SimpleNamespace(on_startup=[], on_shutdown=[]), id="slayer-legend", directory=HERE, data_dir=data_dir,
             add_get=lambda path, handler: routes.__setitem__(("GET", path), handler),
             add_post=lambda path, handler: routes.__setitem__(("POST", path), handler),
             screenshot=refuse, adb=refuse, analyse=refuse, notify=refuse,

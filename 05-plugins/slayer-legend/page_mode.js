@@ -3,7 +3,7 @@
 // it when they change, and on load if the gateway has not been told since
 // it started. Its state is asked every 10 s. Options: the "Mode et
 // farming" section. Overlay hook, called by page_gold.js while the
-// overlay applies: overlay(), only the mode and timer (or small "défaut")
+// overlay applies: overlay(), only the mode and timer (or "défaut")
 // on the game, top left; explanations stay in notifications and options. In the
 // colour of the gateway's tone: white when reached, blue during input
 // and the rolling 5 s pause, orange while returning, red when blocked.
@@ -62,7 +62,8 @@ export default function modeFeature(api, { known, watchdog, stage }) {
   // at: when answer came (Date.now()), for the hold's countdown.
   const farm = { answer: null, timer: null, stages: null, chosen: 0, sending: 0, at: 0,
     oldUntil: Number(takeOld(UNTIL)) || null, inputUntil: 0 };
-  const loadouts = loadout(api, { execution: () => farm.answer, onApplied: () => { askMode(); loadStages(); } });
+  const loadouts = loadout(api, { execution: () => farm.answer, onApplied: () => { askMode(); loadStages(); },
+    onExecute: (request) => applySetup(request) });
   const mode = () => api.setting('mode') || 'mpw18';
   // The mode a timed one goes back to, with no timer itself.
   const defaultMode = () => api.setting('defaultMode') || 'mpw18';
@@ -78,7 +79,10 @@ export default function modeFeature(api, { known, watchdog, stage }) {
   }).filter(([, value]) => value !== null));
   const left = () => {
     const seconds = (farm.answer?.until ?? 0) - Date.now() / 1000;
-    if (!farm.answer?.until || seconds <= 0) return api.tr('Sans limite');
+    const current = farm.answer?.mode ?? mode();
+    if (current === defaultMode()) return api.tr('défaut').toLowerCase();
+    if (!Number.isFinite(farm.answer?.until)) return '…';
+    if (seconds <= 0) return clock(0);
     const minutes = Math.ceil(seconds / 60);
     const text = minutes >= 60 ? `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')}` : `${minutes} min`;
     const end = new Date(farm.answer.until * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -188,7 +192,7 @@ export default function modeFeature(api, { known, watchdog, stage }) {
 
   return {
     // The selected mode, under the player's level (top left), and below it
-    // Only the mode and its timer (or small "défaut") on the game.
+    // Only the mode and its timer (or "défaut") on the game.
     overlay: () => {
       const current = farm.answer?.mode ?? mode();
       const seconds = Math.max(0, Math.round((farm.answer?.until ?? 0) - Date.now() / 1000));
@@ -196,7 +200,8 @@ export default function modeFeature(api, { known, watchdog, stage }) {
       const colour = TONES[tone] ?? TONES.setup;
       return [
         { text: api.tr(MODE_NAMES[current] ?? current).toUpperCase(), colour },
-        { text: current === defaultMode() || !farm.answer?.until ? api.tr('défaut').toLowerCase() : clock(seconds),
+        { text: current === defaultMode() ? api.tr('défaut').toLowerCase()
+          : Number.isFinite(farm.answer?.until) ? clock(seconds) : '…',
           colour: tone === 'ok' ? TIMER_COLOUR : colour },
       ];
     },
@@ -268,7 +273,8 @@ export default function modeFeature(api, { known, watchdog, stage }) {
         buttons: [30, 5, 1, -1, -5, -30].map((m) => ({
           label: m > 0 ? `+${m}` : `−${-m}`,
           run: () => moveTimer(m),
-          disabled: () => m < 0 && !farm.answer?.until,
+          disabled: () => (farm.answer?.mode ?? mode()) === defaultMode()
+            || (m < 0 && !Number.isFinite(farm.answer?.until)),
         })),
       },
       {

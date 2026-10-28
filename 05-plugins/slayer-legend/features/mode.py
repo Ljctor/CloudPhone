@@ -11,13 +11,13 @@ GET  /mode         {mode, default, until, stage18, stage4, highest, configured, 
                    "error" (rules.tone)
 POST /mode         {mode, default, until, stage18, stage4, highest, floor, area}: a number
                    absent or null keeps its value; until absent keeps the
-                   timer, null clears it (no time limit)
+                   timer, null preserves or starts a finite timer for a non-default mode
 POST /mode/setup   {mode, if_revision}: explicitly retry the accepted target; 202 queues
                    the existing leased pipeline, never an equipment success
-POST /mode/timer   {add: minutes}: moves the end of the mode (and of the mine)
+POST /mode/timer   {add: minutes}: moves the finite end of a non-default mode
 POST /mode/hold    {action: "free" | "resume"[, hold: id]}: a switch on hold
                    while the user plays: free play instead, or the switch
-                   now (the user's 10 s not waited for); 409 when nothing
+                   now (the user's 5 s not waited for); 409 when nothing
                    is on hold, the same action again changes nothing
 
 Entering mpw18 or mpw4 farming brings the game there in the background
@@ -66,6 +66,7 @@ stage4 here are read from them and written to them.
 import asyncio
 import secrets
 import copy
+import math
 
 
 
@@ -624,12 +625,20 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
 
     async def handle_timer(request):
         """{add: minutes, may be negative}: moves the end of the timed mode
-        (and of the mine); at or before now there is no time limit."""
+        (and of the mine); subtracting its remaining time ends the mode."""
         try:
             add = float((await request.json()).get("add"))
         except (ValueError, TypeError, AttributeError):
             return ports.respond({"error_t": t("Attendu : {expected}", expected="{add: minutes}")}, status=400)
-        status["until"] = timer.moved(status["until"], add, ports.clock.wall())
+        now = ports.clock.wall()
+        if not math.isfinite(add):
+            return ports.respond({"error_t": t("Attendu : {expected}", expected="finite minutes")}, status=400)
+        if status["mode"] == status["default"]:
+            status["until"] = None
+        else:
+            deadline = rules.timer_for(status["mode"], None, False, status["mode"], status["until"], now, status["default"])
+            moved = timer.moved(deadline, add, now)
+            status["until"] = moved if moved is not None else now
         if status["mode"] == "mine":
             mines["set_until"](status["until"])
         ports.store.save()
@@ -713,6 +722,8 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
     status["mode"], status["until"], ended = rules.restored(status["mode"], status["until"],
                                                             mines["state"]()["enabled"], ports.clock.wall(),
                                                             status["default"])
+    if status["mode"] == "mine" and mines["state"]().get("enabled"):
+        mines["set_until"](status["until"])
     stopped = [f"mode {before}"] if ended else []
     if mines["ended"]:
         stopped.append("mine")

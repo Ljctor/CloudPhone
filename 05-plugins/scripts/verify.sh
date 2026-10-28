@@ -8,11 +8,12 @@ python3 "$(dirname "$0")/../slayer-legend/test_screen_model.py" EngravingPreview
 python3 "$(dirname "$0")/../slayer-legend/test_soul_weapon.py" Tag ActualNativeCaptures Readers NativeReaders
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_screen.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_mode_setup_status.py -q
+python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_mode_rules.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_game.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_navigation_debug.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_trace_feature.py -q
 curl -fsS "${base%/}/api/v1/plugins/slayer-legend/game" | python3 -c '
-import json, re, sys
+import json, math, re, sys
 state = json.load(sys.stdin)
 expected = {"diamond", "gold", "emerald", "cubes", "crystals", "dice",
             "soul_green", "soul_blue", "soul_red", "soul_white",
@@ -32,6 +33,48 @@ if scan is not None:
     if scan["screen"] == "battle":
         assert "cubes" in scan["expected"]
         assert "currencies" in scan["expected"]
+# Observation may be idle, disabled, away from the game, or newly started.
+# Validate bounded work and truthful optional measurements without demanding
+# a capture, a recent fact, zero historical failures, or a running game.
+def count(value):
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+def duration(value):
+    return value is None or (isinstance(value, (int, float)) and not isinstance(value, bool)
+                             and math.isfinite(value) and value >= 0)
+
+observation = state["observation"]
+for field in ("detected", "discarded", "errors", "archive_errors", "reader_running",
+              "reader_waiting", "reader_queued", "reader_workers"):
+    assert count(observation[field]), field
+assert observation["detected"] == state["scans"]
+assert observation["reader_concurrency"] == 2
+assert observation["reader_running"] <= observation["reader_concurrency"]
+assert observation["detection_queued"] in (0, 1)
+assert observation["archive_queued"] in (0, 1)
+for field in ("detection_seconds", "archive_seconds", "age_seconds"):
+    assert duration(observation[field]), field
+assert (observation["age_seconds"] is None) == (scan is None)
+metrics = observation["readers"]
+assert isinstance(metrics, dict)
+for reader, metric in metrics.items():
+    assert isinstance(reader, str)
+    for field in ("runs", "errors", "discarded", "running", "queued"):
+        assert count(metric.get(field, 0)), (reader, field)
+    for field in ("seconds", "queue_seconds", "age_seconds"):
+        assert duration(metric.get(field)), (reader, field)
+    if "at" in metric:
+        assert duration(metric["at"]) and metric["at"] > 0
+assert sum(metric.get("running", 0) for metric in metrics.values()) == observation["reader_running"]
+assert sum(metric.get("queued", 0) for metric in metrics.values()) == observation["reader_waiting"]
+producer = observation["producer"]
+assert count(producer["captures"])
+assert isinstance(producer["foreground"], bool)
+assert producer["interval_seconds"] is None or producer["interval_seconds"] in (0.5, 1.5, 15)
+assert duration(producer.get("capture_seconds"))
+if producer["captures"]:
+    assert duration(producer["at"]) and producer["at"] > 0
+print("Bounded server observation telemetry: OK")
 assert {row["field"] for row in rows} == expected
 cube = next(row for row in rows if row["field"] == "cubes")
 assert cube["pending"] is False
@@ -271,11 +314,18 @@ curl -fsS "${base%/}/plugins/slayer-legend/page_engraving.js" | python3 -c '
 import sys
 script = sys.stdin.read()
 assert "Appliquer" in script and "Modifications non appliquées" in script
+assert "Réessayer cette configuration" in script and "Recharger la cible" in script
+assert "result?.result === '\''done'\''" in script and "currentResult" in script
 print("Explicit complete loadout application: OK")
 '
 curl -fsS "${base%/}/api/v1/plugins/slayer-legend/mode" | python3 -c '
 import json, sys
 state = json.load(sys.stdin)
+import math
+assert (state["until"] is None) == (state["mode"] == state["default"])
+if state["until"] is not None:
+    assert isinstance(state["until"], (int, float)) and not isinstance(state["until"], bool)
+    assert math.isfinite(state["until"])
 assert {"setup_blocker_t", "setup_result", "setup_request"} <= state.keys()
 request = state["setup_request"]
 assert request is None or (request["mode"] == state["mode"]

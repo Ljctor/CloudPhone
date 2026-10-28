@@ -116,12 +116,24 @@ class Timer(unittest.TestCase):
         self.assertEqual(rules.timer_for("free", asked[1], asked[3], "mpw18", None, self.NOW),
                          self.NOW + rules.TIMED_MINUTES * 60)
 
-    def test_a_null_until_clears_it(self):
+    def test_a_null_until_preserves_or_starts_a_finite_timer(self):
         asked, error = rules.request({"mode": "mine", "floor": 12, "area": 3, "until": None}, {})
         self.assertIsNone(error)
         self.assertTrue(asked[3])
-        self.assertIsNone(rules.timer_for("mine", asked[1], asked[3], "mine", self.NOW + 600, self.NOW))
-        self.assertIsNone(rules.timer_for("mine", asked[1], asked[3], "mpw18", None, self.NOW))
+        self.assertEqual(rules.timer_for("mine", asked[1], asked[3], "mine", self.NOW + 600, self.NOW), self.NOW + 600)
+        self.assertEqual(rules.timer_for("mine", asked[1], asked[3], "mpw18", None, self.NOW), self.NOW + 1800)
+
+    def test_every_nondefault_mode_recovers_a_missing_or_invalid_deadline(self):
+        for mode in rules.MODES:
+            if mode == rules.DEFAULT:
+                continue
+            for value in (None, float('nan'), float('inf')):
+                self.assertEqual(rules.timer_for(mode, value, True, mode, value, self.NOW), self.NOW + 1800)
+                restored = rules.restored(mode, value, True, self.NOW)
+                self.assertEqual(restored, (mode, self.NOW + 1800, False))
+                self.assertEqual(rules.restored(mode, self.NOW - 1, True, self.NOW), (rules.DEFAULT, None, True))
+        for value in (float('nan'), float('inf'), float('-inf')):
+            self.assertIsNotNone(rules.request({'mode': 'agent', 'until': value})[1])
 
     def test_a_given_until_and_the_default_mode(self):
         self.assertEqual(rules.timer_for("mpw4", self.NOW + 60, True, "mpw4", self.NOW + 600, self.NOW), self.NOW + 60)

@@ -423,8 +423,23 @@ plugin, with the plugin's and its sections' optional icons.
 `context` offers `add_get`/`add_post`, `screenshot(max_age=0)` (one
 screenshot shared by every plugin: a capture younger than `max_age`
 seconds, or one under way, is given instead of a new one; a plugin's own
-`adb shell input` makes earlier ones stale), `analyse(fn, *args)` (runs
-`fn` in a worker thread: pixel loops there leave the gateway answering),
+`adb shell input` or reported browser input makes earlier ones stale). With `max_age=0`, a completed
+capture is never reused, but callers join the current capture under way.
+Acquisitions are serial: an old or input-invalidated capture finishes before
+its replacement starts. `screenshot_time(shot)` reports acquisition start in
+Unix seconds, conservatively, rather than completion. `analyse(fn, *args)`
+runs resource work in two bounded workers; `detect(fn, *args)` uses one
+separate bounded detector worker. Cancelling a caller keeps its worker slot
+occupied until the function exits. These threads share Python's GIL; separation
+prevents executor queue contention and does not promise CPU parallelism.
+`GET /api/v1/state?details=1` includes shared `capture` counters (requests,
+completed, errors, cache hits, joins, in-flight state, last acquisition latency,
+age and validity) and `analysis` lane counters (running, waiting, completed,
+errors and last wait/run durations) under each plugin. Pools are joined and
+the capture producer cancelled during application cleanup. The plugin ports
+track background and reader tasks, cancelling and draining them on application
+shutdown before those pools close.
+The context also offers
 `adb(...)`, `json()`,
 `notify(text)`, which sends a phone alert when the user turned them on
 (below), and `data_dir`: a directory the plugin may write to,

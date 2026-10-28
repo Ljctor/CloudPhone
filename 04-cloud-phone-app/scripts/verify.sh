@@ -49,12 +49,34 @@ gateway_command_lifecycle() {
 import asyncio
 from unittest.mock import patch
 from videobridge_gateway.adapters import adb
-from videobridge_gateway.plugins import PluginContext, Screenshots
+from videobridge_gateway.plugins import Analysis, PluginContext, Screenshots
 
 assert callable(PluginContext.screenshot_time)
 assert callable(Screenshots.captured_at)
+assert callable(PluginContext.detect)
+assert callable(Analysis.close)
+assert callable(Screenshots.stats)
 
 async def check():
+    capture_started, capture_finish = asyncio.Event(), asyncio.Event()
+    async def capture():
+        capture_started.set()
+        await capture_finish.wait()
+        return (1, 1, b"rgb")
+    screenshots = Screenshots(capture)
+    one = asyncio.create_task(screenshots.get("verify"))
+    await capture_started.wait()
+    two = asyncio.create_task(screenshots.get("verify"))
+    await asyncio.sleep(0)
+    capture_finish.set()
+    assert await one is await two
+    assert screenshots.counts == {"verify": 1}
+    assert screenshots.stats()["joins"] == 1
+    await screenshots.close()
+    analysis = Analysis()
+    assert await analysis.detector.run(lambda: "detector") == "detector"
+    assert await analysis.resources.run(lambda: "resource") == "resource"
+    await analysis.close()
     started, finish = asyncio.Event(), asyncio.Event()
     class Process:
         returncode = None

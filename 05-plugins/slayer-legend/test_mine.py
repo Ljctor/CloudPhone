@@ -143,7 +143,7 @@ class Game:
             return True
 
         return SimpleNamespace(
-            app=SimpleNamespace(on_startup=[]), id="slayer-legend", directory=HERE, data_dir=None, routes=routes,
+            app=SimpleNamespace(on_startup=[], on_shutdown=[]), id="slayer-legend", directory=HERE, data_dir=None, routes=routes,
             add_get=lambda path, handler: routes.__setitem__(("GET", path), handler),
             add_post=lambda path, handler: routes.__setitem__(("POST", path), handler),
             add_delete=lambda path, handler: routes.__setitem__(("DELETE", path), handler),

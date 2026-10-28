@@ -11,10 +11,11 @@ GET /game   {screens: [{screen, fields: [{field, label, shown, pending,
             value, seen, verified, source}], example, examples, details}],
             playing, scans}
 
-While the user plays (an input in the last minute with the game in
-front) a capture is scanned every rules.PLAYING_EVERY seconds, so that
-what the user changes in the game (a stage, a weapon, pieces moved) is
-the new state; each change made while no feature of the plugin holds the
+While enabled with the game in front, one server task captures continuously,
+even with the browser closed: every 0.5 seconds after recent input, otherwise
+every 1.5 seconds. Detection publishes before independent bounded readers;
+each reader keeps its own poll interval. Thus what the user changes in the
+game (a stage, a weapon, pieces moved) becomes the new state; each change made while no feature of the plugin holds the
 lease is logged « User changed <field> from A to B ». The game's process
 is looked at every few seconds: gone, or another process (a relaunch,
 Android restarted), every fact turns unverified and the features' own
@@ -30,8 +31,16 @@ source); value(field); relaunched(why).
 
 import asyncio
 import math
+import time
 
 # The holders that are the plugin's own (a change made under them is not the user's).
+# Server-side observer cadence: active gestures need prompt recognition;
+# stable foreground remains observed with no connected browser. Process/focus
+# probes stay slower than captures to avoid an adb probe for every frame.
+OBSERVE_ACTIVE = 0.5
+OBSERVE_STABLE = 1.5
+OBSERVE_PROBE = 5.0
+
 PLUGIN = ("launch", "mine", "watchdog", "mode", "stage_change", "resource_refresh")
 
 
@@ -179,8 +188,18 @@ def game(ports, screens, rules, readers, archive=None, examples=None):
     clock = ports.clock
     state = {"facts": rules.fresh(ports.store.saved.get("game"), clock.wall()), "saved_at": clock.monotonic(),
              "last_runs": {}, "scans": 0, "last": None, "lock": None, "pending": None, "task": None,
-             "playing": False, "epoch": 0, "relaunched_at": None, "input": None}
+             "playing": False, "watcher": None, "epoch": 0, "relaunched_at": None, "input": None}
     observations = []
+    frames = []  # Bounded identity cache; active jobs retain their own frame.
+    lanes = {}   # At most one running and one latest pending job per reader.
+    runtime = {"detected": 0, "discarded": 0, "errors": 0, "readers": {},
+               "detection_seconds": None, "archive_seconds": None, "archive_errors": 0,
+               "producer": {"captures": 0, "foreground": False, "interval_seconds": None}}
+    applied = {}  # Includes unread observations, whose facts keep their historical seen time.
+    archive_slot = {"pending": None, "task": None}
+    detector_lock = None
+    explicit_lock = None
+    reader_limit = None
 
     def observed(shot):
         """Capture acquisition time, never OCR completion time. Older ports
@@ -232,74 +251,212 @@ def game(ports, screens, rules, readers, archive=None, examples=None):
             return None
         return last
 
+    def valid(frame):
+        return (frame["epoch"] == state["epoch"] and
+                (state["relaunched_at"] is None or frame["at"] >= state["relaunched_at"]))
+
+    def identify(shot):
+        look = screens.look(shot)
+        return {**look, "classified": screens.classify(shot) if look["screen"] == "unknown" else None}
+
+    async def archive_later():
+        try:
+            while archive_slot["pending"] is not None:
+                frame, archive_slot["pending"] = archive_slot["pending"], None
+                began = time.perf_counter()
+                try:
+                    await ports.analyse(archive, frame["look"], frame["shot"], frame["at"])
+                except Exception as exc:
+                    runtime["archive_errors"] += 1
+                    ports.log("warning", f"Game archive failed: {exc!r}")
+                finally:
+                    runtime["archive_seconds"] = time.perf_counter() - began
+        finally:
+            archive_slot["task"] = None
+
+    async def detect(shot):
+        nonlocal detector_lock
+        at, epoch = observed(shot)
+        for frame in frames:
+            if frame["pixels"] is shot[2]:
+                return frame if valid(frame) else None
+        if detector_lock is None:
+            detector_lock = asyncio.Lock()
+        async with detector_lock:
+            for frame in frames:
+                if frame["pixels"] is shot[2]:
+                    return frame if valid(frame) else None
+            frame = {"shot": shot, "pixels": shot[2], "size": [shot[0], shot[1]], "at": at,
+                     "epoch": epoch, "readings": {}, "ran": set(), "jobs": {}}
+            if not valid(frame):
+                runtime["discarded"] += 1
+                return None
+            began = time.perf_counter()
+            look = await getattr(ports, "detect", ports.analyse)(identify, shot)
+            runtime["detection_seconds"] = time.perf_counter() - began
+            if not valid(frame):
+                runtime["discarded"] += 1
+                return None
+            previous = state["last"]
+            changed = previous is not None and (
+                rules.seen_screen(previous["look"], previous["look"].get("classified")),
+                previous["look"].get("quest_tab")) != (
+                rules.seen_screen(look, look.get("classified")), look.get("quest_tab"))
+            user = ports.last_input() if hasattr(ports, "last_input") else None
+            mark = user.get("monotonic") if user else None
+            changed_input = (mark is not None and (state["input"] is None or mark > state["input"])
+                             and isinstance(user.get("wall"), (int, float)) and user["wall"] <= at)
+            if changed_input:
+                state["input"] = mark
+            frame.update(look=look, shows=set(rules.readers_for(look, look["classified"])),
+                         changed=changed or changed_input)
+            frames.insert(0, frame)
+            del frames[8:]
+            # Detection is visible immediately, independently of every resource reader.
+            if previous is None or at >= previous["at"]:
+                state["last"] = frame
+            else:
+                runtime["discarded"] += 1
+            state["scans"] += 1
+            runtime["detected"] += 1
+            if archive:
+                archive_slot["pending"] = frame
+                if archive_slot["task"] is None:
+                    archive_slot["task"] = ports.spawn(archive_later())
+            return frame
+
+    async def read(frame, reader):
+        nonlocal reader_limit
+        if reader_limit is None:
+            reader_limit = asyncio.Semaphore(2)
+        queued = time.perf_counter()
+        metric = runtime["readers"].setdefault(reader, {"runs": 0, "errors": 0, "discarded": 0})
+        metric["queued"] = metric.get("queued", 0) + 1
+        try:
+            await reader_limit.acquire()
+        except BaseException:
+            metric["queued"] -= 1
+            raise
+        metric["queued"] -= 1
+        try:
+            if not valid(frame):
+                metric["discarded"] += 1
+                return {}
+            metric["queue_seconds"] = time.perf_counter() - queued
+            metric["running"] = metric.get("running", 0) + 1
+            began = time.perf_counter()
+            try:
+                values = await ports.analyse(readers[reader], frame["shot"],
+                                            *rules.seen_screen(frame["look"], frame["look"]["classified"]))
+                if not valid(frame):
+                    metric["discarded"] += 1
+                    return {}
+                values = {field: value for field, value in values.items()
+                          if value is not None or frame["readings"].get(field) is None}
+                frame["readings"].update(values)
+                frame["ran"].add(reader)
+                state["last_runs"][reader] = max(state["last_runs"].get(reader, 0), frame["started"])
+                # A newer unread result is evidence too: old OCR cannot reverify it.
+                accepted = {field: value for field, value in values.items()
+                            if frame["at"] >= applied.get(field, float("-inf"))}
+                metric["discarded"] += len(values) - len(accepted)
+                for field in accepted:
+                    applied[field] = frame["at"]
+                note(accepted, seen=frame["at"])
+                metric["at"] = frame["at"]
+                metric["runs"] += 1
+                return values
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                metric["errors"] += 1
+                metric["error"] = str(exc)
+                runtime["errors"] += 1
+                ports.log("warning", f"Game reader {reader} failed: {exc!r}")
+                return {}
+            finally:
+                metric["running"] -= 1
+                metric["seconds"] = time.perf_counter() - began
+        finally:
+            reader_limit.release()
+
+    def due(frame, force=()):
+        frame.setdefault("started", clock.monotonic())
+        return [reader for reader in readers if reader in frame["shows"] and reader not in frame["ran"]
+                and (frame["changed"] or rules.due(reader, state["last_runs"].get(reader),
+                                                   frame["started"], force))]
+
+    def reader_task(frame, reader):
+        task = asyncio.create_task(read(frame, reader))
+        return getattr(ports, "track_task", lambda task: task)(task)
+
+    async def reader_later(reader, lane):
+        try:
+            while lane["pending"] is not None:
+                frame, lane["pending"] = lane["pending"], None
+                task = reader_task(frame, reader)
+                frame["jobs"][reader] = task
+                await task
+        finally:
+            lane["task"] = None
+
+    def enqueue(frame):
+        for reader in due(frame):
+            lane = lanes.setdefault(reader, {"pending": None, "task": None})
+            if reader in frame["jobs"]:
+                continue
+            if lane["pending"] is not None and lane["pending"] is not frame:
+                runtime["discarded"] += 1
+            lane["pending"] = frame
+            if lane["task"] is None:
+                lane["task"] = ports.spawn(reader_later(reader, lane))
+
     async def scan(shot, force=()):
-        """The readings of shot, scanned once (the readers in force run on
-        it even when their every seconds are not over), given again after."""
+        """Wait for this frame's due/forced readers. Background detection never waits for OCR."""
+        nonlocal explicit_lock
         if not shot:
             return {}
-        captured_at, epoch = observed(shot)
-        if epoch != state["epoch"] or (state["relaunched_at"] is not None and captured_at < state["relaunched_at"]):
-            return {}
-        done = scanned(shot, force)
-        if done:
-            return done["readings"]
-        if state["lock"] is None:
-            state["lock"] = asyncio.Lock()
-        async with state["lock"]:
-            if epoch != state["epoch"]:
+        if explicit_lock is None:
+            explicit_lock = asyncio.Lock()
+        async with explicit_lock:
+            frame = await detect(shot)
+            if frame is None:
                 return {}
-            done = scanned(shot, force)
-            if done:
-                return done["readings"]
-            last = state["last"] if state["last"] and state["last"]["pixels"] is shot[2] else None
-            now = clock.monotonic()
-            user = ports.last_input() if hasattr(ports, "last_input") else None
-            # Only a capture taken after the input can refresh its readings.
-            # Never relabel an older cached frame as the result of that input.
-            user_mark = user.get("monotonic") if user else None
-            changed_input = (user_mark is not None and (state["input"] is None or user_mark > state["input"])
-                             and isinstance(user.get("wall"), (int, float)) and user["wall"] <= captured_at)
-            requested = tuple(readers) if changed_input else tuple(force)
-            previous_look = state["last"]["look"] if state["last"] else None
-            look, readings, ran = await ports.analyse(read_all, screens, rules, readers, shot,
-                                                      dict(state["last_runs"]), now, None, requested,
-                                                      tuple(last["ran"]) if last else (), previous_look)
-            if epoch != state["epoch"]:
-                return {}  # A relaunch during OCR invalidates its old pixels.
-            if archive:
-                await ports.analyse(archive, look, shot, captured_at)
-            if epoch != state["epoch"]:
-                return {}
-            if changed_input:
-                state["input"] = user_mark
-            for reader in ran:
-                state["last_runs"][reader] = now
-            state["scans"] += 1
-            if last:
-                readings = {**last["readings"], **{k: v for k, v in readings.items()
-                                                   if v is not None or k not in last["readings"]}}
-                ran = list(last["ran"]) + ran
-            state["last"] = {"pixels": shot[2], "size": [shot[0], shot[1]], "at": captured_at,
-                             "readings": readings, "ran": set(ran), "look": look,
-                             "shows": set(rules.readers_for(look, look["classified"]))}
-            note(readings, seen=captured_at)
-            return readings
+            tasks = []
+            for reader in due(frame, force):
+                lane = lanes.get(reader)
+                if lane and lane["pending"] is frame:
+                    lane["pending"] = None
+                task = frame["jobs"].get(reader)
+                if task is None or task.done():
+                    task = reader_task(frame, reader)
+                    frame["jobs"][reader] = task
+                tasks.append(task)
+            if tasks:
+                await asyncio.gather(*(asyncio.shield(task) for task in tasks))
+            return dict(frame["readings"]) if valid(frame) else {}
 
     async def scan_later():
-        while state["pending"] is not None:
-            shot, state["pending"] = state["pending"], None
-            try:
-                await scan(shot)
-            except Exception as e:
-                ports.log("warning", f"Game scan failed: {e!r}")
-        state["task"] = None
+        try:
+            while state["pending"] is not None:
+                shot, state["pending"] = state["pending"], None
+                try:
+                    frame = await detect(shot)
+                    if frame is not None:
+                        enqueue(frame)
+                except Exception as exc:
+                    runtime["errors"] += 1
+                    ports.log("warning", f"Game detection failed: {exc!r}")
+        finally:
+            state["task"] = None
 
     def saw(shot):
-        """ports.capture's hook: every capture scanned once, in the
-        background (the latest one when several came during a scan)."""
+        """Capture hook: one detection in flight plus one latest pending frame."""
         if not shot or scanned(shot):
             return
         observed(shot)
+        if state["pending"] is not None and state["pending"][2] is not shot[2]:
+            runtime["discarded"] += 1
         state["pending"] = shot
         if state["task"] is None:
             state["task"] = ports.spawn(scan_later())
@@ -360,33 +517,72 @@ def game(ports, screens, rules, readers, archive=None, examples=None):
         state["relaunched_at"] = clock.wall()
         state["last"] = None
         state["last_runs"] = {}
+        applied.clear()
+        state["pending"] = None
+        for lane in lanes.values():
+            lane["pending"] = None
         state["facts"] = rules.unverified(state["facts"])
         ports.log("normal", f"Game {why}: every game value unverified until read again")
         ports.store.save()
 
     async def watch():
-        """The user's play scanned every PLAYING_EVERY seconds; the game's
-        process looked at (ports.running notices a relaunch)."""
+        """One serial server capture producer, independent of browser activity."""
+        foreground = False
+        probe_at = float("-inf")
         while True:
-            last = ports.last_input() if hasattr(ports, "last_input") else None
-            playing = bool(last) and clock.monotonic() - last["monotonic"] < rules.PLAYING
-            state["playing"] = playing
-            await clock.sleep(rules.PLAYING_EVERY if playing else rules.PROCESS_EVERY)
+            interval = rules.PROCESS_EVERY
             try:
-                running = await ports.running()
-                if playing and running and await ports.focused():
-                    await fresh(rules.PLAYING_EVERY)
+                enabled = getattr(ports, "enabled", lambda: True)()
+                if not enabled:
+                    foreground = False
+                    probe_at = float("-inf")
+                elif clock.monotonic() >= probe_at:
+                    running = await ports.running()
+                    foreground = bool(running and await ports.focused())
+                    probe_at = clock.monotonic() + (OBSERVE_PROBE if foreground else rules.PROCESS_EVERY)
+                last = ports.last_input() if hasattr(ports, "last_input") else None
+                state["playing"] = bool(last and foreground and
+                                        clock.monotonic() - last["monotonic"] < rules.PLAYING)
+                runtime["producer"]["foreground"] = foreground
+                if enabled and foreground:
+                    interval = OBSERVE_ACTIVE if state["playing"] else OBSERVE_STABLE
+                    began = time.perf_counter()
+                    shot = await ports.capture(max_age=0)
+                    runtime["producer"]["capture_seconds"] = time.perf_counter() - began
+                    if shot:
+                        runtime["producer"]["captures"] += 1
+                        runtime["producer"]["at"] = observed(shot)[0]
+                        # New ports publish through the hook. Older ports need the same
+                        # coalescing hook here; no explicit scan or reader await.
+                        if not hasattr(ports, "on_capture"):
+                            saw(shot)
             except asyncio.CancelledError:
                 raise
-            except Exception as e:
-                ports.log("warning", f"Game scan failed: {e!r}")
+            except Exception as exc:
+                runtime["errors"] += 1
+                ports.log("warning", f"Game observer failed: {exc!r}")
+            runtime["producer"]["interval_seconds"] = interval
+            await clock.sleep(interval)
 
     async def start(app):
-        ports.spawn(watch())
+        if state["watcher"] is None or state["watcher"].done():
+            state["watcher"] = ports.spawn(watch())
 
     async def handle_game(request):
         answer = {**rules.answer(state["facts"]), "playing": state["playing"], "scans": state["scans"]}
         last = state["last"]
+        answer["observation"] = {**runtime,
+            "readers": {reader: {**metric, "age_seconds": max(0, clock.wall() - metric["at"])
+                                  if "at" in metric else None}
+                        for reader, metric in runtime["readers"].items()},
+            "reader_concurrency": 2,
+            "reader_running": sum(metric.get("running", 0) for metric in runtime["readers"].values()),
+            "reader_waiting": sum(metric.get("queued", 0) for metric in runtime["readers"].values()),
+            "detection_queued": int(state["pending"] is not None),
+            "reader_queued": sum(lane["pending"] is not None for lane in lanes.values()),
+            "reader_workers": sum(lane["task"] is not None for lane in lanes.values()),
+            "archive_queued": int(archive_slot["pending"] is not None),
+            "age_seconds": max(0, clock.wall() - last["at"]) if last else None}
         answer["scan"] = ({"size": last["size"], "at": last["at"],
                           "screen": last["look"]["screen"],
                           "overlays": sorted(last["look"].get("overlays") or ()),

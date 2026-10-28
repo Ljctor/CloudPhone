@@ -529,3 +529,142 @@ class Feature(unittest.TestCase):
             self.assertEqual(answer["scans"], 1)
             self.assertEqual(answer["scan"]["size"], [shot[0], shot[1]])
             self.assertIn("battle_settings", answer["scan"]["ran"])
+
+
+class ObservationPipeline(unittest.IsolatedAsyncioTestCase):
+    def setup_pipeline(self, directory, reader, archive=None):
+        ports, _ = fake_ports(directory)
+        ports.spawn = asyncio.create_task
+        ports.capture_hooks = []
+        ports.on_capture = ports.capture_hooks.append
+        model = types.SimpleNamespace(look=lambda shot: {"screen": "battle", "overlays": ["battle_settings"]},
+                                      classify=lambda shot: "battle")
+        readers = {name: (lambda *args: {}) for name in rules.READERS}
+        readers["battle_settings"] = reader
+        built = game.game(ports, model, rules, readers, archive=archive)
+        return ports, built
+
+    async def turns(self, count=20):
+        for _ in range(count):
+            await asyncio.sleep(0)
+
+    async def test_detection_publishes_while_ocr_and_archive_are_blocked(self):
+        with tempfile.TemporaryDirectory() as directory:
+            gate = asyncio.Event()
+            def read(shot, *args):
+                return {"preset": "III"}
+            def archive(*args):
+                pass
+            ports, built = self.setup_pipeline(directory, read, archive)
+            async def analyse(fn, *args):
+                await gate.wait()
+                return fn(*args)
+            async def detect(fn, *args):
+                return fn(*args)
+            ports.analyse, ports.detect = analyse, detect
+            shot = (1, 1, b'one')
+            demand = asyncio.create_task(built['api']['scan'](shot, ('battle_settings',)))
+            await self.turns()
+            response = await built['routes'][0][2](None)
+            self.assertEqual(response['scan']['screen'], 'battle')
+            self.assertEqual(response['scan']['ran'], [])
+            self.assertFalse(demand.done(), 'fresh demand must await its reader')
+            gate.set()
+            self.assertEqual((await demand)['preset'], 'III')
+            await self.turns()
+
+    async def test_late_old_read_cannot_reverify_newer_unread(self):
+        with tempfile.TemporaryDirectory() as directory:
+            old_gate = asyncio.Event()
+            def read(shot, *args):
+                return {'preset': 'II' if shot[2] == b'old' else None}
+            ports, built = self.setup_pipeline(directory, read)
+            async def analyse(fn, *args):
+                if fn is read and args[0][2] == b'old':
+                    await old_gate.wait()
+                return fn(*args)
+            ports.analyse = analyse
+            built['api']['note']({'preset': 'IV'})
+            ports.clock.now += 1
+            old = (1, 1, b'old')
+            new = (1, 1, b'new')
+            # Exercise the background hook; explicit scans intentionally serialize demands.
+            hooks = ports.capture_hooks
+            hooks[0](old)
+            await self.turns()
+            ports.clock.now += 1
+            await built['api']['scan'](new, ('battle_settings',))
+            self.assertFalse(built['api']['facts']()['preset']['verified'])
+            old_gate.set()
+            await self.turns()
+            fact = built['api']['facts']()['preset']
+            self.assertEqual((fact['value'], fact['verified']), ('IV', False))
+
+    async def test_capture_burst_keeps_only_latest_pending_detection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            gate = asyncio.Event()
+            ports, built = self.setup_pipeline(directory, lambda *args: {'preset': 'III'})
+            hooks = ports.capture_hooks
+            async def detector(fn, *args):
+                await gate.wait()
+                return fn(*args)
+            ports.detect = detector
+            hooks[0]((1, 1, b'first'))
+            await self.turns()
+            for n in range(30):
+                ports.clock.now += .1
+                hooks[0]((1, 1, bytes([n])))
+            response = await built['routes'][0][2](None)
+            self.assertEqual(response['observation']['detection_queued'], 1)
+            self.assertGreaterEqual(response['observation']['discarded'], 29)
+            gate.set()
+            await self.turns(50)
+            response = await built['routes'][0][2](None)
+            self.assertEqual(response['scans'], 2)
+            self.assertEqual(response['observation']['detection_queued'], 0)
+
+    async def test_server_observes_without_recent_input_and_start_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ports, built = self.setup_pipeline(directory, lambda *args: {})
+            sleep_gate, capture_gate = asyncio.Event(), asyncio.Event()
+            captures, sleeps = [], []
+            async def capture(max_age=0):
+                captures.append(max_age)
+                await capture_gate.wait()
+                return (1, 1, b'continuous')
+            async def yes():
+                return True
+            async def sleep(seconds):
+                sleeps.append(seconds)
+                await sleep_gate.wait()
+            ports.capture = capture
+            ports.running = ports.focused = yes
+            ports.last_input = lambda: None
+            ports.clock.sleep = sleep
+            await built['startup'][0](None)
+            await built['startup'][0](None)
+            await self.turns()
+            self.assertEqual(captures, [0], 'a second startup must not create another producer')
+            capture_gate.set()
+            await self.turns()
+            self.assertEqual(sleeps, [game.OBSERVE_STABLE])
+            response = await built['routes'][0][2](None)
+            self.assertEqual(response['observation']['producer']['captures'], 1)
+            self.assertTrue(response['observation']['producer']['foreground'])
+
+    async def test_disabled_plugin_does_not_capture_or_probe(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ports, built = self.setup_pipeline(directory, lambda *args: {})
+            sleep_gate = asyncio.Event()
+            sleeps = []
+            ports.enabled = lambda: False
+            async def unexpected(*args, **kwargs):
+                self.fail('disabled observer must not capture or probe')
+            async def sleep(seconds):
+                sleeps.append(seconds)
+                await sleep_gate.wait()
+            ports.capture = ports.running = ports.focused = unexpected
+            ports.clock.sleep = sleep
+            await built['startup'][0](None)
+            await self.turns()
+            self.assertEqual(sleeps, [rules.PROCESS_EVERY])

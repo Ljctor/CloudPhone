@@ -245,4 +245,3 @@ ils ne doivent pas redevenir des actions de la TODO Cloud Phone.
 - Un test de règles avec gestes simulés n'est pas la fermeture réelle des huit cadenas.
 - Un déploiement réussi n'est pas la preuve qu'un onglet ouvert a rechargé ses modules.
 - Des milliers de tests ou de captures ne remplacent pas les critères de chaque demande.
-

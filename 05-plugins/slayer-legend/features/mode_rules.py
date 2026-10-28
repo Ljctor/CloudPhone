@@ -11,6 +11,9 @@ the log are English.
 """
 
 
+import math
+
+
 def t(template, **params):
     """A status text (features/texts.py)."""
     return {"template": template, "params": params}
@@ -113,7 +116,8 @@ def request(body, stored=None, default=DEFAULT):
     text: the page shows it). A number absent or null keeps its stored value
     (stored: the numbers as they are, e.g. after a gateway restart a
     browser that does not know one). given: whether the body has until (a
-    null one clears the timer; an absent one keeps it, see timer_for). The
+    null one keeps a finite running timer or starts the standard duration;
+    an absent one keeps it, see timer_for). The
     default mode (default: the body's, else the one kept) has no timer."""
     try:
         mode = body.get("mode") or DEFAULT
@@ -122,6 +126,8 @@ def request(body, stored=None, default=DEFAULT):
         numbers = {key: int(body.get(key) or 0) or None for key in NUMBERS}
     except (ValueError, TypeError, AttributeError):
         return None, t("Attendu : {expected}", expected="{mode, until, stage18, stage4, highest, floor, area}")
+    if until is not None and not math.isfinite(until):
+        return None, t("Attendu : {expected}", expected="finite until timestamp")
     if mode not in MODES:
         return None, t("{field} : un de {choices}", field="mode", choices=", ".join(MODES))
     numbers = {key: value if value is not None else (stored or {}).get(key) for key, value in numbers.items()}
@@ -151,15 +157,14 @@ def default_request(body, numbers, current):
 
 
 def timer_for(mode, until, given, current, current_until, now, default=DEFAULT):
-    """The end of mode once POST /mode chose it: until when the body gave
-    one (null: no time limit, e.g. the mine farming until stopped); else
-    the timer running when the mode stays the same, or TIMED_MINUTES from
-    now for a timed mode just chosen. The default mode has none."""
+    """A non-default mode always has a finite deadline. A null/omitted
+    deadline preserves the current timer, or starts TIMED_MINUTES when no
+    valid timer exists. Only the default mode has no deadline."""
     if mode == default:
         return None
-    if given:
+    if given and isinstance(until, (int, float)) and math.isfinite(until):
         return until
-    if mode == current:
+    if mode == current and isinstance(current_until, (int, float)) and math.isfinite(current_until):
         return current_until
     return now + TIMED_MINUTES * 60
 
@@ -195,6 +200,7 @@ def restored(mode, until, mine_enabled, now, default=DEFAULT):
     timer that ended while the gateway was down ends its mode (ended), back
     to the default; so does the mine's mode when the mine is not farming
     any more."""
+    until = timer_for(mode, until, True, mode, until, now, default)
     ended = mode != default and until is not None and until <= now
     if ended:
         mode, until = default, None

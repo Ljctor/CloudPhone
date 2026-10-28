@@ -214,6 +214,27 @@ class NativeReaders(unittest.TestCase):
 
 
 class ActualNativeCaptures(unittest.TestCase):
+    def test_actual_gold_row_preserves_consecutive_indices(self):
+        original = screen("sw_list_gold_ambition_480")
+        for width, height in ((480, 1040), (720, 1560)):
+            with self.subTest(width=width):
+                shot = NativeReaders.resized(original, width, height)
+                cells = reader.rows(shot)
+                self.assertEqual(len(cells), 4)
+                self.assertEqual([cell["selected"] for cell in cells], [False, False, True, False])
+                self.assertTrue(.68 < cells[1]["top"] < .69, "gold Ambition remains before Wild")
+                x, y = reader.select_point(cells[1])
+                self.assertTrue(.69 < y < .71)
+                # Removing the entire unrecognised interior card must
+                # refuse the list, never silently renumber Wild to 1.
+                sw, sh, rgb = original
+                masked = bytearray(rgb)
+                for py in range(707, 768):
+                    start = (py * sw + 8) * 3
+                    masked[start:start + 68 * 3] = bytes(68 * 3)
+                missing = NativeReaders.resized((sw, sh, bytes(masked)), width, height)
+                self.assertEqual(reader.rows(missing), [])
+
     def test_actual_owned_unequipped_relax_has_equip_and_a_red_badge(self):
         shot = screen("sw_name_relax_720", "sw_owned_relax_720", "sw_tag_equip",
                       "sw_badge_owned_unequipped_red_720")

@@ -140,6 +140,13 @@ assert.equal(byLabel('Préréglage de combat').value(), 'IV');
 assert.match(summary(), /V/);
 assert.match(status(), /Configuration modifiée ailleurs/);
 assert.equal(posts.length, 8);
+const reloadTarget = byLabel('État').button();
+assert.equal(reloadTarget.label, 'Recharger la cible');
+const reloading = reloadTarget.run();
+heldReads[3].resolve({ loadouts: structuredClone(accepted) }); await reloading;
+assert.match(status(), /Modifications non appliquées/);
+assert.equal(byLabel('Préréglage de combat').value(), 'IV', 'reload preserves the draft for review');
+assert.equal(posts.length, 8, 'reload performs no write or game action');
 const applyAfterConflict = apply.run();
 assert.equal(posts[8].body.if_revision, 'revision-3');
 accepted.mpw18.preset = 'IV'; accepted.mpw18.revision = 'revision-4';
@@ -161,12 +168,15 @@ assert.doesNotMatch(retryStatus.value(), /Données de gravure indisponibles/);
 retryUi.dispose();
 // Recovery lock checks are not evidence that the requested recipe is in
 // place. Even a full recorded verification is dated historical evidence.
-accepted.mpw18.automation = { supported: true, scope: 'static', runtime_verified: false };
+accepted.mpw18.automation = { supported: true, scope: 'static', runtime_verified: false, engraving_required: true };
 staticSupport.supported = true; staticSupport.reason_t = null;
 farmingSnapshot = { soul_weapon: { switch: 'real', engraving: 'real', recovery: {
   weapon_id: 36, variant: 'Balanced', phase: 'recovered', verified: false,
   locks_verified: true, required: false, at: 1000 } } };
-const evidenceUi = loadout(api, { execution: () => executionSnapshot });
+const executions = [];
+const executionWait = deferred();
+const evidenceUi = loadout(api, { execution: () => executionSnapshot,
+  onExecute: (request) => { executions.push(request); return executionWait.promise; } });
 const evidenceOptions = evidenceUi.options('mpw18');
 const proof = () => evidenceOptions.find((option) => option.label === 'État').value();
 await flush(); proof(); await flush();
@@ -199,6 +209,44 @@ assert.doesNotMatch(proof(), /Current matching target failed/);
 executionSnapshot.setup_result.at = Date.now() / 1000;
 executionSnapshot.setup_result.target = { ...executionSnapshot.setup_result.target, soul_weapon: { id: 32, variant: 'Gold-maxed' } };
 assert.doesNotMatch(proof(), /Current matching target failed/);
+// The same accepted target can be retried from its own dialog. The
+// receipt is validated again at click time, with duplicate clicks ignored.
+executionSnapshot.setup_result.target.soul_weapon = accepted.mpw18.soul_weapon;
+executionSnapshot.setup_request = { mode: 'mpw18', if_revision: accepted.mpw18.revision };
+const proofRow = evidenceOptions.find((option) => option.label === 'État');
+const retrySetup = proofRow.button();
+assert.equal(retrySetup.label, 'Réessayer cette configuration');
+const executing = retrySetup.run();
+await retrySetup.run();
+assert.deepEqual(executions, [executionSnapshot.setup_request]);
+assert.match(proof(), /Application demandée/);
+executionWait.resolve(); await executing;
+executionSnapshot.setup_request.if_revision = 'obsolete';
+await retrySetup.run();
+assert.equal(executions.length, 1, 'an obsolete captured retry button cannot execute');
+assert.equal(proofRow.button(), null);
+// Only the current server result for the full accepted revision proves
+// readiness; recorded recovery alone remains historical.
+executionSnapshot.setup_result.result = 'done';
+executionSnapshot.setup_result.at = Date.now() / 1000;
+assert.match(proof(), /Soul Weapon et gravure vérifiées.*huit cartes verrouillées/);
+accepted.mpw18.automation.engraving_required = false;
+await farmingPoll();
+// Reload current accepted applicability, preserving the draft.
+// A separate UI with no engraving requirement cannot claim card locks.
+const noEngravingUi = loadout(api, { execution: () => executionSnapshot });
+const noEngravingProof = () => noEngravingUi.options('mpw18').find((option) => option.label === 'État').value();
+await flush(); noEngravingProof(); await flush();
+assert.equal(noEngravingProof(), 'Configuration vérifiée');
+noEngravingUi.dispose();
+executionSnapshot.setup_result.revision = 'old-revision';
+assert.doesNotMatch(proof(), /Soul Weapon et gravure vérifiées/);
+executionSnapshot.setup_result.revision = accepted.mpw18.revision;
+executionSnapshot.setup_result.at -= 121;
+assert.doesNotMatch(proof(), /Soul Weapon et gravure vérifiées/);
+executionSnapshot.setup_result.at = Date.now() / 1000;
+executionSnapshot.setup_result.target = { ...executionSnapshot.setup_result.target, preset: 'I' };
+assert.doesNotMatch(proof(), /Soul Weapon et gravure vérifiées/);
 evidenceUi.dispose();
 assert.equal(deadlines.size, 0);
 console.log('Draft loadout, complete explicit apply, rejected save and accepted-target separation: OK');

@@ -311,4 +311,14 @@ for (const ratio of [1, 2]) {
     assert.equal(raster.pixels.filter((pixel) => pixel === '#000').length, border.size);
   }
 }
+// Lowercase default labels have the same readable native height as the
+// uppercase mode and numeric timer, while preserving lowercase shapes.
+window.devicePixelRatio = 1;
+for (const labelText of ['default', 'défaut']) {
+  const labelRaster = document.createElement('canvas');
+  drawText(labelRaster, { height: 13, glyphs: {} }, [{ text: labelText, colour: '#fff' }], 1);
+  const rows = labelRaster.context.fills.filter((fill) => fill.colour === '#fff').map((fill) => fill.rect[1]);
+  const inkHeight = Math.max(...rows) - Math.min(...rows) + 1;
+  assert.ok(inkHeight >= 11 && inkHeight <= 13, `${labelText} stays close to the game's thirteen-row capitals`);
+}
 console.log('Gold-shaped cube counter, freshness and icon columns: OK');

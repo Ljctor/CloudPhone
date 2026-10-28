@@ -19,7 +19,7 @@ const api = { setting: (key) => settings[key] ?? null, addTranslations() {}, ref
   }, adopt(key, value) { settings[key] = value; },
   get: async (path) => {
     if (path === '/mode') return structuredClone(state);
-    if (path === '/loadout') return { loadouts: { mpw18: { stage: 970, preset: 'III', soul_weapon: null } } };
+    if (path === '/loadout') return { loadouts: { mpw18: { stage: 970, preset: 'III', soul_weapon: null, revision: 'accepted-revision' } } };
     if (path === '/engravings') return { weapons: [] };
     if (path === '/stages') return { mpw18: [{ number: 970 }], mpw4: [] };
     if (path === '/farming') return null;
@@ -80,7 +80,11 @@ assert.equal(apply.disabled(), false);
 let resolveSetup;
 setupResponse = new Promise((resolve) => { resolveSetup = resolve; });
 const beforeSetup = posts.length;
-const applying = apply.run();
+ui.onSetting('stage18', '970'); // Restore the accepted draft before retrying it.
+const loadoutStatus = ui.options.find((option) => option.label === 'Farming mpw18').options
+  .find((option) => option.label === 'État');
+assert.equal(loadoutStatus.button().label, 'Réessayer cette configuration');
+const applying = loadoutStatus.button().run();
 assert.equal(apply.disabled(), true);
 assert.equal(statusRow.value(), 'Application demandée…');
 await apply.run();
@@ -124,5 +128,22 @@ assert.equal(statusRow.button().disabled(), false, 'deadline releases the action
 finishLate({ ok: true, status: 202, body: structuredClone(state) });
 await flush();
 assert.equal(posts.length, beforeDeadlinePosts + 1, 'late reconciliation does not automatically retry a mutation');
+state.mode = 'agent'; state.default = 'mpw18'; state.until = Date.now() / 1000 + 1800;
+await poll();
+const timeRow = ui.options.find((option) => option.label === 'Temps restant');
+assert.equal(timeRow.visible(), true);
+assert.match(timeRow.value(), /reste 30 min/);
+assert.match(ui.overlay()[1].text, /^30:00$/);
+state.until = Date.now() / 1000 - 1; await poll();
+assert.equal(timeRow.value(), '00:00', 'an elapsed timer cannot display an unlimited mode');
+assert.equal(ui.overlay()[1].text, '00:00');
+state.until = null; await poll();
+assert.equal(timeRow.value(), '…', 'missing backend timer is unknown, never unlimited');
+assert.equal(ui.overlay()[1].text, '…', 'a nondefault mode cannot masquerade as default when its timer is missing');
+state.mode = 'mpw18'; await poll();
+assert.equal(timeRow.visible(), false);
+assert.equal(timeRow.value(), 'défaut');
+assert.equal(ui.overlay()[1].text, 'défaut');
+assert.ok(ui.options.find((option) => option.label === 'Ajuster (minutes)').buttons.every((button) => button.disabled()));
 ui.dispose();
 console.log('Requested mode, compact execution status and temporary destination/purpose: OK');

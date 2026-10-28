@@ -556,6 +556,7 @@ def build(context, nav):
                 exception_log(log)(f"Relaunch listener failed ({why})")
 
     capture_times = []
+    notified_captures = []
 
     def capture_time(shot):
         """Conservative acquisition timestamp, unchanged on a cached read."""
@@ -574,6 +575,9 @@ def build(context, nav):
                 stamp = started
             capture_times[:] = [(value, at) for value, at in capture_times if value is not shot][-3:]
             capture_times.append((shot, stamp))
+            if any(value is shot for value in notified_captures):
+                return shot
+            notified_captures[:] = (notified_captures + [shot])[-4:]
             for listener in list(capture_listeners):
                 try:
                     listener(shot)
@@ -648,8 +652,47 @@ def build(context, nav):
             return await context.notify(text, actions=actions)
         return await context.notify(text)
 
+    tasks = set()
+    closing = False
+
     def spawn(coroutine):
-        return asyncio.get_running_loop().create_task(coroutine)
+        """Own every plugin background task until completion or app shutdown."""
+        if closing:
+            coroutine.close()
+            raise RuntimeError("plugin is shutting down")
+        return track_task(asyncio.get_running_loop().create_task(coroutine))
+
+    def track_task(task):
+        """Adopt an already-created child, including shielded reader jobs."""
+        if closing:
+            task.cancel()
+        tasks.add(task)
+
+        def done(value):
+            tasks.discard(value)
+            if not value.cancelled() and value.exception() is not None:
+                error = value.exception()
+                log("error", f"Plugin background task failed: {error!r}")
+
+        task.add_done_callback(done)
+        return task
+
+    async def shutdown(app):
+        nonlocal closing
+        closing = True
+        capture_listeners.clear()
+        relaunch_listeners.clear()
+        pending = tuple(tasks)
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+
+    # aiohttp emits shutdown before cleanup: stop producers and drain their
+    # owned commands/readers before the gateway closes capture/analysis pools.
+    application = getattr(context, "app", None)
+    if application is not None:
+        application.on_shutdown.append(shutdown)
 
     # Older gateways give plugins no data directory: then nothing is kept.
     data_dir = getattr(context, "data_dir", None)
@@ -672,7 +715,8 @@ def build(context, nav):
         log("normal", f"Plugin turned {'on' if on else 'off'}")
 
     return SimpleNamespace(
-        capture=capture, capture_time=capture_time, analyse=context.analyse, on_capture=capture_listeners.append,
+        capture=capture, capture_time=capture_time, analyse=context.analyse,
+        detect=getattr(context, "detect", context.analyse), on_capture=capture_listeners.append,
         on_relaunch=relaunch_listeners.append, relaunched=relaunched,
         tap=tap, taps=taps, hold=hold, swipe=swipe, lease=lease, leased=leased, Busy=Busy, Refused=Refused,
         last_input=last_input, user_input=user_input, **text_ports(),
@@ -682,6 +726,6 @@ def build(context, nav):
         account_chooser=account_chooser, choose_account=choose_account,
         notify=notify, action_token=action_token, revoke_action=revoke_action, enabled=enabled, set_enabled=set_enabled,
         clock=clock,
-        spawn=spawn, store=store, data_path=data_path, respond=context.json,
+        spawn=spawn, track_task=track_task, store=store, data_path=data_path, respond=context.json,
         log=log, exception=exception_log(log),
     )
