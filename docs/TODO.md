@@ -77,16 +77,21 @@ separate milestones. Historical checked items below do not close a new regressio
   including cases resumed by a hardware-key input, and verify the actual fix.
 - [ ] Pass relevant unit/browser checks, build, push, deploy and check the
   served version. Keep live gameplay verification distinct from mocked tests.
-- [ ] Send ntfy for each production release with explicit sender
+- [x] Send ntfy for each production release with explicit sender
   **Agent Codex — déploiement**, version, shipped changes and verification
   outcome; report a failed release as failed. This is an agent announcement,
   not a CloudPhone or plugin alert.
 
 Work stages for the current implementation batch:
 
-- [ ] Integrated regression suite passes after the final changes.
-- [ ] Release containing those exact changes is built and deployed.
-- [ ] Browser behavior on that release is verified.
+- [x] Integrated regression suite passes after the final changes: 647 plugin
+  tests (one real Equip calibration test still skipped), 20 gateway tests,
+  browser-module suites and the additional fixed-cube regression.
+- [x] Release containing the implementation commits `9bdd047` and `0c099a9`
+  is built and deployed; app/plugin verification and served-source checks pass.
+- [x] Browser behavior on that release is verified for rejected stop, complete
+  target Apply, request deadline/reconciliation and dated lock evidence.
+  Browser writes are intercepted; these checks do not validate live equipment changes.
 - [ ] Soul Weapon/engraving, counters and mapping acceptance above are verified
   against actual gameplay, with remaining gaps still listed explicitly.
 
