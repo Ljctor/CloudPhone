@@ -3,12 +3,12 @@
 // params}, translated with tr: see templates.json) and « Réessayer »
 // while a repair backs off. No option rows of its own; debug: the shared
 // lease's holder and the watchdog's counters. Asked only while the panel
-// shows them, at most every 15 s (the watchdog's own pace).
+// shows them, at most every 5 s, every second during an active redirect.
 
 export default function watchdog(api) {
   const watched = { answer: null, at: 0, busy: false };
   const watch = () => {
-    if (watched.busy || Date.now() - watched.at < 15000) return;
+    if (watched.busy || Date.now() - watched.at < (watched.answer?.intention ? 1000 : 5000)) return;
     watched.busy = true;
     api.get('/watchdog').catch(() => null).then((answer) => {
       Object.assign(watched, { answer: answer ?? watched.answer, at: Date.now(), busy: false });
@@ -48,6 +48,11 @@ export default function watchdog(api) {
       if (!answer?.line || answer.mode !== mode || mode === 'free') return '';
       if (answer.status?.template === 'En pause : entrée dans le mode {mode}') return '';
       return ` · ${api.tr(answer.line)}`;
+    },
+    intention: (mode) => {
+      watch();
+      return watched.answer?.mode === mode && Date.now() - watched.at < 3000
+        ? watched.answer.intention ?? null : null;
     },
     // « Réessayer » while a repair backs off: each waiting kind starts over.
     retry: (mode) => {

@@ -128,6 +128,21 @@ Rules:
       read E and its padlock closed.
     - At most 24 moves per setup, 8 preview moves per piece.
     - Never Change, the gear or %.
+  - Resource refresh (mpw18 and mpw4): a bounded read-only visit every five
+    minutes after its first supervised circuit has returned successfully.
+    Before that first run, the scheduler stays inactive. It keeps the mode's
+    target unchanged and uses the shared lease; user input, mode/loadout
+    change, plugin shutdown or pending engraving recovery interrupts it.
+    - From a recognised Soul Weapon screen, its red X; from battle, Equipment;
+      select Weapon only when Accessories is recognised.
+    - Scroll only along a calibrated empty gap, at most four gestures per
+      search, to inspect the complete first weapon card and read cubes.
+      Never Enhance or Equip on the ordinary weapon card; close with its X.
+    - Read the Legendary Grade 3 weapon count, then Accessories and its
+      Legendary Grade 3 count; missing values remain unknown independently.
+    - Return through Weapon to Soul Weapon. Every destination is freshly
+      recognised, with no blind cleanup after user intervention. The entire
+      visit is bounded; failure never certifies the first supervised run.
   - Closed mine (mode "mine"): its floor row, the Area, 3 feathers,
     scrolling its floor list, and unticking "Repeat entry" (at most 3
     tries, then one alert). After the watchdog's relaunch, the way back

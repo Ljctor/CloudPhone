@@ -100,7 +100,7 @@ export default function modeFeature(api, { known, watchdog, stage }) {
     remember(await api.get('/mode').catch(() => null), asked);
     api.refresh();
     window.clearTimeout(farm.timer);
-    farm.timer = window.setTimeout(askMode, farm.answer?.tone !== 'ok' || farm.inputUntil > Date.now() ? 1000 : 10000);
+    farm.timer = window.setTimeout(askMode, farm.answer?.intention || farm.answer?.tone !== 'ok' || farm.inputUntil > Date.now() ? 1000 : 10000);
   };
   // A touch on the game: the gateway holds its taps from now, ask its tone.
   const untap = api.onTap?.(() => {
@@ -160,6 +160,13 @@ export default function modeFeature(api, { known, watchdog, stage }) {
     }
   });
   loadStages();
+
+  const activeIntention = () => farm.answer?.intention ?? watchdog?.intention?.(farm.answer?.mode ?? mode()) ?? null;
+  const destinationName = (intent) => intent.destination_t ?? ({
+    battle: 'Combat', game: 'Slayer Legend', equipment_weapon: 'Equipment: Weapon',
+    equipment_accessories: 'Equipment: Accessories', weapon_detail: 'Détail de l’arme',
+    soul_weapon: 'Soul Weapon', battle_settings: 'Battle settings', mine_list: 'Mine fermée',
+  }[intent.destination] ?? intent.destination);
 
   return {
     // The selected mode, under the player's level (top left), and below it
@@ -273,6 +280,13 @@ export default function modeFeature(api, { known, watchdog, stage }) {
           return api.tr(answer.message_t || 'Farming mpw18') + warning(answer.gold) + looked;
         },
       },
+      { type: 'status', label: 'Intention', visible: () => Boolean(activeIntention()),
+        value: () => {
+          const intent = activeIntention();
+          return intent ? api.tr('Vers {destination} · {purpose}', {
+            destination: api.tr(destinationName(intent)), purpose: api.tr(intent.purpose_t),
+          }) : '';
+        } },
       ...(stage ? [stage] : []),
     ],
     onSetting: (key, value) => {

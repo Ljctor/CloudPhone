@@ -32,7 +32,7 @@ import asyncio
 import math
 
 # The holders that are the plugin's own (a change made under them is not the user's).
-PLUGIN = ("launch", "mine", "watchdog", "mode", "stage_change")
+PLUGIN = ("launch", "mine", "watchdog", "mode", "stage_change", "resource_refresh")
 
 
 def reader_table(screens, stage, select, counter, souls, weapon, engraving, controls, screen_rules, table,

@@ -163,6 +163,16 @@ assert state["registry"]["tree"]["equipment_weapon"]["scroll"]
 assert "quest_panel" in graph["screens"]
 print("Navigation debug geometry: OK")
 '
+curl -fsS "${base%/}/api/v1/plugins/slayer-legend/resource-refresh" | python3 -c '
+import json, sys
+state = json.load(sys.stdin)
+assert isinstance(state["active"], bool)
+assert isinstance(state["supervised_verified"], bool)
+assert {"result", "intention", "last_attempt", "last_complete", "next_at", "read", "missing"} <= state.keys()
+assert isinstance(state["read"], dict) and isinstance(state["missing"], list)
+assert state["intention"] is None or state["intention"]["kind"] == "resource_refresh"
+print("Resource refresh supervision and intention state: OK")
+'
 curl -fsS "${base%/}/plugins/slayer-legend/page_navigation_debug.js" | python3 -c '
 import sys
 script = sys.stdin.read()

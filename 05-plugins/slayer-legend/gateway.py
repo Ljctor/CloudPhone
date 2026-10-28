@@ -94,6 +94,10 @@ def setup(context):
     mode = feature("mode").mode(ports, feature("mode_rules"), timer, values, mine["api"], screens,
                                 module("gold_scroll"), engraving["api"], farming["api"])
     gold = feature("gold").gold(ports, screens, stage, module("gold"), feature("gold_rules"), module("soul_counters"))
+    refresh = feature("resource_refresh").resource_refresh(
+        ports, screens, module("nav"), module("equipment_l3"), module("soul_weapon"), module("scrolling"),
+        mode["api"], farming["api"], gold["api"], feature("resource_refresh_rules"))
+    mode["api"]["resource_refresh_by"](refresh["api"]["state"])
     watchdog = feature("watchdog").watchdog(ports, screens, stage, feature("watchdog_rules"),
                                             lambda number: screen_rules.name_numeral(table, stage, number),
                                             mode["api"], mine["api"], launch["api"], engraving["api"]["loadout"],
@@ -111,6 +115,7 @@ def setup(context):
         launch,
         feature("trace").trace(ports, screens, module("trace"), feature("screenshot_archive")),
         gold,
+        refresh,
         mine,
         farming,
         mode,

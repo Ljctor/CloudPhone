@@ -160,6 +160,43 @@ class NativeReaders(unittest.TestCase):
         self.assertIsNone(reader.tab(native))
 
 
+
+class ActualNativeCaptures(unittest.TestCase):
+    def test_real_native_names_and_exact_identity_negatives(self):
+        for fixture, expected in [("sw_name_ambition_720", "Ambition"),
+                                  ("sw_name_wild_720", "Wild"),
+                                  ("sw_name_temptation_720", "Temptation")]:
+            with self.subTest(fixture=fixture):
+                self.assertEqual(reader.name(screen(fixture), NAMES), expected)
+                if expected != "Ambition":
+                    self.assertIsNone(reader.name(screen(fixture), ["Ambition"]))
+        self.assertIsNone(reader.name(screen("sw_name_ambition_720"), ["Wild", "Grand"]))
+        self.assertIsNone(reader.name(screen("sw_name_wild_720"), ["Will"]),
+                          "an exact captured Wild must not be fuzzily renamed Will")
+
+    def test_native_unequip_ignores_the_adjacent_parchment(self):
+        shot = screen("sw_tag_unequip_720")
+        text, box = reader.tag(shot)
+        self.assertEqual(text, "Unequip")
+        self.assertLessEqual(box[2], reader.LIST_X[1])
+        self.assertFalse(reader.TAG_LEARNED, "Unequip proof never supplies the missing Equip state")
+        self.assertFalse(reader.BADGE_TELLS)
+
+    def test_whole_cell_indices_survive_the_equipped_E_badge(self):
+        for fixture, selected in [("sw_list_ambition_selected_720", 0),
+                                  ("sw_list_wild_selected_720", 1),
+                                  ("sw_list_temptation_selected_720", 3)]:
+            with self.subTest(fixture=fixture):
+                rows = reader.rows(screen(fixture))
+                self.assertEqual(len(rows), 5, "the unselected equipped first cell must not disappear")
+                self.assertEqual([i for i, row in enumerate(rows) if row["selected"]], [selected])
+                x, y = reader.select_point(rows[0])
+                self.assertLess(x, .15)
+                self.assertTrue(928 < y * 1560 < 980, "upper part of actual Ambition, above Unequip")
+                if selected != 0:
+                    self.assertEqual(reader.tag(screen(fixture)), (None, None), "owned-zero selection has no Equip tag")
+
+
 def tagged(text, top=0.835, scale=2):
     """A synthetic orange tag in the list with text drawn in the card font
     (white), on an empty screen: until the tag is captured."""

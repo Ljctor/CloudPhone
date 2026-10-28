@@ -20,6 +20,7 @@ weapon = load("soul_weapon")
 equipment = load("equipment_l3")
 rules = load("features/game_rules")
 game = load("features/game")
+model_fixtures = load("test_screen_model")
 
 
 def shot(tab, include_row=True):
@@ -50,6 +51,24 @@ def scaled_720(capture):
 
 
 class EquipmentL3(unittest.TestCase):
+    def test_corrupted_known_digit_is_not_a_guessed_balance(self):
+        capture = shot("weapon")
+        top = equipment._card_top(capture, 1)
+        width, height, data = capture
+        pixels = bytearray(data)
+        xs = [x for x in range(150, 215) if any(min(equipment._pixel(capture, x, y)) > 130
+                                               for y in range(top + 85, top + 105))]
+        left = min(xs)
+        right = next(x for x in range(left, 215) if x not in xs)
+        ys = [y for y in range(top + 85, top + 105) if any(min(equipment._pixel(capture, x, y)) > 130
+                                                       for x in range(left, right))]
+        points = [(x, y) for y in range(min(ys) + 1, max(ys)) for x in range(left, right)
+                  if min(equipment._pixel(capture, x, y)) > 130]
+        for x, y in points[:3]:
+            i = (y * width + x) * 3
+            pixels[i:i + 3] = b"\0\0\0"
+        self.assertIsNone(equipment.read((width, height, bytes(pixels))))
+
     def test_real_weapon_and_accessory_counts(self):
         with (HERE / "stages.json").open(encoding="utf-8") as f:
             stages = json.load(f)
@@ -81,6 +100,45 @@ class EquipmentL3(unittest.TestCase):
             for x in range(150, 215):
                 pixels[(y * 480 + x) * 3:(y * 480 + x) * 3 + 3] = b"\x00\x00\x00"
         self.assertIsNone(equipment.read((480, 1040, bytes(pixels))))
+
+
+class EquipmentSafety(unittest.TestCase):
+    def test_inspect_requires_selected_weapon_and_the_complete_proven_card(self):
+        before = model_fixtures.screen("battle_emerald", "equipment_weapon_tabs_720", "equipment_inspect_card_720")
+        self.assertTrue(equipment.inspect_weapon_safe(before))
+        width, height, rgb = before
+        moved = bytearray(rgb)
+        for y in range(745, 876):
+            start = (y * width + 51) * 3
+            moved[start:start + 118 * 3] = bytes(118 * 3)
+        self.assertFalse(equipment.inspect_weapon_safe((width, height, bytes(moved))))
+        detail = model_fixtures.screen("battle_emerald", "weapon_detail_tabs_720", "weapon_detail_close_720")
+        self.assertFalse(equipment.inspect_weapon_safe(detail))
+        self.assertFalse(equipment.scroll_safe(detail, "weapon"))
+        growth = model_fixtures.screen("battle_emerald", "growth_at_equipment_tabs_720")
+        self.assertFalse(equipment.inspect_weapon_safe(growth))
+        self.assertFalse(equipment.scroll_safe(growth, "weapon"))
+
+    def test_real_weapon_and_accessories_clear_gaps_before_and_after_scroll(self):
+        captures = [
+            ("weapon", "equipment_l3_weapon_tabs", "equipment_gap_weapon_first"),
+            ("weapon", "equipment_l3_weapon_tabs", "equipment_gap_weapon_scrolled"),
+            ("accessories", "equipment_l3_accessories_tabs", "equipment_gap_accessories_first"),
+            ("accessories", "equipment_l3_accessories_tabs", "equipment_gap_accessories_scrolled"),
+        ]
+        for tab, tabs, gap in captures:
+            with self.subTest(tab=tab, gap=gap):
+                capture = model_fixtures.screen("battle_emerald", tabs, gap)
+                self.assertTrue(equipment.scroll_safe(capture, tab))
+                other = "accessories" if tab == "weapon" else "weapon"
+                self.assertFalse(equipment.scroll_safe(capture, other))
+                width, height, rgb = capture
+                pixels = bytearray(rgb)
+                x, y = round(.27 * width), round(.68 * height)
+                i = (y * width + x) * 3
+                pixels[i:i + 3] = bytes([255, 255, 255])
+                self.assertFalse(equipment.scroll_safe((width, height, bytes(pixels)), tab),
+                                 'an unexpected control crossing the drag path closes the gate')
 
 
 if __name__ == "__main__":

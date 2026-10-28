@@ -114,6 +114,48 @@ CARD_FONT = dict(font.FONT, **{
     "o": ['....', '....', '####', '#..#', '#..#', '####', '.##.', '....', '....'],
 })
 
+# Native 720 capture phase (sw_name_ambition_720, sw_name_wild_720).
+# Whole-word masks avoid guessing through aliased rn/m, h/b and n/o
+# glyphs. The legacy OCR confidence and ambiguity margin stay unchanged.
+NAME_INK = 180
+NAME_TEMPLATE_MOST = 0.02
+NAME_NATIVE_TEMPLATES = {'Ambition': ('...###................##........###..###.....###..................',
+              '..#####...............##........###..###.....###..................',
+              '..##.##...#####.####..##.####..####.#######.####..#####...######..',
+              '..##.##...#####.####..##.####..####.#######.####..#####...######..',
+              '##....###.##..##..###.####..##..###..###....######....###.##...###',
+              '##....###.##..##...##.####..##..###..###.....#####....###.##....##',
+              '##....###.##..##...##.##....##..###..###.....#####....###.##....##',
+              '#########.##..##...##.##....##..###..###.....#####....###.##....##',
+              '#########.##..##...##.##....##..###..###.....#####....###.##....##',
+              '##....###.##..##...##.##....##..###..###.....#####....###.##....##',
+              '##....###.##..##...##.########..###..######..############.##....##',
+              '##....###.##..##...##.#######...###....####..###..#####...##....##'),
+ 'Wild': ('##....###...###..######.......##',
+          '##....###...###..######.......##',
+          '##....###...###.#######..####.##',
+          '##....###...###.#######..####.##',
+          '.###.##.##.###...######.##..####',
+          '..##.##.##.###...######.##..####',
+          '..##.##.##.###...######.##....##',
+          '..##.##.##.###...######.##....##',
+          '..##.##.##.###...######.##....##',
+          '...###...###.....######.##....##',
+          '...###....##.....######.########',
+          '...###....##.....######..#######')}
+
+
+def _name_ink(shot):
+    left, top, right, bottom = _box(shot, NAME_AREA)
+    points = {(x, y) for y in range(top, bottom) for x in range(left, right)
+              if min(_pixel(shot, x, y)) >= NAME_INK}
+    if not points:
+        return ()
+    xs, ys = zip(*points)
+    return tuple("".join("#" if (x, y) in points else "." for x in range(min(xs), max(xs) + 1))
+                 for y in range(min(ys), max(ys) + 1))
+
+
 # A name read is within this many edits per character of its weapon's,
 # every other name at least NAME_MARGIN edits further.
 NAME_MOST = 0.3
@@ -147,6 +189,11 @@ def names_of(table):
 @calibrated
 def read_name(shot):
     """The card's name as read, "?" for an unread glyph; None without one."""
+    marks = _name_ink(shot)
+    captured = [text for text, template in NAME_NATIVE_TEMPLATES.items()
+                if marks and _tag_distance(marks, template) <= NAME_TEMPLATE_MOST]
+    if len(captured) == 1:
+        return captured[0]
     lines = font.read(shot, NAME_AREA, font=CARD_FONT, caps=(0.009, 0.016))
     return max(lines, key=lambda line: len(line[0]))[0] if lines else None
 
@@ -155,7 +202,10 @@ def read_name(shot):
 def name(shot, names):
     """The selected weapon's name (one of names), None when it does not
     read clearly as one."""
-    return font.close(read_name(shot), names, most=NAME_MOST, margin=NAME_MARGIN)
+    text = read_name(shot)
+    if text in NAME_NATIVE_TEMPLATES:
+        return text if text in names else None
+    return font.close(text, names, most=NAME_MOST, margin=NAME_MARGIN)
 
 
 def _owned_ink(shot):
@@ -213,9 +263,15 @@ def rows(shot):
     width, height, _ = shot
     left, top, right, bottom = _box(shot, (0.0, LIST_Y[0], 0.2, LIST_Y[1]))
     x0, x1 = int(0.02 * width), int(0.04 * width)
+    right0, right1 = int(0.135 * width), int(0.155 * width)
+    edges = (*range(x0, x1), *range(right0, right1))
     inside = []
     for y in range(top, bottom):
-        inside.append(any(_frame(_pixel(shot, x, y)) or _red(_pixel(shot, x, y)) for x in range(x0, x1)))
+        inside.append(any(_frame(_pixel(shot, x, y)) or _red(_pixel(shot, x, y))
+                          # The equipped cell's native gold border, observed
+                          # unchanged in all three reviewed 720 captures.
+                          or (x >= right0 and _pixel(shot, x, y) == (83, 60, 26))
+                          for x in edges))
     cells, start = [], None
     for i, on in enumerate(inside + [False]):
         if on and start is None:
@@ -248,7 +304,7 @@ def tags(shot):
     """The orange boxes in the list column, [left, top, right, bottom]
     (fractions), at least 0.04 wide and 0.008 high."""
     width, height, _ = shot
-    left, top, right, bottom = _box(shot, (0.0, LIST_Y[0], 0.2, LIST_Y[1]))
+    left, top, right, bottom = _box(shot, (0.0, LIST_Y[0], LIST_X[1], LIST_Y[1]))
     marked = [y for y in range(top, bottom) if sum(1 for x in range(left, right, 2)
                                                    if _orange(_pixel(shot, x, y))) >= 0.02 * width]
     boxes, run = [], []
@@ -284,6 +340,17 @@ TAG_TEMPLATES = {
         "......................#..........#....",
     ),
 }
+# Additional exact native sampling phase from sw_tag_unequip_720.
+TAG_NATIVE_TEMPLATES = {'Unequip': ('#...#.........................##......',
+             '#...#.........................##......',
+             '#...#.####..####..#####.#...#.#######.',
+             '#...#.#####.#####.#####.#...#.########',
+             '#...#.#...#.#####.#...#.#...#.####..##',
+             '#...#.#...#.#####.#...#.#...#.####..##',
+             '#...#.#...#.#.....#####.#...#.########',
+             '#####.#...#.#####.#####.#####.#######.',
+             '####..#...#.#####.....#.#####.####....',
+             '......................#.........##....')}
 # The Equip tap is real only once both tags read on real captures.
 TAG_LEARNED = {"Equip", "Unequip"} <= set(TAG_TEMPLATES)
 # At most this share of a template's pixels may differ.
@@ -334,7 +401,7 @@ def tag(shot):
     ink = _tag_ink(shot, box)
     if not ink:
         return None, box
-    for text, template in TAG_TEMPLATES.items():
+    for text, template in (*TAG_TEMPLATES.items(), *TAG_NATIVE_TEMPLATES.items()):
         if _tag_distance(ink, template) <= TAG_MOST:
             return text, box
     return None, box

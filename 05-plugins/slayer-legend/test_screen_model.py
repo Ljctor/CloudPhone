@@ -82,14 +82,24 @@ class ConcurrentScreens(unittest.TestCase):
 
 
 def screen(*names, background=(20, 16, 14)):
-    """An empty 480x1040 screen with the crops pasted back where they were."""
-    pixels = bytearray(bytes(background) * (W * H))
-    for name in names:
-        _, _, x, y, w, h, data = screens.fixture(name)
+    """Real crops at their recorded native positions. Mixed-size fixtures
+    use the largest canvas, scaling only the smaller historical crops."""
+    crops = [screens.fixture(name) for name in names]
+    width, height = max(((crop[0], crop[1]) for crop in crops), default=(W, H))
+    pixels = bytearray(bytes(background) * (width * height))
+    for sw, sh, x, y, w, h, data in crops:
+        if (sw, sh) != (width, height):
+            sx, sy = width / sw, height / sh
+            left, top, right, bottom = round(x * sx), round(y * sy), round((x + w) * sx), round((y + h) * sy)
+            target_w, target_h = right - left, bottom - top
+            xs = [min(w - 1, int(col / sx)) * 3 for col in range(target_w)]
+            data = b"".join(b"".join(data[start + col:start + col + 3] for col in xs)
+                            for start in (min(h - 1, int(row / sy)) * w * 3 for row in range(target_h)))
+            x, y, w, h = left, top, target_w, target_h
         for row in range(h):
-            start = ((y + row) * W + x) * 3
+            start = ((y + row) * width + x) * 3
             pixels[start:start + w * 3] = data[row * w * 3:(row + 1) * w * 3]
-    return W, H, bytes(pixels)
+    return width, height, bytes(pixels)
 
 
 def made(key):
@@ -235,6 +245,25 @@ class Tree(unittest.TestCase):
 
 
 class Recognised(unittest.TestCase):
+    def test_equipment_selected_tabs_are_distinct_and_scoped(self):
+        for key in ("equipment_weapon", "equipment_accessories"):
+            other = "equipment_accessories" if key == "equipment_weapon" else "equipment_weapon"
+            for width, height in ((480, 1040), (720, 1560)):
+                with self.subTest(tab=key, width=width):
+                    seen = screens.look(scaled(made(key), width, height))
+                    self.assertIn(key, seen["overlays"])
+                    self.assertNotIn(other, seen["overlays"])
+        growth = screen("battle_emerald", "growth_at_equipment_tabs_720")
+        self.assertNotIn("equipment_weapon", screens.look(growth)["overlays"])
+        self.assertNotIn("equipment_accessories", screens.look(growth)["overlays"])
+
+    def test_native_weapon_detail_needs_both_tabs_and_close(self):
+        native = made("weapon_detail")
+        self.assertEqual(native[:2], (720, 1560), 'reviewed native pixels are not distorted to make an anchor')
+        self.assertIn("weapon_detail", screens.look(native)["overlays"])
+        for crop in ("weapon_detail_tabs_720", "weapon_detail_close_720"):
+            self.assertNotIn("weapon_detail", screens.look(screen("battle_emerald", crop))["overlays"])
+
     def test_every_registered_screen_from_its_fixtures_with_a_margin(self):
         for key in REGISTERED:
             entry = screens.REGISTRY[key]

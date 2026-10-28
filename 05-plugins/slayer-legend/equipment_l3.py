@@ -10,12 +10,17 @@ Unknown digits, a clipped card, and other resolutions do not produce a
 reading. No game input is made here.
 """
 
+import importlib.util
+import os
 import re
 
 WIDTH, HEIGHT = 480, 1040
 CARD_X = (146, 222)
 COUNT_X = (150, 215)
 ROW_TOP = (465, 840)
+# Known crops disagree by at most .036 at native 720. A broad .18 match
+# accepted damaged glyphs; missing digit calibrations must not be guessed.
+MAX_DISTANCE = 0.06
 
 # White cores of the counter glyphs at 480x1040, from the red Grade 3
 # cards (the other cards in those captures provide 0 and 1). 6–9 have
@@ -102,8 +107,60 @@ def read(shot):
     chars = []
     for glyph in _glyphs(shot, top, scale):
         closest = sorted((_distance(glyph, shape), char) for char, shape in SHAPES.items())
-        if closest[0][0] > 0.18 or closest[1][0] - closest[0][0] < 0.06:
+        if closest[0][0] > MAX_DISTANCE or closest[1][0] - closest[0][0] < 0.06:
             return None
         chars.append(closest[0][1])
     text = "".join(chars)
     return int(text[:-2]) if re.fullmatch(r"[0-5]{1,4}/5", text) else None
+
+
+_safety = None
+
+
+def _safety_readers():
+    global _safety
+    if _safety is None:
+        spec = importlib.util.spec_from_file_location(
+            "cloudphone_plugin_slayer_legend_equipment_safety", os.path.join(os.path.dirname(__file__), "screens.py"))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _safety = module, module.Patch("equipment_inspect_card_720", limit=.35)
+    return _safety
+
+
+def _equipment_visible(shot, tab):
+    model, _ = _safety_readers()
+    seen = model.look(shot)
+    identity = {"weapon": "equipment_weapon", "accessories": "equipment_accessories"}.get(tab)
+    return bool(identity and seen["screen"] == "battle" and seen.get("plain") is False
+                and identity in seen["overlays"]
+                and all(item in {"panel", identity, "better_weapon_toast"} for item in seen["overlays"]))
+
+
+def inspect_weapon_safe(shot):
+    """The proven (.15,.52) inspect point is inside the complete first
+    Common weapon card. A shifted list, another tab or a popup fails closed.
+    This authorises inspecting that card, never its Enhance or Equip buttons."""
+    if not INSPECT_LEARNED or not _equipment_visible(shot, "weapon"):
+        return False
+    _, card = _safety_readers()
+    return card.margin(shot) >= .3
+
+
+def scroll_safe(shot, tab):
+    """Both endpoints and the entire drag stay in the observed dark gap
+    between columns, above Batch Combine. Tested before/after real scrolling
+    on each tab; any bright/coloured control crossing the gap refuses it."""
+    if not SCROLL_LEARNED or not _equipment_visible(shot, tab):
+        return False
+    width, height, _ = shot
+    return all(max(_pixel(shot, x, y)) < 80
+               for x in range(round(.26 * width), round(.28 * width))
+               for y in range(round(.55 * height), round(.81 * height)))
+
+
+# Real before/after card inspection (Equipment -> ordinary weapon detail),
+# real Weapon/Accessories first/scrolled gaps, plus modal/Growth negatives.
+# Every required state is listed in test_gates.py and read by its tests.
+INSPECT_LEARNED = True
+SCROLL_LEARNED = True

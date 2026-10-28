@@ -155,6 +155,12 @@ class Ownership(unittest.IsolatedAsyncioTestCase):
         values = NS(time_or_none=lambda v: v, number_or_none=lambda v, top: v)
         part = mode_feature.mode(self.ports, mode_rules, None, values, mines, None,
                                  NS(fresh=lambda: {"gold": None}), loadouts, {"farm": farm})
+        refresh = {"active": False, "intention": {"kind": "resource_refresh", "destination": "soul_weapon"}}
+        part["api"]["resource_refresh_by"](lambda: refresh)
+        self.assertIsNone(part["api"]["state"]()["intention"])
+        refresh["active"] = True
+        self.assertEqual(part["api"]["state"]()["intention"]["kind"], "resource_refresh")
+        refresh["active"] = False
         post = next(fn for method, path, fn in part["routes"] if (method, path) == ("POST", "/mode"))
 
         class Request:
@@ -164,6 +170,12 @@ class Ownership(unittest.IsolatedAsyncioTestCase):
         try:
             await post(Request())
             await asyncio.wait_for(started.wait(), 1)
+            intent = part["api"]["state"]()["intention"]
+            self.assertEqual(intent["kind"], "apply_loadout")
+            self.assertEqual(intent["destination"], "battle")
+            self.assertIsNone(intent["route"])
+            self.assertFalse(intent["route_known"], "no full path was computed")
+            self.assertNotIn("owner", intent, "internal transaction token is not public JSON")
             changed = callbacks[0]
             before = dict(parts["mpw4"])
             parts["mpw4"]["stage"] = 932

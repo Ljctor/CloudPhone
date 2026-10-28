@@ -26,7 +26,14 @@ def load(name):
 # (module, flag, the fixtures of every state its reading tells apart, the
 # test reading them).
 GATES = [
-    ("soul_weapon", "TAG_LEARNED", ["sw_tag_equip", "sw_tag_unequip"], "test_soul_weapon"),
+    ("equipment_l3", "INSPECT_LEARNED", ["equipment_weapon_tabs_720", "equipment_inspect_card_720",
+                                       "weapon_detail_tabs_720", "weapon_detail_close_720",
+                                       "growth_at_equipment_tabs_720"], "test_equipment_l3"),
+    ("equipment_l3", "SCROLL_LEARNED", ["equipment_l3_weapon_tabs", "equipment_l3_accessories_tabs",
+                                      "equipment_gap_weapon_first", "equipment_gap_weapon_scrolled",
+                                      "equipment_gap_accessories_first", "equipment_gap_accessories_scrolled",
+                                      "weapon_detail_tabs_720", "weapon_detail_close_720"], "test_equipment_l3"),
+    ("soul_weapon", "TAG_LEARNED", ["sw_tag_equip", "sw_tag_unequip", "sw_tag_unequip_720"], "test_soul_weapon"),
     ("soul_weapon", "BADGE_TELLS", ["sw_badge_red", "sw_badge_grey", "sw_badge_owned_grey"], "test_soul_weapon"),
     ("stage", "PROGRESS_CALIBRATED", ["bar_empty", "bar_partial", "bar_full", "bar_flash", "bar_parked_empty",
                                       "bar_parked_partial", "bar_parked_full", "bar_parked_flash"], "test_fixtures"),

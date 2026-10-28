@@ -7,7 +7,7 @@ the mine re-entered by the mine feature (reenter); free play, nothing.
 
 GET /watchdog   {mode, status: {template, params}, line: {template,
                  params}, symptom, paused_t, counters, waiting, lease,
-                 repairing, profile} (status, line, paused_t: status
+                 repairing, profile, intention} (status, line, paused_t: status
                  texts, see texts.py; paused_t null unless paused)
 POST /watchdog/retry   {kind}: « Réessayer », that repair's backoff starts
                  over (needs the page token)
@@ -65,6 +65,7 @@ looks; the repairs' hourly counts are kept in state.json ("watchdog").
 
 import asyncio
 import random
+import json
 
 AVAILABLE = ("relaunch", "mine_relaunch")
 # Repairs by the stage change feature, and the switch that makes each real.
@@ -85,7 +86,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
     memory = rules.fresh(ports.store.saved.get("watchdog"))
     status = {"text": ports.t("Démarrage"), "symptom": None, "paused": None, "repairing": None,
               "mode": None, "ended_at": None, "resumed": False, "anr_waited": False, "controls": None,
-              "gold": rules.gold_fresh(),
+              "intention": None, "redirect_episode": None, "input_stamp": None, "gold": rules.gold_fresh(),
               "bar": rules.bar_fresh(), "relaunched_at": None}
     parking = bool(farming) and "park" in farming
     available = AVAILABLE + (tuple(FARMING) if farming else ()) + (("park",) if parking else ())
@@ -229,21 +230,24 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         part = profile()
         name = part["mode"]
         status["repairing"] = kind
-        show(ports.t("Réparation en cours : {repair}", repair=rules.REPAIR_NAMES[kind]))
+        status["intention"] = rules.redirect_intention(kind, profile())
+        show(ports.t("Vers {destination} : {purpose}", destination=status["intention"]["destination_t"],
+                     purpose=status["intention"]["purpose_t"]))
         try:
             answer = await (farming["park"](name) if kind == "park" else
                             farming["farm"](part["stage"], part["preset"], name, modes["state"]().get("highest")))
         except ports.Busy as e:
             memory = rules.not_run(memory, kind)
-            say("normal", "Repair deferred: {repair} ({why})", {"repair": rules.REPAIR_NAMES[kind], "why": e.t})
+            say("normal", "Action waiting: {repair}; {why}", {"repair": rules.REPAIR_NAMES[kind], "why": e.t})
             return
         finally:
             status["repairing"] = None
+            status["intention"] = None
         if answer["result"] == "failed":
             memory, actions = rules.stopped(memory, kind, ports.clock.wall(), random.uniform(-1.0, 1.0), name)
             # Why it stopped, with the backoff's alert (if it is one).
             notify = any(action[4] for action in actions)
-            text = say("warning", "Repair stopped: {repair}: {why}",
+            text = say("warning", "Action stopped: {repair}; {why}",
                        {"repair": rules.REPAIR_NAMES[kind], "why": answer["text_t"]}, notify=notify)
             if notify:
                 await ports.notify(text)
@@ -287,11 +291,14 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             memory = rules.not_run(memory, kind)
             return
         status["repairing"] = kind
-        show(ports.t("Réparation en cours : {repair}", repair=rules.REPAIR_NAMES[kind]))
+        status["intention"] = rules.redirect_intention(kind, profile())
+        show(ports.t("Vers {destination} : {purpose}", destination=status["intention"]["destination_t"],
+                     purpose=status["intention"]["purpose_t"]))
         try:
             await task
         finally:
             status["repairing"] = None
+            status["intention"] = None
         ended = launches["state"]()
         status["relaunched_at"] = ports.clock.monotonic()
         if ended["state"] == "done" and farming and "relaunched" in farming:
@@ -307,10 +314,12 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             # Back in the mine by its own way; out of feathers or no way in,
             # the mine ends and the mode goes back to the default (its alert).
             status["repairing"] = kind
+            status["intention"] = rules.redirect_intention(kind, profile())
             try:
                 answer = await mines["reenter"]()
             finally:
                 status["repairing"] = None
+                status["intention"] = None
             say("normal", "Back into the mine: {result} {text}", {"result": answer["result"],
                                                                   "text": answer["text_t"]})
 
@@ -319,7 +328,12 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         name = mode_now()
         now, wall = ports.clock.monotonic(), ports.clock.wall()
         last = await ports.user_input()  # only an input with the game in front
+        stamp = last.get("monotonic") if last else None
+        if stamp is not None and stamp != status["input_stamp"]:
+            status["input_stamp"] = stamp
+            status["redirect_episode"] = None
         if name != status["mode"]:
+            status["redirect_episode"] = None
             if status["mode"] is not None:
                 # Another mode: its own symptoms, from scratch (the backoff
                 # kept). Look at once, no menu grace; after free play,
@@ -329,8 +343,11 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                 status.update(resumed=True, controls=None,
                               ended_at=now if status["mode"] == "free" else status["ended_at"])
             status["mode"] = name
-        moving = modes["state"]().get("state") == "moving"
+        mode_state = modes["state"]()
+        moving = mode_state.get("state") == "moving"
         why = rules.paused(name, last["monotonic"] if last else None, now, moving)
+        if not why and (mode_state.get("intention") or {}).get("kind") == "resource_refresh":
+            why = "Actualisation des ressources en cours"
         if not ports.enabled():
             # Off: no look at all, from scratch once back on.
             why = "Plugin désactivé"
@@ -366,6 +383,10 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             after_mode)
         status["resumed"] = False
         status["symptom"] = symptom
+        if symptom is None:
+            # The next observed healthy screen completes this redirect
+            # episode. Retries before that observation share one notice.
+            status["redirect_episode"] = None
         held = ports.lease.state()
         context = {"input_wall": last["wall"] if last else None,
                    "lease": held["holder"] if held and held["holder"] != "watchdog" else None,
@@ -381,18 +402,42 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             show(ports.t("{what} ; prochain essai dans {minutes} min", what=ports.t(text, **params), minutes=minutes))
         else:
             show(ports.t(text, **params))
+        observed = ports.t(text, **params)
+        redirect = next((action[1] for action in actions if action[0] == "repair"), None)
+        intention = rules.redirect_intention(redirect, profile()) if redirect else None
+        redirect_key = json.dumps(intention, sort_keys=True) if intention else None
+        new_redirect = bool(redirect and status["redirect_episode"] != redirect_key)
+        redirect_notified = False
+
+        async def announce_redirect():
+            nonlocal redirect_notified
+            if new_redirect and not redirect_notified:
+                notice = rules.redirect_notice(intention, observed)
+                said = say("normal", notice, notify=True)
+                await ports.notify(said)
+                status["redirect_episode"] = redirect_key
+                memory["notified"] = {**memory["notified"], redirect: wall}
+                redirect_notified = True
+
         repaired = False
         for action in actions:
             if action[0] == "record":
                 _, level, text, values, notify = action
+                if notify and new_redirect and not redirect_notified:
+                    text = rules.redirect_notice(rules.redirect_intention(redirect, profile()), ports.t(text, **values) if not ports.is_t(text) else text)
+                    values = None
+                    redirect_notified = True
+                    status["redirect_episode"] = redirect_key
                 said = say(level, text, values, notify)
                 if notify:
                     await ports.notify(said)
             elif action[0] == "repair" and action[1] in ("relaunch", "mine_relaunch"):
+                await announce_redirect()
                 ports.store.save()
                 await relaunch(action[1])
                 repaired = True
             elif action[0] == "repair" and (action[1] in FARMING or action[1] == "park"):
+                await announce_redirect()
                 ports.store.save()
                 await farm_repair(action[1])
                 repaired = True
@@ -462,7 +507,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         return {"mode": status["mode"], "status": status["text"], "line": line(),
                 "waiting": sorted(kind for kind, kept in memory["backoff"].items() if kept["next"] > wall),
                 "symptom": status["symptom"], "paused_t": status["text"] if status["paused"] else None,
-                "repairing": status["repairing"],
+                "repairing": status["repairing"], "intention": status["intention"],
                 "counters": rules.counters(memory, wall), "lease": held,
                 "profile": profile()}
 
@@ -489,7 +534,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         symptom = status["symptom"]
         return {"mode": status["mode"], "level": rules.level(symptom),
                 "message_t": status["text"],
-                "repairing": status["repairing"],
+                "repairing": status["repairing"], "intention": status["intention"],
                 "blocked": bool(memory["alerted"] and symptom in rules.ERRORS
                                 and not status["repairing"])}
 

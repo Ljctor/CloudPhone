@@ -301,7 +301,7 @@ LEASE_OWNER = contextvars.ContextVar("slayer_legend_lease_owner", default=None)
 
 
 # The plugin's own holders of the lease: refused while the plugin is off.
-PLUGIN_HOLDERS = ("launch", "mine", "watchdog", "mode", "stage_change")
+PLUGIN_HOLDERS = ("launch", "mine", "watchdog", "mode", "stage_change", "resource_refresh")
 OFF = "plugin désactivé"
 HELD = "bail tenu par {holder}"
 PLAYING = "l’utilisateur joue"

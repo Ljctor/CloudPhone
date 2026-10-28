@@ -3,9 +3,10 @@ farming mpw4, free play or the Closed Mine; back to mpw18 when the timer
 ends (the mine ends its last entry first).
 
 GET  /mode         {mode, default, until, stage18, stage4, highest, configured, state, message_t, setup, tone,
-                    gold, mine} (message_t: a status text, texts.py)
+                    gold, mine, intention} (message_t: a status text, texts.py)
                    setup: true while the mode is being set up (its switch,
                    waiting for the lease or tried again), for the overlay;
+                   intention: active destination/purpose, route null unless computed
                    tone: the overlay's colour, "ok", "hold", "setup" or
                    "error" (rules.tone)
 POST /mode         {mode, default, until, stage18, stage4, highest, floor, area}: a number
@@ -80,7 +81,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
               # ended last ({id, action}), wake: wakes the switch's wait.
               "hold": None, "last_hold": None, "wake": None,
               # watched(): the watchdog's last look ({mode, level}), once wired.
-              "watched": None}
+              "watched": None, "intention": None, "resource_refresh": None}
     ports.store.register("mode", lambda: {key: status[key] for key in (
         "mode", "default", "until", "highest", "configured")})
 
@@ -110,6 +111,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         answer["message_t"] = status["message"]
         answer.update(stages())
         answer["setup"] = status["state"] in ("moving", "waiting")
+        answer["intention"] = active_intention()
         hold = status["hold"]
         answer["hold"] = ({"id": hold["id"], "mode": hold["mode"],
                            "left": max(0, round(hold["until"] - ports.clock.monotonic()))} if hold else None)
@@ -205,7 +207,33 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
             await (ports.notify(text, actions=buttons) if buttons else ports.notify(text))
         return left
 
+    def active_intention():
+        current = status["intention"]
+        if current:
+            return {key: value for key, value in current.items() if key != "owner"}
+        getter = status["resource_refresh"]
+        refresh = getter() if getter else None
+        return refresh.get("intention") if refresh and refresh.get("active") else None
+
+    def resource_refresh_by(getter):
+        status["resource_refresh"] = getter
+
     async def set_stage(number, mpw, applied=False, step=None):
+        name = f"mpw{mpw}"
+        parked = farming.get("soul_weapon_switch", lambda: "off")() == "real"
+        owner = object()
+        status["intention"] = {"owner": owner, "kind": "apply_loadout",
+                               "destination": "soul_weapon" if parked or step else "battle",
+                               "destination_t": t("Soul Weapon") if parked or step else t("Combat"),
+                               "purpose_t": t("appliquer la configuration demandée de {mode}", mode=name),
+                               "route": None, "route_known": False}
+        try:
+            return await apply_stage(number, mpw, applied, step)
+        finally:
+            if status["intention"] and status["intention"]["owner"] is owner:
+                status["intention"] = None
+
+    async def apply_stage(number, mpw, applied=False, step=None):
         """Brings the game to farming that stage with its loadout's preset.
         True once there; else one alert naming the step. While the
         shared lease cannot be had (the user played in the last 10 s,
@@ -379,11 +407,19 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         """Free play or the mine starts: the farming modes' parking (the
         Soul Weapon screen) is left, when the game shows it; while the
         user plays (the lease refused) nothing is touched."""
+        owner = object()
+        status["intention"] = {"owner": owner, "kind": "leave_farming", "destination": "battle",
+                               "destination_t": t("Combat"),
+                               "purpose_t": t("libérer le jeu pour {mode}", mode=name),
+                               "route": None, "route_known": False}
         try:
             answer = await farming["unpark"](name)
         except ports.Busy as e:
             ports.log("normal", f"Mode {name}: the Soul Weapon screen not left: {ports.english(e.t)}")
             return
+        finally:
+            if status["intention"] and status["intention"]["owner"] is owner:
+                status["intention"] = None
         if answer["result"] == "failed":
             ports.log("warning", f"Mode {name}: leaving the Soul Weapon screen stopped: "
                       f"{ports.english(answer['text_t'])}")
@@ -590,5 +626,6 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
                    ("POST", "/mode/hold", handle_hold)],
         "startup": [resume],
         # For the watchdog: the mode now (it runs only in the default one).
-        "api": {"state": state, "confirm": confirm, "watched_by": watched_by},
+        "api": {"state": state, "confirm": confirm, "watched_by": watched_by,
+                "resource_refresh_by": resource_refresh_by},
     }

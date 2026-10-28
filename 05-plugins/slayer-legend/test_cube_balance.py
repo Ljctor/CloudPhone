@@ -46,6 +46,26 @@ class CubeBalance(unittest.TestCase):
         self.assertEqual(cubes.read((width, height, pixels)),
                          {"text": "2,876,028,358", "value": 2876028358})
 
+    def test_successive_native_balances_keep_zero_and_eight_distinct(self):
+        for name, text, value in (("cube_balance_720_d", "3,850,085,694", 3850085694),
+                                  ("cube_balance_720_e", "3,850,167,614", 3850167614)):
+            with self.subTest(name=name):
+                self.assertEqual(cubes.read(captured_counter(name)), {"text": text, "value": value})
+
+    def test_real_successive_balances_produce_a_rate_at_observation_times(self):
+        rate_rules = load("features/gold_rules")
+        window = rate_rules.empty()
+        # Values come from two actual native captures. Times are controlled
+        # test observations; no filesystem time is claimed as capture evidence.
+        for at, name in ((100.0, "cube_balance_720_d"), (110.0, "cube_balance_720_e")):
+            reading = cubes.read(captured_counter(name))
+            self.assertIsNotNone(reading)
+            window = rate_rules.counted(window, {**reading, "full": True, "step": 1}, at)
+        rate, samples = rate_rules.rate(window["samples"], 110.0)
+        self.assertEqual(rate, 8192)
+        self.assertEqual(rate * 3600, 29491200)
+        self.assertEqual(samples[-1][0], 110.0)
+
     def test_unreadable_digit_does_not_produce_a_balance(self):
         width, height, pixels = captured_counter("cube_balance_720_b")
         for y in range(433, 451):

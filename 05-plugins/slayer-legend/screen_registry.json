@@ -22,7 +22,7 @@
         {"share": "TOP_EMERALD", "test": "green", "above": 0.15},
         {"patch": "battle_emerald", "limit": 0.6}
       ],
-      "fixtures": ["battle_emerald", "battle_menu_labels", "battle_mana_bar", "top_currencies_battle", "top_currencies_equipment", "top_currencies_shaded"]
+      "fixtures": ["battle_emerald", "battle_menu_labels", "battle_mana_bar", "top_currencies_battle", "top_currencies_equipment", "top_currencies_shaded", "top_currencies_live_720"]
     },
     "saver": {
       "kind": "screen", "status": "registered", "legacy": "saver",
@@ -78,9 +78,26 @@
     "equipment_weapon": {
       "kind": "overlay", "over": ["battle"], "status": "registered",
       "anchors": [
-        {"patch": "sw_tabs", "limit": 0.6}
+        {"patch": "equipment_l3_weapon_tabs", "box": [13, 0, 92, 24], "limit": 0.6},
+        {"reader": "equipment_weapon_tab"}
       ],
-      "fixtures": ["battle_emerald", "sw_tabs"]
+      "fixtures": ["battle_emerald", "sw_tabs", "equipment_l3_weapon_tabs"]
+    },
+    "equipment_accessories": {
+      "kind": "overlay", "over": ["battle"], "status": "registered",
+      "anchors": [
+        {"patch": "equipment_l3_accessories_tabs", "box": [104, 0, 93, 24], "limit": 0.6},
+        {"reader": "equipment_accessories_tab"}
+      ],
+      "fixtures": ["battle_emerald", "equipment_l3_accessories_tabs"]
+    },
+    "weapon_detail": {
+      "kind": "overlay", "over": ["battle"], "status": "registered",
+      "anchors": [
+        {"patch": "weapon_detail_tabs_720", "limit": 0.45},
+        {"patch": "weapon_detail_close_720", "limit": 0.45}
+      ],
+      "fixtures": ["battle_emerald", "weapon_detail_tabs_720", "weapon_detail_close_720"]
     },
     "stage_select": {
       "kind": "overlay", "over": ["battle"], "status": "registered",
@@ -134,12 +151,12 @@
     "skill_mastery": {"name": "Skill Mastery", "parent": "skill", "screen": "skill_mastery", "via": "skill/element_3", "back": "skill_mastery/close", "look": "screen", "visit": true, "example": "screenshots/skill_mastery.png", "scroll": [{"rect": [0.1, 0.2, 0.9, 0.9], "direction": "vertical", "content": "mastery tree", "measured": false, "why": "node taps may spend currency; safe swipe path not calibrated"}]},
     "skill_rave_mantra": {"name": "Rave and Mantra skills", "parent": "skill", "screen": "skill_rave_mantra", "via": "skill/element_4", "back": "skill_rave_mantra/close", "look": "panel", "visit": true, "example": "screenshots/skill_rave_mantra.png"},
     "equipment_weapon": {"name": "Equipment: Weapon", "parent": "battle", "screen": "equipment_weapon", "via": "battle/menu_equipment", "back": "equipment_weapon/close", "look": "equipment_weapon", "visit": true, "example": "screenshots/equipment_weapon.png", "scroll": [{"move": "equipment_weapon/scroll", "rect": [0.03, 0.48, 0.97, 0.88], "direction": "vertical", "content": "grid of weapons", "measured": true, "gesture": [0.27, 0.81, 0.27, 0.55], "start": "first grade rows visible", "end": "single equipped gold weapon at bottom", "captures": ["equipment_weapon_scroll_1.png", "equipment_weapon_scroll_2.png"]}]},
-    "soul_weapon": {"name": "Soul Weapon", "parent": "equipment_weapon", "screen": "soul_weapon", "via": "equipment_weapon/soul_weapon", "back": "soul_weapon/close", "look": "soul_weapon", "visit": true, "example": "screenshots/soul_weapon.png", "scroll": [{"move": "soul_weapon/scroll", "rect": [0.0, 0.55, 0.17, 0.93], "direction": "vertical", "content": "list of the 89 soul weapons", "seen": "soul_weapon.tags", "gesture": [0.087, 0.86, 0.087, 0.62], "start": "the list's first cell shows its red frame or nothing moves upwards", "end": "two frames alike in the rectangle after a swipe", "measured": true, "why_no_capture": "historical calibration; this archive has only the base Soul Weapon screen"}]},
+    "soul_weapon": {"name": "Soul Weapon", "parent": "equipment_weapon", "screen": "soul_weapon", "via": "equipment_weapon/soul_weapon", "back": "soul_weapon/close", "look": "soul_weapon", "visit": true, "example": "screenshots/soul_weapon.png", "variants": ["screenshots/soul_weapon_ambition_calibration.png", "screenshots/soul_weapon_wild_calibration.png", "screenshots/soul_weapon_temptation_calibration.png"], "scroll": [{"move": "soul_weapon/scroll", "rect": [0.0, 0.55, 0.17, 0.93], "direction": "vertical", "content": "list of the 89 soul weapons", "seen": "soul_weapon.tags", "gesture": [0.087, 0.86, 0.087, 0.62], "start": "the list's first cell shows its red frame or nothing moves upwards", "end": "two frames alike in the rectangle after a swipe", "measured": true, "why_no_capture": "historical calibration; this archive has only the base Soul Weapon screen"}]},
     "soul_weapon_engraving": {"name": "Soul Weapon Engraving", "parent": "soul_weapon", "screen": "soul_weapon_engraving", "via": "soul_weapon/engraving", "back": "soul_weapon_engraving/close", "look": "soul_weapon_engraving", "visit": true, "example": "screenshots/soul_weapon_engraving_relax.png"},
-    "weapon_detail": {"name": "Weapon detail", "parent": "equipment_weapon", "screen": "weapon_detail", "via": "equipment_weapon/inspect_weapon", "look": "panel", "visit": false, "why": "a redacted full-screen example remains to be archived"},
+    "weapon_detail": {"name": "Weapon detail", "parent": "equipment_weapon", "screen": "weapon_detail", "via": "equipment_weapon/inspect_weapon", "look": "weapon_detail", "back": "weapon_detail/close", "visit": false, "why": "inspection requires a fresh calibrated card check; use the guarded resource circuit", "example": "screenshots/weapon_detail_calibration.png", "variants": ["screenshots/weapon_detail_calibration_second.png"]},
     "equipment_weapon_icon": {"name": "Equipment: Weapon, diamond icon", "parent": "equipment_weapon", "screen": null, "via": null, "look": "panel", "visit": false, "why": "not explored: what it does is not known, so the tour does not tap it (icon at 0.80, 0.462)"},
     "spirit": {"name": "Spirit", "parent": "equipment_weapon", "screen": "spirit", "via": "equipment_weapon/spirit", "back": "spirit/close", "look": "screen", "visit": true, "example": "screenshots/spirit.png", "scroll": [{"rect": [0.03, 0.5, 0.97, 0.9], "direction": "vertical", "content": "grid of spirits", "measured": false, "why": "the grid is the forbidden spirit +/- area"}]},
-    "equipment_accessories": {"name": "Equipment: Accessories", "parent": "equipment_weapon", "screen": "equipment_accessories", "via": "equipment_weapon/accessories", "back": "equipment_accessories/weapon", "look": "panel", "visit": true, "example": "screenshots/equipment_accessories.png", "scroll": [{"move": "equipment_accessories/scroll", "rect": [0.03, 0.48, 0.97, 0.88], "direction": "vertical", "content": "grid of accessories", "measured": true, "gesture": [0.27, 0.81, 0.27, 0.55], "start": "first grade rows visible", "end": "single equipped gold accessory at bottom", "captures": ["equipment_accessories_scroll_1.png", "equipment_accessories_scroll_2.png"]}]},
+    "equipment_accessories": {"name": "Equipment: Accessories", "parent": "equipment_weapon", "screen": "equipment_accessories", "via": "equipment_weapon/accessories", "back": "equipment_accessories/weapon", "look": "equipment_accessories", "visit": true, "example": "screenshots/equipment_accessories.png", "scroll": [{"move": "equipment_accessories/scroll", "rect": [0.03, 0.48, 0.97, 0.88], "direction": "vertical", "content": "grid of accessories", "measured": true, "gesture": [0.27, 0.81, 0.27, 0.55], "start": "first grade rows visible", "end": "single equipped gold accessory at bottom", "captures": ["equipment_accessories_scroll_1.png", "equipment_accessories_scroll_2.png"]}]},
     "black_orb": {"name": "Black Orb", "parent": "equipment_accessories", "screen": "black_orb", "via": "equipment_accessories/black_orb", "back": "black_orb/close", "look": "screen", "visit": true, "example": "screenshots/black_orb.png"},
     "black_orb_obtain": {"name": "Obtain: Black Feathers", "parent": "black_orb", "screen": null, "via": "black_orb/obtain", "look": "screen", "visit": false, "resource": "feather_black", "why": "button is forbidden in navigation.json because it may spend Black Orb; no Obtain screen capture exists, so the black-feather balance cannot be calibrated"},
     "black_orb_accessory": {"name": "Black Orb: accessory card", "parent": "black_orb", "screen": "black_orb_accessory", "via": "black_orb/accessory_left", "back": "black_orb_accessory/close", "look": "panel", "visit": true, "example": "screenshots/black_orb_accessory.png"},

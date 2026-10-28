@@ -92,8 +92,13 @@ class HourlyResources(unittest.TestCase):
         result = self.measure([{"cubes": {"value": 100}}, {"cubes": {"value": 110}}, None, None])
         self.assertEqual(result["cubes"]["rate"], 1)
         self.assertEqual(result["cubes"]["read"], 110)
-        self.assertEqual(result["cubes"]["status"], "stale")
+        self.assertEqual(result["cubes"]["status"], "measured", "dated model remains usable between scheduled visits")
         self.assertEqual(result["cubes"]["span"], 10)
+
+    def test_resource_model_expires_only_at_its_measurement_window(self):
+        result = self.measure([{"cubes": {"value": 100}}, {"cubes": {"value": 110}}] + [None] * 181)
+        self.assertEqual(result["cubes"]["status"], "stale")
+        self.assertEqual(result["cubes"]["read"], 110, "expiry must not fabricate a fresh observation")
 
     def test_old_game_facts_never_become_samples_and_unread_is_not_zero(self):
         result = self.measure([{}, {}, {}, {}])

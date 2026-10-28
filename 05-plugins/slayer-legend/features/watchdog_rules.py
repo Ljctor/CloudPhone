@@ -234,6 +234,39 @@ ALWAYS_REAL = ("relaunch", "mine_relaunch", "back_to_battle", "park")
 PARK_ALERT_AFTER = 8
 
 
+
+def redirect_intention(kind, target):
+    """The next operation's destination/purpose, not an invented route.
+
+    A destination is an objective. Only the executor verifies each actual
+    screen; this catalogue does not claim a computed full-screen path.
+    """
+    mode = MODE_NAMES.get(target.get("mode"), target.get("mode", "?"))
+    stage, preset = target.get("stage"), target.get("preset")
+    destination, label, purpose = {
+        "relaunch": ("game", t("Slayer Legend"), t("relancer le jeu pour reprendre {mode}", mode=mode)),
+        "mine_relaunch": ("mine_list", t("Mine fermée"), t("relancer le jeu puis rejoindre la mine configurée")),
+        "back_to_battle": ("battle", t("Combat"), t("reprendre {mode}", mode=mode)),
+        "stage_change": ("soul_weapon" if target.get("park") else "battle",
+                         t("Soul Weapon") if target.get("park") else t("Combat"),
+                         t("appliquer le stage {stage} et le préréglage {preset} de {mode}",
+                           stage=stage if stage is not None else "?", preset=preset or "?", mode=mode)),
+        "select_preset": ("battle_settings", t("Battle settings"),
+                          t("rétablir le préréglage {preset} pour {mode}", preset=preset or "?", mode=mode)),
+        "loadout": ("soul_weapon", t("Soul Weapon"), t("équiper l’arme et vérifier la gravure de {mode}", mode=mode)),
+        "park": ("soul_weapon", t("Soul Weapon"), t("surveiller les âmes pendant {mode}", mode=mode)),
+    }[kind]
+    return {"kind": kind, "destination": destination, "destination_t": label,
+            "purpose_t": purpose, "route": None, "route_known": False}
+
+
+def redirect_notice(intention, observed=None):
+    """One concrete notice per redirect, never one notice per gesture."""
+    return t("Constat : {observed} · destination : {destination} · objectif : {purpose} · étapes intermédiaires à confirmer à l’écran",
+             observed=observed or t("Contrôle du mode"), destination=intention["destination_t"],
+             purpose=intention["purpose_t"])
+
+
 def park_wanted(mode, switch, state=None, hold=None):
     """The mode parks on the Soul Weapon screen: mpw18 or mpw4 farming only
     (never free play or the mine), its soul weapon switch real (switch;
@@ -480,13 +513,13 @@ def failure(memory, kind, wall, jitter=0.0, mode="mpw18"):
     named = {**values, "mode": MODE_NAMES.get(mode, mode)}
     reached = next((d for d in ESCALATE if base >= d and d not in said), None)
     if failures == 1:
-        action = record("warning", "Repair without effect: {repair}, next attempt in {minutes} min", values,
+        action = record("warning", "Action incomplete: {repair}; verification failed, next attempt in {minutes} min", values,
                         notify=True)
     elif reached is not None:
         action = record("warning", "{mode}: {repair} still failing, next attempt in {minutes} min", named,
                         notify=True)
     else:
-        action = record("normal", "Repair without effect: {repair}, next attempt in {minutes} min", values)
+        action = record("normal", "Action incomplete: {repair}; verification failed, next attempt in {minutes} min", values)
     if reached is not None:
         said.append(reached)
     memory = {**memory, "backoff": {**memory["backoff"], kind: {
@@ -557,7 +590,7 @@ def decide(memory, symptom, text, params, context, wall):
     verifying, memory["verifying"] = memory["verifying"], None
     if symptom is None:
         if verifying:
-            actions.append(record("normal", "Repair done: {repair}", {"repair": REPAIR_NAMES[verifying]}))
+            actions.append(record("normal", "Action verified: {repair}", {"repair": REPAIR_NAMES[verifying]}))
         if memory["good_since"] is None:
             memory["good_since"] = wall
         memory = recovered(memory, wall)
@@ -566,7 +599,7 @@ def decide(memory, symptom, text, params, context, wall):
         if memory["good"] >= RECOVERED_AFTER and (not memory["repaired"]
                                                   or wall - memory["good_since"] >= RECOVERY_FLOOR):
             if memory["alerted"] and memory["alert_notified"]:
-                actions.append(record("normal", "{mode}: recovered", {"mode": named}, notify=True))
+                actions.append(record("normal", "{mode}: monitoring is stable again", {"mode": named}, notify=True))
             memory.update(alerted=False, alert_notified=False, repaired=False, watch={}, planned=None,
                           deferred=None, tiers=[])
         return memory, actions
@@ -582,7 +615,7 @@ def decide(memory, symptom, text, params, context, wall):
             actions += said
         else:
             # It took; something else is wrong now (a pop-up after a relaunch).
-            actions.append(record("normal", "Repair done: {repair}", {"repair": REPAIR_NAMES[verifying]}))
+            actions.append(record("normal", "Action verified: {repair}", {"repair": REPAIR_NAMES[verifying]}))
     same = symptom == memory["symptom"] or (repair is not None and repair == REPAIRS.get(memory["symptom"]))
     memory["streak"] = memory["streak"] + 1 if same else 1
     memory["since_repair"] = memory["since_repair"] + 1 if same else 1
@@ -626,7 +659,7 @@ def decide(memory, symptom, text, params, context, wall):
     memory["verifying"] = repair
     memory["repaired"] = True
     memory["since_repair"] = 0
-    actions.append(record("normal", "Repair: {repair}", {"repair": REPAIR_NAMES[repair]}))
+    actions.append(record("normal", "Action started: {repair}", {"repair": REPAIR_NAMES[repair]}))
     actions.append(("repair", repair))
     return memory, actions
 

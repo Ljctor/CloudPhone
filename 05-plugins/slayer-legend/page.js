@@ -40,6 +40,9 @@ import trace from './page_trace.js';
 import watchdog from './page_watchdog.js';
 
 const ENGLISH = {
+  "Intention": "Intention",
+  "Détail de l’arme": "Weapon details",
+  "Vers {destination} · {purpose}": "Going to {destination} · {purpose}",
   "Agrandir le menu de navigation": "Expand navigation menu",
   "Réduire le menu de navigation": "Minimize navigation menu",
   "Capture annulée · Choisis une action": "Capture cancelled \u00b7 Choose an action",

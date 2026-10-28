@@ -22,6 +22,11 @@ SHAPES = {
     "8": ("..#######..", "###########", "###.....###", "###########", "###########", "###.....###", "###.....###", "###########", "..#######.."),
     "9": ("..########.", "###########", "###......##", "###......##", "###########", "..#########", ".......####", ".......###.", "..######..."),
 }
+# A second native pixel phase of zero, independently observed in both
+# cube_balance_720_d/e. Keep both real shapes rather than widening the
+# digit ambiguity threshold (zero must still be distinct from eight).
+VARIANTS = {"0": (("..#######..", "###########", "###.....###", "###.....###", "###.....###",
+                    "###.....###", "###.....###", "###########", "..#######.."),)}
 
 
 def _purple(pixels, offset):
@@ -51,16 +56,18 @@ def _digit(mask):
     if not 6 <= width <= 15 or height < 15:
         return None
     scores = []
-    for character, shape in SHAPES.items():
-        target_width = len(shape[0])
-        difference = 0
-        for row in range(9):
-            source_y = min(height - 1, (row * 2 * height + 9) // 18)
-            for col in range(target_width):
-                source_x = min(width - 1, (col * width + target_width // 2) // target_width)
-                difference += mask[source_y][source_x] != (shape[row][col] == "#")
-        score = difference / (9 * target_width)
-        scores.append((score, character))
+    for character, base in SHAPES.items():
+        distances = []
+        for shape in (base,) + VARIANTS.get(character, ()):
+            target_width = len(shape[0])
+            difference = 0
+            for row in range(9):
+                source_y = min(height - 1, (row * 2 * height + 9) // 18)
+                for col in range(target_width):
+                    source_x = min(width - 1, (col * width + target_width // 2) // target_width)
+                    difference += mask[source_y][source_x] != (shape[row][col] == "#")
+            distances.append(difference / (9 * target_width))
+        scores.append((min(distances), character))
     scores.sort()
     if scores[0][0] > 0.17:
         return None

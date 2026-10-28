@@ -30,6 +30,28 @@ def gold(ports, screens, stage, counter, rules, souls=None):
               "resources": {field: rules.empty() for field in ("cubes", "weapon_l3", "accessory_l3")},
               "resource_read": {}, "frame": None, "frame_at": None}
 
+    def observe_resources(shot, readings, captured_at=None):
+        """Count a visit's forced scan now; a short popup need not wait for
+        the background ten-second poll. Duplicate timestamps never count twice."""
+        if captured_at is None:
+            captured_at = ports.capture_time(shot) if hasattr(ports, "capture_time") else ports.clock.wall()
+        if captured_at is None:
+            return
+        kind, here = readings.get("gold_place") or (None, None)
+        for field, window in status["resources"].items():
+            value = readings.get(field)
+            raw = value.get("value") if isinstance(value, dict) else value
+            if not isinstance(raw, (int, float)) or isinstance(raw, bool) or raw < 0:
+                continue
+            window, counts = rules.where(window, kind, here)
+            if counts:
+                exact = {"value": raw, "text": value.get("text", str(raw)) if isinstance(value, dict)
+                         else str(raw), "step": 1, "full": True}
+                window = rules.counted(window, exact, captured_at, rules.RESOURCE_WINDOW,
+                                       short=rules.RESOURCE_WINDOW)
+                status["resource_read"][field] = captured_at
+            status["resources"][field] = window
+
     def gold_facts(shot):
         """The gold counter's reading, where the game is: ("saver", stage
         number) or ("battle", ink of the stage name line), and the souls
@@ -79,21 +101,7 @@ def gold(ports, screens, stage, counter, rules, souls=None):
                         if counts and count:
                             window = rules.counted(window, count, captured_at, rules.SOULS_WINDOW, "skip")
                         status["souls"][colour] = window
-                    for field, window in status["resources"].items():
-                        value = readings.get(field)
-                        raw = value.get("value") if isinstance(value, dict) else value
-                        if not isinstance(raw, (int, float)) or isinstance(raw, bool) or raw < 0:
-                            continue
-                        # Consume this capture's actual reader output only;
-                        # never re-count a historical /game fact as current.
-                        window, counts = rules.where(window, kind, here)
-                        if counts:
-                            exact = {"value": raw, "text": value.get("text", str(raw)) if isinstance(value, dict)
-                                     else str(raw), "step": 1, "full": True}
-                            window = rules.counted(window, exact, captured_at, rules.RESOURCE_WINDOW,
-                                                   short=rules.RESOURCE_WINDOW)
-                            status["resource_read"][field] = captured_at
-                        status["resources"][field] = window
+                    observe_resources(shot, readings, captured_at)
             except Exception as e:
                 ports.log("warning", f"Gold reading failed: {e!r}")
             await ports.clock.sleep(rules.SECONDS)
@@ -143,7 +151,7 @@ def gold(ports, screens, stage, counter, rules, souls=None):
             # not gain fresh timestamps, zero samples, or new confidence.
             rate, samples = rules.rate(window["samples"], read if read is not None else ports.clock.wall(),
                                        rules.RESOURCE_WINDOW)
-            state = ("unread" if read is None else "stale" if ports.clock.wall() - read > rules.SECONDS * 2.5
+            state = ("unread" if read is None else "stale" if ports.clock.wall() - read > rules.RESOURCE_WINDOW
                      else "measuring" if rate is None else "measured")
             answer[field] = {"rate": rate, "read": read, "span": span(samples), "window": rules.RESOURCE_WINDOW,
                              "text": window["text"], "value": samples[-1][1] if samples else None, "status": state}
@@ -170,4 +178,4 @@ def gold(ports, screens, stage, counter, rules, souls=None):
                               "glyphs": {**counter.DIGITS, **counter.LETTERS, **counter.SIGNS}})
 
     return {"routes": [("GET", "/gold", handle_gold), ("GET", "/gold-font", handle_font)],
-            "api": {"current": current}}
+            "api": {"current": current, "observe_resources": observe_resources, "resources": resources_now}}

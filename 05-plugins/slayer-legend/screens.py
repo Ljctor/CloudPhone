@@ -363,7 +363,7 @@ class Patch:
     strokes still count at another screen size."""
 
     def __init__(self, name, box=None, limit=0.6):
-        _, _, x, y, w, h, data = fixture(name)
+        self.width, self.height, x, y, w, h, data = fixture(name)
         bx, by, bw, bh = box or (0, 0, w, h)
         self.step = step = max(2, round((bw * bh / SAMPLES) ** 0.5))
         self.cells = [(x + px, y + py) for py in range(by, by + bh - step + 1, step)
@@ -383,7 +383,9 @@ class Patch:
         width, height, pixels = shot
         cached = self.offsets.get((width, height))
         if cached is None:
-            sx, sy = width / WIDTH, height / HEIGHT
+            # A real fixture may be native 720, not the legacy 480 canvas.
+            # Keep its exact pixels and scale geometry from its own size.
+            sx, sy = width / self.width, height / self.height
             run = max(1, round(self.step * sx)) * 3
             cached = self.offsets[(width, height)] = (run, [
                 ((int(py * sy) * width + int(px * sx)) * 3, (int((py + self.step // 2) * sy) * width + int(px * sx)) * 3)
@@ -406,6 +408,7 @@ def _share_margin(value, level, above):
 
 
 _engraving = None
+_soul_weapon = None
 # Anchors of one look share measurements; concurrent executor workers must
 # never reuse measurements from another capture. Direct margin() calls use
 # no cache. ContextVar also restores the caller's cache on a nested look.
@@ -446,7 +449,17 @@ def quest_panel(shot):
 
 def _reader(name):
     """A reader by name: one of this module's, or engraving_screen's."""
-    global _engraving
+    global _engraving, _soul_weapon
+    if name.startswith("soul_weapon."):
+        if _soul_weapon is None:
+            with _seen_lock:
+                if _soul_weapon is None:
+                    spec = importlib.util.spec_from_file_location(
+                        "cloudphone_plugin_slayer_legend_screens_weapon", os.path.join(HERE, "soul_weapon.py"))
+                    module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(module)
+                    _soul_weapon = module
+        return getattr(_soul_weapon, name.split(".", 1)[1])
     if not name.startswith("engraving_screen."):
         return globals()[name]
     if _engraving is None:
@@ -458,6 +471,16 @@ def _reader(name):
                 spec.loader.exec_module(module)
                 _engraving = module
     return getattr(_engraving, name.split(".", 1)[1])
+
+
+def equipment_weapon_tab(shot):
+    """Selected-tab evidence only; the registry also requires its real
+    Equipment word patch, because other panels can contain bright pixels."""
+    return _reader("soul_weapon.tab")(shot) == "weapon"
+
+
+def equipment_accessories_tab(shot):
+    return _reader("soul_weapon.tab")(shot) == "accessories"
 
 
 def _anchor(spec):

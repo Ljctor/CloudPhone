@@ -129,7 +129,7 @@ READERS = {
     "souls": {"on": [("battle", "soul_weapon")], "fields": ("souls", "souls_reading"), "every": 10},
     "soul_weapon": {"on": [("battle", "soul_weapon")], "fields": ("soul_weapon_selected", "soul_weapon_equipped"),
                     "every": 10},
-    "equipment_l3": {"on": [("battle", "equipment_weapon")],
+    "equipment_l3": {"on": [("battle", "equipment_weapon"), ("battle", "equipment_accessories")],
                      "fields": ("weapon_l3", "accessory_l3"), "every": 10},
     "region": {"on": [("battle", "stage_select")], "fields": ("region",), "every": 5},
     "engraving": {"on": [("soul_weapon_engraving", None)], "fields": ("engraving",), "every": 5},

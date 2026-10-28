@@ -549,6 +549,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
            "relaunched": relaunched, "ensure_soul_weapon": ensure_soul_weapon,
            "park": lambda mode: run(mode, [("park", lambda: park(mode))]), "parked": parked, "unpark": unpark,
            "soul_weapon_switch": lambda: souls["switch"]() if souls else "off",
+           "soul_weapon_state": lambda: souls["state"]() if souls else None,
            "engraving_switch": lambda: souls["state"]()["engraving"] if souls else "off",
            "soul_weapon": lambda mode="mpw18": ensure_soul_weapon(mode),
            "battle_stage": lambda shot, shade=1.0: select.battle_stage(shot, names, shade)}
