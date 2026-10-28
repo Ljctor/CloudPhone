@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import goldFeature, { combatCountersVisible, hourlyRate, measureResourceRate } from './page_gold.js';
+import goldFeature, { combatCountersVisible, hourlyRate, measureResourceRate, estimatedCubes } from './page_gold.js';
 import { GOLD_COUNTER_FONT as font, GOLD_COUNTER_SOURCES as sources } from './page_gold_counter_font.js';
 import { freshnessColour } from './page_freshness.js';
 import { drawText } from './gold_text.js';
@@ -44,6 +44,16 @@ const invalidated = measureResourceRate({ ...oldLocal, value: 20 }, { verified: 
 assert.equal(invalidated.hourly, null, 'unverified resource readings invalidate the old local rate');
 assert.equal(measureResourceRate(invalidated, { seen: 1020, value: 25, verified: true }).hourly, null,
   'the next verified reading starts a new baseline after a relaunch/unread observation');
+const datedModel = { resources: { cubes: { ...measured, status: 'stale', window: 1800 } } };
+assert.equal(estimatedCubes({ value: 1000, seen: 1000 }, datedModel, null, 1060), 1120,
+  'a dated known rate still animates the estimated total after 60 seconds hidden');
+assert.equal(estimatedCubes({ value: 1000, seen: 1000 }, datedModel, null, 5000), 4600,
+  'forecast stops extending at the measured model window instead of growing forever');
+assert.equal(estimatedCubes({ value: 20, seen: 1060 }, datedModel, null, 1060), 20,
+  'a real counter reading resynchronises the estimate exactly, including after spending');
+assert.equal(estimatedCubes({ value: 20, seen: 1060 }, datedModel, null, 1061), 22);
+assert.equal(estimatedCubes({ value: 1000, seen: 1000 }, { resources: { cubes: { rate: null } } }, oldLocal, 1060), 1000,
+  'no movement is invented when there is no known measured cube rate');
 
 let now = 1000000;
 const originalNow = Date.now;
@@ -95,7 +105,22 @@ assert.ok(parseFloat(rateRows[0].style.width) > 0);
 assert.ok(rateRows.every((row) => row.children[0].style.flexShrink === '0'));
 assert.ok(rateRows.every((row) => row.children[1].style.marginLeft !== 'auto'));
 assert.ok(rateRows.every((row) => row.style.cssText.includes('gap:2px')));
-now += 300000;
+const fixedLeft = canvas.style.left;
+answer.box[0] = .45;
+feature.update();
+assert.equal(canvas.style.left, fixedLeft, 'Cube anchor does not follow the changing centred Gold number');
+now += 1000;
+scan.at = now / 1000;
+intervals[0]();
+assert.equal(canvas.title, '1,234,567,892', 'Cube estimate updates on the one-second overlay tick');
+now += 59000;
+scan.at = now / 1000;
+answer.resources.cubes = { ...measured, status: 'stale' };
+intervals[0]();
+assert.equal(canvas.title, '1,234,568,010', '60 seconds without a real counter read still advances the estimate');
+assert.equal(rateRows[1].children[1].title, '.../h', 'a dated estimate does not claim a fresh hourly measurement');
+answer.resources.cubes = measured;
+now += 240000;
 scan.at = now / 1000;
 intervals[0]();
 assert.ok(canvas.context.fills.some((fill) => fill.colour === freshnessColour(300)), 'age changes colour without a new reading');

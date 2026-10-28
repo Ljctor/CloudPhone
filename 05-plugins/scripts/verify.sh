@@ -114,7 +114,8 @@ assert "outline: 2" in script
 assert "combatCountersVisible" in script
 assert "cubeRow.style.opacity" in script and "row.style.opacity" in script
 assert "left:36.1%;top:18.25%;transform:translateY(-50%)" in script
-assert "hourly * age / 3600" in script
+assert "estimatedCubes(cube, gold.answer" in script
+assert "CUBE_NUMBER_LEFT = 298 / 720" in script
 assert all("[" + chr(39) + name + chr(39) not in script
            for name in ("stone_green", "stone_yellow", "stone_red", "stone_blue"))
 assert "weapon_l3" in script and "accessory_l3" in script

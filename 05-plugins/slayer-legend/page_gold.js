@@ -15,6 +15,9 @@ import { shortNumber } from './page_numbers.js';
 // ends around 17% of the screen). Each row keeps its own icon beside its value.
 const RATE_TOP = 18.5;
 const RATE_STEP = 1.65;
+// Mean start of Gold's number on reviewed 720×1560 Battle captures. Its
+// centred balance moves as its width changes; our Cube column stays fixed.
+const CUBE_NUMBER_LEFT = 298 / 720;
 const RATE_FIELDS = [
   ['gold', GOLD], ['cubes', RESOURCE_ICONS.cubes],
   ['soul_green', SOULS.green], ['soul_blue', SOULS.blue], ['soul_red', SOULS.red],
@@ -58,6 +61,23 @@ export function hourlyRate(answer, field, fallback = null, now = Date.now() / 10
   if (!source || source.status === 'stale' || !Number.isFinite(source.rate) || source.rate < 0) return null;
   if (source.read != null && (now - source.read < 0 || now - source.read > (source.window ?? 300) + 10)) return null;
   return source.rate * 3600;
+}
+
+// The total may keep estimating from a dated measured rate while its
+// hourly row says unknown/stale. Stop extending after that model's window;
+// retain the capped estimate until the next real counter reading syncs it.
+export function estimatedCubes(cube, answer, fallback = null, now = Date.now() / 1000) {
+  const base = resourceNumber(cube?.value);
+  if (base === null) return null;
+  const server = Object.hasOwn(answer?.resources ?? {}, 'cubes');
+  const model = server ? answer.resources.cubes : fallback;
+  const rate = server ? model?.rate : model?.hourly / 3600;
+  if (!Number.isFinite(rate) || rate < 0 || model?.invalidated) return base;
+  const horizon = Number.isFinite(model?.window) && model.window > 0 ? model.window : 300;
+  const modelRead = Number.isFinite(model?.read) ? model.read : model?.seen;
+  const remaining = Number.isFinite(modelRead) ? Math.max(0, modelRead + horizon - cube.seen) : 0;
+  const elapsed = Math.min(Math.max(0, now - cube.seen), remaining);
+  return Math.floor(base + rate * elapsed);
 }
 
 // The colours measured, each its game icon and rate: [{ icon, text }];
@@ -127,10 +147,7 @@ export default function goldFeature(api, { overlay, enabled = () => true, screen
       return;
     }
     const age = Math.max(0, Date.now() / 1000 - cube.seen);
-    const base = resourceNumber(cube.value);
-    const hourly = hourlyRate(gold.answer, 'cubes', gold.rates.cubes);
-    const estimated = base !== null && Number.isFinite(hourly) && hourly >= 0
-      ? Math.floor(base + hourly * age / 3600) : base;
+    const estimated = estimatedCubes(cube, gold.answer, gold.rates.cubes);
     const value = estimated !== null ? estimated.toLocaleString('en-US') :
       String(cube.value?.text ?? cube.value);
     const colour = freshnessColour(age);
@@ -138,13 +155,10 @@ export default function goldFeature(api, { overlay, enabled = () => true, screen
     // Full-digit Gold has its own compact shapes, including its comma;
     // scaling the abbreviated 13-row font loses these strokes/proportions.
     const cell = api.layer.offsetHeight / 1560;
-    // The Gold reader's box starts at the number's ink, not its coin.
-    // Anchor Cube ink there separately, leaving the correctly placed icon.
-    const box = gold.answer?.box;
-    const left = Array.isArray(box) && box.length === 4
-      && Number.isFinite(box[0]) && box[0] >= .25 && box[0] <= .85
-      && Date.now() / 1000 - gold.answer.read < 25 ? box[0] : 298 / 720;
-    cubeValue.style.left = `${(left - .361) * api.layer.offsetWidth - 2 * cell}px`;
+    // Position the ink independently of the icon and outline padding.
+    // Never follow the game's changing centred Gold balance bounds.
+    cubeValue.style.left = `${(CUBE_NUMBER_LEFT - .361) * api.layer.offsetWidth - 2 * cell}px`;
+    cubeValue.title = value;
     const key = `${value}@${colour}@${cell}`;
     if (key === cubeDrawn) return;
     if (!cubeRow.isConnected) api.layer.append(cubeRow);

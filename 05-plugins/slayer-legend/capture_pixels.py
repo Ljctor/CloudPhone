@@ -44,4 +44,3 @@ def canonical(shot):
         _normalised.insert(0, (shot, result))
         del _normalised[2:]
     return result
-
