@@ -334,6 +334,22 @@ def tagged(text, top=0.835, scale=2):
 
 
 class Tag(unittest.TestCase):
+    def test_actual_480_unequip_phase_stays_distinct_from_equip(self):
+        original = screen("sw_tag_unequip_480")
+        for width, height in ((480, 1040), (720, 1560)):
+            shot = NativeReaders.resized(original, width, height)
+            text, box = reader.tag(shot)
+            self.assertEqual(text, "Unequip")
+            self.assertTrue(.71 < box[1] < .73)
+        self.assertEqual(reader.tag(screen("sw_tag_equip"))[0], "Equip")
+        # An ambiguous template set cannot turn Unequip into an Equip tap.
+        prior = reader.TAG_480_TEMPLATES
+        try:
+            reader.TAG_480_TEMPLATES = {**prior, "Equip": prior["Unequip"]}
+            self.assertIsNone(reader.tag(original)[0])
+        finally:
+            reader.TAG_480_TEMPLATES = prior
+
     def test_synthetic_tags_read_nothing(self):
         # Text drawn in another font matches no template cut from the game:
         # found as a tag, read as nothing.
@@ -354,7 +370,7 @@ class Tag(unittest.TestCase):
     def test_the_equip_gate_has_both_actual_tag_states(self):
         self.assertTrue(reader.TAG_LEARNED)
         for fixture, expected in (("sw_tag_equip", "Equip"), ("sw_tag_unequip", "Unequip"),
-                                  ("sw_tag_unequip_720", "Unequip")):
+                                  ("sw_tag_unequip_720", "Unequip"), ("sw_tag_unequip_480", "Unequip")):
             self.assertTrue(os.path.exists(os.path.join(FIXTURES, fixture + ".txt")))
             self.assertEqual(reader.tag(screen(fixture))[0], expected)
 

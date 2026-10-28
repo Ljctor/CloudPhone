@@ -12,13 +12,15 @@ separate milestones. Historical checked items below do not close a new regressio
 - [ ] Validate independent server capture, priority recognition, bounded readers
   and deferred archives with the browser closed. Measure frame age and actual
   screen transitions; HTTP response time alone is not recognition latency.
-- [ ] Stop and drain all plugin background work before shared capture/analysis
-  services close. No task may restart observation after shutdown.
+- [x] Stop and drain plugin background work before shared capture/analysis
+  services close, including shielded readers and in-flight commands. Verify
+  with the app lifecycle and production gateway restart; Android stays running.
 - [ ] Give every non-default mode a finite deadline and return to the default
-  on expiry; verify the actual countdown and readable lowercase default label.
+  on expiry. Actual Agent countdown and expiry to mpw18 verified; inspect the
+  enlarged lowercase default label in the browser after the setup completes.
 
-- [ ] Keep mode and timer visible when Gold/soul readings are absent, stale
-  or failing; deploy and verify the actual browser overlay.
+- [x] Keep mode and timer visible when Gold/soul readings are absent, stale
+  or failing; verify the actual browser overlay with a running timed Agent mode.
 - [ ] Observe Free play navigation with trustworthy before/after captures and
   refresh visible readers on user-driven screen changes, including fast visits.
 - [ ] Recognise the Title screen from a calibrated visual title landmark;
@@ -87,6 +89,13 @@ separate milestones. Historical checked items below do not close a new regressio
   Rankings, AUTO and other forbidden navigation/actions.
 
 ### Setup verification findings
+
+- [ ] Verify the native-height Unequip tag after the automatic route reaches
+  Ambition. A real nine-row tag was unreadable by the older phase templates;
+  keep strict Equip/Unequip separation and add its reviewed crop.
+- [x] Inspect the live server observation metrics after deployment: bounded
+  reader lanes, no recorded analysis/archive errors in the sampled interval.
+  The browser remained connected; the browser-closed acceptance stays open.
 
 - [x] Calibrate an additional real Ambition engraving header and cards:
   distinguish the narrower m, neutral level text over coloured crystals,

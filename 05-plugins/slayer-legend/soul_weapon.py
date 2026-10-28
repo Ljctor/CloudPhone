@@ -409,6 +409,9 @@ TAG_NATIVE_TEMPLATES = {'Unequip': ('#...#.........................##......',
              '#####.#...#.#####.#####.#####.#######.',
              '####..#...#.#####.....#.#####.####....',
              '......................#.........##....')}
+# Actual 480 Ambition Unequip phase, sw_tag_unequip_480 (2026-10-28).
+# Nine text rows here; the older captures have ten. No distance relaxation.
+TAG_480_TEMPLATES = {"Unequip": ('#...#..........................#......', '#...#.................................', '#...#.####...###...####.#...#.##.####.', '#...#.#...#.#...#.#...#.#...#..#.#...#', '#...#.#...#.#####.#...#.#...#..#.#...#', '#...#.#...#.#.....#...#.#...#..#.#...#', '#...#.#...#.#......####.#...#..#.####.', '.###..#...#..####.....#..####..#.#....', '......................#..........#....')}
 # The Equip tap is real only once both tags read on real captures.
 TAG_LEARNED = {"Equip", "Unequip"} <= set(TAG_TEMPLATES)
 # At most this share of a template's pixels may differ.
@@ -459,10 +462,10 @@ def tag(shot):
     ink = _tag_ink(shot, box)
     if not ink:
         return None, box
-    for text, template in (*TAG_TEMPLATES.items(), *TAG_NATIVE_TEMPLATES.items()):
-        if _tag_distance(ink, template) <= TAG_MOST:
-            return text, box
-    return None, box
+    matches = {text for text, template in
+               (*TAG_TEMPLATES.items(), *TAG_NATIVE_TEMPLATES.items(), *TAG_480_TEMPLATES.items())
+               if _tag_distance(ink, template) <= TAG_MOST}
+    return (next(iter(matches)) if len(matches) == 1 else None), box
 
 
 @calibrated

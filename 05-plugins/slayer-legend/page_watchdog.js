@@ -45,7 +45,7 @@ export default function watchdog(api) {
     line: (mode) => {
       watch();
       const answer = watched.answer;
-      if (!answer?.line || answer.mode !== mode || mode === 'free') return '';
+      if (!answer?.line || answer.mode !== mode || mode === 'free' || mode === 'agent') return '';
       if (answer.status?.template === 'En pause : entrée dans le mode {mode}') return '';
       return ` · ${api.tr(answer.line)}`;
     },

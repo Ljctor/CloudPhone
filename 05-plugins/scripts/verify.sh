@@ -340,3 +340,11 @@ if result is not None:
     assert isinstance(result["target"], dict) and isinstance(result["at"], (int, float))
 print("Explicit setup blocker and target-bound attempt result: OK")
 '
+
+# Passive modes already explain their status in the mode row.
+curl -fsS "${base%/}/plugins/slayer-legend/page_watchdog.js" | python3 -c '
+import sys
+script = sys.stdin.read()
+assert "mode === " + chr(39) + "agent" + chr(39) in script
+print("Agent mode status is not duplicated: OK")
+'
