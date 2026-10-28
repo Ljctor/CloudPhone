@@ -749,3 +749,115 @@ class ObservationPipeline(unittest.IsolatedAsyncioTestCase):
                 await explicit
             self.assertFalse(built['api']['scan'].__self__.explicit_lock.locked())
             self.assertNotIn('preset', built['api']['facts'](), 'cancelled OCR is never fresh evidence')
+
+    def evict_capture_provenance(self, pipeline, ports, metadata):
+        for index in range(20):
+            ports.clock.now += .001
+            shot = (1, 1, bytes([index]))
+            metadata[id(shot)] = ports.clock.wall()
+            pipeline.observed(shot)
+        metadata.clear()  # The ports metadata ring has evicted the requested image too.
+
+    async def test_queued_frame_keeps_stamp_when_capture_metadata_is_evicted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            gate = asyncio.Event()
+            ports, built = self.setup_pipeline(directory, lambda shot, *args: {
+                'preset': 'II' if shot[2] == b'blocker' else 'III'})
+            pipeline = built['api']['scan'].__self__
+            metadata = {}
+            ports.capture_time = lambda shot: metadata.get(id(shot))
+            async def detect(fn, *args):
+                return fn(*args)
+            async def analyse(fn, *args):
+                if args[1][2] == b'blocker':
+                    await gate.wait()
+                return fn(*args)
+            ports.detect, ports.analyse = detect, analyse
+            blocker = (1, 1, b'blocker')
+            metadata[id(blocker)] = ports.clock.wall()
+            first = asyncio.create_task(built['api']['scan'](blocker))
+            await self.turns()
+            ports.clock.now += .1
+            queued = (1, 1, b'queued')
+            captured_at = metadata[id(queued)] = ports.clock.wall()
+            second = asyncio.create_task(built['api']['scan'](queued, ('battle_settings',)))
+            await self.turns()
+            self.evict_capture_provenance(pipeline, ports, metadata)
+            gate.set()
+            await first
+            self.assertEqual(await second, {'preset': 'III'})
+            self.assertEqual(built['api']['facts']()['preset']['seen'], captured_at)
+
+    async def test_evicted_pre_relaunch_queued_frame_cannot_enter_new_epoch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            gate = asyncio.Event()
+            ports, built = self.setup_pipeline(directory, lambda *args: {'preset': 'III'})
+            pipeline = built['api']['scan'].__self__
+            metadata = {}
+            ports.capture_time = lambda shot: metadata.get(id(shot))
+            async def detect(fn, *args):
+                return fn(*args)
+            async def analyse(fn, *args):
+                await gate.wait()
+                return fn(*args)
+            ports.detect, ports.analyse = detect, analyse
+            blocker, queued = (1, 1, b'blocker'), (1, 1, b'queued')
+            metadata[id(blocker)] = ports.clock.wall()
+            first = asyncio.create_task(built['api']['scan'](blocker))
+            await self.turns()
+            metadata[id(queued)] = ports.clock.wall()
+            second = asyncio.create_task(built['api']['scan'](queued))
+            await self.turns()
+            ports.clock.now += 1
+            built['api']['relaunched']('test restart')
+            self.evict_capture_provenance(pipeline, ports, metadata)
+            gate.set()
+            self.assertEqual(await first, {})
+            self.assertEqual(await second, {})
+            self.assertNotIn('preset', built['api']['facts']())
+            self.assertIsNone(built['api']['view']())
+            # Even when only ports retains metadata, its acquisition cutoff
+            # rejects an unseen reference captured before the restart.
+            old = (1, 1, b'old-but-timestamped')
+            metadata[id(old)] = ports.clock.wall() - 2
+            self.assertEqual(await built['api']['scan'](old), {})
+
+    async def test_require_proof_keeps_stamp_after_slow_ocr_metadata_eviction(self):
+        with tempfile.TemporaryDirectory() as directory:
+            gate = asyncio.Event()
+            ports, built = self.setup_pipeline(directory, lambda *args: {'preset': 'III'})
+            pipeline = built['api']['scan'].__self__
+            shot = (1, 1, b'required')
+            captured_at = ports.clock.wall()
+            metadata = {id(shot): captured_at}
+            ports.capture_time = lambda shot: metadata.get(id(shot))
+            async def capture(max_age=0):
+                return shot
+            async def detect(fn, *args):
+                return fn(*args)
+            async def analyse(fn, *args):
+                await gate.wait()
+                return fn(*args)
+            ports.capture, ports.detect, ports.analyse = capture, detect, analyse
+            request = asyncio.create_task(built['api']['require'](['preset'], 0))
+            await self.turns()
+            self.evict_capture_provenance(pipeline, ports, metadata)
+            gate.set()
+            answer = await request
+            self.assertEqual((answer['preset']['value'], answer['preset']['seen']),
+                             ('III', captured_at))
+
+    async def test_timestamp_capable_ports_with_missing_metadata_fail_closed(self):
+        for missing in (None, True, float('nan'), float('inf')):
+            with self.subTest(metadata=missing), tempfile.TemporaryDirectory() as directory:
+                ports, built = self.setup_pipeline(directory, lambda *args: {'preset': 'III'})
+                shot = (1, 1, b'unknown-time')
+                ports.capture_time = lambda shot: missing
+                async def capture(max_age=0):
+                    return shot
+                ports.capture = capture
+                self.assertEqual(await built['api']['scan'](shot), {})
+                self.assertIsNone(built['api']['view']())
+                answer = await built['api']['require'](['preset'], 0)
+                self.assertIsNone(answer['preset']['value'])
+                self.assertNotIn('preset', built['api']['facts']())

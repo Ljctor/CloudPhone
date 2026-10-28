@@ -74,7 +74,7 @@ assert isinstance(producer["foreground"], bool)
 assert producer["interval_seconds"] is None or producer["interval_seconds"] in (0.5, 1.5, 15)
 assert duration(producer.get("capture_seconds"))
 if producer["captures"]:
-    assert duration(producer["at"]) and producer["at"] > 0
+    assert producer["at"] is None or (duration(producer["at"]) and producer["at"] > 0)
 print("Bounded server observation telemetry: OK")
 assert {row["field"] for row in rows} == expected
 cube = next(row for row in rows if row["field"] == "cubes")

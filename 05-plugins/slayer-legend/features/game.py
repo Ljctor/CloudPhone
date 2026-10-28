@@ -18,8 +18,15 @@ class GameState:
 
     async def fresh(self, max_age=0, force=()):
         """(shot, readings) of a capture at most max_age seconds old."""
+        shot, readings, _ = await self.fresh_observation(max_age, force)
+        return shot, readings
+
+    async def fresh_observation(self, max_age, force):
+        """Keep acquisition provenance through admission, OCR and proof creation."""
         shot = await self.ports.capture(max_age=max_age)
-        return (shot, await self.pipeline.scan(shot, force) if shot else {})
+        stamp = self.pipeline.observed(shot) if shot else None
+        readings = await self.pipeline.scan_observed(shot, force, stamp) if shot else {}
+        return shot, readings, stamp
 
     async def scan_visible(self, shot):
         """Read every calibrated reader shown by a user's final gesture frame."""
@@ -40,16 +47,16 @@ class GameState:
                 for reader, spec in self.rules.READERS.items()
                 if any(field in spec["fields"] for field in fields)
             )
-            shot, readings = await self.fresh(
+            shot, readings, stamp = await self.fresh_observation(
                 min(max_age, 1.0) if max_age is not None else 0, wanted
             )
             here = self.pipeline.readable_here()
             now = self.clock.wall()
             # Derived fields count only when this exact capture established them.
             # A fresh unread image cannot fall back to recent historical facts.
-            confirmed, _ = self.rules.noted(
-                {}, readings, self.pipeline.observed(shot)[0] if shot else now
-            )
+            confirmed = {}
+            if self.pipeline.valid_stamp(stamp):
+                confirmed, _ = self.rules.noted({}, readings, stamp[0])
             for field in fields:
                 if answer[field] is None:
                     fact = self.rules.fact_now(

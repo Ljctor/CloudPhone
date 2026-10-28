@@ -17,6 +17,11 @@ separate milestones. Historical checked items below do not close a new regressio
   still receive readings from its own frame, never an unrelated newer frame.
 - [ ] Recheck the input lease after native UI discovery and invalidate captured
   pixels across game starts/relaunches before any direct reader can reuse them.
+- [ ] Retain frame provenance through queue waits and OCR; missing acquisition
+  metadata on timestamp-aware ports must never become a wall-clock-now reading.
+- [ ] Make debug `/screen?quick=1` timestamps refer to acquisition rather than
+  classification completion, including a slow-classifier/lost-metadata check.
+  This display geometry does not authorize automatic gestures.
 - [ ] Verify the refactored installed pipeline in Agent mode and the unchanged
   farming target, with fresh gameplay evidence and no extra gesture permissions.
 

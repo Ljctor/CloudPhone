@@ -58,9 +58,12 @@ class ObservationPipeline:
         for pixels, size, at, epoch in self.observations:
             if pixels is shot[2] and size == shot[:2]:
                 return (at, epoch)
-        at = self.ports.capture_time(shot) if hasattr(self.ports, "capture_time") else None
+        timestamped = hasattr(self.ports, "capture_time")
+        at = self.ports.capture_time(shot) if timestamped else self.clock.wall()
         if not isinstance(at, (int, float)) or isinstance(at, bool) or not math.isfinite(at):
-            at = self.clock.wall()
+            # Timestamp-capable ports losing metadata cannot turn old pixels
+            # into a new capture. Only legacy ports use the entry-time fallback.
+            return None
         self.observations.insert(0, (shot[2], shot[:2], at, self.epoch))
         del self.observations[FRAME_HISTORY:]
         return (at, self.epoch)
@@ -75,13 +78,21 @@ class ObservationPipeline:
             return None
         return last
 
-    def valid(self, frame):
-        return frame["epoch"] == self.epoch and (
-            self.relaunched_at is None or frame["at"] >= self.relaunched_at
+    def valid_stamp(self, stamp):
+        return (
+            stamp is not None
+            and stamp[1] == self.epoch
+            and (self.relaunched_at is None or stamp[0] >= self.relaunched_at)
         )
 
-    async def detect(self, shot):
-        at, epoch = self.observed(shot)
+    def valid(self, frame):
+        return self.valid_stamp((frame["at"], frame["epoch"]))
+
+    async def detect(self, shot, stamp):
+        if not self.valid_stamp(stamp):
+            self.runtime["discarded"] += 1
+            return None
+        at, epoch = stamp
         for frame in self.frames:
             if frame["pixels"] is shot[2]:
                 return frame if self.valid(frame) else None
@@ -230,10 +241,19 @@ class ObservationPipeline:
         """Wait for this frame's due/forced readers. Background detection never waits for OCR."""
         if not shot:
             return {}
+        # Capture provenance is immutable across admission waits/cache eviction.
+        stamp = self.observed(shot)
+        return await self.scan_observed(shot, force, stamp)
+
+    async def scan_observed(self, shot, force, stamp):
+        """Scan with provenance already captured by the caller, before any await."""
+        if not shot or not self.valid_stamp(stamp):
+            self.runtime["discarded"] += 1
+            return {}
         if self.explicit_lock is None:
             self.explicit_lock = asyncio.Lock()
         async with self.explicit_lock:
-            frame = await self.detect(shot)
+            frame = await self.detect(shot, stamp)
             if frame is None:
                 return {}
             tasks = []
@@ -275,9 +295,9 @@ class ObservationPipeline:
     async def scan_later(self):
         try:
             while self.pending is not None:
-                shot, self.pending = (self.pending, None)
+                (shot, stamp), self.pending = (self.pending, None)
                 try:
-                    frame = await self.detect(shot)
+                    frame = await self.detect(shot, stamp)
                     if frame is not None:
                         self.enqueue(frame)
                 except Exception as exc:
@@ -290,10 +310,13 @@ class ObservationPipeline:
         """Capture hook: one detection in flight plus one latest pending frame."""
         if not shot or self.scanned(shot):
             return
-        self.observed(shot)
-        if self.pending is not None and self.pending[2] is not shot[2]:
+        stamp = self.observed(shot)
+        if not self.valid_stamp(stamp):
             self.runtime["discarded"] += 1
-        self.pending = shot
+            return
+        if self.pending is not None and self.pending[0][2] is not shot[2]:
+            self.runtime["discarded"] += 1
+        self.pending = (shot, stamp)
         if self.task is None:
             self.task = self.ports.spawn(self.scan_later())
 
@@ -445,7 +468,8 @@ class CaptureProducer:
                     self.runtime["capture_seconds"] = time.perf_counter() - began
                     if shot:
                         self.runtime["captures"] += 1
-                        self.runtime["at"] = self.pipeline.observed(shot)[0]
+                        stamp = self.pipeline.observed(shot)
+                        self.runtime["at"] = stamp[0] if stamp is not None else None
                         # New ports already publish through the capture hook.
                         # Older ports enter the same coalescing path here.
                         if not hasattr(self.ports, "on_capture"):
