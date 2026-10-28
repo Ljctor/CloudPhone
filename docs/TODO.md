@@ -15,9 +15,9 @@ separate milestones. Historical checked items below do not close a new regressio
 - [x] Stop and drain plugin background work before shared capture/analysis
   services close, including shielded readers and in-flight commands. Verify
   with the app lifecycle and production gateway restart; Android stays running.
-- [ ] Give every non-default mode a finite deadline and return to the default
-  on expiry. Actual Agent countdown and expiry to mpw18 verified; inspect the
-  enlarged lowercase default label in the browser after the setup completes.
+- [x] Give every non-default mode a finite deadline and return to the default
+  on expiry. Verify the actual Agent countdown, expiry to mpw18 and enlarged
+  lowercase default label in desktop and mobile browser views.
 
 - [x] Keep mode and timer visible when Gold/soul readings are absent, stale
   or failing; verify the actual browser overlay with a running timed Agent mode.
@@ -90,9 +90,9 @@ separate milestones. Historical checked items below do not close a new regressio
 
 ### Setup verification findings
 
-- [ ] Verify the native-height Unequip tag after the automatic route reaches
-  Ambition. A real nine-row tag was unreadable by the older phase templates;
-  keep strict Equip/Unequip separation and add its reviewed crop.
+- [x] Verify the native-height Unequip tag after the automatic route reaches
+  Ambition. Calibrate the real nine-row tag with a reviewed crop, retain
+  strict Equip/Unequip separation and verify the installed automatic path.
 - [x] Inspect the live server observation metrics after deployment: bounded
   reader lanes, no recorded analysis/archive errors in the sampled interval.
   The browser remained connected; the browser-closed acceptance stays open.
@@ -100,8 +100,12 @@ separate milestones. Historical checked items below do not close a new regressio
 - [x] Calibrate an additional real Ambition engraving header and cards:
   distinguish the narrower m, neutral level text over coloured crystals,
   the narrow 7 and the red T facets. Keep name/digit confidence thresholds.
-- [ ] Verify the calibrated Ambition reader through the installed automatic
-  setup pipeline, including actual equipment proof and final eight locks.
+- [x] Verify the calibrated Ambition reader through the installed automatic
+  setup pipeline: stage 970, preset IV, Ambition Gold-maxed, eight closed
+  locks and final Unequip proof. Recorded acceptance: 17.1 seconds for Soul
+  Weapon, including 10 seconds engraving inspection and two navigation taps.
+  No piece needed moving; removal, replacement and relocking acceptance
+  remains open and must not be inferred from this already-correct setup.
 - [x] Calibrate actual Soul Weapon name glyphs from Honor, Ecstasy, Friendship,
   Skilfulness and Relax. Keep ownership-zero refusal and identity ambiguity gates.
 - [ ] Verify complete live list search and scroll endpoints before certifying
