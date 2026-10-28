@@ -47,12 +47,14 @@ Responsabilités actuelles :
 
 ## Construction et dépendances
 
-`gateway.py` construit les composants explicitement, avec une seule instance de
-chaque module par plugin. Les lecteurs ne connaissent ni le mode ni le stockage.
+`gateway.py` construit les composants explicitement et met en cache les modules
+qu'il charge pendant cette composition. Les lecteurs ne connaissent ni le mode ni le stockage.
 Le registre de faits ne connaît pas la navigation. Les preuves de setup ne
 pilotent aucun geste : elles valident seulement la portée d’un résultat fourni
 par l’exécuteur. Les signatures des constructeurs rendent ces dépendances
-visibles ; aucun chargement caché ni bus global n’est nécessaire.
+visibles. Certains lecteurs historiques chargent encore eux-mêmes leurs modules
+utilitaires : ce cache ne garantit donc pas une instance unique de tous les
+modules du plugin. Leur injection explicite reste à terminer.
 
 ## Invariants
 

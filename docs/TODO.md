@@ -9,24 +9,29 @@ separate milestones. Historical checked items below do not close a new regressio
 
 ### Architecture refactor acceptance
 
-- [ ] Keep reader registry, fact storage, observation scheduling and capture
-  producer separate, with explicit composition and one module instance per plugin.
-- [ ] Separate target receipts and setup evidence from mode/timer orchestration;
+- [x] Keep reader registry, fact storage, observation scheduling and capture
+  producer separate, with explicit composition and cached composition-root loads.
+- [x] Separate target receipts and setup evidence from mode/timer orchestration;
   preserve rejection after newer input, a changed target or a game relaunch.
-- [ ] Bound explicit scans even when callers repeatedly cancel; an action must
+- [x] Bound explicit scans even when callers repeatedly cancel; an action must
   still receive readings from its own frame, never an unrelated newer frame.
-- [ ] Recheck the input lease after native UI discovery and invalidate captured
+- [x] Recheck the input lease after native UI discovery and invalidate captured
   pixels across game starts/relaunches before any direct reader can reuse them.
-- [ ] Retain frame provenance through queue waits and OCR; missing acquisition
+- [x] Retain frame provenance through queue waits and OCR; missing acquisition
   metadata on timestamp-aware ports must never become a wall-clock-now reading.
 - [ ] Make debug `/screen?quick=1` timestamps refer to acquisition rather than
   classification completion, including a slow-classifier/lost-metadata check.
   This display geometry does not authorize automatic gestures.
-- [ ] Recover an already-open engraving screen under the action lease before
+- [x] Recover an already-open engraving screen under the action lease before
   stage/preset navigation. Verify identity and eight locks before closing;
   allow a bounded transition delay without treating timeout as success.
-- [ ] Verify the refactored installed pipeline in Agent mode and the unchanged
+- [x] Verify the refactored installed pipeline in Agent mode and the unchanged
   farming target, with fresh gameplay evidence and no extra gesture permissions.
+  Acceptance exercised an already-correct engraving: recovery, target verification
+  and parking completed in 31 seconds, with eight closed locks. No replacement
+  or relocking-after-removal is covered by that result.
+- [ ] Remove remaining private module loaders in legacy readers and inject their
+  shared dependencies. Composition-root caching does not eliminate these copies.
 
 ### Immediate priorities
 
