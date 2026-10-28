@@ -12,6 +12,7 @@ const TURN = ['#e0453a', '#3b82f6', '#9b5de5', '#3fb950', '#f2c230', '#f08c2e', 
 const DOTS = { green: '🟢', blue: '🔵', red: '🔴' };
 
 const ENGLISH = {
+  "Configuration demandée non vérifiée": "Requested configuration unverified",
   "Cible": "Target",
   "Acceptée": "Accepted",
   "Dernière tentative : {weapon} · arme et gravure à vérifier": "Last attempt: {weapon} · weapon and engraving need checking",
@@ -19,7 +20,7 @@ const ENGLISH = {
   "Cible différente sur le serveur · vérifier avant d’appliquer": "Server target differs \u00b7 review before applying",
   "Configuration modifiée ailleurs : recharge la cible avant d’appliquer": "Configuration changed elsewhere: reload the target before applying",
   "Dernier contrôle : autre arme ou gravure · cible acceptée à vérifier": "Last observation: another target \u00b7 accepted target unverified",
-  "Gravure automatique désactivée": "Automatic engraving disabled",
+  "Gravure automatique désactivée · premier passage soumis à supervision": "Automatic engraving disabled · first execution requires supervision",
   "Gravure et verrouillage des huit cartes vérifiés le {time} · contrôle actuel à refaire": "Grid and locks verified at {time} \u00b7 historical evidence, current equipment unconfirmed",
   "Remise en sécurité nécessaire : les huit cartes ne sont pas confirmées verrouillées": "Lock recovery required \u00b7 target unverified",
   "Changement automatique de Soul Weapon désactivé": "Automatic Soul Weapon changes disabled",
@@ -53,7 +54,7 @@ const ENGLISH = {
 
 };
 
-export default function loadoutFeature(api, { onApplied = () => {} } = {}) {
+export default function loadoutFeature(api, { onApplied = () => {}, execution = () => null } = {}) {
   api.addTranslations(ENGLISH);
   const data = { list: null, weapons: {}, asking: new Set(), failed: new Set(), saved: null, disposed: false, writes: 0, readAfterWrite: false, farming: null };
   const edits = { mpw18: {}, mpw4: {} };
@@ -179,14 +180,31 @@ export default function loadoutFeature(api, { onApplied = () => {} } = {}) {
       : api.tr('Cible acceptée · équipement en jeu à vérifier');
   };
 
+  const currentFailure = (mode) => {
+    const observed = execution();
+    const result = observed?.setup_result;
+    const accepted = data.saved?.[mode];
+    const age = Date.now() / 1000 - Number(result?.at);
+    if (observed?.mode !== mode || result?.mode !== mode || result?.result !== 'failed'
+        || !accepted?.revision || result.revision !== accepted.revision
+        || !Number.isFinite(age) || age < 0 || age > 120
+        || !same(result.target, { stage: accepted.stage ?? null, preset: accepted.preset ?? null,
+          soul_weapon: accepted.soul_weapon ?? null })) return null;
+    return result.message_t;
+  };
+
   const evidence = (mode) => {
     const part = data.saved?.[mode];
     const target = part?.soul_weapon;
     if (!target) return api.tr('Sans Soul Weapon demandée');
+    const failure = currentFailure(mode);
+    if (failure) return api.tr(failure);
+    const observed = execution();
+    if (observed?.mode === mode && observed.setup_blocker_t) return api.tr(observed.setup_blocker_t);
     const soul = data.farming?.soul_weapon;
     if (!soul) return api.tr('Cible acceptée · équipement en jeu à vérifier');
     const gate = soul.switch === 'off' ? api.tr('Changement automatique de Soul Weapon désactivé')
-      : soul.engraving === 'off' ? api.tr('Gravure automatique désactivée') : '';
+      : soul.engraving === 'off' ? api.tr('Gravure automatique désactivée · premier passage soumis à supervision') : '';
     const recovery = soul.recovery;
     let proof;
     if (recovery?.required) proof = api.tr('Remise en sécurité nécessaire : les huit cartes ne sont pas confirmées verrouillées');

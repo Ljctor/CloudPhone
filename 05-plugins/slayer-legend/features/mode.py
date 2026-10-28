@@ -63,6 +63,7 @@ stage4 here are read from them and written to them.
 
 import asyncio
 import secrets
+import copy
 
 
 
@@ -81,7 +82,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
               # ended last ({id, action}), wake: wakes the switch's wait.
               "hold": None, "last_hold": None, "wake": None,
               # watched(): the watchdog's last look ({mode, level}), once wired.
-              "watched": None, "intention": None, "resource_refresh": None}
+              "watched": None, "intention": None, "resource_refresh": None, "setup_result": None, "launch_epoch": 0}
     ports.store.register("mode", lambda: {key: status[key] for key in (
         "mode", "default", "until", "highest", "configured")})
 
@@ -105,10 +106,56 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         status["state"], status["message"] = state, message
         ports.store.save()
 
+    def input_mark():
+        latest = ports.last_input() if callable(getattr(ports, "last_input", None)) else None
+        return (latest.get("wall"), latest.get("monotonic")) if isinstance(latest, dict) else None
+
+    def setup_blocker():
+        name = status["mode"]
+        if name not in ("mpw18", "mpw4") or mines["state"]().get("enabled"):
+            return None
+        chosen = loadouts["loadout"](name).get("soul_weapon")
+        if not chosen:
+            return None
+        switch = farming.get("soul_weapon_switch")
+        if switch and switch() == "off":
+            return t("Soul Weapon désactivée : configuration demandée non appliquée")
+        capability = loadouts.get("applicability")
+        support = capability(chosen) if capability else None
+        if support and not support["supported"]:
+            return support.get("reason_t")
+        if (not support or support.get("engraving_required", True)) and engraving_off(name):
+            # An off switch does not tell us whether it is the initial gate
+            # or a later explicit stop. State the fact and supervision policy,
+            # never invent a never-completed first-run history.
+            return t("Gravure automatique désactivée · premier passage soumis à supervision")
+        return None
+
+    def current_setup_result():
+        result = status["setup_result"]
+        revision = loadouts.get("revision")
+        if not result or not revision or result["mode"] != status["mode"] or mines["state"]().get("enabled"):
+            return None
+        age = ports.clock.wall() - result["at"]
+        if (not 0 <= age <= 120 or result["revision"] != revision(result["mode"])
+                or result["input_mark"] != input_mark() or result["launch_epoch"] != status["launch_epoch"]):
+            return None
+        return {key: value for key, value in result.items() if key not in ("input_mark", "launch_epoch")}
+
+    def invalidate_setup_result(*_args):
+        status["launch_epoch"] += 1
+
+    if callable(getattr(ports, "on_relaunch", None)):
+        ports.on_relaunch(invalidate_setup_result)
+
     def state():
         answer = {key: status[key] for key in ("mode", "default", "until", "configured", "state")}
         answer["highest"] = highest()
         answer["message_t"] = status["message"]
+        answer["setup_blocker_t"] = setup_blocker()
+        answer["setup_result"] = current_setup_result()
+        if status["state"] == "failed" and status["setup_result"] and answer["setup_result"] is None:
+            answer["message_t"] = t("Configuration demandée non vérifiée")
         answer.update(stages())
         answer["setup"] = status["state"] in ("moving", "waiting")
         answer["intention"] = active_intention()
@@ -139,9 +186,13 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         name = "mine" if mine.get("enabled") else status["mode"]
         look = status["watched"]() if status["watched"] else None
         playing = (ports.pause_left() or 0) > 0 if hasattr(ports, "pause_left") else False
-        return rules.tone(name, status["state"], status["hold"] is not None, playing,
-                          look if look and look.get("mode") == name else None,
-                          mine.get("state") if name == "mine" else None, engraving_off(name))
+        watched = look if look and look.get("mode") == name else None
+        base = rules.tone(name, status["state"], status["hold"] is not None, playing,
+                          watched, mine.get("state") if name == "mine" else None, engraving_off(name))
+        if (name in ("mpw18", "mpw4") and setup_blocker() and not playing and not status["hold"]
+                and status["state"] not in ("moving", "waiting") and not (watched or {}).get("repairing")):
+            return "error"
+        return base
 
     def watched_by(look):
         """look(): the watchdog's last look (its api's look)."""
@@ -222,13 +273,25 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         name = f"mpw{mpw}"
         parked = farming.get("soul_weapon_switch", lambda: "off")() == "real"
         owner = object()
+        revision = loadouts.get("revision")
+        mark = input_mark()
+        epoch = status["launch_epoch"]
+        target_revision = revision(name) if revision else None
+        target = copy.deepcopy(loadouts["loadout"](name))
+        status["setup_result"] = None
         status["intention"] = {"owner": owner, "kind": "apply_loadout",
                                "destination": "soul_weapon" if parked or step else "battle",
                                "destination_t": t("Soul Weapon") if parked or step else t("Combat"),
                                "purpose_t": t("appliquer la configuration demandée de {mode}", mode=name),
                                "route": None, "route_known": False}
         try:
-            return await apply_stage(number, mpw, applied, step)
+            completed = await apply_stage(number, mpw, applied, step)
+            if (revision and status["mode"] == name and target_revision == revision(name)
+                    and target.get("stage") == number and mark == input_mark() and epoch == status["launch_epoch"]):
+                status["setup_result"] = {"mode": name, "revision": target_revision, "target": target,
+                                          "at": ports.clock.wall(), "result": "done" if completed else status["state"],
+                                          "message_t": status["message"], "input_mark": mark, "launch_epoch": epoch}
+            return completed
         finally:
             if status["intention"] and status["intention"]["owner"] is owner:
                 status["intention"] = None

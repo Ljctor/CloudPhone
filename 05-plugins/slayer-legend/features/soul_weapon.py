@@ -227,7 +227,7 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
     setup = None
     if engraving:
         setup = engraving["setup"](ports, engraving["screen"], engraving["rules"], helpers, wait_for, reader.title,
-                                   lambda: status["engraving"])
+                                   lambda: status["engraving"], source_weapon=reader.name)
 
     async def engrave(shot, entry, variant):
         """On the Soul Weapon screen with the target equipped: its engraving
@@ -304,6 +304,19 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
         engraved = round(ports.clock.monotonic() - began, 1)
         if done:
             ports.log("normal", f"Soul weapon: engraving step took {engraved} s ({done['gestures']} gestures)")
+        # Engraving verifies its selected weapon, not whether that weapon
+        # remained equipped. Prove the complete result again before leaving
+        # or publishing success; an old view or a badge is insufficient.
+        require_enabled()
+        shot = await helpers.look()
+        def final_view(shot):
+            return view_of(shot) if reader.title(shot) else {}
+        final = await ports.analyse(final_view, shot)
+        require_enabled()
+        if not final.get("open") or final.get("selected") != target or final.get("tag") != "Unequip":
+            raise Stop("vérification finale de l’équipement (lu : {name}, {tag})",
+                       name=final.get("selected") or ports.t("nom illisible"),
+                       tag=final.get("tag") or ports.t("étiquette illisible"))
         if not park:
             await close_screen(shot)
         seconds = round(ports.clock.monotonic() - since, 1)

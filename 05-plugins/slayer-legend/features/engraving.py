@@ -80,7 +80,7 @@ def engraving(ports, rules):
 
     api = {"loadout": lambda mode: dict(loadouts[mode]), "stage": lambda mode: loadouts[mode]["stage"],
            "set_stage": set_stage, "adopt_stage": adopt_stage, "expected_cells": expected_cells,
-           "variant": variant, "table": table, "on_change": listeners.append, "applicability": applicability}
+           "variant": variant, "table": table, "on_change": listeners.append, "applicability": applicability, "revision": lambda mode: revision(loadouts[mode])}
 
     def summary(entry):
         return {key: entry.get(key) for key in ("id", "name", "stage", "grid", "source", "verified_in_game",

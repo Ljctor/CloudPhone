@@ -308,6 +308,26 @@ class Recognised(unittest.TestCase):
         self.assertFalse(screens.plain_battle(made("soul_weapon")))
 
 
+class EngravingPreview(unittest.TestCase):
+    def test_red_ghost_without_controls_is_not_an_actionable_preview(self):
+        shot = screen("eg_title", "eg_red_ghost_no_bar_720", background=(0, 0, 0))
+        self.assertGreater(screens.share(shot, screens.PREVIEW_AREA, screens.red, 4), .001)
+        self.assertIsNone(screens._reader("engraving_screen.bar")(shot))
+        seen = screens.look(shot)
+        self.assertEqual(seen["screen"], "soul_weapon_engraving")
+        self.assertNotIn("soul_weapon_engraving_preview", seen["overlays"])
+        self.assertLess(seen["margins"]["soul_weapon_engraving_preview"], 0)
+
+    def test_valid_and_invalid_real_preview_controls_remain_recognized(self):
+        for name, valid in (("eg_preview_base", False), ("eg_preview_turned", False),
+                            ("eg_preview_valid", True)):
+            for width, height in ((480, 1040), (720, 1560)):
+                with self.subTest(fixture=name, width=width):
+                    shot = scaled(screen("eg_title", name, background=(0, 0, 0)), width, height)
+                    self.assertEqual(screens._reader("engraving_screen.bar")(shot)["valid"], valid)
+                    self.assertIn("soul_weapon_engraving_preview", screens.look(shot)["overlays"])
+
+
 class QuestAndBattle(unittest.TestCase):
     def test_each_quest_tab_on_real_crops_at_multiple_sizes(self):
         for tab in ("daily", "repeat", "achievement"):

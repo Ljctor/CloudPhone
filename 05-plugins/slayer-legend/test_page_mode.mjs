@@ -48,5 +48,21 @@ watchdogIntent = { kind: 'park', destination: 'soul_weapon', purpose_t: 'surveil
 assert.match(intentRow.value(), /Soul Weapon.*surveiller les âmes/);
 watchdogIntent = null;
 assert.equal(intentRow.visible(), false, 'completed/absent intentions do not leave a permanent extra row');
+state.state = 'idle'; state.tone = 'error'; state.message_t = null;
+state.setup_blocker_t = { template: 'Gravure automatique désactivée · premier passage soumis à supervision', params: {} };
+await poll();
+const statusRow = ui.options.find((option) => option.label === 'État');
+assert.match(statusRow.value(), /Gravure automatique désactivée.*supervision/);
+assert.equal(ui.overlay().length, 2);
+assert.ok(ui.overlay().every((line) => line.colour === '#ff4040'), 'idle proven blocker uses existing red tone');
+state.setup_result = { mode: 'mpw18', result: 'failed', at: Date.now() / 1000,
+  message_t: { template: 'Échec de la configuration courante', params: {} } };
+await poll();
+assert.equal(statusRow.value(), 'Échec de la configuration courante');
+state.setup_result.at -= 121; await poll();
+assert.match(statusRow.value(), /Gravure automatique désactivée.*supervision/, 'stale attempt reason cannot mask actual gate');
+state.setup_result = null;
+state.hold = { id: 'hold', mode: 'mpw18', left: 5 }; state.tone = 'setup'; await poll();
+assert.match(statusRow.value(), /en attente.*tu joues/);
 ui.dispose();
 console.log('Requested mode, compact execution status and temporary destination/purpose: OK');

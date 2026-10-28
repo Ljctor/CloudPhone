@@ -52,12 +52,12 @@ MOVE_MS = 800
 BUDGET = 60
 
 
-def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lambda: "off"):
+def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lambda: "off", source_weapon=None):
     """screen: engraving_screen.py; rules: engraving_setup_rules.py;
     helpers: the soul weapon's (look, tap, front, Stop); wait_for(test,
     most): the soul weapon's polled wait; back_on(shot): the Soul Weapon
-    screen is shown (its title); switch(): the engraving switch, "real"
-    or "off"."""
+    screen is shown (its title); source_weapon(shot, names): its selected
+    weapon name; switch(): the engraving switch, "real" or "off"."""
     Stop = helpers.Stop
     # The gestures of the setup running (taps and drags).
     gestures = [0]
@@ -73,16 +73,6 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
         recovery.update(changes, at=ports.clock.wall())
         ports.store.save()
 
-    async def tap(*args, **kwargs):
-        require_enabled()
-        gestures[0] += 1
-        await helpers.tap(*args, **kwargs)
-
-    async def swipe(*args, **kwargs):
-        require_enabled()
-        gestures[0] += 1
-        await ports.swipe(*args, **kwargs)
-
     def read(shot, size, shapes):
         return {"grid": screen.grid(shot, size), "cards": screen.cards(shot, shapes)}
 
@@ -93,24 +83,13 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
                 sorted(tuple(sorted(map(tuple, piece))) for piece in reading["grid"]["pieces"]),
                 [(c["shape"], c["level"], c.get("kind"), c["locked"], c["placed"]) for c in reading["cards"]])
 
-    async def steady(size, shapes, most=3.0):
-        """Two matching, readable observations; a timeout is never evidence."""
-        last, end = None, ports.clock.monotonic() + most
-        while True:
-            await ports.clock.sleep(0.25)
-            shot = await helpers.look()
-            reading = await ports.analyse(read, shot, size, shapes)
-            if last is not None and signature(reading) is not None and signature(reading) == signature(last):
-                return shot, reading
-            last = reading
-            if ports.clock.monotonic() >= end:
-                raise Stop("gravure : lectures instables ou grille illisible")
-
     async def error(text):
         """An error alert for the developer (something did not work as
         calibrated), the setup going on."""
         ports.log("error", f"Engraving: {text}")
         await ports.notify(f"Engraving: {text}"[:200])
+
+    poll = wait_for
 
     async def run(shot, entry, variant_name, variant, names, card_font, shapes, recovery_only=False):
         """(shot back on Soul Weapon, {ok, problems, locked, removed,
@@ -126,6 +105,68 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
         known = {}
         done = {"locked": [], "removed": [], "placed": [], "corner_failed": False}
         problems = []
+
+        def identity(shot, source=False):
+            """Bind every raw observation to this target, including under
+            a piece popup/preview. A changed or unread name stops the owner;
+            no cleanup can act on another weapon's engraving."""
+            require_enabled()
+            if source:
+                named = source_weapon(shot, names) if source_weapon and back_on(shot) else None
+            else:
+                named = screen.weapon(shot, names, card_font) if screen.title(shot) else None
+            if named != entry["name"]:
+                raise Stop("l’écran montre {seen}, pas {name}", seen=named or ports.t("un nom illisible"),
+                           name=entry["name"])
+            return named
+
+        def observed(shot, reader, *args):
+            identity(shot)
+            return reader(shot, *args)
+
+        async def observe(reader, shot, *args):
+            return await ports.analyse(observed, shot, reader, *args)
+
+        async def wait_for(reader, most=None, transition=None):
+            def checked(shot):
+                if transition == "opening" and not screen.title(shot):
+                    if back_on(shot):
+                        identity(shot, source=True)
+                    return False
+                if transition == "closing":
+                    if back_on(shot):
+                        identity(shot, source=True)
+                        return reader(shot)
+                    if screen.title(shot):
+                        identity(shot)
+                    return False
+                return observed(shot, reader)
+            return await poll(checked) if most is None else await poll(checked, most)
+
+        async def tap(shot, screen_id, *args, **kwargs):
+            await ports.analyse(identity, shot, screen_id == "soul_weapon")
+            require_enabled()
+            gestures[0] += 1
+            await helpers.tap(shot, screen_id, *args, **kwargs)
+
+        async def swipe(shot, *args, **kwargs):
+            await ports.analyse(identity, shot)
+            require_enabled()
+            gestures[0] += 1
+            await ports.swipe(shot, *args, **kwargs)
+
+        async def steady(size, shapes, most=3.0):
+            """Two matching target-bound observations, never a timeout."""
+            last, end = None, ports.clock.monotonic() + most
+            while True:
+                await ports.clock.sleep(.25)
+                shot = await helpers.look()
+                reading = await observe(read, shot, size, shapes)
+                if last is not None and signature(reading) is not None and signature(reading) == signature(last):
+                    return shot, reading
+                last = reading
+                if ports.clock.monotonic() >= end:
+                    raise Stop("gravure : lectures instables ou grille illisible")
 
         def remember(cards):
             """The cards with each bright one's shape, level and icon as
@@ -154,8 +195,8 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
                 done["corner_failed"] = True
                 await error(f"the padlock corner tap of #{index + 1} did nothing, locked through its popup")
                 shot = await helpers.look()
-            if not await ports.analyse(screen.popup, shot):
-                state = await ports.analyse(screen.locked, shot, index)
+            if not await observe(screen.popup, shot):
+                state = await observe(screen.locked, shot, index)
                 if state is not False:
                     return state is True
                 await tap(shot, "soul_weapon_engraving", "piece", screen.drag_point(index), verified=True)
@@ -164,11 +205,11 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
                 await tap(shot, "soul_weapon_engraving_piece", "padlock", screen.POPUP_LOCK_TAP,
                                   verified=True)
                 shot, state = await wait_for(lambda s: screen.popup_padlock(s) == "closed" and "closed")
-            if await ports.analyse(screen.popup, shot):
+            if await observe(screen.popup, shot):
                 await tap(shot, "soul_weapon_engraving_piece", "close", screen.POPUP_CLOSE_TAP)
                 await wait_for(lambda s: not screen.popup(s))
             shot = await helpers.look()
-            if await ports.analyse(screen.locked, shot, index) is True:
+            if await observe(screen.locked, shot, index) is True:
                 done["locked"].append(index)
                 return True
             return False
@@ -202,7 +243,7 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
             if before["cards"][index]["placed"] or any(before["grid"]["cells"].get(cell) != "empty" for cell in cells):
                 problems.append(ports.t("n°{number} : carte ou cases changées avant le glisser", number=index + 1))
                 return False
-            under = set(await ports.analyse(screen.cubes, shot))
+            under = set(await observe(screen.cubes, shot))
             base = rules.normalised([tuple(c) for c in shapes[card["shape"]]["cells"]])
             target = screen.hold_point(cells)
             await helpers.front()
@@ -214,7 +255,7 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
                 if not found:
                     problems.append(ports.t("pas d’aperçu après avoir glissé n°{number}", number=index + 1))
                     return False
-                now = await ports.analyse(screen.cubes, shot)
+                now = await observe(screen.cubes, shot)
                 step = rules.preview_step(under, set(now), found["valid"], base, turns, cells)
                 if step[0] == "rotate":
                     await tap(shot, "soul_weapon_engraving_preview", "rotate", found["rotate"], verified=True)
@@ -256,27 +297,27 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
         remember_state(required=True)
         if not await ports.analyse(screen.title, shot):
             await tap(shot, "soul_weapon", "engraving", ENGRAVING_TAP)
-            shot, opened = await wait_for(screen.title)
+            shot, opened = await wait_for(screen.title, transition="opening")
             if not opened:
                 raise Stop("ouverture de la gravure")
-        named = await ports.analyse(screen.weapon, shot, names, card_font)
+        named = await ports.analyse(identity, shot)
         if named != entry["name"]:
             raise Stop("l’écran montre {seen}, pas {name}", seen=named or ports.t("un nom illisible"),
                        name=entry["name"])
         # Recover interrupted previews/popups only while this operation still
         # owns input. Cancellation itself never performs additional gestures.
-        found = await ports.analyse(screen.bar, shot)
+        found = await observe(screen.bar, shot)
         if found:
             await tap(shot, "soul_weapon_engraving_preview", "cancel", found["cancel"], verified=True)
             shot, cleared = await wait_for(lambda s: not screen.bar(s))
             if not cleared:
                 raise Stop("gravure : aperçu non fermé")
-        if await ports.analyse(screen.popup, shot):
+        if await observe(screen.popup, shot):
             await tap(shot, "soul_weapon_engraving_piece", "close", screen.POPUP_CLOSE_TAP)
             shot, cleared = await wait_for(lambda s: not screen.popup(s))
             if not cleared:
                 raise Stop("gravure : détail de pièce non fermé")
-        named = await ports.analyse(screen.weapon, shot, names, card_font)
+        named = await ports.analyse(identity, shot)
         if named != entry["name"]:
             raise Stop("l’écran montre {seen}, pas {name}", seen=named or ports.t("un nom illisible"),
                        name=entry["name"])
@@ -320,6 +361,7 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
         shot, reading = await steady(size, shapes)
         if not all(card["locked"] is True for card in reading["cards"]) or len(reading["cards"]) != 8:
             raise Stop("gravure : récupération requise, les huit cadenas ne sont pas confirmés fermés")
+        named = await ports.analyse(identity, shot)
         remember_state(locks_verified=True)
         if not recovery_only and size == 5 and named == entry["name"]:
             problems = problems + [p for p in rules.check(reading["grid"], reading["cards"], variant,
@@ -327,7 +369,7 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
                                    if p not in problems]
         # Leave only after a fresh stable observation proved every card locked.
         await tap(shot, "soul_weapon_engraving", "close", ENGRAVING_CLOSE_TAP)
-        shot, back = await wait_for(back_on)
+        shot, back = await wait_for(back_on, transition="closing")
         if not back:
             raise Stop("retour de la gravure à l’écran Soul Weapon")
         seconds = round(ports.clock.monotonic() - since, 1)

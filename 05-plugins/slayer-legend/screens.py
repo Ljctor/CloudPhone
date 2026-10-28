@@ -183,8 +183,9 @@ def better_weapon_toast(shot):
 # The battle screen with no panel or pop-up over it shows the skill bar:
 # its blue mana bar (the start of it, filled unless the mana is spent).
 MANA_BAR = (0.12, 0.546, 0.30, 0.551)
-# The engraving screen's piece preview: its red cancel in this area
-# (engraving_screen.BAR_AREA; its bar() then finds where).
+# Cheap preview candidate only: red ghost tiles can also occupy this area.
+# The registry additionally requires engraving_screen.bar() to find the
+# compact control bar, for both valid and invalid placement previews.
 PREVIEW_AREA = (60 / 480, 200 / 1040, 420 / 480, 600 / 1040)
 
 

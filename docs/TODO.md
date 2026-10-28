@@ -22,8 +22,11 @@ separate milestones. Historical checked items below do not close a new regressio
 - [ ] Relock every removed engraving piece, verify locks after placement,
   and confirm all eight locks before closing. Preserve recovery after
   interruption; resume only with current identity and readings verified.
-- [ ] Obtain real Equip/Unequip calibration evidence and complete the first
-  supervised engraving run required by part 05, including recorded results.
+- [x] Obtain real Equip/Unequip calibration evidence: owned, unequipped
+  Relax supplies Equip; equipped Ambition supplies Unequip. Read-only
+  navigation produced the evidence; no Equip or engraving action was run.
+- [ ] Complete the first supervised equipment/engraving run required by
+  part 05, including actual target, highest-level choices and eight locks.
 
 ### Mode, interface and notifications
 
@@ -65,6 +68,23 @@ separate milestones. Historical checked items below do not close a new regressio
 - [ ] Preserve the prohibition on the top-right menu, Mailbox, Settings,
   Rankings, AUTO and other forbidden navigation/actions.
 
+### Setup verification findings
+
+- [x] Reproduce stale weapon identity during engraving: a changed name
+  previously allowed further gestures and a ready result. Bind every raw
+  reading, gesture and final verification to the expected weapon; stop with
+  recovery required on missing or changed identity.
+- [x] Require a fresh Soul Weapon/selected-target/Unequip read after engraving
+  before publishing equipment facts or caching a successful setup.
+- [x] Reject a red dragged piece as evidence of preview controls. The real
+  negative capture is retained with its corrected identity, and both valid
+  and invalid preview bars remain recognized.
+- [x] Expose actual configuration blockers in the existing status row.
+  Bind current attempt results to mode, target revision, timestamp and
+  unchanged input/relaunch context; a saved target is not observed readiness.
+- [ ] Verify this batch after deployment, then complete the supervised game
+  execution. Mocked transactions do not establish the final in-game setup.
+
 ### Calibration follow-up
 
 - [x] Keep the Cube number at the fixed average Gold anchor; regression
@@ -78,8 +98,10 @@ separate milestones. Historical checked items below do not close a new regressio
   This does not certify the still-pending automatic refresh circuit.
 - [ ] Complete the first supervised resource circuit before enabling its
   automatic cadence. Calibration flags alone do not establish this first run.
-- [ ] Complete the still-pending Equip calibration and supervised engraving;
-  the new Unequip/name/list evidence does not authorize an unobserved Equip.
+- [x] Complete Equip calibration on the real owned Relax capture, including
+  the bright owned-cell border and rejection of a clipped top cell.
+- [ ] Complete supervised engraving and the first real Equip action when
+  needed; a calibrated reader does not itself prove a successful operation.
 
 ### Counter presentation and release evidence
 
@@ -123,7 +145,7 @@ Follow-up release evidence:
   detail and Soul Weapon variants are referenced by the screen catalogue.
 - [ ] The resource circuit's first supervised run and the engraving first run
   remain pending. Their inactive state must not be described as completed
-  automatic gameplay; Equip remains uncalibrated.
+  automatic gameplay; Equip was still uncalibrated in that release.
 
 ## CloudPhone Slayer Legend work in progress (2026-10-26)
 
@@ -197,8 +219,12 @@ made with the user present, recorded here: date, readings, result.
   preview, an error alert "engraving not set up: first supervised run
   pending", the weapon not ready); it goes to "real" only with the user
   present, for that run.
-- Slayer Legend Equip tap (`TAG_LEARNED`): closed until the Equip tag is
-  captured.
+- Slayer Legend Equip tap (`TAG_LEARNED`): calibrated on the owned Relax
+  Equip capture and Ambition Unequip captures (2026-10-28). No actual Equip
+  tap has been made for this calibration; its first supervised action remains
+  pending. The whole farming preflight still refuses setup while engraving
+  is off. The red sword badge is not equipment proof: owned, unequipped
+  Relax displays it too, so `BADGE_TELLS` remains false.
 
 # Planned work
 
@@ -324,7 +350,7 @@ glyph needs two occurrences.
 | 12 | ≡ top menu → **Settings**, look only; then ≡ → **Power Saving Mode**, capture, hold the button 4 s to leave | Settings title and its labels (0, 100, 480, 300) cut into line crops; Power Saving: "STAGE 920" (96, 382, 288, 26) → `saver_number`, name (48, 409, 384, 30) → `saver_name` | font letters; `stage.py` DIGITS (cut its 10 digits from real captures, see the font note below) |
 | 13 | Toasts and pop-ups, whenever one shows during the session: the **Better Soul Weapon** toast (over the battle and over an open panel), event, offer, maintenance, update required | the toast (334, 328, 146, 60) → `toast_better_weapon_2`, `toast_over_panel`; a pop-up's title and buttons only, never its body if it shows an account | `screens.better_weapon_toast()` (second occurrence: its text is cap 7 and not read yet), part B's catalogue of named screens |
 | 14 | Optional, the user's call: open the game on the user's own phone for a minute, then back here: the **connected on another device** screen and, after it, the **choice between two saves** | title and buttons only (no account, no save ids) → `other_another_device`, `other_save_choice` | part B's catalogue; **no move** on them until `05-plugins/AGENTS.md`'s precondition is validated by the user; the user resolves them on the device |
-| 15 | The screens with no crop yet, look only, each reached by its allowed move in `navigation.json` and closed by its X: Character **Promotion** tab, a **weapon's detail** (a weapon cell in Equipment), Equipment **Accessories** and **Relic** tabs, **Black Orb** and an accessory's card in it, **Spirit**, **Beast**, Adventure's **quest** pop-up, **Dragon Valley** raid camp, **Guild**, the ≡ **top menu**, the **Quest** panel; and whenever they show: **Loading**, the **title** screen and the **save notice** (both at a relaunch), the mine's **fight** (row 9), the **quit dialog**; **never** a Promotion bonus page (no move there) | each screen's title or tab row, full width, its y measured on the capture → `screen_<id>` (the `navigation.json` id); the title screen's TAP TO START line (0, 820, 480, 50) → `screen_title`; the save notice's two buttons (100, 750, 280, 40) → `screen_save_notice` | `screens.look()` (`screen_registry.json`): each one registered from its crop, else pending capture and never matched |
+| 15 | The screens with no crop yet, look only, each reached by its allowed move in `navigation.json` and closed by its X: Character **Promotion** tab, a **weapon's detail** (a weapon cell in Equipment), Equipment **Accessories** and **Relic** tabs, **Black Orb** and an accessory's card in it, **Spirit**, **Beast**, Adventure's **quest** pop-up, **Dragon Valley** raid camp, **Guild**, the **Quest** panel; and whenever they show: **Loading**, the **title** screen and the **save notice** (both at a relaunch), the mine's **fight** (row 9), the **quit dialog**; **never** a Promotion bonus page (no move there) | each screen's title or tab row, full width, its y measured on the capture → `screen_<id>` (the `navigation.json` id); the title screen's TAP TO START line (0, 820, 480, 50) → `screen_title`; the save notice's two buttons (100, 750, 280, 40) → `screen_save_notice` | `screens.look()` (`screen_registry.json`): each one registered from its crop, else pending capture and never matched |
 | 16 | Back to the battle: every panel closed, stage of mpw18, preset III, AUTO on (the gear spinning); the plugin back on **mpw18 farming** | none | the watchdog says OK within a minute |
 
 Screens pending capture: `loading` `character_enhance` `character_growth` `character_promotion` `skill` `skill_refinement_grounds` `skill_mastery` `skill_rave_mantra` `familiar` `equipment_relic` `spirit` `companion` `companion_advancement` `beast` `beast_mount` `beast_scouting` `beast_scouting_info` `adventure_map` `adventure_quest` `adventure_story_main` `adventure_story_easy` `adventure_story_sub` `adventure_story_ellie` `dungeon_map` `dungeon_shelter` `dungeon_rift` `dungeon_forest` `dungeon_kingdom` `dungeon_training` `raid_camp` `mine_list` `mine_area` `mine_feathers` `mine_fight` `top_menu` `scroll` `shop_summon` `shop_package` `shop_goods` `shop_golden_key` `shop_event` `guild` `guild_divine_beast` `guild_shop_normal` `guild_shop_appearance` `airfield` `airfield_recipes_appetizer` `airfield_recipes_main` `airfield_recipes_dessert` `airfield_boarding_status` `guild_request` `guild_info_basic` `guild_info_members` `promotion_bonus` `quit_dialog` `black_orb` `black_orb_accessory` `black_orb_obtain` `top_ranking` `top_settings` `top_mail` `character_growth_icon_1` `character_growth_icon_2` `character_class` `equipment_weapon_icon` `equipment_relic_icon_1` `equipment_relic_icon_2` `raid_ranking` `raid_bag` `shop_summon_equipment` `shop_summon_relic` `quest_daily` `quest_repeat` `quest_achievement` `event` `top_achievements` `top_collection` `top_events` `top_guild_entry` `event_popup` `daily_reward` `offer_popup` `maintenance` `update_required` `another_device` `save_choice`.

@@ -56,7 +56,7 @@ export default function modeFeature(api, { known, watchdog, stage }) {
   // at: when answer came (Date.now()), for the hold's countdown.
   const farm = { answer: null, timer: null, stages: null, chosen: 0, sending: 0, at: 0,
     oldUntil: Number(takeOld(UNTIL)) || null, inputUntil: 0 };
-  const loadouts = loadout(api, { onApplied: () => { askMode(); loadStages(); } });
+  const loadouts = loadout(api, { execution: () => farm.answer, onApplied: () => { askMode(); loadStages(); } });
   const mode = () => api.setting('mode') || 'mpw18';
   // The mode a timed one goes back to, with no timer itself.
   const defaultMode = () => api.setting('defaultMode') || 'mpw18';
@@ -273,6 +273,11 @@ export default function modeFeature(api, { known, watchdog, stage }) {
             return api.tr('{mode} · en attente : tu joues · nouvel essai dans {seconds} s',
               { mode: api.tr(MODE_NAMES[answer.hold.mode] ?? answer.hold.mode), seconds: holdLeft() });
           }
+          if (answer.setup_result?.result === 'failed' && answer.setup_result.mode === answer.mode
+              && Number.isFinite(answer.setup_result.at) && Date.now() / 1000 - answer.setup_result.at >= 0
+              && Date.now() / 1000 - answer.setup_result.at <= 120 && answer.setup_result.message_t) return api.tr(answer.setup_result.message_t);
+          if (answer.setup_blocker_t) return api.tr(answer.setup_blocker_t);
+          if (answer.setup_result?.result === 'failed') return api.tr('Configuration demandée non vérifiée');
           const warning = (gold) => (gold === false ? ` ⚠ ${api.tr('plus de parchemin doré')}` : '');
           const looked = watchdog?.line(answer.mode) ?? '';
           if (answer.mode === 'mine') return api.tr(answer.mine?.message_t || 'Mine') + warning(answer.mine?.gold) + looked;

@@ -98,7 +98,7 @@ class Readers(unittest.TestCase):
     def test_badge(self):
         self.assertIs(reader.equipped_badge(screen("sw_badge_red")), True)
         self.assertIs(reader.equipped_badge(screen("sw_badge_grey")), False)
-        # Not told until an owned, unequipped weapon is seen grey.
+        # Actual owned, unequipped Relax is also red: not state evidence.
         self.assertFalse(reader.BADGE_TELLS)
 
     def test_whole_screen(self):
@@ -135,7 +135,7 @@ class NativeReaders(unittest.TestCase):
             for width, height in [(480, 1040), (720, 1560)]:
                 with self.subTest(fixtures=names, width=width):
                     self.assertEqual(read(self.resized(original, width, height), *args), expected)
-        self.assertFalse(reader.TAG_LEARNED, 'resizing does not fabricate the missing Equip calibration')
+        self.assertTrue(reader.TAG_LEARNED, 'both real tag states have now been captured')
         self.assertFalse(reader.BADGE_TELLS, 'colour geometry does not prove equipped state')
 
     def test_view_and_tap_fractions_are_consistent_at_720(self):
@@ -162,6 +162,50 @@ class NativeReaders(unittest.TestCase):
 
 
 class ActualNativeCaptures(unittest.TestCase):
+    def test_actual_owned_unequipped_relax_has_equip_and_a_red_badge(self):
+        shot = screen("sw_name_relax_720", "sw_owned_relax_720", "sw_tag_equip",
+                      "sw_badge_owned_unequipped_red_720")
+        self.assertEqual(reader.name(shot, NAMES), "Relax")
+        self.assertIsNone(reader.name(shot, ["Relief", "Conceit", "Skill"]))
+        self.assertEqual(reader.owned(shot), 1)
+        self.assertEqual(reader.tag(shot)[0], "Equip")
+        self.assertIs(reader.equipped_badge(shot), True)
+        self.assertFalse(reader.BADGE_TELLS, "red badge also occurs before equipping")
+        self.assertIsNone(reader.view(shot, NAMES)["badge"])
+        self.assertTrue(reader.TAG_LEARNED)
+
+    def test_owned_relax_row_survives_selection_of_other_weapons(self):
+        cases = (("sw_list_relax_unselected_720", False),
+                 ("sw_list_relax_conceit_720", False),
+                 ("sw_list_relax_skill_720", False),
+                 ("sw_list_relax_selected_720", True))
+        for name, selected in cases:
+            with self.subTest(fixture=name):
+                shot = screen(name)
+                rows = reader.rows(shot)
+                self.assertEqual(len(rows), 4, "owned row stays; clipped first cell is excluded")
+                relax = rows[0]
+                self.assertEqual(relax["selected"], selected)
+                self.assertTrue(.61 < relax["top"] < .625)
+                self.assertTrue(.66 < relax["bottom"] < .68)
+                x, y = reader.select_point(relax)
+                self.assertLess(x, .15)
+                self.assertTrue(960 < y * 1560 < 1010, "selection stays above Equip")
+                text, box = reader.tag(shot)
+                self.assertEqual(text, "Equip" if selected else None)
+                if selected:
+                    self.assertLess(y, box[1], "selection point never touches Equip")
+
+    def test_clipped_top_cell_cannot_offset_whole_cell_selection(self):
+        for fixture in ("sw_list_return_two_720", "sw_list_restored_720"):
+            with self.subTest(fixture=fixture):
+                rows = reader.rows(screen(fixture))
+                self.assertEqual(len(rows), 4)
+                self.assertGreater(rows[0]["top"], .61, "clipped Wisdom is not whole cell zero")
+                x, y = reader.select_point(rows[2])
+                self.assertTrue(.74 < y < .78, "whole cell2 is the real Ambition gold cell")
+                self.assertLess(x, .15)
+
     def test_real_native_names_and_exact_identity_negatives(self):
         for fixture, expected in [("sw_name_ambition_720", "Ambition"),
                                   ("sw_name_wild_720", "Wild"),
@@ -179,7 +223,7 @@ class ActualNativeCaptures(unittest.TestCase):
         text, box = reader.tag(shot)
         self.assertEqual(text, "Unequip")
         self.assertLessEqual(box[2], reader.LIST_X[1])
-        self.assertFalse(reader.TAG_LEARNED, "Unequip proof never supplies the missing Equip state")
+        self.assertTrue(reader.TAG_LEARNED, "the separate actual Relax capture supplies Equip proof")
         self.assertFalse(reader.BADGE_TELLS)
 
     def test_whole_cell_indices_survive_the_equipped_E_badge(self):
@@ -226,8 +270,6 @@ class Tag(unittest.TestCase):
             self.assertTrue(box[0] <= 0.09 <= box[2] and box[1] <= 0.845 <= box[3])
         self.assertEqual(reader.tag(screen("sw_list_none")), (None, None))
 
-    @unittest.skipUnless(os.path.exists(os.path.join(FIXTURES, "sw_tag_equip.txt")),
-                         "no capture of the Equip tag yet (fixtures/sw_tag_equip.txt)")
     def test_equip_tag_capture(self):
         self.assertEqual(reader.tag(screen("sw_tag_equip"))[0], "Equip")
 
@@ -236,8 +278,12 @@ class Tag(unittest.TestCase):
         self.assertEqual(text, "Unequip")
         self.assertTrue(box[0] < 0.1 < box[2] and box[1] < 0.623 < box[3])
 
-    def test_the_equip_gate_is_closed_until_both_tags_are_captured(self):
-        self.assertEqual(reader.TAG_LEARNED, os.path.exists(os.path.join(FIXTURES, "sw_tag_equip.txt")))
+    def test_the_equip_gate_has_both_actual_tag_states(self):
+        self.assertTrue(reader.TAG_LEARNED)
+        for fixture, expected in (("sw_tag_equip", "Equip"), ("sw_tag_unequip", "Unequip"),
+                                  ("sw_tag_unequip_720", "Unequip")):
+            self.assertTrue(os.path.exists(os.path.join(FIXTURES, fixture + ".txt")))
+            self.assertEqual(reader.tag(screen(fixture))[0], expected)
 
 
 def rows(count=5, selected=None):
@@ -465,6 +511,7 @@ def fake_reader(game):
 
     return SimpleNamespace(
         names_of=reader.names_of, select_point=reader.select_point, view=view, CARD_FONT=reader.CARD_FONT,
+        name=lambda shot, names: view(shot, names)["selected"],
         TAG_LEARNED=game.state.get("tag_learned", True),
         title=lambda shot: shot[2]["screen"] == "soul",
         weapon_detail=lambda shot: shot[2]["screen"] == "detail",
@@ -996,6 +1043,93 @@ def engraving_moves(game):
 
 
 class Engraving(unittest.TestCase):
+    def test_final_equipment_readback_rejects_changed_or_unread_tag_after_engraving(self):
+        for lost_equipment in (True, False):
+            with self.subTest(lost_equipment=lost_equipment):
+                game = vision_game()
+                original = game.apply
+                def apply(screen, move, point, end=None):
+                    original(screen, move, point, end)
+                    if move == "remove_piece":
+                        if lost_equipment:
+                            game.state["equipped"] = AMBITION
+                        else:
+                            game.state["tag_unread"] = True
+                game.apply = apply
+                part = {"setup": engraving_setup.engraving_setup, "screen": fake_engraving_screen(game),
+                        "rules": setup_rules, "variant": lambda weapon_id, name: VISION_VARIANTS.get(name)}
+                loadouts = {"mpw18": {"stage": 920, "preset": None,
+                                     "soul_weapon": {"id": VISION_ID, "variant": "Gold-balanced"}}}
+                ports, api = build(game, loadouts, part)
+                notes = []
+                ports.game = {"note": lambda *args: notes.append(args)}
+                answer = asyncio.run(api["soul_weapon"]("mpw18"))
+                self.assertEqual(answer["result"], "failed")
+                self.assertIn("vérification finale de l’équipement", french(answer["text_t"]))
+                self.assert_gold_balanced(game)  # selected name and engraving remain correct
+                self.assertIsNone(api["soul_weapon_state"]()["cached"])
+                self.assertEqual(notes, [])
+                self.assertFalse(any(" ready:" in alert for alert in game.alerts))
+                self.assertNotIn(("soul_weapon", "close"), game.moves)
+
+    def test_changed_or_missing_identity_after_remove_stops_before_any_next_gesture(self):
+        for changed_name in ("Ambition", None):
+            with self.subTest(name=changed_name):
+                game = vision_game()
+                view = fake_engraving_screen(game)
+                view.weapon = lambda shot, names, font: shot[2].get("engraving_name", "Vision") if view.title(shot) else None
+                original = game.apply
+                stopped_after = []
+                def apply(screen, move, point, end=None):
+                    original(screen, move, point, end)
+                    if move == "remove_piece" and not stopped_after:
+                        game.state["engraving_name"] = changed_name
+                        stopped_after.append(len(game.moves))
+                game.apply = apply
+                answer, ports = self.run_custom_reader(game, view, "Gold-balanced")
+                self.assertEqual(answer["result"], "failed")
+                self.assertTrue(stopped_after)
+                self.assertEqual(game.moves[stopped_after[0]:], [], 'no lock, close or other cleanup on another/unknown weapon')
+                recovery = ports.store.sections["engraving_recovery"]()
+                self.assertTrue(recovery["required"])
+                self.assertFalse(recovery["verified"])
+                self.assertFalse(any(" ready:" in alert for alert in game.alerts))
+
+    def test_preview_and_popup_waits_recheck_target_before_controls(self):
+        for trigger in ("drag_piece", "piece"):
+            with self.subTest(phase=trigger):
+                game = vision_game(corner_works=trigger != "piece")
+                view = fake_engraving_screen(game)
+                view.weapon = lambda shot, names, font: shot[2].get("engraving_name", "Vision") if view.title(shot) else None
+                original = game.apply
+                stopped_after = []
+                def apply(screen, move, point, end=None):
+                    original(screen, move, point, end)
+                    if move == trigger and not stopped_after:
+                        game.state["engraving_name"] = "Ambition"
+                        stopped_after.append(len(game.moves))
+                game.apply = apply
+                answer, ports = self.run_custom_reader(game, view, "Gold-balanced")
+                self.assertEqual(answer["result"], "failed")
+                self.assertTrue(stopped_after)
+                self.assertEqual(game.moves[stopped_after[0]:], [], 'no preview confirm/cancel or popup padlock/close after identity loss')
+                self.assertTrue(ports.store.sections["engraving_recovery"]()["required"])
+
+    def test_every_stable_raw_frame_requires_the_target_name(self):
+        game = vision_game()
+        view = fake_engraving_screen(game)
+        view.weapon = lambda shot, names, font: shot[2].get("engraving_name", "Vision") if view.title(shot) else None
+        original = view.grid
+        def grid(shot, size):
+            result = original(shot, size)
+            game.state["engraving_name"] = None
+            return result
+        view.grid = grid
+        answer, ports = self.run_custom_reader(game, view)
+        self.assertEqual(answer["result"], "failed")
+        self.assertEqual(engraving_moves(game), [], 'an unread second raw frame cannot establish steady evidence')
+        self.assertTrue(ports.store.sections["engraving_recovery"]()["required"])
+
     def assert_gold_balanced(self, game):
         eng = game.state["engraving"]
         want = sorted(sorted(map(tuple, p["cells"])) for p in VISION_VARIANTS["Gold-balanced"]["pieces"])
@@ -1190,7 +1324,7 @@ class Engraving(unittest.TestCase):
                     return shot, value
         setup = engraving_setup.engraving_setup(ports, fake_engraving_screen(game), setup_rules,
             SimpleNamespace(look=look, tap=ports.tap, front=front, Stop=RuntimeError), wait_for,
-            lambda shot: shot[2]["screen"] == "soul", lambda: allowed[0])
+            lambda shot: shot[2]["screen"] == "soul", lambda: allowed[0], source_weapon=fake_reader(game).name)
         with self.assertRaisesRegex(RuntimeError, "désactivée"):
             asyncio.run(setup(game.snapshot(), VISION, "Gold-balanced", VISION_VARIANTS["Gold-balanced"],
                               NAMES, reader.CARD_FONT, TABLE["shapes"]))

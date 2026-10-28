@@ -2,6 +2,10 @@
 # Read-only validation of the installed Slayer Legend resource catalogue.
 set -euo pipefail
 base=${1:?Usage: verify.sh http://LISTEN_ADDRESS:WEB_PORT}
+# Real reviewed crops distinguish red drag ghosts from actionable controls;
+# this check stays deterministic and never gestures on the installed game.
+python3 "$(dirname "$0")/../slayer-legend/test_screen_model.py" EngravingPreview
+python3 "$(dirname "$0")/../slayer-legend/test_soul_weapon.py" Tag ActualNativeCaptures
 curl -fsS "${base%/}/api/v1/plugins/slayer-legend/game" | python3 -c '
 import json, re, sys
 state = json.load(sys.stdin)
@@ -259,4 +263,18 @@ import sys
 script = sys.stdin.read()
 assert "Appliquer" in script and "Modifications non appliquées" in script
 print("Explicit complete loadout application: OK")
+'
+curl -fsS "${base%/}/api/v1/plugins/slayer-legend/mode" | python3 -c '
+import json, sys
+state = json.load(sys.stdin)
+assert {"setup_blocker_t", "setup_result"} <= state.keys()
+blocker = state["setup_blocker_t"]
+assert blocker is None or isinstance(blocker, dict) and "template" in blocker
+result = state["setup_result"]
+if result is not None:
+    assert {"mode", "revision", "target", "at", "result", "message_t"} <= result.keys()
+    assert result["mode"] in ("mpw18", "mpw4")
+    assert isinstance(result["revision"], str) and len(result["revision"]) == 24
+    assert isinstance(result["target"], dict) and isinstance(result["at"], (int, float))
+print("Explicit setup blocker and target-bound attempt result: OK")
 '

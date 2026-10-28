@@ -328,5 +328,8 @@
   "Actualisation des ressources bloquée : {gates}": "Resource refresh blocked: {gates}",
   "Actualiser les compteurs de ressources": "Refresh resource counters",
   "Actualisation des ressources incomplète : {fields}": "Resource refresh incomplete: {fields}",
-  "Actualisation des ressources : premier passage supervisé en attente": "Resource refresh: first supervised run pending"
+  "Actualisation des ressources : premier passage supervisé en attente": "Resource refresh: first supervised run pending",
+  "Gravure automatique désactivée · premier passage soumis à supervision": "Automatic engraving disabled · first execution requires supervision",
+  "Configuration demandée non vérifiée": "Requested configuration unverified",
+  "vérification finale de l’équipement (lu : {name}, {tag})": "final equipment verification (read: {name}, {tag})"
 }

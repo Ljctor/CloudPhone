@@ -18,14 +18,14 @@ picked in the list):
 - tags(): the orange tags in the list column ([left, top, right, bottom]),
   and tag(): the text of the one tag, matched against templates of its
   white text cut from real captures (TAG_TEMPLATES: Unequip from
-  fixtures/sw_tag_unequip; Equip not captured yet), else None.
+  fixtures/sw_tag_unequip; Equip from native Relax Owned:1), else None.
   TAG_LEARNED (both templates there) gates the Equip tap.
 - tab(): the Equipment panel's active tab, "weapon" or "accessories" (the
   Accessories tab has its own top-right icon, Black Orb), by which tab's
   text is clearly the brightest; None otherwise.
-- equipped_badge(): the card's sword badge (top right) is red. Seen red
-  on the equipped weapon and grey on one not owned; whether an owned
-  weapon not equipped shows it grey is not known yet: see BADGE_TELLS.
+- equipped_badge(): the card's sword badge (top right) is red. The real
+  owned, unequipped Relax also shows red: this colour cannot establish
+  equipment state. BADGE_TELLS stays False.
 
 The engraving screen (from the card's big icon) is read by
 engraving_screen.py.
@@ -69,6 +69,10 @@ OWNED_AREA = (0.78, 0.558, 0.96, 0.58)
 OWNED_LEVEL = 120
 LIST_X = (0.025, 0.15)
 LIST_Y = (0.55, 0.93)
+# The actual list viewport starts at native y870 (canonical y580), below
+# the title/header padding included in LIST_Y. A cell touching this edge
+# is clipped even when its surviving border run looks almost full-height.
+LIST_CONTENT_TOP = 580 / 1040
 # Where a cell is tapped to select it: in its upper part, above where its
 # Equip / Unequip tag shows (the tag sits in the cell's lower half).
 SELECT_X = 0.087
@@ -76,8 +80,8 @@ SELECT_DEPTH = 0.3
 TAB_Y = (0.402, 0.423)
 TABS = {"weapon": (0.03, 0.2), "accessories": (0.22, 0.4), "relic": (0.42, 0.58), "spirit": (0.6, 0.77)}
 BADGE_AREA = (0.855, 0.59, 0.915, 0.62)
-# The red badge is taken for "equipped" only once a capture of an owned,
-# unequipped weapon shows it grey.
+# Red is also present on the actual unequipped, owned Relax. Never use
+# this colour as equipped-state evidence.
 BADGE_TELLS = False
 
 # Shapes cut from the title "Soul Weapon" (its x-height is taller than the
@@ -143,6 +147,23 @@ NAME_NATIVE_TEMPLATES = {'Ambition': ('...###................##........###..###.
           '...###...###.....######.##....##',
           '...###....##.....######.########',
           '...###....##.....######..#######')}
+
+
+# Exact native Relax name, from the same reviewed Owned:1 / Equip capture.
+NAME_NATIVE_TEMPLATES["Relax"] = (
+    "#######............##...................",
+    "#########..........##...................",
+    "##....###..#####...##..######..###...###",
+    "##....###..#####...##..######..###...###",
+    "##....###.##...###.##.......##..###.##..",
+    "##....###.##....##.##.......##..###.##..",
+    "#######...########.##..#######....##....",
+    "#######...########.##.########....##....",
+    "##.###....##.......##.##....##....##....",
+    "##..###...##.......##.##....##..###.##..",
+    "##...####.########.##.########.####.####",
+    "##....###..#######.##..#######.###...###",
+)
 
 
 def _name_ink(shot):
@@ -261,16 +282,17 @@ def rows(shot):
     """The list's whole cells, top to bottom: [{top, bottom, selected}]
     (fractions of the screen height)."""
     width, height, _ = shot
-    left, top, right, bottom = _box(shot, (0.0, LIST_Y[0], 0.2, LIST_Y[1]))
+    left, top, right, bottom = _box(shot, (0.0, LIST_CONTENT_TOP, 0.2, LIST_Y[1]))
     x0, x1 = int(0.02 * width), int(0.04 * width)
     right0, right1 = int(0.135 * width), int(0.155 * width)
     edges = (*range(x0, x1), *range(right0, right1))
     inside = []
     for y in range(top, bottom):
         inside.append(any(_frame(_pixel(shot, x, y)) or _red(_pixel(shot, x, y))
-                          # The equipped cell's native gold border, observed
-                          # unchanged in all three reviewed 720 captures.
-                          or (x >= right0 and _pixel(shot, x, y) == (83, 60, 26))
+                          # Actual native borders: equipped gold and the
+                          # brighter unselected owned Relax brown. Border
+                          # colour only finds cells, never equipment state.
+                          or (x >= right0 and _pixel(shot, x, y) in ((83, 60, 26), (121, 87, 53)))
                           for x in edges))
     cells, start = [], None
     for i, on in enumerate(inside + [False]):
@@ -280,7 +302,7 @@ def rows(shot):
             first, last = top + start, top + i - 1
             # Whole cells only: not touching the list's edges, 0.045 to
             # 0.07 of the screen high.
-            if start > 0 and i < len(inside) and 0.045 <= (last - first + 1) / height <= 0.07:
+            if start > 1 and i < len(inside) and 0.045 <= (last - first + 1) / height <= 0.07:
                 xs = range(int(0.05 * width), int(0.13 * width))
                 red = sum(1 for x in xs for y in (first, first + 1, first + 2) if _red(_pixel(shot, x, y)))
                 cells.append({"top": first / height, "bottom": (last + 1) / height,
@@ -323,10 +345,22 @@ def tags(shot):
 
 # The tag's white text (min channel at least TAG_INK), cropped to its ink,
 # as cut from real captures: "Unequip" from fixtures/sw_tag_unequip
-# (2026-10-22, the equipped Vision). "Equip" is added from
-# fixtures/sw_tag_equip once captured (an owned weapon, not equipped).
+# (2026-10-22, the equipped Vision). "Equip" is from the actual native
+# Relax Owned:1 capture, selected but never equipped during calibration.
 TAG_INK = 100
 TAG_TEMPLATES = {
+    "Equip": (
+        "#####.............##......",
+        "#####..............#......",
+        "####..#####.#...#.########",
+        "####..#####.#...#.########",
+        "#.....#...#.#...#.####..##",
+        "#.....#...#.#...#.####..##",
+        "#####.#####.#####.#######.",
+        "#####..####.#####.#######.",
+        "..........#.........##....",
+        "..........#..........#....",
+    ),
     "Unequip": (
         "#...#..........................#......",
         "#...#..........................#......",

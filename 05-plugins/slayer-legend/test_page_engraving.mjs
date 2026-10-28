@@ -10,6 +10,7 @@ let detailFailure = false;
 let holdReads = false;
 const heldReads = [];
 let farmingSnapshot = null;
+let executionSnapshot = null;
 const staticSupport = { supported: true, scope: 'static', runtime_verified: false, reason_t: null };
 const details = (id) => ({ id, automation: staticSupport, name: id === 32 ? 'Ambition' : 'Vision', grid: 2, cells: [[0, 0]],
   variants: [{ name: 'Balanced', pieces: [{ cells: [[0, 0]], colour: 'red' }] }] });
@@ -165,7 +166,7 @@ staticSupport.supported = true; staticSupport.reason_t = null;
 farmingSnapshot = { soul_weapon: { switch: 'real', engraving: 'real', recovery: {
   weapon_id: 36, variant: 'Balanced', phase: 'recovered', verified: false,
   locks_verified: true, required: false, at: 1000 } } };
-const evidenceUi = loadout(api);
+const evidenceUi = loadout(api, { execution: () => executionSnapshot });
 const evidenceOptions = evidenceUi.options('mpw18');
 const proof = () => evidenceOptions.find((option) => option.label === 'État').value();
 await flush(); proof(); await flush();
@@ -180,6 +181,24 @@ assert.match(proof(), /autre arme ou gravure.*à vérifier/);
 farmingSnapshot.soul_weapon.recovery.required = true;
 await farmingPoll();
 assert.match(proof(), /Remise en sécurité nécessaire.*huit cartes/);
+farmingSnapshot.soul_weapon.engraving = 'off';
+farmingSnapshot.soul_weapon.recovery = {};
+farmingSnapshot.soul_weapon.last = { weapon: 'Ambition', result: 'failed', engraving_t: 'Unrelated legacy failure' };
+await farmingPoll();
+assert.match(proof(), /Gravure automatique désactivée.*supervision/);
+assert.doesNotMatch(proof(), /Unrelated legacy failure|premier passage.*en attente/);
+executionSnapshot = { mode: 'mpw18', setup_result: { mode: 'mpw18', revision: accepted.mpw18.revision,
+  result: 'failed', at: Date.now() / 1000, target: { stage: accepted.mpw18.stage, preset: accepted.mpw18.preset,
+    soul_weapon: accepted.mpw18.soul_weapon }, message_t: 'Current matching target failed' } };
+assert.equal(proof(), 'Current matching target failed');
+executionSnapshot.setup_result.revision = 'old-revision';
+assert.doesNotMatch(proof(), /Current matching target failed/);
+executionSnapshot.setup_result.revision = accepted.mpw18.revision;
+executionSnapshot.setup_result.at -= 121;
+assert.doesNotMatch(proof(), /Current matching target failed/);
+executionSnapshot.setup_result.at = Date.now() / 1000;
+executionSnapshot.setup_result.target = { ...executionSnapshot.setup_result.target, soul_weapon: { id: 32, variant: 'Gold-maxed' } };
+assert.doesNotMatch(proof(), /Current matching target failed/);
 evidenceUi.dispose();
 assert.equal(deadlines.size, 0);
 console.log('Draft loadout, complete explicit apply, rejected save and accepted-target separation: OK');
