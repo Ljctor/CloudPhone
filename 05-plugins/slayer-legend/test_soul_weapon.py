@@ -621,7 +621,7 @@ def fake_screens():
                                               "plain": plain(shot), "overlays": [] if plain(shot) else ["panel"]})
 
 
-def build(game, loadout=None, engraving=None):
+def build(game, loadout=None, engraving=None, stage_reader=None):
     ports = game.ports()
     loadouts = loadout or {"mpw18": {"stage": 920, "preset": None, "soul_weapon": {"id": AMBITION, "variant": "Atk"}},
                            "mpw4": {"stage": 915, "preset": None, "soul_weapon": {"id": GRAND - 1, "variant": "Atk"}}}
@@ -630,7 +630,7 @@ def build(game, loadout=None, engraving=None):
             # Equipment-only tests deliberately omit engraving; production
             # injects the complete recipe capability from the loadout feature.
             "applicability": lambda chosen: {"supported": True, "engraving_required": bool(engraving)}}
-    part = stage_change.stage_change(ports, fake_screens(), SimpleNamespace(regions=lambda table: []),
+    part = stage_change.stage_change(ports, fake_screens(), stage_reader or SimpleNamespace(regions=lambda table: []),
                                      SimpleNamespace(), stage_rules, STAGES, soul)
     return ports, part["api"]
 
@@ -1036,7 +1036,8 @@ class EngravingGame(Game):
         ports = super().ports()
         game = self
         # The engraving switch: "real" (the supervised run done) unless said.
-        ports.store.saved = {"engraving": game.state.get("engraving_switch", "real")}
+        ports.store.saved = {"engraving": game.state.get("engraving_switch", "real"),
+                             "farming": game.state.get("farming", {})}
 
         async def swipe(shot, screen, move, start, end, milliseconds, verified=False, seen=None):
             refusal = nav.guard(screen, move, start[0], start[1], "swipe", verified, seen)
@@ -1132,6 +1133,88 @@ def engraving_moves(game):
 
 
 class Engraving(unittest.TestCase):
+    def delayed_opening(self, game, delay):
+        original_apply, original_snapshot = game.apply, game.snapshot
+        pending = [None]
+
+        def apply(screen, move, point, end=None):
+            original_apply(screen, move, point, end)
+            if screen == "soul_weapon" and move == "engraving":
+                game.state["screen"] = "soul"
+                pending[0] = game.now + delay[0]
+
+        def snapshot():
+            if pending[0] is not None and game.now >= pending[0]:
+                game.state["screen"] = "engraving"
+                pending[0] = None
+            return original_snapshot()
+
+        game.apply, game.snapshot = apply, snapshot
+
+    def setup_game(self, game, stage_reader=None):
+        part = {"setup": engraving_setup.engraving_setup, "screen": fake_engraving_screen(game),
+                "rules": setup_rules, "variant": lambda weapon_id, name: VISION_VARIANTS.get(name)}
+        loadouts = {"mpw18": {"stage": 920, "preset": None,
+                               "soul_weapon": {"id": VISION_ID, "variant": "Gold-balanced"}}}
+        return build(game, loadouts, part, stage_reader)
+
+    def test_opening_can_outlast_the_card_polling_deadline(self):
+        game = vision_game()
+        self.delayed_opening(game, [4.0])
+        _, api = self.setup_game(game)
+        answer = asyncio.run(api["soul_weapon"]("mpw18"))
+        self.assertEqual(answer["result"], "done", answer)
+        self.assert_gold_balanced(game)
+        self.assertEqual(game.moves.count(("soul_weapon", "engraving")), 1)
+
+    def test_timed_out_opening_is_recovered_before_the_next_stage_navigation(self):
+        game = vision_game(farming={"switches": {"stage_change": "real"}})
+        delay = [engraving_setup.TRANSITION_WAIT + 1]
+        self.delayed_opening(game, delay)
+        stage_reader = SimpleNamespace(regions=lambda table: ["known"] * 50,
+                                       battle_stage=lambda shot, names, *args: 920)
+        ports, api = self.setup_game(game, stage_reader)
+        first = asyncio.run(api["soul_weapon"]("mpw18"))
+        self.assertEqual(first["result"], "failed")
+        self.assertIn("ouverture de la gravure", french(first["text_t"]))
+        self.assertTrue(api["soul_weapon_state"]()["recovery"]["required"])
+        self.assertNotIn(("soul_weapon_engraving", "close"), game.moves)
+        game.now += 1.25  # The already-authorised opening finishes after timeout.
+        self.assertEqual(game.snapshot()[2]["screen"], "engraving")
+        delay[0] = 0
+        before = len(game.moves)
+        answer = asyncio.run(api["farm"](920, None, "mpw18"))
+        self.assertEqual(answer["result"], "done", answer)
+        self.assertEqual(game.moves[before:before + 3], [("soul_weapon_engraving", "close"),
+                         ("soul_weapon", "close"), ("equipment_weapon", "close")])
+        self.assertEqual(game.leases[-1], ("stage_change", "farm mpw18"))
+        self.assert_gold_balanced(game)
+        self.assertTrue(all(card["locked"] for card in game.state["engraving"]["cards"]))
+        self.assertFalse(api["soul_weapon_state"]()["recovery"]["required"])
+
+    def test_recovery_before_stage_refuses_unknown_identity_or_unread_locks(self):
+        for missing in ("identity", "padlock"):
+            with self.subTest(missing=missing):
+                game = vision_game(screen="engraving", farming={"switches": {"stage_change": "real"}})
+                view = fake_engraving_screen(game)
+                if missing == "identity":
+                    view.weapon = lambda *args: None
+                else:
+                    game.state["padlock_unread"] = (2,)
+                part = {"setup": engraving_setup.engraving_setup, "screen": view,
+                        "rules": setup_rules, "variant": lambda weapon_id, name: VISION_VARIANTS.get(name)}
+                loadouts = {"mpw18": {"stage": 920, "preset": None,
+                                       "soul_weapon": {"id": VISION_ID, "variant": "Gold-balanced"}}}
+                stage_reader = SimpleNamespace(regions=lambda table: ["known"] * 50,
+                                               battle_stage=lambda shot, names, *args: 920)
+                _, api = build(game, loadouts, part, stage_reader)
+                answer = asyncio.run(api["farm"](920, None, "mpw18"))
+                self.assertEqual(answer["result"], "failed")
+                self.assertEqual(game.moves, [], "no close or stage gesture without safe recovery")
+                self.assertEqual(game.state["screen"], "engraving")
+                if missing == "padlock":
+                    self.assertTrue(api["soul_weapon_state"]()["recovery"]["required"])
+
     def test_final_equipment_readback_rejects_changed_or_unread_tag_after_engraving(self):
         for lost_equipment in (True, False):
             with self.subTest(lost_equipment=lost_equipment):

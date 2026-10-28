@@ -156,13 +156,14 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
             if ports.clock.monotonic() >= end:
                 return shot, None
 
-    async def open_screen():
-        """The Soul Weapon screen, open already (parked) or opened from the
-        battle."""
+    async def recover_engraving_run(shot):
+        """Recover a recognised interrupted engraving under the caller's lease.
+
+        Identification and eight verified locks are required before its own
+        close button is allowed. This never opens an engraving or applies a
+        different recipe; it returns the recovered Soul Weapon screen.
+        """
         require_enabled()
-        shot = await helpers.look()
-        if await ports.analyse(reader.title, shot):
-            return shot
         if setup and await ports.analyse(engraving["screen"].title, shot):
             name = await ports.analyse(engraving["screen"].weapon, shot, names, reader.CARD_FONT)
             matches = [entry for entry in by_id.values() if entry["name"] == name]
@@ -173,6 +174,20 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
             if not recovered["ok"]:
                 raise Stop("gravure interrompue : récupération non vérifiée")
             return shot
+        raise Stop("gravure interrompue : écran non reconnu, récupération suspendue")
+
+    async def recover_engraving(shot):
+        return await tracked(recover_engraving_run, shot)
+
+    async def open_screen():
+        """The Soul Weapon screen, open already (parked) or opened from the
+        battle."""
+        require_enabled()
+        shot = await helpers.look()
+        if await ports.analyse(reader.title, shot):
+            return shot
+        if setup and await ports.analyse(engraving["screen"].title, shot):
+            return await recover_engraving_run(shot)
         shot = await helpers.to_battle()
         await tap(shot, "battle", "menu_equipment", EQUIPMENT_TAP)
         shot, tab = await wait_for(reader.tab)
@@ -392,7 +407,8 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
             status["cache"] = None
             ports.store.save()
 
-    return {"ensure": ensure, "park": park, "leave": leave, "relaunched": relaunched, "forget": forget, "set_switch": set_switch,
+    return {"ensure": ensure, "park": park, "leave": leave, "recover_engraving": recover_engraving,
+            "relaunched": relaunched, "forget": forget, "set_switch": set_switch,
             "switch": lambda: status["switch"], "set_engraving": set_engraving,
             "state": lambda: {"switch": status["switch"], "engraving": status["engraving"],
                               "direction": status["direction"], "last": status["last"],

@@ -22,6 +22,9 @@ separate milestones. Historical checked items below do not close a new regressio
 - [ ] Make debug `/screen?quick=1` timestamps refer to acquisition rather than
   classification completion, including a slow-classifier/lost-metadata check.
   This display geometry does not authorize automatic gestures.
+- [ ] Recover an already-open engraving screen under the action lease before
+  stage/preset navigation. Verify identity and eight locks before closing;
+  allow a bounded transition delay without treating timeout as success.
 - [ ] Verify the refactored installed pipeline in Agent mode and the unchanged
   farming target, with fresh gameplay evidence and no extra gesture permissions.
 

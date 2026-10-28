@@ -50,6 +50,9 @@ REMOVE_MS = 800
 MOVE_MS = 800
 # The budget the user gave a mode switch.
 BUDGET = 60
+# Screen transitions can outlast the fine-grained card polling deadline on
+# the real capture/analysis pipeline. Keep a separate, bounded allowance.
+TRANSITION_WAIT = 10.0
 
 
 def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lambda: "off", source_weapon=None):
@@ -141,6 +144,8 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
                         identity(shot)
                     return False
                 return observed(shot, reader)
+            if transition and most is None:
+                most = TRANSITION_WAIT
             return await poll(checked) if most is None else await poll(checked, most)
 
         async def tap(shot, screen_id, *args, **kwargs):

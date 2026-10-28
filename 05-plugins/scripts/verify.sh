@@ -6,6 +6,10 @@ base=${1:?Usage: verify.sh http://LISTEN_ADDRESS:WEB_PORT}
 # this check stays deterministic and never gestures on the installed game.
 python3 "$(dirname "$0")/../slayer-legend/test_screen_model.py" EngravingPreview
 python3 "$(dirname "$0")/../slayer-legend/test_soul_weapon.py" Tag ActualNativeCaptures Readers NativeReaders
+python3 "$(dirname "$0")/../slayer-legend/test_soul_weapon.py" \
+  Engraving.test_opening_can_outlast_the_card_polling_deadline \
+  Engraving.test_timed_out_opening_is_recovered_before_the_next_stage_navigation \
+  Engraving.test_recovery_before_stage_refuses_unknown_identity_or_unread_locks
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_screen.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_mode_setup_status.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_mode_rules.py -q

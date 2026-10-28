@@ -188,6 +188,8 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
             return "saver"
         if parked(shot):
             return "parked"
+        if souls and soul.get("engraving") and soul["engraving"]["screen"].title(shot):
+            return "engraving"
         return screens.open_tab(shot)
 
     async def to_battle(may_tap=True):
@@ -199,6 +201,14 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         parking) by its red X first. The game's « Better Soul Weapon »
         toast is no obstacle (screens.better_weapon_toast)."""
         shot, seen = await settle(battle_or_panel)
+        if seen == "engraving":
+            if not may_tap:
+                raise Plan("quitter l’écran Soul Weapon")
+            # A timed-out opening may finish after the previous attempt.
+            # Recover the identified engraving, including all eight locks,
+            # before any stage/preset navigation in this existing lease.
+            await souls["recover_engraving"](shot)
+            shot, seen = await settle(battle_or_panel)
         if seen == "parked":
             if not may_tap:
                 raise Plan("quitter l’écran Soul Weapon")
