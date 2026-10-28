@@ -82,8 +82,12 @@ separate milestones. Historical checked items below do not close a new regressio
 - [x] Expose actual configuration blockers in the existing status row.
   Bind current attempt results to mode, target revision, timestamp and
   unchanged input/relaunch context; a saved target is not observed readiness.
-- [ ] Verify this batch after deployment, then complete the supervised game
-  execution. Mocked transactions do not establish the final in-game setup.
+- [x] Verify release `8386455`: 691 Python tests pass without skips, seven
+  browser-module suites pass, exact-commit build and shell checks pass.
+  Installed backend/browser files match the commit; live browser options
+  show the real disabled-engraving blocker and no successful attempt.
+- [ ] Complete the supervised game execution. Mocked transactions and
+  read-only calibration do not establish the final in-game setup.
 
 ### Calibration follow-up
 
