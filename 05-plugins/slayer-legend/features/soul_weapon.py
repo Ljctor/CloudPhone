@@ -213,9 +213,14 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
                               verified=True, seen=seen)
         elif step[0] == "scroll":
             rows = view["rows"]
-            # From the last whole cell to the first (or back): the list moves
-            # by about its height less a cell, each in its upper part.
-            first, last = reader.select_point(rows[0]), reader.select_point(rows[-1])
+            # The top whole row can start above the calibrated scroll lane.
+            # Use whole-cell upper points nearest the navigation's .62/.86
+            # anchors; the normal guard still checks both ends and orange tags.
+            points = [reader.select_point(row) for row in rows]
+            first = min(points, key=lambda point: abs(point[1] - .62))
+            last = min(points, key=lambda point: abs(point[1] - .86))
+            if first == last:
+                raise Stop("liste des armes illisible")
             start, end = (last, first) if step[1] == "down" else (first, last)
             await helpers.front()
             require_enabled()

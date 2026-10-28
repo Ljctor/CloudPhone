@@ -85,6 +85,10 @@ separate milestones. Historical checked items below do not close a new regressio
   the narrow 7 and the red T facets. Keep name/digit confidence thresholds.
 - [ ] Verify the calibrated Ambition reader through the installed automatic
   setup pipeline, including actual equipment proof and final eight locks.
+- [x] Calibrate actual Soul Weapon name glyphs from Honor, Ecstasy, Friendship,
+  Skilfulness and Relax. Keep ownership-zero refusal and identity ambiguity gates.
+- [ ] Verify complete live list search and scroll endpoints before certifying
+  automatic equipment selection; the first whole row can lie above the scroll lane.
 - [ ] Retry an unchanged accepted configuration explicitly, under the current
   mode/revision and existing input lease; never report a queued attempt as ready.
 

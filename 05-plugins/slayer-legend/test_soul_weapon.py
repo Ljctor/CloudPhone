@@ -72,6 +72,58 @@ class Readers(unittest.TestCase):
         self.assertIsNone(reader.name(screen("sw_name_grand"), [n for n in NAMES if n != "Grand"]))
         self.assertIsNone(reader.name(screen("sw_title"), NAMES))
 
+    def test_actual_honor_missing_h_glyph_and_owned_zero(self):
+        original = screen("sw_name_honor", "sw_owned_honor_0")
+        for width, height in ((480, 1040), (720, 1560)):
+            with self.subTest(width=width):
+                shot = NativeReaders.resized(original, width, height)
+                self.assertEqual(reader.read_name(shot), "Honor")
+                self.assertEqual(reader.name(shot, NAMES), "Honor")
+                self.assertEqual(reader.owned(shot), 0)
+                self.assertIsNone(reader.name(shot, ["Ambition", "Grand"]))
+                self.assertIsNone(reader.name(shot, NAMES + ["Honour"]))
+                observed = reader.view(shot, NAMES)
+                observed.update(open=True, rows=rows(5, 2), tag="Equip")
+                step = rules.plan(observed, "Honor", rules.fresh_memory(None), ORDER, True)
+                self.assertEqual(step[0], "fail")
+                self.assertIn("Owned : 0", french(step[1]))
+
+    def test_actual_ecstasy_rendering_and_missing_y(self):
+        original = screen("sw_name_ecstasy")
+        for width, height in ((480, 1040), (720, 1560)):
+            with self.subTest(width=width):
+                shot = NativeReaders.resized(original, width, height)
+                self.assertEqual(reader.read_name(shot), "Ecstasy")
+                self.assertEqual(reader.name(shot, NAMES), "Ecstasy")
+                self.assertIsNone(reader.name(shot, ["Ambition", "Grand"]))
+                self.assertIsNone(reader.name(shot, NAMES + ["Ecstacy"]))
+
+    def test_actual_friendship_missing_f(self):
+        original = screen("sw_name_friendship")
+        for width, height in ((480, 1040), (720, 1560)):
+            shot = NativeReaders.resized(original, width, height)
+            self.assertEqual(reader.read_name(shot), "Friendship")
+            self.assertEqual(reader.name(shot, NAMES), "Friendship")
+            self.assertIsNone(reader.name(shot, ["Ambition", "Grand"]))
+            self.assertIsNone(reader.name(shot, NAMES + ["Friendshib"]))
+
+    def test_actual_skilfulness_and_relax_missing_k_x(self):
+        for fixture, expected, ambiguous in (("sw_name_skilfulness", "Skilfulness", "Skilfulnes"),
+                                              ("sw_name_relax_480", "Relax", "Relas")):
+            for width, height in ((480, 1040), (720, 1560)):
+                with self.subTest(fixture=fixture, width=width):
+                    shot = NativeReaders.resized(screen(fixture), width, height)
+                    self.assertEqual(reader.read_name(shot), expected)
+                    self.assertEqual(reader.name(shot, NAMES), expected)
+                    self.assertIsNone(reader.name(shot, ["Ambition", "Grand"]))
+                    if expected in reader.NAME_NATIVE_TEMPLATES:
+                        # Existing exact Relax template keeps its identity;
+                        # it never fuzzily becomes a supplied near-name.
+                        self.assertEqual(reader.name(shot, NAMES + [ambiguous]), expected)
+                        self.assertIsNone(reader.name(shot, [ambiguous]))
+                    else:
+                        self.assertIsNone(reader.name(shot, NAMES + [ambiguous]))
+
     def test_owned(self):
         self.assertEqual(reader.owned(screen("sw_owned_1")), 1)
         self.assertEqual(reader.owned(screen("sw_owned_0")), 0)

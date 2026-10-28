@@ -5,7 +5,7 @@ base=${1:?Usage: verify.sh http://LISTEN_ADDRESS:WEB_PORT}
 # Real reviewed crops distinguish red drag ghosts from actionable controls;
 # this check stays deterministic and never gestures on the installed game.
 python3 "$(dirname "$0")/../slayer-legend/test_screen_model.py" EngravingPreview
-python3 "$(dirname "$0")/../slayer-legend/test_soul_weapon.py" Tag ActualNativeCaptures
+python3 "$(dirname "$0")/../slayer-legend/test_soul_weapon.py" Tag ActualNativeCaptures Readers NativeReaders
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_screen.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_mode_setup_status.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_game.py -q
