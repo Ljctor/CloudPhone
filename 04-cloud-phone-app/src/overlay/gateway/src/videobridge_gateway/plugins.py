@@ -59,6 +59,7 @@ import logging
 import os
 import re
 import time
+from collections import deque
 
 from aiohttp import web
 
@@ -86,6 +87,11 @@ class Screenshots:
         self._last = None      # (start, generation, value)
         self._flight = None    # (start, generation, task)
         self.counts = {}
+        self._times = deque(maxlen=4)
+
+    def captured_at(self, shot):
+        """Acquisition start (Unix seconds), never analysis completion time."""
+        return next((stamp for value, stamp in self._times if value is shot), None)
 
     def stale(self):
         self._generation += 1
@@ -100,6 +106,7 @@ class Screenshots:
             return self._last[2]
         if self._young(self._flight, now, max_age):
             return await asyncio.shield(self._flight[2])
+        started = time.time()
         entry = (now, self._generation, loop.create_task(self._capture()))
         self._flight = entry
         self.counts[plugin_id] = self.counts.get(plugin_id, 0) + 1
@@ -108,6 +115,7 @@ class Screenshots:
             if self._flight is entry:
                 self._flight = None
             if not task.cancelled() and task.exception() is None and task.result():
+                self._times.append((task.result(), started))
                 if self._last is None or self._last[0] <= entry[0]:
                     self._last = (entry[0], entry[1], task.result())
 
@@ -153,6 +161,10 @@ class PluginContext:
         max_age (seconds), a capture that young may be given instead of a
         new one (shared by every plugin)."""
         return await self._screenshots.get(self.id, max_age)
+
+    def screenshot_time(self, shot):
+        """Acquisition time of a recent screenshot, None when unknown."""
+        return self._screenshots.captured_at(shot)
 
     async def adb(self, *args, timeout=10):
         """Runs `adb -s <emulator> ARGS...`; returns (exit code, stdout)."""

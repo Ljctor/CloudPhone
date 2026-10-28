@@ -40,6 +40,18 @@ import trace from './page_trace.js';
 import watchdog from './page_watchdog.js';
 
 const ENGLISH = {
+  "Agrandir le menu de navigation": "Expand navigation menu",
+  "Réduire le menu de navigation": "Minimize navigation menu",
+  "Capture annulée · Choisis une action": "Capture cancelled \u00b7 Choose an action",
+  "Capture avant enregistrée · Trace un rectangle autour de l’élément": "Before capture saved \u00b7 Draw a rectangle around the element",
+  "Capture après annotée": "Annotated after capture",
+  "Capture avant annotée": "Annotated before capture",
+  "Zones connues de l’écran archivé · rouge : geste enregistré": "Known zones for the archived screen \u00b7 red: recorded gesture",
+  "Zones historiques indisponibles · rouge : geste enregistré": "Historical zones unavailable \u00b7 red: recorded gesture",
+  "Écran historique non identifié": "Historical screen unidentified",
+  "Image originale": "Original image",
+  "Annulation…": "Cancelling\u2026",
+
   'Étage à farmer': 'Floor to farm',
   'défaut': 'default',
   'Gold': 'Gold',

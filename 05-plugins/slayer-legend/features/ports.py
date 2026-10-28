@@ -292,8 +292,12 @@ class State:
 # holder that did not come from the user's own press (seconds).
 LEASE_MAX = 15 * 60
 INPUT_PAUSE = 5
-# Who holds the lease in the running task (and the tasks it spawns).
+# The holder's display name in this task; inherited context alone grants no
+# action authority to spawned tasks (LEASE_OWNER also checks task identity).
 HOLDER = contextvars.ContextVar("slayer_legend_lease_holder", default=None)
+# The display name is not ownership: two mode transactions can have the
+# same name. An owner belongs to one lease context and one asyncio task.
+LEASE_OWNER = contextvars.ContextVar("slayer_legend_lease_owner", default=None)
 
 
 # The plugin's own holders of the lease: refused while the plugin is off.
@@ -329,8 +333,9 @@ class Lease:
     watchdog's repairs and the modes' sequences take it for each tapping
     sequence (ports.leased), an outside holder through POST /lease. It has
     a holder's name, a reason and a time to live (at most LEASE_MAX), is
-    renewed explicitly by the same holder (take again) and released by its
-    holder only; one that expires is logged as a warning. A user input (a
+    renewed explicitly by the same owner (take again) and released by its
+    owner only. Internal transactions carry a private owner token; outside
+    holders retain their name-based API. Expiry is logged as a warning. A user input (a
     touch, a swipe or a key, context.last_input) refuses it for
     INPUT_PAUSE seconds and stops the sequence under way, unless it was
     taken on the user's own press (user=True), but only while the game is
@@ -380,37 +385,38 @@ class Lease:
             return 0.0
         return max(0.0, last["monotonic"] + INPUT_PAUSE - self.clock.monotonic())
 
-    def take(self, holder, reason, seconds, user=False, pause=True):
+    def take(self, holder, reason, seconds, user=False, pause=True, *, owner=None):
         """None once holder has it (taken or renewed until now + seconds),
         or why not (a status text, see Busy)."""
         seconds = min(float(seconds), LEASE_MAX)
         if holder in PLUGIN_HOLDERS and not self.enabled():
             return texts.t(OFF)
         held = self.current()
-        if held and held["holder"] != holder:
+        if held and (held["holder"] != holder or held.get("owner") is not owner):
             return texts.t(HELD, holder=held["holder"])
         if not user and pause and self.playing():
             return texts.t(PLAYING)
         now = self.clock.wall()
         self.held = {"holder": holder, "reason": reason, "since": held["since"] if held else now,
-                     "until": now + seconds, "user": user, "mark": self.clock.monotonic()}
+                     "until": now + seconds, "user": held["user"] if held else user,
+                     "mark": held["mark"] if held and owner is not None else self.clock.monotonic(), "owner": owner}
         self.log("normal", f"Lease {'renewed' if held else 'taken'} by {holder} for {seconds:.0f} s: {reason}")
         return None
 
-    def release(self, holder):
+    def release(self, holder, *, owner=None):
         """True when holder had it (only its own holder releases it)."""
         held = self.current()
-        if not held or held["holder"] != holder:
+        if not held or held["holder"] != holder or held.get("owner") is not owner:
             return False
         self.held = None
         self.log("normal", f"Lease released by {holder}")
         return True
 
-    def check(self, holder):
+    def check(self, holder, *, owner=None):
         """Before a tap, hold or swipe: Busy unless holder has the lease and
         the user has not played since it was taken (or it was the user's)."""
         held = self.current()
-        if not held or held["holder"] != holder or holder is None:
+        if not held or held["holder"] != holder or holder is None or held.get("owner") is not owner:
             raise Busy(HELD, holder=held["holder"]) if held else Busy(NO_LEASE)
         if holder in PLUGIN_HOLDERS and not self.enabled():
             raise Busy(OFF)
@@ -455,18 +461,27 @@ def build(context, nav):
         when it cannot); released at its end."""
         if not user and pause and lease.recent():
             await focus()  # is the game in front now? (lease.front)
-        why = lease.take(holder, reason, seconds, user, pause)
+        owner = object()
+        why = lease.take(holder, reason, seconds, user, pause, owner=owner)
         if why:
             raise Busy(why)
         token = HOLDER.set(holder)
+        ownership = LEASE_OWNER.set((owner, asyncio.current_task()))
         try:
             yield
         finally:
+            LEASE_OWNER.reset(ownership)
             HOLDER.reset(token)
-            lease.release(holder)
+            lease.release(holder, owner=owner)
+
+    def check_lease():
+        owned = LEASE_OWNER.get()
+        if owned is None or owned[1] is not asyncio.current_task():
+            raise Busy(NO_LEASE)
+        lease.check(HOLDER.get(), owner=owned[0])
 
     async def tap(shot, screen, move, point, verified=False, seen=None):
-        lease.check(HOLDER.get())
+        check_lease()
         allowed(screen, move, point, verified=verified, seen=seen)
         width, height, _ = shot
         await adb("shell", "input", "tap", str(round(point[0] * width)), str(round(point[1] * height)))
@@ -474,7 +489,7 @@ def build(context, nav):
     async def taps(shot, screen, moves, gap, verified=()):
         """moves: [(move, point)], tapped gap seconds apart in one adb call;
         verified: the moves whose precondition the caller checked."""
-        lease.check(HOLDER.get())
+        check_lease()
         for move, point in moves:
             allowed(screen, move, point, verified=move in verified)
         width, height, _ = shot
@@ -483,14 +498,14 @@ def build(context, nav):
         await adb("shell", script, timeout=gap * len(moves) + 10)
 
     async def hold(shot, screen, move, point, milliseconds):
-        lease.check(HOLDER.get())
+        check_lease()
         allowed(screen, move, point, "hold")
         width, height, _ = shot
         x, y = str(round(point[0] * width)), str(round(point[1] * height))
         await adb("shell", "input", "swipe", x, y, x, y, str(milliseconds), timeout=milliseconds / 1000 + 10)
 
     async def swipe(shot, screen, move, start, end, milliseconds, verified=False, seen=None):
-        lease.check(HOLDER.get())
+        check_lease()
         allowed(screen, move, start, "swipe", verified, seen)
         width, height, _ = shot
         await adb("shell", "input", "swipe", str(round(start[0] * width)), str(round(start[1] * height)),
@@ -540,11 +555,25 @@ def build(context, nav):
             except Exception:
                 exception_log(log)(f"Relaunch listener failed ({why})")
 
+    capture_times = []
+
+    def capture_time(shot):
+        """Conservative acquisition timestamp, unchanged on a cached read."""
+        return next((stamp for value, stamp in capture_times if value is shot), None)
+
     async def capture(max_age=0):
         """The shared capture, each one handed to the capture listeners
         (the game's scan) as it comes."""
+        started = clock.wall() - max(0, max_age)
         shot = await context.screenshot(max_age=max_age)
         if shot:
+            stamp = getattr(context, "screenshot_time", lambda shot: None)(shot)
+            if stamp is None:
+                stamp = capture_time(shot)
+            if stamp is None:
+                stamp = started
+            capture_times[:] = [(value, at) for value, at in capture_times if value is not shot][-3:]
+            capture_times.append((shot, stamp))
             for listener in list(capture_listeners):
                 try:
                     listener(shot)
@@ -570,7 +599,7 @@ def build(context, nav):
     async def press_dialog(shot, screen, move, name):
         """Taps button name of an Android dialog where uiautomator says it
         is; False when it is not there."""
-        lease.check(HOLDER.get())
+        check_lease()
         code, out = await adb("shell", "uiautomator", "dump", "/dev/tty", timeout=20)
         point = close_button(out, name) if code == 0 else None
         if not point:
@@ -598,7 +627,7 @@ def build(context, nav):
         return {"count": len(found), "point": found[0] if len(found) == 1 else None}
 
     async def choose_account(shot, point):
-        lease.check(HOLDER.get())
+        check_lease()
         width, height, _ = shot
         allowed("account_chooser", "account", (point[0] / width, point[1] / height), verified=True)
         await adb("shell", "input", "tap", str(point[0]), str(point[1]))
@@ -643,7 +672,7 @@ def build(context, nav):
         log("normal", f"Plugin turned {'on' if on else 'off'}")
 
     return SimpleNamespace(
-        capture=capture, analyse=context.analyse, on_capture=capture_listeners.append,
+        capture=capture, capture_time=capture_time, analyse=context.analyse, on_capture=capture_listeners.append,
         on_relaunch=relaunch_listeners.append, relaunched=relaunched,
         tap=tap, taps=taps, hold=hold, swipe=swipe, lease=lease, leased=leased, Busy=Busy, Refused=Refused,
         last_input=last_input, user_input=user_input, **text_ports(),

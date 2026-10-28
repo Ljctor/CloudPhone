@@ -474,7 +474,7 @@ class Store:
 
 
 class Mode(unittest.TestCase):
-    def enter(self, answers, confirm=None):
+    def enter(self, answers, confirm=None, verified_setup=False):
         """answers: what farm does each time: an answer ({result, text}:
         its text a template), or Busy's text."""
         game = Game()
@@ -520,7 +520,7 @@ class Mode(unittest.TestCase):
             for _ in range(20):
                 await asyncio.sleep(0)
             if confirm:
-                part["api"]["confirm"](confirm)
+                part["api"]["confirm"](confirm, verified_setup=verified_setup)
             get = next(h for method, path, h in part["routes"] if method == "GET")
             return (await get(None))[1]
 
@@ -554,9 +554,14 @@ class Mode(unittest.TestCase):
         self.assertIsNone(mode_rules.retry_after(5, 46))
         self.assertEqual(mode_rules.retry_after(4, 30), 16)
 
-    def test_the_watchdog_confirms_a_failed_mode(self):
+    def test_watchdog_health_does_not_clear_a_failed_setup(self):
         failed = {"result": "failed", "text": "écran inattendu"}
         calls, state, alerts = self.enter([failed] * 8, confirm="mpw4")
+        self.assertEqual(state["state"], "failed")
+
+    def test_explicit_verified_setup_resolves_a_failed_mode(self):
+        failed = {"result": "failed", "text": "écran inattendu"}
+        calls, state, alerts = self.enter([failed] * 8, confirm="mpw4", verified_setup=True)
         self.assertEqual(state["state"], "farming", french(state["message_t"]))
         self.assertIn("931", french(state["message_t"]))
 

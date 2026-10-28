@@ -44,6 +44,47 @@ assert any("data-plugin-layer" in urllib.request.urlopen(base + path, timeout=5)
            for path in scripts if path.startswith("/"))
 PYCODE
 }
+gateway_command_lifecycle() {
+  "$PREFIX/current/venv/bin/python" - <<'PYCODE'
+import asyncio
+from unittest.mock import patch
+from videobridge_gateway.adapters import adb
+from videobridge_gateway.plugins import PluginContext, Screenshots
+
+assert callable(PluginContext.screenshot_time)
+assert callable(Screenshots.captured_at)
+
+async def check():
+    started, finish = asyncio.Event(), asyncio.Event()
+    class Process:
+        returncode = None
+        async def communicate(self):
+            started.set()
+            await finish.wait()
+            self.returncode = 0
+            return b"", b""
+    process = Process()
+    async def create(*args, **kwargs):
+        return process
+    with patch.object(adb.asyncio, "create_subprocess_exec", create), patch.object(adb.logs, "adb_reached"):
+        task = asyncio.create_task(adb.run("offline lifecycle check", timeout=1))
+        await started.wait()
+        task.cancel()
+        for _ in range(3):
+            await asyncio.sleep(0)
+        drained_early = task.done()
+        finish.set()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        else:
+            raise AssertionError("command cancellation was lost")
+        assert not drained_early and process.returncode == 0
+
+asyncio.run(check())
+PYCODE
+}
 listens_only_on() {
   local port=$1 addresses
   addresses=$(ss -Hltn | awk -v p=":$port" 'substr($4, length($4) - length(p) + 1) == p { print $4 }')
@@ -57,6 +98,7 @@ check "cloudphone-gateway is active" systemctl is-active --quiet cloudphone-gate
 check "no separate cloudphone-web service is left" test ! -e /etc/systemd/system/cloudphone-web.service
 check "web page answers on $host:$WEB_PORT" answers "http://$host:$WEB_PORT/"
 check "page serves interactive plugin overlay" interactive_plugin_layer
+check "installed gateway drains cancelled commands and exposes capture timestamps" gateway_command_lifecycle
 check "gateway answers on $host:$WEB_PORT" answers "http://$host:$WEB_PORT/api/v1/emulator/status"
 check "gateway reports live CPU and memory" live_metrics
 check "gateway reports bounded stream diagnostics" stream_diagnostics

@@ -26,17 +26,20 @@ IDLE = 600
 # The souls' counters move by one step of « 94.6C » every few minutes:
 # their abbreviated window is longer.
 SOULS_WINDOW = 1800
+# Cube/L3 balances are visible only on particular screens; retain a dated
+# measurement across visits without inventing samples while they are hidden.
+RESOURCE_WINDOW = 1800
 
 
 def empty():
-    return {"samples": [], "pending": None, "text": None, "step": None, "offset": 0, "place": None,
+    return {"samples": [], "pending": None, "pending_at": None, "text": None, "step": None, "offset": 0, "place": None,
             "number": None, "odd": 0}
 
 
-def window_for(step, long=WINDOW):
+def window_for(step, long=WINDOW, short=SHORT):
     """Seconds of the window for a counter read at step (one unit of its
     last digit, None: not read yet): SHORT in full digits, else long."""
-    return SHORT if step is not None and step <= 1 else long
+    return short if step is not None and step <= 1 else long
 
 
 def trimmed(samples, now, seconds=WINDOW):
@@ -78,7 +81,8 @@ def same_place(a, b):
 
 def restarted(window, place=None):
     """The window starts again, at place if known."""
-    return {**window, "place": place, "number": None, "odd": 0, "pending": None, "samples": [], "offset": 0}
+    return {**window, "place": place, "number": None, "odd": 0, "pending": None, "pending_at": None,
+            "samples": [], "offset": 0}
 
 
 def elsewhere(window, place=None):
@@ -112,7 +116,7 @@ def where(window, kind, here):
     return elsewhere(window, here), False
 
 
-def counted(window, reading, now, long=WINDOW, spent="restart"):
+def counted(window, reading, now, long=WINDOW, spent="restart", short=SHORT):
     """A reading on the window's stage: a full-digit value counts at each
     reading, since it can change between every scan; abbreviated values
     count only when the previous reading agreed. A drop is spending:
@@ -120,6 +124,9 @@ def counted(window, reading, now, long=WINDOW, spent="restart"):
     (gold), "skip" leaves it out (souls: the samples go on from the last
     value, the drop kept in offset). long: the abbreviated window
     (window_for)."""
+    # A cached capture is one observation, even when two clients ask for it.
+    if window.get("pending_at") is not None and now <= window["pending_at"]:
+        return window
     full = reading.get("full", False)
     if full or window["pending"] == reading["value"]:
         samples = list(window["samples"])
@@ -137,6 +144,6 @@ def counted(window, reading, now, long=WINDOW, spent="restart"):
                 samples, offset, value = [], 0, reading["value"]
         samples.append((now, value))
         step = reading.get("step")
-        window = {**window, "samples": trimmed(samples, now, window_for(step, long)), "text": reading["text"],
+        window = {**window, "samples": trimmed(samples, now, window_for(step, long, short)), "text": reading["text"],
                   "step": step, "offset": offset}
-    return {**window, "pending": reading["value"]}
+    return {**window, "pending": reading["value"], "pending_at": now}

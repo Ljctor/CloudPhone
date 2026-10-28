@@ -21,6 +21,14 @@ calls f(mode, before, after) on every change of a mode's loadout (POST
 /loadout or set_stage), for the mode feature to apply it at once.
 """
 
+import hashlib
+import json
+
+
+def revision(part):
+    """Content revision, stable across restarts and API presentation changes."""
+    return hashlib.sha256(json.dumps(part, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:24]
+
 
 def engraving(ports, rules):
     table = rules.load()
@@ -67,22 +75,28 @@ def engraving(ports, rules):
         entry = rules.weapon_by_id(weapon_id, table)
         return rules.variants(entry, rotate).get(name) if entry and entry.get("grid") else None
 
+    def applicability(chosen):
+        return rules.automation(chosen.get("id"), table, rotate, chosen.get("variant") or "") if chosen else rules.automation(None, table)
+
     api = {"loadout": lambda mode: dict(loadouts[mode]), "stage": lambda mode: loadouts[mode]["stage"],
            "set_stage": set_stage, "adopt_stage": adopt_stage, "expected_cells": expected_cells,
-           "variant": variant, "table": table, "on_change": listeners.append}
+           "variant": variant, "table": table, "on_change": listeners.append, "applicability": applicability}
 
     def summary(entry):
         return {key: entry.get(key) for key in ("id", "name", "stage", "grid", "source", "verified_in_game",
                                                 "wiki_check")} | {
-            "variants": list(rules.variants(entry, rotate)) if entry.get("grid") else []}
+            "variants": list(rules.variants(entry, rotate)) if entry.get("grid") else [],
+            "automation": rules.automation(entry["id"], table, rotate)}
 
     def detail(entry):
         answer = {key: entry.get(key) for key in ("id", "name", "aliases", "stage", "colour", "grid", "cells",
                                                   "completion", "source", "wiki_check", "verified_in_game",
                                                   "tileable_with_rotation", "tileable_without", "note")}
         answer["rotation"] = table.get("rotation")
+        answer["automation"] = rules.automation(entry["id"], table, rotate)
         answer["variants"] = [
             dict(variant, needed=rules.needed(variant), needs_rotation=rules.needs_rotation(variant),
+                 automation=rules.automation(entry["id"], table, rotate, variant["name"]),
                  needed_oriented=rules.needed(variant, oriented) if oriented else None)
             for variant in (rules.variants(entry, rotate).values() if entry.get("grid") else [])]
         return answer
@@ -108,9 +122,10 @@ def engraving(ports, rules):
         for mode, part in loadouts.items():
             chosen = part["soul_weapon"]
             entry = rules.weapon_by_id(chosen["id"], table) if chosen else None
-            variant = rules.variants(entry, rotate)[chosen["variant"]] if entry else None
-            out[mode] = dict(part, weapon=entry["name"] if entry else None,
-                             placeable=variant["placeable"] if variant else None)
+            variant = rules.variants(entry, rotate).get(chosen["variant"]) if entry else None
+            out[mode] = dict(part, revision=revision(part), weapon=entry["name"] if entry else None,
+                             placeable=variant["placeable"] if variant else None,
+                             automation=applicability(chosen))
         return {"loadouts": out}
 
     async def handle_get(request):
@@ -126,6 +141,8 @@ def engraving(ports, rules):
         if error:
             return ports.respond({"error_t": error}, status=400)
         mode, part = asked
+        if "if_revision" in body and body["if_revision"] != revision(loadouts[mode]):
+            return ports.respond(dict(state(), error_t=ports.t("Configuration modifiée ailleurs : recharge la cible avant d’appliquer")), status=409)
         before = dict(loadouts[mode])
         loadouts[mode] = part
         ports.store.save()

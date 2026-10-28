@@ -489,6 +489,37 @@ def weapon_by_id(weapon_id, table):
     return next((entry for entry in table["weapons"] if entry["id"] == weapon_id), None)
 
 
+def automation(weapon_id, table, rotate=False, variant=None):
+    """Static executor applicability only; never proof of owned pieces,
+    equipment, calibrated readings, switch authorization or final locks.
+    variant=None describes the weapon, a supplied name describes its recipe.
+    The current engraving executor reads and places only 5x5 grids.
+    """
+    def result(code, reason=None):
+        return {"supported": code == "supported", "code": code, "reason_t": reason,
+                "scope": "static", "runtime_verified": False}
+
+    if weapon_id is None:
+        return result("not_selected")
+    entry = weapon_by_id(weapon_id, table) if isinstance(weapon_id, int) and not isinstance(weapon_id, bool) else None
+    if entry is None:
+        return result("unknown_weapon", t("Arme inconnue : id {id}", id=weapon_id))
+    if sum(item["name"] == entry["name"] for item in table["weapons"]) > 1:
+        return result("ambiguous_weapon", t("{weapon} : deux armes portent ce nom, le nom lu ne suffit pas à choisir",
+                                             weapon=entry["name"]))
+    if not entry.get("grid"):
+        return result("no_engraving", t("{name} n’a pas de gravure", name=entry["name"]))
+    if entry["grid"] != 5:
+        return result("unsupported_grid", t("grille {size}x{size} pas encore calibrée", size=entry["grid"]))
+    choices = variants(entry, rotate)
+    if variant is not None and variant not in choices:
+        return result("unknown_variant", t("Gravure de {name} : variante {variant} inconnue",
+                                            name=entry["name"], variant=variant))
+    if variant is not None and not choices[variant]["placeable"]:
+        return result("unsupported_variant", t("à poser : {piece} (rotation pas apprise)", piece=variant))
+    return result("supported")
+
+
 MODES = ("mpw18", "mpw4")
 PRESETS = ("I", "II", "III", "IV", "V")
 

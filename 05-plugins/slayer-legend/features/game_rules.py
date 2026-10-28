@@ -9,12 +9,14 @@ A field's fact: {value, seen (Unix time), verified, source}. source is
 "page" (what a page sent: a stage it saw). verified turns false for every
 fact when the game was stopped or relaunched (unverified): the value is
 kept, the next setup reads it again. A value once seen is never null
-again: a reading that gives nothing leaves the fact as it was. A field
+again: an unread scan retains its historical value/time, marking it
+unverified until another capture confirms it. A field
 whose reader waits for its calibration captures is "pending": it has no
 fact.
 """
 
 import json
+import math
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -240,13 +242,22 @@ def noted(facts, readings, now, source="scan"):
     if readings.get("stage") is not None:
         readings["highest"] = max(filter(None, (readings.get("highest"), readings["stage"])))
     for field, value in readings.items():
-        if value is None or field not in FIELDS or FIELDS[field]["pending"]:
+        if field not in FIELDS or FIELDS[field]["pending"]:
             continue
         before = facts.get(field)
+        if before is not None and now < before["seen"]:
+            continue  # A slow older scan cannot replace newer evidence.
+        if value is None:
+            if before is not None and source == "scan":
+                facts[field] = {**before, "verified": False}
+            continue  # Retain the historical value and its original age.
         if field == "highest":
-            value = _higher(before and before["value"], value)
-            if value is None:
+            higher = _higher(before and before["value"], value)
+            if higher is None:
                 continue
+            if higher != value:
+                continue  # Seeing stage 900 does not reverify a historical 920.
+            value = higher
         if before is not None and before["value"] != value:
             changes.append((field, before["value"], value))
         facts[field] = {"value": value, "seen": now, "verified": True, "source": source}
@@ -260,9 +271,16 @@ def unverified(facts):
 
 def fact_now(facts, field, max_age, now):
     """The fact when it was seen within max_age seconds (None: any age),
-    verified or not; else None."""
+    and is verified in this game session; else None. Historical values
+    remain available through answer()/value(), never as action evidence."""
     fact = facts.get(field)
-    if fact is None or (max_age is not None and now - fact["seen"] > max_age):
+    if fact is None or fact.get("verified") is not True:
+        return None
+    seen = fact.get("seen")
+    if not isinstance(seen, (int, float)) or isinstance(seen, bool) or not math.isfinite(seen):
+        return None
+    age = now - seen
+    if age < 0 or (max_age is not None and age > max_age):
         return None
     return fact
 

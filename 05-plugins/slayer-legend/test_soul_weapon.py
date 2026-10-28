@@ -108,6 +108,58 @@ class Readers(unittest.TestCase):
         self.assertEqual(len(view["rows"]), 5)
 
 
+class NativeReaders(unittest.TestCase):
+    @staticmethod
+    def resized(shot, width, height):
+        sw, sh, pixels = shot
+        xs = [int(x * sw / width) * 3 for x in range(width)]
+        return width, height, b"".join(
+            b"".join(pixels[start + x:start + x + 3] for x in xs)
+            for start in (int(y * sh / height) * sw * 3 for y in range(height)))
+
+    def test_real_soul_readers_at_480_and_720(self):
+        cases = [(("sw_title",), reader.title, ()),
+                 (("sw_name_ambition",), reader.name, (NAMES,)),
+                 (("sw_name_grand",), reader.name, (NAMES,)),
+                 (("sw_name_vision",), reader.name, (NAMES,)),
+                 (("sw_owned_1",), reader.owned, ()),
+                 (("sw_owned_0",), reader.owned, ()),
+                 (("sw_list_first",), reader.rows, ()),
+                 (("sw_tag_unequip",), reader.tag, ()),
+                 (("sw_tabs",), reader.tab, ()),
+                 (("sw_badge_red",), reader.equipped_badge, ()),
+                 (("sw_badge_grey",), reader.equipped_badge, ())]
+        for names, read, args in cases:
+            original = screen(*names)
+            expected = read(original, *args)
+            for width, height in [(480, 1040), (720, 1560)]:
+                with self.subTest(fixtures=names, width=width):
+                    self.assertEqual(read(self.resized(original, width, height), *args), expected)
+        self.assertFalse(reader.TAG_LEARNED, 'resizing does not fabricate the missing Equip calibration')
+        self.assertFalse(reader.BADGE_TELLS, 'colour geometry does not prove equipped state')
+
+    def test_view_and_tap_fractions_are_consistent_at_720(self):
+        original = screen("sw_title", "sw_name_ambition", "sw_owned_1", "sw_list_none", "sw_tag_unequip")
+        expected = reader.view(original, NAMES)
+        native = self.resized(original, 720, 1560)
+        self.assertEqual(reader.view(native, NAMES), expected)
+        for cell in reader.rows(native):
+            x, y = reader.select_point(cell)
+            self.assertTrue(cell["top"] * 1560 < y * 1560 < cell["bottom"] * 1560)
+            self.assertAlmostEqual(x * 720, reader.SELECT_X * 720)
+
+    def test_under_480_precision_never_authorises_equipping(self):
+        original = screen("sw_title", "sw_name_ambition", "sw_owned_1", "sw_list_none", "sw_tag_unequip")
+        native = self.resized(original, 360, 780)
+        seen = reader.view(native, NAMES)
+        self.assertFalse(seen["open"])
+        self.assertIsNone(seen["selected"])
+        self.assertIsNone(seen["owned"])
+        self.assertIsNone(seen["tag"])
+        self.assertIsNone(reader.equipped_badge(native))
+        self.assertIsNone(reader.tab(native))
+
+
 def tagged(text, top=0.835, scale=2):
     """A synthetic orange tag in the list with text drawn in the card font
     (white), on an empty screen: until the tag is captured."""
@@ -391,7 +443,9 @@ def fake_screens():
         return (0.41, "equipment_weapon") if s["screen"] == "equipment" else None
 
     return SimpleNamespace(plain_battle=plain, open_tab=open_tab, TAB_TAP_Y=screens.TAB_TAP_Y,
-                           classify=lambda shot: shot[2]["screen"])
+                           classify=lambda shot: shot[2]["screen"],
+                           look=lambda shot: {"screen": "battle" if shot[2]["screen"] in ("battle", "equipment") else shot[2]["screen"],
+                                              "plain": plain(shot), "overlays": [] if plain(shot) else ["panel"]})
 
 
 def build(game, loadout=None, engraving=None):
@@ -399,7 +453,10 @@ def build(game, loadout=None, engraving=None):
     loadouts = loadout or {"mpw18": {"stage": 920, "preset": None, "soul_weapon": {"id": AMBITION, "variant": "Atk"}},
                            "mpw4": {"stage": 915, "preset": None, "soul_weapon": {"id": GRAND - 1, "variant": "Atk"}}}
     soul = {"feature": feature.soul_weapon, "reader": fake_reader(game), "rules": rules, "table": TABLE,
-            "loadout": lambda mode: loadouts[mode], "engraving": engraving}
+            "loadout": lambda mode: loadouts[mode], "engraving": engraving,
+            # Equipment-only tests deliberately omit engraving; production
+            # injects the complete recipe capability from the loadout feature.
+            "applicability": lambda chosen: {"supported": True, "engraving_required": bool(engraving)}}
     part = stage_change.stage_change(ports, fake_screens(), SimpleNamespace(regions=lambda table: []),
                                      SimpleNamespace(), stage_rules, STAGES, soul)
     return ports, part["api"]
@@ -413,6 +470,63 @@ def outcome(answer):
 def equip(game, mode="mpw18", api=None):
     ports, built = build(game) if api is None else (None, api)
     return asyncio.run(built["soul_weapon"](mode)), built
+
+
+class RunningSoulSwitch(unittest.IsolatedAsyncioTestCase):
+    async def test_off_during_selection_stops_before_equip_even_if_reenabled(self):
+        game = Game(screen="soul", selected=GRAND)
+        ports = game.ports()
+        selected = asyncio.Event()
+        release = asyncio.Event()
+        original = ports.tap
+
+        async def tap(*args, **kwargs):
+            await original(*args, **kwargs)
+            if args[2] == "select":
+                selected.set()
+                await release.wait()
+
+        helpers = SimpleNamespace(look=ports.capture, tap=tap, front=ports.focused,
+                                  to_battle=ports.capture, Stop=stage_change.Stop)
+        soul = feature.soul_weapon(ports, fake_screens(), fake_reader(game), rules, TABLE, helpers)
+        running = asyncio.create_task(soul["ensure"](GRAND - 1, park=True))
+        await asyncio.wait_for(selected.wait(), 1)
+        soul["set_switch"]("off")
+        soul["set_switch"]("real")
+        with self.assertRaises(asyncio.CancelledError):
+            await running
+        self.assertEqual(game.moves, [("soul_weapon", "select")])
+        self.assertEqual(game.state["equipped"], AMBITION)
+        self.assertIsNone(soul["state"]()["cached"])
+        # Re-enabling authorizes a new transaction, never the cancelled one.
+        release.set()
+        self.assertEqual(await soul["ensure"](GRAND - 1, park=True), "done")
+        self.assertEqual(game.moves.count(("soul_weapon", "equip")), 1)
+
+    async def test_off_while_preparing_scroll_sends_no_swipe(self):
+        game = Game(screen="soul", selected=GRAND)
+        ports = game.ports()
+        ports.store.saved["soul_weapon"] = {"direction": -1}
+        preparing = asyncio.Event()
+
+        async def front():
+            preparing.set()
+            await asyncio.Event().wait()
+
+        helpers = SimpleNamespace(look=ports.capture, tap=ports.tap, front=front,
+                                  to_battle=ports.capture, Stop=stage_change.Stop)
+        soul = feature.soul_weapon(ports, fake_screens(), fake_reader(game), rules, TABLE, helpers)
+        running = asyncio.create_task(soul["ensure"](AMBITION, park=True))
+        # Its equipped target is outside the visible selected list rows.
+        await asyncio.wait_for(preparing.wait(), 1)
+        soul["set_switch"]("off")
+        with self.assertRaises(asyncio.CancelledError):
+            await running
+        self.assertEqual(game.moves, [])
+        captures = game.captures
+        with self.assertRaises(stage_change.Stop):
+            await soul["ensure"](AMBITION, park=True)
+        self.assertEqual(game.captures, captures, "disabled operations do not even capture")
 
 
 class Sequence(unittest.TestCase):
@@ -896,10 +1010,11 @@ class Engraving(unittest.TestCase):
         game = vision_game(corner_works=False, popup_lock_works=False)
         answer, _ = engrave(game, "Gold-balanced")
         self.assertEqual(answer[0], "failed")
-        self.assertIn("déverrouillée", answer[1])
+        self.assertIn("récupération requise", answer[1])
         self.assertTrue(any("unlocked" in alert for alert in game.alerts))
         self.assertIsNone(game.state["engraving"]["popup"])
-        self.assertEqual(game.state["screen"], "soul")
+        self.assertEqual(game.state["screen"], "engraving")
+        self.assertNotIn("close", [move for screen, move in game.moves if screen == "soul_weapon_engraving"])
 
     def test_an_unreadable_padlock_at_the_end_is_an_error_never_ready(self):
         game = vision_game(padlock_unread={2})
@@ -909,6 +1024,143 @@ class Engraving(unittest.TestCase):
         # Never tapped: a tap on a closed padlock opens it.
         self.assertNotIn("lock", engraving_moves(game))
         self.assertTrue(game.state["engraving"]["cards"][2]["locked"])
+        self.assertEqual(game.state["screen"], "engraving")
+
+    def test_unstable_grid_never_proceeds_or_closes(self):
+        game = vision_game()
+        view = fake_engraving_screen(game)
+        view.grid = lambda shot, size: None
+        part = {"setup": engraving_setup.engraving_setup, "screen": view, "rules": setup_rules,
+                "variant": lambda weapon_id, name: VISION_VARIANTS.get(name)}
+        loadouts = {"mpw18": {"stage": 920, "preset": None, "soul_weapon": {"id": VISION_ID, "variant": "Atk"}}}
+        ports, api = build(game, loadouts, part)
+        answer = asyncio.run(api["soul_weapon"]("mpw18"))
+        self.assertEqual(answer["result"], "failed")
+        self.assertIn("instables", french(answer["text_t"]))
+        self.assertEqual(engraving_moves(game), [])
+        self.assertEqual(game.state["screen"], "engraving")
+        self.assertTrue(ports.store.sections["engraving_recovery"]()["required"])
+
+    def test_exact_piece_partition_must_be_stable_not_only_occupied_cells(self):
+        game = vision_game()
+        view = fake_engraving_screen(game)
+        read_grid = view.grid
+        calls = [0]
+        def grid(shot, size):
+            result = read_grid(shot, size)
+            if result:
+                calls[0] += 1
+                if calls[0] % 2:
+                    result["pieces"][0][0], result["pieces"][1][0] = result["pieces"][1][0], result["pieces"][0][0]
+            return result
+        view.grid = grid
+        answer, _ = self.run_custom_reader(game, view)
+        self.assertEqual(answer["result"], "failed")
+        self.assertIn("instables", french(answer["text_t"]))
+        self.assertEqual(engraving_moves(game), [])
+
+    def test_final_unreadable_level_cannot_reuse_earlier_best_piece_evidence(self):
+        game = vision_game()
+        view = fake_engraving_screen(game)
+        read_cards = view.cards
+        calls = [0]
+        def cards(shot, shapes):
+            result = read_cards(shot, shapes)
+            calls[0] += 1
+            if calls[0] > 2:
+                result[0]["level"] = None
+            return result
+        view.cards = cards
+        answer, ports = self.run_custom_reader(game, view)
+        self.assertEqual(answer["result"], "failed")
+        self.assertIn("illisible", french(answer["text_t"]))
+        self.assertFalse(ports.store.sections["engraving_recovery"]()["verified"])
+
+    def test_wrong_weapon_pattern_is_rejected_before_rearranging_pieces(self):
+        game = vision_game()
+        view = fake_engraving_screen(game)
+        read_grid = view.grid
+        def grid(shot, size):
+            result = read_grid(shot, size)
+            if result:
+                unused = next(cell for cell, value in result["cells"].items() if value == "none")
+                result["cells"][unused] = "empty"
+            return result
+        view.grid = grid
+        answer, _ = self.run_custom_reader(game, view, "Gold-balanced")
+        self.assertEqual(answer["result"], "failed")
+        self.assertIn("forme de Vision", french(answer["text_t"]))
+        self.assertEqual(engraving_moves(game), ["close"])
+
+    def run_custom_reader(self, game, view, variant="Atk"):
+        part = {"setup": engraving_setup.engraving_setup, "screen": view, "rules": setup_rules,
+                "variant": lambda weapon_id, name: VISION_VARIANTS.get(name)}
+        loadouts = {"mpw18": {"stage": 920, "preset": None,
+                              "soul_weapon": {"id": VISION_ID, "variant": variant}}}
+        ports, api = build(game, loadouts, part)
+        return asyncio.run(api["soul_weapon"]("mpw18")), ports
+
+    def test_cancelled_drag_leaves_recovery_record_and_no_cleanup_input(self):
+        game = vision_game()
+        part = {"setup": engraving_setup.engraving_setup, "screen": fake_engraving_screen(game), "rules": setup_rules,
+                "variant": lambda weapon_id, name: VISION_VARIANTS.get(name)}
+        loadouts = {"mpw18": {"stage": 920, "preset": None,
+                              "soul_weapon": {"id": VISION_ID, "variant": "Gold-balanced"}}}
+        ports, api = build(game, loadouts, part)
+        original = ports.swipe
+        async def interrupted(*args, **kwargs):
+            await original(*args, **kwargs)
+            raise asyncio.CancelledError()
+        ports.swipe = interrupted
+        with self.assertRaises(asyncio.CancelledError):
+            asyncio.run(api["soul_weapon"]("mpw18"))
+        self.assertEqual(engraving_moves(game), ["remove_piece"])
+        state = ports.store.sections["engraving_recovery"]()
+        self.assertTrue(state["required"])
+        self.assertEqual(state["phase"], "interrupted")
+        self.assertFalse(state["verified"])
+        ports.swipe = original
+        # The next owned transaction repairs locks before closing the old
+        # engraving, then reads/equips and applies the requested target afresh.
+        answer = asyncio.run(api["soul_weapon"]("mpw18"))
+        self.assertEqual(answer["result"], "done", game.alerts)
+        self.assert_gold_balanced(game)
+        state = ports.store.sections["engraving_recovery"]()
+        self.assertFalse(state["required"])
+        self.assertTrue(state["verified"])
+
+    def test_switch_off_during_remove_stops_without_lock_or_close(self):
+        game = vision_game()
+        game.state["screen"] = "soul"
+        ports = game.ports()
+        allowed = ["real"]
+        original = ports.swipe
+        async def switched_off(*args, **kwargs):
+            await original(*args, **kwargs)
+            allowed[0] = "off"
+        ports.swipe = switched_off
+        async def look():
+            return await ports.capture()
+        async def front():
+            return None
+        async def wait_for(test, most=3):
+            end = ports.clock.monotonic() + most
+            while True:
+                await ports.clock.sleep(.25)
+                shot = await look()
+                value = test(shot)
+                if value or ports.clock.monotonic() >= end:
+                    return shot, value
+        setup = engraving_setup.engraving_setup(ports, fake_engraving_screen(game), setup_rules,
+            SimpleNamespace(look=look, tap=ports.tap, front=front, Stop=RuntimeError), wait_for,
+            lambda shot: shot[2]["screen"] == "soul", lambda: allowed[0])
+        with self.assertRaisesRegex(RuntimeError, "désactivée"):
+            asyncio.run(setup(game.snapshot(), VISION, "Gold-balanced", VISION_VARIANTS["Gold-balanced"],
+                              NAMES, reader.CARD_FONT, TABLE["shapes"]))
+        self.assertEqual(engraving_moves(game), ["remove_piece"])
+        self.assertTrue(setup.state()["required"])
+        self.assertFalse(setup.state()["verified"])
+        self.assertEqual(game.state["screen"], "engraving")
 
     def test_the_engraving_step_is_timed_on_its_own(self):
         game = vision_game()
@@ -935,6 +1187,10 @@ class Engraving(unittest.TestCase):
                                             "en attente"))
         self.assertEqual(engraving_moves(game), [])
         self.assertNotIn(("soul_weapon", "engraving"), game.moves)
+        self.assertEqual(game.moves, [], "the supervised gate fails before any equipment/navigation action")
+        blocked = asyncio.run(api["farm"](931, "V", "mpw18"))
+        self.assertEqual(blocked["result"], "failed")
+        self.assertEqual(game.moves, [], "the supervised gate fails before stage or preset changes")
         self.assertTrue(any("ERROR" in line and "engraving not set up: first supervised run pending" in line
                             for line in logs.output))
         # Not ready: read again next time, never cached.
@@ -965,7 +1221,8 @@ class Engraving(unittest.TestCase):
                 "variant": lambda weapon_id, name: VISION_VARIANTS.get(name)}
         ports = game.ports()
         soul = {"feature": feature.soul_weapon, "reader": fake_reader(game), "rules": rules, "table": TABLE,
-                "loadout": lambda mode: loadout[mode], "engraving": part}
+                "loadout": lambda mode: loadout[mode], "engraving": part,
+                "applicability": lambda chosen: {"supported": True}}
         built = stage_change.stage_change(ports, fake_screens(), SimpleNamespace(regions=lambda table: []),
                                           SimpleNamespace(), stage_rules, STAGES, soul)
         post = next(h for m, p, h in built["routes"] if m == "POST")

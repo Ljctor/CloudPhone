@@ -38,6 +38,9 @@ not read: each slot keeps the shape and level read while it was locked.
 """
 
 
+import asyncio
+
+
 ENGRAVING_TAP = (0.33, 0.636)
 ENGRAVING_CLOSE_TAP = (0.11, 0.955)
 # Slow drags, so the game takes them as drags (eg5 to eg6: 800 ms; eg7:
@@ -58,12 +61,25 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
     Stop = helpers.Stop
     # The gestures of the setup running (taps and drags).
     gestures = [0]
+    active = [None]
+
+    def require_enabled():
+        if switch() != "real":
+            raise Stop("gravure désactivée : opération arrêtée")
+    recovery = dict(ports.store.saved.get("engraving_recovery") or {})
+    ports.store.register("engraving_recovery", lambda: dict(recovery))
+
+    def remember_state(**changes):
+        recovery.update(changes, at=ports.clock.wall())
+        ports.store.save()
 
     async def tap(*args, **kwargs):
+        require_enabled()
         gestures[0] += 1
         await helpers.tap(*args, **kwargs)
 
     async def swipe(*args, **kwargs):
+        require_enabled()
         gestures[0] += 1
         await ports.swipe(*args, **kwargs)
 
@@ -74,11 +90,11 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
         if reading["grid"] is None:
             return None
         return (sorted(reading["grid"]["cells"].items()),
-                [(c["shape"], c["level"], c["locked"], c["placed"]) for c in reading["cards"]])
+                sorted(tuple(sorted(map(tuple, piece))) for piece in reading["grid"]["pieces"]),
+                [(c["shape"], c["level"], c.get("kind"), c["locked"], c["placed"]) for c in reading["cards"]])
 
     async def steady(size, shapes, most=3.0):
-        """(shot, reading) once two looks in a row read alike, or the last
-        one after most seconds."""
+        """Two matching, readable observations; a timeout is never evidence."""
         last, end = None, ports.clock.monotonic() + most
         while True:
             await ports.clock.sleep(0.25)
@@ -88,7 +104,7 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
                 return shot, reading
             last = reading
             if ports.clock.monotonic() >= end:
-                return shot, reading
+                raise Stop("gravure : lectures instables ou grille illisible")
 
     async def error(text):
         """An error alert for the developer (something did not work as
@@ -96,7 +112,7 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
         ports.log("error", f"Engraving: {text}")
         await ports.notify(f"Engraving: {text}"[:200])
 
-    async def setup(shot, entry, variant_name, variant, names, card_font, shapes):
+    async def run(shot, entry, variant_name, variant, names, card_font, shapes, recovery_only=False):
         """(shot back on Soul Weapon, {ok, problems, locked, removed,
         placed, seconds, gestures})."""
         since = ports.clock.monotonic()
@@ -232,70 +248,85 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
                                     why=step[1] if step[0] == "cancel" else ports.t("trop de gestes")))
             return False
 
-        await tap(shot, "soul_weapon", "engraving", ENGRAVING_TAP)
-        shot, opened = await wait_for(screen.title)
-        if not opened:
-            raise Stop("ouverture de la gravure")
-        try:
-            named = await ports.analyse(screen.weapon, shot, names, card_font)
-            if named != entry["name"]:
-                problems.append(ports.t("l’écran montre {seen}, pas {name}", seen=named or ports.t("un nom illisible"),
-                                        name=entry["name"]))
-            elif size != 5:
-                problems.append(ports.t("grille {size}x{size} pas encore calibrée", size=size))
-            elif not all(getattr(screen, gate, False) for gate in ("PADLOCK_LEARNED", "POPUP_LEARNED",
-                                                                   "PREVIEW_LEARNED")):
-                problems.append(ports.t("lectures de la gravure pas calibrées, rien n’a bougé"))
+        if size != 5:
+            raise Stop("grille {size}x{size} pas encore calibrée", size=size)
+        if not all(getattr(screen, gate, False) for gate in
+                   ("PADLOCK_LEARNED", "POPUP_LEARNED", "PREVIEW_LEARNED")):
+            raise Stop("lectures de la gravure pas calibrées, rien n’a bougé")
+        remember_state(required=True)
+        if not await ports.analyse(screen.title, shot):
+            await tap(shot, "soul_weapon", "engraving", ENGRAVING_TAP)
+            shot, opened = await wait_for(screen.title)
+            if not opened:
+                raise Stop("ouverture de la gravure")
+        named = await ports.analyse(screen.weapon, shot, names, card_font)
+        if named != entry["name"]:
+            raise Stop("l’écran montre {seen}, pas {name}", seen=named or ports.t("un nom illisible"),
+                       name=entry["name"])
+        # Recover interrupted previews/popups only while this operation still
+        # owns input. Cancellation itself never performs additional gestures.
+        found = await ports.analyse(screen.bar, shot)
+        if found:
+            await tap(shot, "soul_weapon_engraving_preview", "cancel", found["cancel"], verified=True)
+            shot, cleared = await wait_for(lambda s: not screen.bar(s))
+            if not cleared:
+                raise Stop("gravure : aperçu non fermé")
+        if await ports.analyse(screen.popup, shot):
+            await tap(shot, "soul_weapon_engraving_piece", "close", screen.POPUP_CLOSE_TAP)
+            shot, cleared = await wait_for(lambda s: not screen.popup(s))
+            if not cleared:
+                raise Stop("gravure : détail de pièce non fermé")
+        named = await ports.analyse(screen.weapon, shot, names, card_font)
+        if named != entry["name"]:
+            raise Stop("l’écran montre {seen}, pas {name}", seen=named or ports.t("un nom illisible"),
+                       name=entry["name"])
+        elif not recovery_only:
+            probed = []
+            for _ in range(rules.MOST_STEPS):
+                shot, reading = await steady(size, shapes)
+                cards = remember(reading["cards"])
+                if reading["grid"] is not None and {cell for cell, value in reading["grid"]["cells"].items()
+                                                     if value != "none"} != {tuple(cell) for cell in entry["cells"]}:
+                    problems.append(ports.t("la grille lue n’a pas la forme de {name}", name=entry["name"]))
+                    break
+                step = rules.next_step(reading["grid"], cards, variant, shapes, gold, probed)
+                if step[0] in ("done", "fail"):
+                    if step[0] == "fail":
+                        problems.append(step[1])
+                    break
+                if step[0] == "lock":
+                    if not await lock(step[1]):
+                        problems.append(ports.t("n°{number} reste déverrouillée", number=step[1] + 1))
+                        await error(f"#{step[1] + 1} stays unlocked")
+                        break
+                elif step[0] == "remove":
+                    probed.append(step[1])
+                    if not await remove(step[1], reading):
+                        break
+                elif not await place(step[1], step[2], cards[step[1]]):
+                    break
             else:
-                probed = []
-                for _ in range(rules.MOST_STEPS):
-                    shot, reading = await steady(size, shapes)
-                    cards = remember(reading["cards"])
-                    step = rules.next_step(reading["grid"], cards, variant, shapes, gold, probed)
-                    if step[0] in ("done", "fail"):
-                        if step[0] == "fail":
-                            problems.append(step[1])
-                        break
-                    if step[0] == "lock":
-                        if not await lock(step[1]):
-                            problems.append(ports.t("n°{number} reste déverrouillée", number=step[1] + 1))
-                            await error(f"#{step[1] + 1} stays unlocked")
-                            break
-                    elif step[0] == "remove":
-                        probed.append(step[1])
-                        if not await remove(step[1], reading):
-                            break
-                    elif not await place(step[1], step[2], cards[step[1]]):
-                        break
-                else:
-                    problems.append(ports.t("pas fini en {moves} gestes", moves=rules.MOST_STEPS))
-            # Never left with a piece unlocked: all 8 read closed first.
-            shot, reading = await steady(size, shapes)
-            # A padlock unreadable is not closed: lock() reads it again and
-            # never taps it.
-            for card in reading["cards"]:
-                if card["locked"] is not True and not await lock(card["index"]):
-                    unread = card["locked"] is None
-                    problems.append(ports.t("n°{number} laissée déverrouillée (cadenas illisible)" if unread
-                                            else "n°{number} laissée déverrouillée", number=card["index"] + 1))
-                    await error(f"#{card['index'] + 1} left unlocked" + (" (padlock unreadable)" if unread else ""))
-            shot, reading = await steady(size, shapes)
-            if size == 5 and named == entry["name"]:
-                problems = problems + [p for p in rules.check(reading["grid"], remember(reading["cards"]), variant,
-                                                              entry["cells"], entry["name"], variant_name, gold)
-                                       if p not in problems]
-        finally:
-            # Nothing left over the screen: a preview cancelled, a popup
-            # closed, then the screen's red X.
-            shot = await helpers.look()
-            found = await ports.analyse(screen.bar, shot)
-            if found:
-                await tap(shot, "soul_weapon_engraving_preview", "cancel", found["cancel"], verified=True)
-                shot, _ = await wait_for(lambda s: not screen.bar(s))
-            if await ports.analyse(screen.popup, shot):
-                await tap(shot, "soul_weapon_engraving_piece", "close", screen.POPUP_CLOSE_TAP)
-                shot, _ = await wait_for(lambda s: not screen.popup(s))
-            await tap(shot, "soul_weapon_engraving", "close", ENGRAVING_CLOSE_TAP)
+                problems.append(ports.t("pas fini en {moves} gestes", moves=rules.MOST_STEPS))
+        # Never left with a piece unlocked: all 8 read closed first.
+        shot, reading = await steady(size, shapes)
+        # A padlock unreadable is not closed: lock() reads it again and
+        # never taps it.
+        for card in reading["cards"]:
+            if card["locked"] is not True and not await lock(card["index"]):
+                unread = card["locked"] is None
+                problems.append(ports.t("n°{number} laissée déverrouillée (cadenas illisible)" if unread
+                                        else "n°{number} laissée déverrouillée", number=card["index"] + 1))
+                await error(f"#{card['index'] + 1} left unlocked" + (" (padlock unreadable)" if unread else ""))
+        shot, reading = await steady(size, shapes)
+        if not all(card["locked"] is True for card in reading["cards"]) or len(reading["cards"]) != 8:
+            raise Stop("gravure : récupération requise, les huit cadenas ne sont pas confirmés fermés")
+        remember_state(locks_verified=True)
+        if not recovery_only and size == 5 and named == entry["name"]:
+            problems = problems + [p for p in rules.check(reading["grid"], reading["cards"], variant,
+                                                          entry["cells"], entry["name"], variant_name, gold)
+                                   if p not in problems]
+        # Leave only after a fresh stable observation proved every card locked.
+        await tap(shot, "soul_weapon_engraving", "close", ENGRAVING_CLOSE_TAP)
         shot, back = await wait_for(back_on)
         if not back:
             raise Stop("retour de la gravure à l’écran Soul Weapon")
@@ -307,4 +338,32 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
                       "removed": done["removed"], "placed": done["placed"], "dragged": done["placed"],
                       "seconds": seconds, "gestures": gestures[0]}
 
+    async def setup(shot, entry, variant_name, variant, names, card_font, shapes, recovery_only=False):
+        if switch() != "real":
+            return await run(shot, entry, variant_name, variant, names, card_font, shapes, recovery_only)
+        remember_state(required=bool(recovery.get("required")), phase="recovering" if recovery_only else "applying",
+                       weapon_id=entry["id"], variant=variant_name, locks_verified=False, verified=False,
+                       error=None)
+        task = asyncio.current_task()
+        active[0] = task
+        try:
+            result = await run(shot, entry, variant_name, variant, names, card_font, shapes, recovery_only)
+        except BaseException as exc:
+            remember_state(phase="interrupted" if isinstance(exc, asyncio.CancelledError) else "failed",
+                           error=type(exc).__name__ if isinstance(exc, asyncio.CancelledError) else str(exc))
+            raise
+        finally:
+            if active[0] is task:
+                active[0] = None
+        remember_state(required=False, phase="recovered" if recovery_only else "verified" if result[1]["ok"] else "failed",
+                       verified=bool(result[1]["ok"] and not recovery_only), locks_verified=True)
+        return result
+
+    def cancel():
+        task = active[0]
+        if task is not None and not task.done():
+            task.cancel()
+
+    setup.cancel = cancel
+    setup.state = lambda: dict(recovery)
     return setup

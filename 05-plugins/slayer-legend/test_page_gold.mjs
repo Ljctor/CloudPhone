@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import goldFeature, { combatCountersVisible } from './page_gold.js';
+import goldFeature, { combatCountersVisible, hourlyRate, measureResourceRate } from './page_gold.js';
 import { GOLD_COUNTER_FONT as font, GOLD_COUNTER_SOURCES as sources } from './page_gold_counter_font.js';
 import { freshnessColour } from './page_freshness.js';
 import { drawText } from './gold_text.js';
@@ -30,13 +30,28 @@ assert.equal(freshnessColour(0), 'rgb(255, 255, 255)');
 assert.equal(freshnessColour(300), 'rgb(215, 238, 255)');
 assert.equal(freshnessColour(600), 'rgb(175, 221, 255)');
 assert.equal(freshnessColour(3600), freshnessColour(600));
+const measured = { rate: 2, read: 1000, window: 300, status: 'measured' };
+assert.equal(hourlyRate({ resources: { cubes: measured } }, 'cubes', null, 1000), 7200,
+  'a backend measurement survives a page reload without two client snapshots');
+assert.equal(hourlyRate({ souls: { blue: { ...measured, rate: 0 } } }, 'soul_blue', null, 1000), 0);
+const oldLocal = { hourly: 123, seen: 1000 };
+assert.equal(hourlyRate({ resources: { cubes: { rate: null } } }, 'cubes', oldLocal, 1000), null,
+  'an explicit unknown backend rate cannot fall back to a local estimate');
+assert.equal(hourlyRate({ resources: { cubes: { ...measured, status: 'stale' } } }, 'cubes', oldLocal, 1000), null);
+assert.equal(hourlyRate({}, 'cubes', oldLocal, 1000), 123, 'legacy gateway fallback');
+assert.equal(hourlyRate({}, 'cubes', oldLocal, 1400), null, 'old local rates expire');
+const invalidated = measureResourceRate({ ...oldLocal, value: 20 }, { verified: false });
+assert.equal(invalidated.hourly, null, 'unverified resource readings invalidate the old local rate');
+assert.equal(measureResourceRate(invalidated, { seen: 1020, value: 25, verified: true }).hourly, null,
+  'the next verified reading starts a new baseline after a relaunch/unread observation');
 
 let now = 1000000;
 const originalNow = Date.now;
 Date.now = () => now;
 const intervals = [];
+const timeouts = [];
 const nodes = [];
-globalThis.window = { devicePixelRatio: 1, setInterval(fn) { intervals.push(fn); }, setTimeout() {}, clearTimeout() {} };
+globalThis.window = { devicePixelRatio: 1, setInterval(fn) { intervals.push(fn); }, setTimeout(fn) { timeouts.push(fn); }, clearTimeout() {} };
 globalThis.document = { createElement(tagName) {
   const node = { tagName: tagName.toUpperCase(), style: {}, children: [], isConnected: false,
     append(...children) { this.children.push(...children); for (const child of children) child.isConnected = true; },
@@ -48,11 +63,14 @@ globalThis.document = { createElement(tagName) {
 const layer = document.createElement('div');
 layer.offsetHeight = 1560;
 layer.offsetWidth = 720;
-const answer = { box: [298 / 720, 0.2, 0.6, 0.21], read: 1000, shade: 1, rate: 1, span: 300, window: 300 };
+const answer = { box: [298 / 720, 0.2, 0.6, 0.21], read: 1000, shade: 1, rate: 1, span: 300, window: 300,
+  souls: { green: { ...measured, rate: .2 }, blue: { ...measured, rate: 0 }, red: { rate: null } },
+  resources: { cubes: measured, weapon_l3: { ...measured, rate: .5 }, accessory_l3: { rate: null } } };
+let failGold = false;
 const api = { layer, setting() {}, refresh() {}, tr: (x) => x,
   async get(path) {
     if (path === '/gold-font') return { height: 13, glyphs: { '1': Array(13).fill('##') } };
-    if (path === '/gold') return answer;
+    if (path === '/gold') { if (failGold) throw Error('temporary gateway failure'); return answer; }
     return { resources: [{ field: 'cubes', value: 1234567890, seen: 1000, verified: true }] };
   } };
 let scan = { screen: 'battle', overlays: [], plain: true, at: 1000 };
@@ -70,6 +88,8 @@ assert.equal(.361 * layer.offsetWidth + parseFloat(canvas.style.left) + inkLeft,
   'Cube number ink aligns with Gold number ink while the icon stays fixed');
 const rateRows = layer.children.filter((node) => node.style.cssText?.includes('right:1%'));
 assert.equal(rateRows.length, 7);
+assert.deepEqual(rateRows.map((row) => row.children[1].title),
+  ['3.60A/h', '7.20A/h', '720/h', '0/h', '.../h', '1.80A/h', '.../h']);
 assert.equal(new Set(rateRows.map((row) => row.style.width)).size, 1);
 assert.ok(parseFloat(rateRows[0].style.width) > 0);
 assert.ok(rateRows.every((row) => row.children[0].style.flexShrink === '0'));
@@ -98,6 +118,7 @@ for (const visible of [
   { screen: 'battle', overlays: [], plain: true, at: now / 1000 },
   { screen: 'battle', overlays: ['panel', 'equipment_weapon'], plain: false, at: now / 1000 },
   { screen: 'battle', overlays: ['panel'], plain: false, at: now / 1000 },
+  { screen: 'battle', overlays: ['panel', 'equipment_weapon', 'soul_weapon'], plain: false, at: now / 1000 },
 ]) {
   scan = visible;
   answer.read = now / 1000;
@@ -105,6 +126,19 @@ for (const visible of [
   assert.equal(total.isConnected, true, 'Cube total restored on full or minimised combat');
   assert.ok(rateRows.every((row) => row.isConnected), 'hourly counters restored on combat');
 }
+answer.read = now / 1000 - 30;
+answer.souls = {};
+answer.resources.weapon_l3 = { ...measured, rate: .5, read: now / 1000 };
+feature.update();
+assert.ok(rateRows.every((row) => row.isConnected), 'resource rates do not disappear when Gold OCR is older than 25 seconds');
+assert.equal(rateRows[5].children[1].title, '1.80A/h', 'each resource rate renders independently');
+failGold = true;
+await timeouts.at(-1)();
+assert.ok(rateRows.every((row) => row.isConnected), 'a failed rates fetch keeps explicit unknown rows on visible combat');
+assert.equal(rateRows[0].children[1].title, '.../h', 'fetch failure cannot display an old Gold rate as current');
+failGold = false;
+await timeouts.at(-1)();
+assert.equal(rateRows[5].children[1].title, '1.80A/h', 'the next successful poll restores the measured resource rate');
 assert.equal(combatCountersVisible({ screen: 'battle', overlays: [], at: now / 1000 }), false,
   'missing geometry does not authorise counters');
 assert.equal(combatCountersVisible({ ...scan, at: now / 1000 + 1 }), false, 'future timestamps are refused');

@@ -29,6 +29,7 @@ source); value(field); relaunched(why).
 """
 
 import asyncio
+import math
 
 # The holders that are the plugin's own (a change made under them is not the user's).
 PLUGIN = ("launch", "mine", "watchdog", "mode", "stage_change")
@@ -172,7 +173,21 @@ def game(ports, screens, rules, readers, archive=None, examples=None):
     clock = ports.clock
     state = {"facts": rules.fresh(ports.store.saved.get("game"), clock.wall()), "saved_at": clock.monotonic(),
              "last_runs": {}, "scans": 0, "last": None, "lock": None, "pending": None, "task": None,
-             "playing": False}
+             "playing": False, "epoch": 0, "relaunched_at": None}
+    observations = []
+
+    def observed(shot):
+        """Capture acquisition time, never OCR completion time. Older ports
+        fall back to the first hook/scan entry, before queueing or analysis."""
+        for pixels, size, at, epoch in observations:
+            if pixels is shot[2] and size == shot[:2]:
+                return at, epoch
+        at = ports.capture_time(shot) if hasattr(ports, "capture_time") else None
+        if not isinstance(at, (int, float)) or isinstance(at, bool) or not math.isfinite(at):
+            at = clock.wall()
+        observations.insert(0, (shot[2], shot[:2], at, state["epoch"]))
+        del observations[8:]
+        return at, state["epoch"]
     ports.store.register("game", lambda: rules.persisted(state["facts"]))
     # Earlier versions kept the highest stage apart: it becomes the state's.
     kept = [ports.store.saved.get("highest"), (ports.store.saved.get("mode") or {}).get("highest")]
@@ -186,12 +201,12 @@ def game(ports, screens, rules, readers, archive=None, examples=None):
             state["saved_at"] = clock.monotonic()
             ports.store.save()
 
-    def note(readings, source="scan"):
+    def note(readings, source="scan", seen=None):
         """Notes readings ({field: value}); logs the user's changes. Written
         at once when a lasting value changed or a field is first seen,
         else at most every SAVE_EVERY seconds."""
         before = state["facts"]
-        state["facts"], changes = rules.noted(before, readings, clock.wall(), source)
+        state["facts"], changes = rules.noted(before, readings, clock.wall() if seen is None else seen, source)
         held = ports.lease.state() if hasattr(ports, "lease") else None
         ours = bool(held and held.get("holder") in PLUGIN)
         lasting = [change for change in changes if rules.lasting(change[0])]
@@ -216,12 +231,17 @@ def game(ports, screens, rules, readers, archive=None, examples=None):
         it even when their every seconds are not over), given again after."""
         if not shot:
             return {}
+        captured_at, epoch = observed(shot)
+        if epoch != state["epoch"] or (state["relaunched_at"] is not None and captured_at < state["relaunched_at"]):
+            return {}
         done = scanned(shot, force)
         if done:
             return done["readings"]
         if state["lock"] is None:
             state["lock"] = asyncio.Lock()
         async with state["lock"]:
+            if epoch != state["epoch"]:
+                return {}
             done = scanned(shot, force)
             if done:
                 return done["readings"]
@@ -230,8 +250,12 @@ def game(ports, screens, rules, readers, archive=None, examples=None):
             look, readings, ran = await ports.analyse(read_all, screens, rules, readers, shot,
                                                       dict(state["last_runs"]), now, None, tuple(force),
                                                       tuple(last["ran"]) if last else ())
+            if epoch != state["epoch"]:
+                return {}  # A relaunch during OCR invalidates its old pixels.
             if archive:
-                await ports.analyse(archive, look, shot, clock.wall())
+                await ports.analyse(archive, look, shot, captured_at)
+            if epoch != state["epoch"]:
+                return {}
             for reader in ran:
                 state["last_runs"][reader] = now
             state["scans"] += 1
@@ -239,10 +263,10 @@ def game(ports, screens, rules, readers, archive=None, examples=None):
                 readings = {**last["readings"], **{k: v for k, v in readings.items()
                                                    if v is not None or k not in last["readings"]}}
                 ran = list(last["ran"]) + ran
-            state["last"] = {"pixels": shot[2], "size": [shot[0], shot[1]], "at": clock.wall(),
+            state["last"] = {"pixels": shot[2], "size": [shot[0], shot[1]], "at": captured_at,
                              "readings": readings, "ran": set(ran), "look": look,
                              "shows": set(rules.readers_for(look, look["classified"]))}
-            note(readings)
+            note(readings, seen=captured_at)
             return readings
 
     async def scan_later():
@@ -259,6 +283,7 @@ def game(ports, screens, rules, readers, archive=None, examples=None):
         background (the latest one when several came during a scan)."""
         if not shot or scanned(shot):
             return
+        observed(shot)
         state["pending"] = shot
         if state["task"] is None:
             state["task"] = ports.spawn(scan_later())
@@ -281,14 +306,26 @@ def game(ports, screens, rules, readers, archive=None, examples=None):
         if any(fact is None for fact in answer.values()):
             wanted = tuple(reader for reader, spec in rules.READERS.items()
                            if any(field in spec["fields"] for field in fields))
-            await fresh(min(max_age, 1.0), wanted)
+            shot, readings = await fresh(min(max_age, 1.0) if max_age is not None else 0, wanted)
             here = readable_here()
             now = clock.wall()
+            # Derived fields (highest, individual souls) count only when this
+            # capture actually established their value. An unread new image
+            # never falls back to a recent historical fact.
+            confirmed, _ = rules.noted({}, readings, observed(shot)[0] if shot else now)
             for field in fields:
                 if answer[field] is None:
-                    fact = rules.fact_now(state["facts"], field, max(max_age, 1.0), now)
+                    fact = rules.fact_now(state["facts"], field, max(max_age, 1.0) if max_age is not None else None, now)
+                    proof = confirmed.get(field)
+                    if not proof or not fact or proof["value"] != fact["value"] or proof["seen"] != fact["seen"]:
+                        fact = None
                     answer[field] = fact or {"value": None, "why": "unread" if field in here
                                              else "not readable on this screen"}
+                else:
+                    # A refresh for another field may have crossed a relaunch
+                    # or disproved this cached reading while we awaited OCR.
+                    answer[field] = rules.fact_now(state["facts"], field, max_age, now) or {
+                        "value": None, "why": "unread" if field in here else "not readable on this screen"}
         return answer
 
     async def get(field, max_age=0):
@@ -299,6 +336,10 @@ def game(ports, screens, rules, readers, archive=None, examples=None):
         return fact["value"] if fact else None
 
     def relaunched(why):
+        state["epoch"] += 1
+        state["relaunched_at"] = clock.wall()
+        state["last"] = None
+        state["last_runs"] = {}
         state["facts"] = rules.unverified(state["facts"])
         ports.log("normal", f"Game {why}: every game value unverified until read again")
         ports.store.save()

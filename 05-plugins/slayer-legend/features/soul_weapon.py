@@ -50,6 +50,9 @@ present (POST /farming {engraving}).
 """
 
 
+import asyncio
+
+
 EQUIPMENT_TAP = (0.41, 0.966)
 WEAPON_TAB_TAP = (0.12, 0.414)
 SOUL_WEAPON_TAP = (0.92, 0.445)
@@ -80,13 +83,50 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
     ports.store.register("soul_weapon", lambda: {"direction": status["direction"], "switch": status["switch"]})
     ports.store.register("engraving", lambda: status["engraving"])
     Stop = helpers.Stop
+    active = {}
+    stopping = set()
+
+    def require_enabled():
+        if status["switch"] != "real":
+            raise Stop("Soul Weapon désactivée : opération arrêtée")
+
+    async def tracked(operation, *args, **kwargs):
+        require_enabled()
+        task = asyncio.current_task()
+        active[task] = active.get(task, 0) + 1
+        try:
+            result = await operation(*args, **kwargs)
+            require_enabled()
+            return result
+        except BaseException:
+            status["cache"] = None
+            raise
+        finally:
+            active[task] -= 1
+            if not active[task]:
+                del active[task]
+                stopping.discard(task)
+
+    def cancel_active():
+        for task in tuple(active):
+            if not task.done() and task not in stopping:
+                stopping.add(task)
+                task.cancel()
+        if not active and setup and hasattr(setup, "cancel"):
+            setup.cancel()
+
+    async def tap(*args, **kwargs):
+        require_enabled()
+        await helpers.tap(*args, **kwargs)
 
     async def wait_for(test, most=None):
         """(shot, value) of the first fresh look where test(shot) is true
         (polled every POLL), or (the last shot, None) after most seconds."""
         end = ports.clock.monotonic() + (rules.WAIT_MOST if most is None else most)
         while True:
+            require_enabled()
             await ports.clock.sleep(rules.POLL)
+            require_enabled()
             shot = await helpers.look()
             value = await ports.analyse(test, shot)
             if value or ports.clock.monotonic() >= end:
@@ -102,7 +142,9 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
         end = ports.clock.monotonic() + rules.WAIT_MOST
         last = None
         while True:
+            require_enabled()
             await ports.clock.sleep(rules.POLL)
+            require_enabled()
             shot = await helpers.look()
             seen = await ports.analyse(view_of, shot)
             if rules.progressed(before, seen):
@@ -117,23 +159,34 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
     async def open_screen():
         """The Soul Weapon screen, open already (parked) or opened from the
         battle."""
+        require_enabled()
         shot = await helpers.look()
         if await ports.analyse(reader.title, shot):
             return shot
+        if setup and await ports.analyse(engraving["screen"].title, shot):
+            name = await ports.analyse(engraving["screen"].weapon, shot, names, reader.CARD_FONT)
+            matches = [entry for entry in by_id.values() if entry["name"] == name]
+            if len(matches) != 1:
+                raise Stop("gravure interrompue : arme non identifiée, récupération suspendue")
+            shot, recovered = await setup(shot, matches[0], None, None, names, reader.CARD_FONT,
+                                          table["shapes"], recovery_only=True)
+            if not recovered["ok"]:
+                raise Stop("gravure interrompue : récupération non vérifiée")
+            return shot
         shot = await helpers.to_battle()
-        await helpers.tap(shot, "battle", "menu_equipment", EQUIPMENT_TAP)
+        await tap(shot, "battle", "menu_equipment", EQUIPMENT_TAP)
         shot, tab = await wait_for(reader.tab)
         if tab == "accessories":
-            await helpers.tap(shot, "equipment_accessories", "weapon", WEAPON_TAB_TAP)
+            await tap(shot, "equipment_accessories", "weapon", WEAPON_TAB_TAP)
             shot, tab = await wait_for(lambda s: reader.tab(s) == "weapon" and "weapon")
         if tab != "weapon":
             raise Stop("onglet Weapon de l’équipement pas actif (lu : {seen})", seen=tab or ports.t("rien"))
-        await helpers.tap(shot, "equipment_weapon", "soul_weapon", SOUL_WEAPON_TAP)
+        await tap(shot, "equipment_weapon", "soul_weapon", SOUL_WEAPON_TAP)
         shot, opened = await wait_for(lambda s: reader.title(s) or reader.weapon_detail(s))
         if opened and not reader.title(shot):
             # The tap opened an ordinary weapon's card (the list scrolled
             # under the icon): closed, nothing else touched there.
-            await helpers.tap(shot, "weapon_detail", "close", CLOSE_TAP)
+            await tap(shot, "weapon_detail", "close", CLOSE_TAP)
             await wait_for(lambda s: reader.tab(s) == "weapon")
             raise Stop("la fiche d’une arme s’est ouverte au lieu de Soul Weapon (fermée)")
         if not opened:
@@ -143,7 +196,7 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
     async def leave(shot):
         """From the Soul Weapon screen (shot): its red X; the Equipment
         panel's Weapon tab must show."""
-        await helpers.tap(shot, "soul_weapon", "close", CLOSE_TAP)
+        await tap(shot, "soul_weapon", "close", CLOSE_TAP)
         shot, closed = await wait_for(lambda s: not reader.title(s) and reader.tab(s) == "weapon")
         if not closed:
             raise Stop("fermeture de l’écran Soul Weapon")
@@ -156,7 +209,7 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
     async def move(shot, view, step, target):
         seen = rules.seen(view, target)
         if step[0] == "select":
-            await helpers.tap(shot, "soul_weapon", "select", reader.select_point(view["rows"][step[1]]),
+            await tap(shot, "soul_weapon", "select", reader.select_point(view["rows"][step[1]]),
                               verified=True, seen=seen)
         elif step[0] == "scroll":
             rows = view["rows"]
@@ -165,10 +218,11 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
             first, last = reader.select_point(rows[0]), reader.select_point(rows[-1])
             start, end = (last, first) if step[1] == "down" else (first, last)
             await helpers.front()
+            require_enabled()
             await ports.swipe(shot, "soul_weapon", "scroll", start, end, SWIPE_MS, verified=True, seen=seen)
             await ports.clock.sleep(SETTLE)
         else:
-            await helpers.tap(shot, "soul_weapon", "equip", rules.tag_point(view), verified=True, seen=seen)
+            await tap(shot, "soul_weapon", "equip", rules.tag_point(view), verified=True, seen=seen)
 
     setup = None
     if engraving:
@@ -193,7 +247,7 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
             return shot, engraving["rules"].alert(entry["name"], variant, done["problems"]), done
         return shot, None, done
 
-    async def ensure(target_id, variant=None, park=False):
+    async def ensure_run(target_id, variant=None, park=False):
         """The weapon target_id equipped and its engraving set up as variant:
         "cached", "equipped" (it already was) or "done" (Equip tapped); else
         Stop with the step (an engraving not ready: its alert). park: the
@@ -218,6 +272,7 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
         view = await ports.analyse(view_of, shot)
         result, moves = "equipped", 0
         while True:
+            require_enabled()
             memory = rules.observe(memory, view, order)
             step = rules.plan(view, target, memory, order, reader.TAG_LEARNED)
             if step[0] == "done":
@@ -271,7 +326,10 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
                                + (f" (over the {BUDGET} s budget)" if over else ""))
         return result
 
-    async def park():
+    async def ensure(target_id, variant=None, park=False):
+        return await tracked(ensure_run, target_id, variant, park)
+
+    async def park_run():
         """The Soul Weapon screen open, the farming mode's idle place:
         "parked" (it was) or "opened"."""
         since = ports.clock.monotonic()
@@ -282,6 +340,9 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
         ports.log("normal", f"Soul weapon: parked on the Soul Weapon screen in "
                   f"{round(ports.clock.monotonic() - since, 1)} s")
         return "opened"
+
+    async def park():
+        return await tracked(park_run)
 
     def relaunched():
         """The game was relaunched: the next ensure reads again."""
@@ -297,6 +358,9 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
         if value != status["switch"]:
             ports.log("normal", f"Soul weapon: switched to {value}")
             status["switch"] = value
+            status["cache"] = None
+            if value == "off":
+                cancel_active()
             ports.store.save()
 
     def set_engraving(value):
@@ -305,6 +369,8 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
         if value != status["engraving"]:
             ports.log("normal", f"Soul weapon: engraving switched to {value}")
             status["engraving"] = value
+            if value == "off":
+                cancel_active()
             status["cache"] = None
             ports.store.save()
 
@@ -312,4 +378,5 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
             "switch": lambda: status["switch"], "set_engraving": set_engraving,
             "state": lambda: {"switch": status["switch"], "engraving": status["engraving"],
                               "direction": status["direction"], "last": status["last"],
-                              "cached": (status["cache"] or {}).get("id")}}
+                              "cached": (status["cache"] or {}).get("id"),
+                              "recovery": setup.state() if setup and hasattr(setup, "state") else None}}

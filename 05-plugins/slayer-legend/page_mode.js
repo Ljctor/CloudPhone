@@ -56,7 +56,7 @@ export default function modeFeature(api, { known, watchdog, stage }) {
   // at: when answer came (Date.now()), for the hold's countdown.
   const farm = { answer: null, timer: null, stages: null, chosen: 0, sending: 0, at: 0,
     oldUntil: Number(takeOld(UNTIL)) || null, inputUntil: 0 };
-  const loadouts = loadout(api);
+  const loadouts = loadout(api, { onApplied: () => { askMode(); loadStages(); } });
   const mode = () => api.setting('mode') || 'mpw18';
   // The mode a timed one goes back to, with no timer itself.
   const defaultMode = () => api.setting('defaultMode') || 'mpw18';
@@ -67,8 +67,6 @@ export default function modeFeature(api, { known, watchdog, stage }) {
     // never chose one does not reset it.
     default: api.setting('defaultMode') || null,
     until: farm.answer?.until ?? farm.oldUntil,
-    stage18: Number(api.setting('stage18')) || null,
-    stage4: Number(api.setting('stage4')) || null,
     floor: Number(api.setting('mineFloor')) || null,
     area: Number(api.setting('mineArea')) || null,
   }).filter(([, value]) => value !== null));
@@ -190,17 +188,15 @@ export default function modeFeature(api, { known, watchdog, stage }) {
         type: 'dialog', label: 'Farming mpw18',
         select: { key: 'mode', value: 'mpw18', default: 'mpw18' },
         options: [
-          { type: 'choice', key: 'stage18', label: 'Stage mpw18', choices: () => stageChoices(18) },
-          ...loadouts.options('mpw18'),
+          ...loadouts.options('mpw18', () => stageChoices(18)),
         ],
       },
       {
         type: 'dialog', label: 'Farming mpw4',
         // Only once configured: its stage chosen.
-        select: { key: 'mode', value: 'mpw4', default: 'mpw18', disabled: () => !Number(api.setting('stage4')) },
+        select: { key: 'mode', value: 'mpw4', default: 'mpw18', disabled: () => !loadouts.stage('mpw4') },
         options: [
-          { type: 'choice', key: 'stage4', label: 'Stage mpw4', choices: () => stageChoices(4) },
-          ...loadouts.options('mpw4'),
+          ...loadouts.options('mpw4', () => stageChoices(4)),
         ],
       },
       {
@@ -230,7 +226,7 @@ export default function modeFeature(api, { known, watchdog, stage }) {
         type: 'choice', key: 'defaultMode', label: 'Mode par défaut',
         choices: () => [
           { value: 'mpw18', label: api.tr('Farming mpw18') },
-          ...(Number(api.setting('stage4')) || defaultMode() === 'mpw4'
+          ...(loadouts.stage('mpw4') || defaultMode() === 'mpw4'
             ? [{ value: 'mpw4', label: api.tr('Farming mpw4') }] : []),
           { value: 'free', label: api.tr('Jeu libre') },
           { value: 'agent', label: api.tr('Agent mode') },
@@ -280,12 +276,12 @@ export default function modeFeature(api, { known, watchdog, stage }) {
       ...(stage ? [stage] : []),
     ],
     onSetting: (key, value) => {
-      loadouts.onSetting(key);
+      loadouts.onSetting(key, value);
       if (key === 'mode' || key === 'defaultMode') farm.chosen = Date.now();
       if (key === 'mode' && value !== defaultMode() && value !== farm.answer?.mode) {
         farm.answer = { ...farm.answer, until: Date.now() / 1000 + TIMED_MINUTES * 60 };
       }
-      if (['mode', 'defaultMode', 'stage18', 'stage4', 'mineFloor', 'mineArea'].includes(key)) {
+      if (['mode', 'defaultMode', 'mineFloor', 'mineArea'].includes(key)) {
         farm.error = null;
         sendMode();
       }

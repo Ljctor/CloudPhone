@@ -33,6 +33,7 @@ engraving_screen.py.
 
 import importlib.util
 import os
+from functools import wraps
 
 # The pixel font, loaded beside this file (the gateway loads plugin files
 # by path, not as a package).
@@ -40,6 +41,26 @@ _spec = importlib.util.spec_from_file_location(
     "cloudphone_plugin_slayer_legend_soul_weapon_font", os.path.join(os.path.dirname(__file__), "pixel_font.py"))
 font = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(font)
+
+_spec = importlib.util.spec_from_file_location(
+    "cloudphone_plugin_slayer_legend_soul_weapon_pixels", os.path.join(os.path.dirname(__file__), "capture_pixels.py"))
+_capture_pixels = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_capture_pixels)
+
+
+def calibrated(reader):
+    @wraps(reader)
+    def read_native(shot, *args, **kwargs):
+        if shot[0] < 480 or shot[1] < 1040:
+            if reader.__name__ == "tag":
+                boxes = tags(shot)
+                return None, boxes[0] if len(boxes) == 1 else None
+            if reader.__name__ in {"title", "weapon_detail"}:
+                return False
+            if reader.__name__ not in {"rows", "tags"}:
+                return None
+        return reader(_capture_pixels.canonical(shot), *args, **kwargs)
+    return read_native
 
 TITLE_AREA = (0.0, 0.515, 0.35, 0.55)
 TITLE = "Soul Weapon"
@@ -111,6 +132,7 @@ def _box(shot, area):
             min(width, int(area[2] * width)), min(height, int(area[3] * height)))
 
 
+@calibrated
 def title(shot):
     """The popup's title reads "Soul Weapon"."""
     return any(font.distance(text, TITLE) <= 1 for text, _, _ in
@@ -122,12 +144,14 @@ def names_of(table):
     return sorted({entry["name"] for entry in table["weapons"]})
 
 
+@calibrated
 def read_name(shot):
     """The card's name as read, "?" for an unread glyph; None without one."""
     lines = font.read(shot, NAME_AREA, font=CARD_FONT, caps=(0.009, 0.016))
     return max(lines, key=lambda line: len(line[0]))[0] if lines else None
 
 
+@calibrated
 def name(shot, names):
     """The selected weapon's name (one of names), None when it does not
     read clearly as one."""
@@ -139,6 +163,7 @@ def _owned_ink(shot):
     return font.ink(rows, OWNED_LEVEL)
 
 
+@calibrated
 def owned(shot):
     """"Owned : N": 0 or 1, None when the digit is neither or unread."""
     marks = _owned_ink(shot)
@@ -181,6 +206,7 @@ def _red(rgb):
     return r > 140 and g < 60 and b < 60
 
 
+@calibrated
 def rows(shot):
     """The list's whole cells, top to bottom: [{top, bottom, selected}]
     (fractions of the screen height)."""
@@ -217,6 +243,7 @@ def _orange(rgb):
     return r > 190 and 90 <= g <= 190 and b < 90 and r - g > 40
 
 
+@calibrated
 def tags(shot):
     """The orange boxes in the list column, [left, top, right, bottom]
     (fractions), at least 0.04 wide and 0.008 high."""
@@ -295,6 +322,7 @@ def _tag_distance(ink, template):
     return best / max(1, sum(row.count("#") for row in template))
 
 
+@calibrated
 def tag(shot):
     """(text, box) of the one tag in the list: "Equip" or "Unequip" when
     its text matches that template (TAG_TEMPLATES); (None, box) when it
@@ -312,6 +340,7 @@ def tag(shot):
     return None, box
 
 
+@calibrated
 def tab(shot):
     """The Equipment panel's active tab ("weapon", "accessories", "relic",
     "spirit"): its text at least 1.4 times brighter than every other's."""
@@ -334,6 +363,7 @@ def tab(shot):
 DETAIL_BUTTON_AREA = (0.1, 0.8, 0.49, 0.87)
 
 
+@calibrated
 def weapon_detail(shot):
     """An ordinary weapon's card is open: its left button reads "Enhance
     MAX"."""
@@ -343,6 +373,7 @@ def weapon_detail(shot):
     return False
 
 
+@calibrated
 def equipped_badge(shot):
     """The card's sword badge is red (True), grey (False); None: neither."""
     left, top, right, bottom = _box(shot, BADGE_AREA)

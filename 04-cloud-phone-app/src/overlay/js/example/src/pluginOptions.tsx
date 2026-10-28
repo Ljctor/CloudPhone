@@ -111,7 +111,8 @@ function pluginOption(context, plugin, option, index) {
     return (
       <label key={key} style={styles.infoRow}>
         <span style={styles.infoLabel}>{tr(option.label)}</span>
-        <select style={styles.select} value={settings.plugins?.[plugin.id]?.[option.key] ?? choices[0]?.value ?? ''}
+        <select style={styles.select} disabled={resolved(option.disabled) ?? false}
+          value={resolved(option.value) ?? settings.plugins?.[plugin.id]?.[option.key] ?? choices[0]?.value ?? ''}
           onChange={(event) => setPluginOption(plugin.id, option.key, event.target.value)}>
           {choices.map((choice) => (
             <option key={choice.value} value={choice.value}

@@ -4,6 +4,7 @@ and check right, the same way every time.
 Run: python3 -m unittest test_engraving"""
 
 import asyncio
+import contextlib
 import importlib.util
 import json
 import os
@@ -589,7 +590,9 @@ class Routes(unittest.TestCase):
             self.assertEqual(call("GET", "/engraving", Request(id="x")).status, 404)
             self.assertEqual(call("GET", "/engraving", Request(id="999")).status, 404)
 
-            empty = {"stage": None, "preset": None, "soul_weapon": None, "weapon": None, "placeable": None}
+            empty = {"stage": None, "preset": None, "soul_weapon": None, "weapon": None, "placeable": None,
+                     "revision": load("features/engraving").revision({"stage": None, "preset": None, "soul_weapon": None}),
+                     "automation": rules.automation(None, TABLE)}
             self.assertEqual(call("GET", "/loadout", Request()).body, {"loadouts": {"mpw18": empty, "mpw4": empty}})
             body = {"mode": "mpw18", "preset": "III", "soul_weapon": {"id": 32, "variant": "Gold-maxed"}}
             self.assertEqual(call("POST", "/loadout", Request(body)).status, 200)
@@ -611,8 +614,31 @@ class Routes(unittest.TestCase):
             again = self.setup_gateway(data_dir)
             self.assertEqual(again("GET", "/loadout", Request()).body["loadouts"],
                              {"mpw18": {"stage": 940, "preset": "III", "soul_weapon": {"id": 32, "variant": "Gold-maxed"},
-                                        "weapon": "Ambition", "placeable": True}, "mpw4": empty})
+                                        "revision": load("features/engraving").revision({"stage": 940, "preset": "III", "soul_weapon": {"id": 32, "variant": "Gold-maxed"}}),
+                                        "weapon": "Ambition", "placeable": True,
+                                        "automation": rules.automation(32, TABLE, True, "Gold-maxed")}, "mpw4": empty})
             self.assertEqual(again("GET", "/mode", Request()).body["stage18"], 940)
+
+    def test_stale_browser_cannot_overwrite_another_target_or_stage_change(self):
+        with tempfile.TemporaryDirectory() as data_dir:
+            call = self.setup_gateway(data_dir)
+            first = call("GET", "/loadout", Request()).body["loadouts"]["mpw18"]
+            body = {"mode": "mpw18", "stage": 940, "preset": "III", "soul_weapon": {"id": 32, "variant": "Gold-maxed"},
+                    "if_revision": first["revision"]}
+            accepted = call("POST", "/loadout", Request(body))
+            self.assertEqual(accepted.status, 200)
+            saved = accepted.body["loadouts"]["mpw18"]
+            self.assertNotEqual(saved["revision"], first["revision"])
+            refused = call("POST", "/loadout", Request(dict(body, preset="V")))
+            self.assertEqual(refused.status, 409)
+            self.assertEqual(refused.body["loadouts"]["mpw18"], saved)
+            restarted = self.setup_gateway(data_dir)
+            self.assertEqual(restarted("GET", "/loadout", Request()).body["loadouts"]["mpw18"], saved)
+            # A stage edited through the mode API also invalidates the editor's revision.
+            call("POST", "/mode", Request({"mode": "mpw18", "stage18": 920}))
+            refused = call("POST", "/loadout", Request(dict(body, if_revision=saved["revision"])))
+            self.assertEqual(refused.status, 409)
+            self.assertEqual(refused.body["loadouts"]["mpw18"]["stage"], 920)
 
     def test_stages_of_an_older_state_move_to_the_loadouts(self):
         with tempfile.TemporaryDirectory() as data_dir:
@@ -629,6 +655,22 @@ class Routes(unittest.TestCase):
             self.assertNotIn("stage18", kept["mode"])
             self.assertEqual(kept["loadouts"]["mpw4"]["stage"], 31)
 
+    def test_unsupported_targets_are_reported_but_remain_saveable(self):
+        with tempfile.TemporaryDirectory() as data_dir:
+            call = self.setup_gateway(data_dir)
+            listed = call("GET", "/engravings", Request()).body["weapons"]
+            self.assertEqual(listed[12]["automation"]["code"], "unsupported_grid")
+            detail = call("GET", "/engraving", Request(id="13")).body
+            self.assertTrue(all(v["automation"]["code"] == "unsupported_grid" for v in detail["variants"]))
+            for weapon_id, expected in ((13, "unsupported_grid"), (89, "ambiguous_weapon")):
+                response = call("POST", "/loadout", Request({"mode": "mpw4", "soul_weapon": {
+                    "id": weapon_id, "variant": "Gold-maxed"}}))
+                self.assertEqual(response.status, 200)
+                chosen = response.body["loadouts"]["mpw4"]
+                self.assertEqual(chosen["soul_weapon"]["id"], weapon_id)
+                self.assertEqual(chosen["automation"]["code"], expected)
+                self.assertFalse(chosen["automation"]["runtime_verified"])
+
     def test_no_search_at_run_time(self):
         # The routes only read engravings.json: the searches run when it is built.
         with open(os.path.join(HERE, "features", "engraving.py"), encoding="utf-8") as f:
@@ -637,6 +679,72 @@ class Routes(unittest.TestCase):
             self.assertNotIn(f"rules.{name}(", source)
             self.assertNotIn(f"{name}(", source.replace("rotation_allowed(", ""))
         self.assertNotIn("import engraving_rules", source)
+
+
+class AutomationApplicability(unittest.TestCase):
+    def test_static_support_is_not_runtime_verification(self):
+        capability = rules.automation(32, TABLE, True, "Gold-maxed")
+        self.assertTrue(capability["supported"])
+        self.assertEqual(capability["scope"], "static")
+        self.assertFalse(capability["runtime_verified"])
+        self.assertFalse(TABLE["weapons"][31]["verified_in_game"])
+
+    def test_actual_executor_limits_and_invalid_selection(self):
+        for weapon_id, variant, expected in ((13, "Gold-maxed", "unsupported_grid"),
+                                              (20, "Gold-maxed", "ambiguous_weapon"),
+                                              (89, "Gold-maxed", "ambiguous_weapon"),
+                                              (32, "missing", "unknown_variant"),
+                                              (32, "", "unknown_variant"), (999, None, "unknown_weapon")):
+            with self.subTest(id=weapon_id, variant=variant):
+                capability = rules.automation(weapon_id, TABLE, True, variant)
+                self.assertFalse(capability["supported"])
+                self.assertEqual(capability["code"], expected)
+                self.assertIsNotNone(capability["reason_t"])
+
+    def test_preflight_stops_before_stage_preset_or_capture(self):
+        stage = load("features/stage_change")
+        feature = load("features/engraving")
+        cases = [(13, "Gold-maxed", "real", "real", True, True, "failed"),
+                 (89, "Gold-maxed", "real", "real", True, True, "failed"),
+                 (32, "missing", "real", "real", True, True, "failed"),
+                 (32, "Gold-maxed", "off", "real", True, True, "plan"),
+                 (32, "Gold-maxed", "real", "off", True, True, "failed"),
+                 (32, "Gold-maxed", "real", "real", False, True, "failed"),
+                 (32, "Gold-maxed", "real", "real", True, False, "failed")]
+        for weapon_id, variant, soul_switch, engraving_switch, capability_present, setup_present, expected in cases:
+            with self.subTest(id=weapon_id, variant=variant, soul=soul_switch, engraving=engraving_switch,
+                              capability=capability_present, setup=setup_present):
+                chosen = {"id": weapon_id, "variant": variant}
+                effects = []
+
+                async def forbidden(*args, **kwargs):
+                    effects.append("unexpected action or capture")
+                    self.fail("preflight must stop before observing or changing the game")
+
+                @contextlib.asynccontextmanager
+                async def leased(*args, **kwargs):
+                    yield
+
+                store = SimpleNamespace(saved={}, register=lambda *args: None, save=lambda: None)
+                ports = SimpleNamespace(store=store, clock=SimpleNamespace(monotonic=lambda: 0),
+                                        leased=leased, capture=forbidden, analyse=forbidden, tap=forbidden,
+                                        log=lambda *args: None, t=texts.t, english=texts.english,
+                                        Busy=type("Busy", (RuntimeError,), {}))
+                capability = feature.engraving(ports, rules)["api"]["applicability"]
+                soul = {"feature": lambda *args: {"switch": lambda: soul_switch,
+                                                  "state": lambda: {"engraving": engraving_switch}},
+                        "reader": None, "rules": None, "table": TABLE,
+                        "loadout": lambda mode: {"soul_weapon": chosen}, "applicability": capability,
+                        "engraving": {"setup": "present"} if setup_present else None}
+                if not capability_present:
+                    soul.pop("applicability")
+                api = stage.stage_change(ports, None, SimpleNamespace(regions=lambda table: []), None,
+                                         None, {}, soul)["api"]
+                answer = asyncio.run(api["farm"](931, "V", "mpw18"))
+                self.assertEqual(answer["result"], expected)
+                self.assertIsNotNone(answer["text_t"])
+                self.assertEqual(effects, [])
+                self.assertEqual(answer["timings"], {})
 
 
 class Names(unittest.TestCase):

@@ -154,6 +154,28 @@ class Mapping(unittest.TestCase):
 
 
 class Rules(unittest.TestCase):
+    def test_unverified_and_future_facts_are_history_not_action_evidence(self):
+        facts, _ = rules.noted({}, {"preset": "III"}, 10)
+        self.assertIsNotNone(rules.fact_now(facts, "preset", 5, 12))
+        self.assertIsNone(rules.fact_now(facts, "preset", None, 9))
+        historical = rules.unverified(facts)
+        self.assertIsNone(rules.fact_now(historical, "preset", None, 12))
+        self.assertEqual(historical["preset"]["value"], "III")
+
+    def test_slow_old_scan_cannot_replace_newer_setup_evidence(self):
+        facts, _ = rules.noted({}, {"preset": "IV"}, 20, "setup")
+        for value in ("II", None):
+            after, changes = rules.noted(facts, {"preset": value}, 10)
+            self.assertEqual(after, facts)
+            self.assertEqual(changes, [])
+
+    def test_lower_stage_does_not_refresh_or_reverify_historical_highest(self):
+        facts, _ = rules.noted({}, {"stage": 920}, 10)
+        facts = rules.unverified(facts)
+        facts, _ = rules.noted(facts, {"stage": 900}, 20)
+        self.assertEqual((facts["highest"]["value"], facts["highest"]["seen"], facts["highest"]["verified"]),
+                         (920, 10, False))
+
     def test_the_highest_stage_only_goes_up_and_a_stage_raises_it(self):
         facts, _ = rules.noted({}, {"stage": 920}, 1.0)
         self.assertEqual(facts["highest"]["value"], 920)
@@ -286,6 +308,73 @@ def build(ports):
 
 
 class Feature(unittest.TestCase):
+    def test_seen_is_capture_time_not_slow_ocr_completion(self):
+        shot = screen(*SCREENS["Battle settings"][0])
+        for metadata in (False, True):
+            with self.subTest(capture_metadata=metadata), tempfile.TemporaryDirectory() as data_dir:
+                ports, _ = fake_ports(data_dir, shot)
+                entered = ports.clock.wall()
+                captured = entered - 5 if metadata else entered
+                if metadata:
+                    ports.capture_time = lambda shot: captured
+                async def slow(fn, *args):
+                    ports.clock.now += 20
+                    return fn(*args)
+                ports.analyse = slow
+                built = build(ports)
+                asyncio.run(built["api"]["scan"](shot))
+                fact = built["api"]["facts"]()["preset"]
+                self.assertEqual(fact["seen"], captured)
+                self.assertIsNone(rules.fact_now(built["api"]["facts"](), "preset", 1, ports.clock.wall()))
+                answer = asyncio.run(built["routes"][0][2](None))
+                self.assertEqual(answer["scan"]["at"], captured)
+                self.assertEqual(built["api"]["value"]("preset"), "III", 'old value remains in history')
+
+    def test_fresh_unread_never_returns_a_recent_historical_value(self):
+        with tempfile.TemporaryDirectory() as data_dir:
+            shot = screen(*SCREENS["Battle settings"][0])
+            ports, _ = fake_ports(data_dir, shot)
+            readers = dict(READERS, battle_settings=lambda *args: {"preset": None})
+            built = game.game(ports, screens, rules, readers)
+            built["api"]["note"]({"preset": "II"})
+            seen = ports.clock.wall()
+            ports.clock.now += .2
+            result = asyncio.run(built["api"]["require"](["preset"], 0))
+            self.assertEqual(result["preset"], {"value": None, "why": "unread"})
+            fact = built["api"]["facts"]()["preset"]
+            self.assertEqual((fact["value"], fact["seen"], fact["verified"]), ("II", seen, False))
+            self.assertIsNone(asyncio.run(built["api"]["get"]("preset", 100))["value"])
+
+    def test_relaunch_denies_cached_pixels_but_new_capture_can_reverify(self):
+        with tempfile.TemporaryDirectory() as data_dir:
+            shot = screen(*SCREENS["Battle settings"][0])
+            ports, _ = fake_ports(data_dir, shot)
+            built = build(ports)
+            asyncio.run(built["api"]["scan"](shot))
+            ports.relaunched("restarted")
+            self.assertIsNone(asyncio.run(built["api"]["get"]("preset", 100))["value"])
+            self.assertEqual(built["api"]["value"]("preset"), "III")
+            self.assertFalse(built["api"]["facts"]()["preset"]["verified"])
+            ports.clock.now += 1
+            new_shot = shot[0], shot[1], bytes(bytearray(shot[2]))
+            asyncio.run(built["api"]["scan"](new_shot))
+            self.assertTrue(built["api"]["facts"]()["preset"]["verified"])
+
+    def test_relaunch_during_ocr_invalidates_inflight_and_cached_answers(self):
+        with tempfile.TemporaryDirectory() as data_dir:
+            shot = screen(*SCREENS["Battle settings"][0])
+            ports, _ = fake_ports(data_dir, shot)
+            built = build(ports)
+            built["api"]["note"]({"preset": "II"})
+            async def restarted(fn, *args):
+                ports.relaunched("restarted during OCR")
+                return fn(*args)
+            ports.analyse = restarted
+            result = asyncio.run(built["api"]["require"](["preset", "region"], 5))
+            self.assertIsNone(result["preset"]["value"], 'even the initially cached answer lost its verification')
+            fact = built["api"]["facts"]()["preset"]
+            self.assertEqual((fact["value"], fact["verified"]), ("II", False))
+
     def test_the_highest_stage_survives_a_restart_and_a_reload(self):
         with tempfile.TemporaryDirectory() as data_dir:
             ports, _ = fake_ports(data_dir)

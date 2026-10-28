@@ -26,7 +26,9 @@ def gold(ports, screens, stage, counter, rules, souls=None):
     colours = souls.COLOURS if souls else ()
     game = getattr(ports, "game", None)
     status = {"window": rules.empty(), "read": None, "box": None, "shade": 1.0, "asked": 0.0, "task": None,
-              "souls": {colour: rules.empty() for colour in colours}}
+              "souls": {colour: rules.empty() for colour in colours},
+              "resources": {field: rules.empty() for field in ("cubes", "weapon_l3", "accessory_l3")},
+              "resource_read": {}, "frame": None, "frame_at": None}
 
     def gold_facts(shot):
         """The gold counter's reading, where the game is: ("saver", stage
@@ -44,6 +46,10 @@ def gold(ports, screens, stage, counter, rules, souls=None):
         while ports.clock.monotonic() - status["asked"] < rules.IDLE:
             try:
                 shot = await ports.capture(max_age=rules.SECONDS) if await ports.focused() else None
+                captured_at = (ports.capture_time(shot) if shot and hasattr(ports, "capture_time") else None)
+                if captured_at is None:
+                    captured_at = ports.clock.wall()  # record before OCR, never after it
+                readings = {}
                 if not shot:
                     # Another app in front: the game stops.
                     status["window"] = rules.elsewhere(status["window"])
@@ -51,26 +57,43 @@ def gold(ports, screens, stage, counter, rules, souls=None):
                         status["souls"][colour] = rules.elsewhere(status["souls"][colour])
                 elif game is not None:
                     # The game's scan of this capture (features/game.py).
-                    readings = await game["scan"](shot, ("gold", "souls"))
+                    readings = await game["scan"](shot, ("gold", "souls", "cubes", "equipment_l3"))
                     reading, row = readings.get("gold_reading"), readings.get("souls_reading")
                     kind, here = readings.get("gold_place") or (None, None)
                 else:
                     reading, (kind, here), row = await ports.analyse(gold_facts, shot)
-                if shot:
+                distinct = shot and not (status["frame"] is shot[2] and status["frame_at"] == captured_at)
+                if distinct:
+                    status["frame"], status["frame_at"] = shot[2], captured_at
                     if reading:
-                        status["read"] = ports.clock.wall()
+                        status["read"] = captured_at
                         status["box"] = reading["box"]
                         status["shade"] = reading.get("shade", 1.0)
                     window, counts = rules.where(status["window"], kind, here)
                     if counts and reading:
-                        window = rules.counted(window, reading, ports.clock.wall())
+                        window = rules.counted(window, reading, captured_at)
                     status["window"] = window
                     for colour in colours:
                         window, counts = rules.where(status["souls"][colour], kind, here)
                         count = (row or {}).get(colour)
                         if counts and count:
-                            window = rules.counted(window, count, ports.clock.wall(), rules.SOULS_WINDOW, "skip")
+                            window = rules.counted(window, count, captured_at, rules.SOULS_WINDOW, "skip")
                         status["souls"][colour] = window
+                    for field, window in status["resources"].items():
+                        value = readings.get(field)
+                        raw = value.get("value") if isinstance(value, dict) else value
+                        if not isinstance(raw, (int, float)) or isinstance(raw, bool) or raw < 0:
+                            continue
+                        # Consume this capture's actual reader output only;
+                        # never re-count a historical /game fact as current.
+                        window, counts = rules.where(window, kind, here)
+                        if counts:
+                            exact = {"value": raw, "text": value.get("text", str(raw)) if isinstance(value, dict)
+                                     else str(raw), "step": 1, "full": True}
+                            window = rules.counted(window, exact, captured_at, rules.RESOURCE_WINDOW,
+                                                   short=rules.RESOURCE_WINDOW)
+                            status["resource_read"][field] = captured_at
+                        status["resources"][field] = window
             except Exception as e:
                 ports.log("warning", f"Gold reading failed: {e!r}")
             await ports.clock.sleep(rules.SECONDS)
@@ -112,6 +135,20 @@ def gold(ports, screens, stage, counter, rules, souls=None):
         return {"rate": rate, "span": span(samples), "window": seconds,
                 "last": samples[-1][0] if samples else None}
 
+    def resources_now():
+        answer = {}
+        for field, window in status["resources"].items():
+            read = status["resource_read"].get(field)
+            # A hidden counter retains its dated last measurement. It does
+            # not gain fresh timestamps, zero samples, or new confidence.
+            rate, samples = rules.rate(window["samples"], read if read is not None else ports.clock.wall(),
+                                       rules.RESOURCE_WINDOW)
+            state = ("unread" if read is None else "stale" if ports.clock.wall() - read > rules.SECONDS * 2.5
+                     else "measuring" if rate is None else "measured")
+            answer[field] = {"rate": rate, "read": read, "span": span(samples), "window": rules.RESOURCE_WINDOW,
+                             "text": window["text"], "value": samples[-1][1] if samples else None, "status": state}
+        return answer
+
     async def handle_gold(request):
         rate, samples, seconds = asked()
         return ports.respond({
@@ -125,6 +162,7 @@ def gold(ports, screens, stage, counter, rules, souls=None):
             "box": status["box"],
             "shade": status["shade"],
             "souls": souls_now(),
+            "resources": resources_now(),
         })
 
     async def handle_font(request):

@@ -31,6 +31,8 @@ from dumpsys.
 import importlib.util
 import json
 import os
+from contextvars import ContextVar
+from threading import RLock
 
 _spec = importlib.util.spec_from_file_location(
     "cloudphone_plugin_slayer_legend_screens_font", os.path.join(os.path.dirname(__file__), "pixel_font.py"))
@@ -404,8 +406,11 @@ def _share_margin(value, level, above):
 
 
 _engraving = None
-# The shares measured on the capture being looked at (two anchors may read one).
-_shares = {}
+# Anchors of one look share measurements; concurrent executor workers must
+# never reuse measurements from another capture. Direct margin() calls use
+# no cache. ContextVar also restores the caller's cache on a nested look.
+_shares = ContextVar("screen_capture_shares", default=None)
+_seen_lock = RLock()
 _quest_patches = None
 
 
@@ -445,10 +450,13 @@ def _reader(name):
     if not name.startswith("engraving_screen."):
         return globals()[name]
     if _engraving is None:
-        spec = importlib.util.spec_from_file_location(
-            "cloudphone_plugin_slayer_legend_screens_engraving", os.path.join(HERE, "engraving_screen.py"))
-        _engraving = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(_engraving)
+        with _seen_lock:
+            if _engraving is None:
+                spec = importlib.util.spec_from_file_location(
+                    "cloudphone_plugin_slayer_legend_screens_engraving", os.path.join(HERE, "engraving_screen.py"))
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                _engraving = module
     return getattr(_engraving, name.split(".", 1)[1])
 
 
@@ -463,9 +471,14 @@ def _anchor(spec):
         key = (spec["share"], spec["test"], step)
 
         def margin_of(shot):
-            if key not in _shares:
-                _shares[key] = share(shot, area, test, step)
-            return _share_margin(_shares[key], level, above)
+            shares = _shares.get()
+            if shares is None:
+                value = share(shot, area, test, step)
+            else:
+                if key not in shares:
+                    shares[key] = share(shot, area, test, step)
+                value = shares[key]
+            return _share_margin(value, level, above)
         return margin_of
     reader = spec["reader"]
     return lambda shot: 1.0 if _reader(reader)(shot) else -1.0
@@ -493,10 +506,23 @@ _seen = []
 def look(shot):
     """{screen, overlays, margin, plain, margins} of one capture (see above)."""
     width, height, pixels = shot
-    for kept, answer in _seen:
-        if kept is pixels and answer["size"] == (width, height):
-            return answer
-    _shares.clear()
+    with _seen_lock:
+        for kept, answer in _seen:
+            if kept is pixels and answer["size"] == (width, height):
+                return answer
+    token = _shares.set({})
+    try:
+        answer = _look(shot)
+    finally:
+        _shares.reset(token)
+    with _seen_lock:
+        _seen.insert(0, (pixels, answer))
+        del _seen[CACHE:]
+    return answer
+
+
+def _look(shot):
+    width, height, _ = shot
     margins = {key: margin(shot, key) for key in BASES}
     found = sorted((TIERS[REGISTRY[key]["status"]], -value, key) for key, value in margins.items() if value > 0)
     if found:
@@ -518,8 +544,6 @@ def look(shot):
               "margins": {key: round(value, 3) for key, value in margins.items()}, "size": (width, height)}
     if "quest_panel" in overlays:
         answer["quest_tab"] = quest_tab(shot)
-    _seen.insert(0, (pixels, answer))
-    del _seen[CACHE:]
     return answer
 
 

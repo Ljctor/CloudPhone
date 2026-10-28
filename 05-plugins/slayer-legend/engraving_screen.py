@@ -1,7 +1,11 @@
 """Reads the Soul Weapon Engraving screen (the card's big icon on the Soul
 Weapon screen) off a screenshot (width, height, RGB bytes). Pure, stdlib
 only. Calibrated at 480x1040 on one capture of 2026-10-21 (Vision, its
-5x5 grid filled as Gold-balanced, 8 cards, all locked).
+5x5 grid filled as Gold-balanced, 8 cards, all locked). Native captures are
+sampled on that lattice before reading; returned points remain fractions.
+Below 480x1040 the fine card readers return unknown: lost digit/padlock
+strokes cannot safely be reconstructed. Grid and preview geometry remain
+available independently.
 
 - title(): "Soul Weapon Engraving" at the top (y 0.05-0.085), and
   weapon(): the weapon's name below it (y 0.09-0.125), matched against
@@ -18,22 +22,53 @@ only. Calibrated at 480x1040 on one capture of 2026-10-21 (Vision, its
   grid, matched to the sheet's shapes as drawn: the card shows the
   shape's base orientation whatever the piece's orientation in the grid,
   seen on every card), "Lv.NN" at the bottom (digits by templates cut from
-  the capture: 0 3 4 5 6 8 9; 1 2 7 are drawn), the padlock at the top
-  right (locked: a closed shackle; an open one is not captured yet: then
-  None), "E" at the bottom left (placed in the grid), the round icon at
+  the captures, including a narrow 1 in Lv.41), the padlock at the top
+  right (closed white shackle, open grey shackle on a bright card, or
+  unknown), "E" at the bottom left (placed in the grid), the round icon at
   the top left (kind: "gold" for the coin, the Line's EXTRA_GOLD; "atk"
   for the sword, the L-Shape's ATK).
 """
 
 import importlib.util
 import os
+from functools import wraps
 
 _spec = importlib.util.spec_from_file_location(
     "cloudphone_plugin_slayer_legend_engraving_screen_font", os.path.join(os.path.dirname(__file__), "pixel_font.py"))
 font = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(font)
 
+_spec = importlib.util.spec_from_file_location(
+    "cloudphone_plugin_slayer_legend_engraving_pixels", os.path.join(os.path.dirname(__file__), "capture_pixels.py"))
+_capture_pixels = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_capture_pixels)
+normalised_capture = _capture_pixels.canonical
+
 WIDTH, HEIGHT = 480, 1040
+
+# Readers below use the calibrated 480×1040 lattice and pixel thresholds.
+# Canonicalise pixels once per immutable capture; public points remain screen
+# fractions, so every returned tap/drag position is valid at native size.
+
+
+def calibrated(reader):
+    @wraps(reader)
+    def read_native(shot, *args, **kwargs):
+        # Below the calibration resolution, thin strokes have been lost:
+        # e.g. a real Lv39 crop reduced to 360 can read as Lv9. Upsampling
+        # cannot restore those strokes. Keep precise card gates closed;
+        # large grid/preview/popup geometry can still be read independently.
+        if shot[0] < WIDTH or shot[1] < HEIGHT:
+            if reader.__name__ == "cards":
+                return _unread_cards()
+            if reader.__name__ == "crystals":
+                return []
+            if reader.__name__ in {"level", "bright", "locked", "placed", "kind"}:
+                return None
+        return reader(normalised_capture(shot), *args, **kwargs)
+    return read_native
+
+
 TITLE_AREA = (0.15, 0.05, 0.85, 0.088)
 TITLE = "Soul Weapon Engraving"
 WEAPON_AREA = (0.3, 0.09, 0.7, 0.125)
@@ -75,10 +110,16 @@ DIGITS = {
     9: [".###.", "#...#", "#...#", "#...#", ".####", "....#", "...#.", ".##.."],
 }
 DIGITS = {digit: tuple(tuple(1 if ch == "#" else 0 for ch in row) for row in rows) for digit, rows in DIGITS.items()}
+DIGIT_VARIANTS = {digit: [shape] for digit, shape in DIGITS.items()}
+# Real narrow 1 from fixtures/eg_level_41 (Relax, second card): its two
+# substantial columns differ from the old drawn 5-column approximation.
+DIGIT_VARIANTS[1].append(tuple(tuple(ch == "#" for ch in row) for row in
+    ["...##", "#####", "...##", "...##", "...##", "...##", "...##", "#####"]))
 
 # The padlock, locked, as each card's place renders it (white pixels, x 52
 # to 67 and y 1 to 13 from the card's top left; the places differ by a
-# pixel's phase: one leg can look short). An open padlock is not captured.
+# pixel's phase: one leg can look short). Open padlocks have their own
+# brightness and grey-shackle checks, calibrated on eg_cards_unlocked.
 LOCKED = {
     0: ['................', '.......###......', '......#...#.....', '................', '.....#.....#....', '.....#.....#....', '....#########...', '....####.####...', '....####.####...', '....####.####...', '....####.####...', '....#########...', '................'],
     1: ['................', '.......###......', '......#...#.....', '................', '.....#.....#....', '.....#.....#....', '....#########...', '....####.####...', '....####.####...', '....####.####...', '....####.####...', '....#########...', '................'],
@@ -102,12 +143,14 @@ def _px(shot, fx, fy):
     return _pixel(shot, min(width - 1, max(0, int(fx * width))), min(height - 1, max(0, int(fy * height))))
 
 
+@calibrated
 def title(shot):
     """The screen's title reads "Soul Weapon Engraving"."""
     return any(font.distance(text.replace(" ", ""), TITLE.replace(" ", "")) <= 4
                for text, _, _ in font.read(shot, TITLE_AREA, font=TITLE_FONT))
 
 
+@calibrated
 def weapon(shot, names, card_font):
     """The weapon's name under the title (one of names), or None."""
     for text, _, _ in font.read(shot, WEAPON_AREA, font=card_font):
@@ -165,6 +208,7 @@ def _linked(shot, a, b):
     return _bright_run(shot, points) >= 14
 
 
+@calibrated
 def grid(shot, size):
     """{cells: {(row, col): "piece", "empty" or "none"}, pieces: [sorted
     cells]} of the size x size grid; None for a 4x4 grid (not calibrated)
@@ -219,6 +263,7 @@ def _card_px(shot, index):
     return int(round(left * width)), int(round(top * height))
 
 
+@calibrated
 def crystals(shot, index):
     """The centres (x, y pixels) of the crystals drawn on a card: the bright
     top facets (red + green >= 84; the links between them are dimmer), in
@@ -316,7 +361,11 @@ def _digit_runs(ink):
             right = x
             while right + 1 < cols and used[right + 1]:
                 right += 1
-            if right - x + 1 >= 3:
+            # Narrow 1s are real suffixes (Lv.41), not noise to discard.
+            # Only the sparse Lv prefix before the number is ignored. Any
+            # unrecognised suffix remains a token and makes level() fail.
+            ink_count = sum(sum(row[x:right + 1]) for row in ink)
+            if right - x + 1 >= 3 or runs or ink_count >= 6:
                 runs.append((x, right))
             x = right + 1
         else:
@@ -335,6 +384,7 @@ def _scaled(glyph, cols=5):
     return tuple(tuple(glyph[y][min(width - 1, int(x * width / cols))] for x in range(cols)) for y in range(len(glyph)))
 
 
+@calibrated
 def level(shot, index):
     """The card's level, None when a digit does not read."""
     ink = _digits_ink(shot, index)
@@ -344,14 +394,16 @@ def level(shot, index):
     value = 0
     for run in runs:
         glyph = _scaled(_digit_grid(ink, run))
-        scored = sorted((sum(a != b for ra, rb in zip(glyph, shape) for a, b in zip(ra, rb)), digit)
-                        for digit, shape in DIGITS.items())
+        scored = sorted((min(sum(a != b for ra, rb in zip(glyph, shape) for a, b in zip(ra, rb))
+                             for shape in variants), digit)
+                        for digit, variants in DIGIT_VARIANTS.items())
         if scored[0][0] > 6 or (len(scored) > 1 and scored[1][0] - scored[0][0] < 2):
             return None
         value = value * 10 + scored[0][1]
     return value
 
 
+@calibrated
 def bright(shot, index):
     """The card is drawn bright (its piece unlocked; a locked card is
     dimmed): at least 20 pixels of its drawing at 200 or more."""
@@ -360,6 +412,7 @@ def bright(shot, index):
                if max(_pixel(shot, x, y)) >= 200) >= 20
 
 
+@calibrated
 def locked(shot, index):
     """The card's padlock: True (closed: its white pixels within 4 of that
     place's closed padlock), False (open: no white in it, a grey open
@@ -379,6 +432,7 @@ def locked(shot, index):
     return None
 
 
+@calibrated
 def placed(shot, index):
     """The card's "E" (its piece is in the grid): a white letter at the
     bottom left."""
@@ -388,6 +442,7 @@ def placed(shot, index):
     return white >= 15
 
 
+@calibrated
 def kind(shot, index):
     """The round icon at the top left: "gold" (a coin: a dim engraved
     texture inside the ring) or "atk" (a sword: a flat stroke, no texture),
@@ -408,14 +463,19 @@ def kind(shot, index):
 KINDS = {"I": "gold", "L": "atk"}
 
 
+def _unread_cards():
+    return [{"index": index, "shape": None, "rotation": None, "cells": None, "level": None, "locked": None,
+             "placed": None, "kind": None, "bright": None} for index in range(8)]
+
+
+@calibrated
 def cards(shot, shapes):
     """The 8 cards: [{index, shape, rotation, cells, level, locked, placed,
     kind, bright}]. A bright (unlocked) card's drawing, level and icon are
     not calibrated: None (the sequence knows it from before it was
     unlocked). Under the piece popup nothing of the cards is read."""
     if popup(shot):
-        return [{"index": index, "shape": None, "rotation": None, "cells": None, "level": None, "locked": None,
-                 "placed": None, "kind": None, "bright": None} for index in range(8)]
+        return _unread_cards()
     out = []
     for index in range(8):
         lit = bright(shot, index)
@@ -439,11 +499,13 @@ POPUP_CLOSE_TAP = (0.5, 0.15)
 POPUP_OPTION_AREA = (0.2, 0.71, 0.65, 0.755)
 
 
+@calibrated
 def popup(shot):
     """The piece popup is open: its brown at three places."""
     return all(all(abs(a - b) <= 8 for a, b in zip(_px(shot, fx, fy), POPUP_BROWN)) for fx, fy in POPUP_POINTS)
 
 
+@calibrated
 def popup_padlock(shot):
     """The popup's padlock: "closed" (white), "open" (grey, no white: eg3),
     None (no popup, or neither)."""
@@ -462,6 +524,7 @@ def popup_padlock(shot):
     return None
 
 
+@calibrated
 def popup_gold(shot):
     """The popup's Additional Options read "Monster Gold …" (the pixel
     font reads its "Gold")."""
@@ -488,6 +551,7 @@ def _red(p):
     return p[0] > 200 and p[1] < 60 and p[2] < 60
 
 
+@calibrated
 def bar(shot):
     """{cancel, rotate, confirm: (x, y) fractions, valid: True, False or
     None} of the preview's bar, None without one (no red cancel)."""
@@ -510,6 +574,7 @@ def bar(shot):
             "confirm": ((cx + 2 * step) / width, cy / height), "valid": valid}
 
 
+@calibrated
 def cubes(shot):
     """{(row, col): "cube" or "red"} of the cells holding a cube (placed or
     previewed), rows and cols -1 to 5 (the preview may stick out of the

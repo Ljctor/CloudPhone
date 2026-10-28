@@ -47,6 +47,101 @@ def blank(screen, box):
     return width, height, bytes(pixels)
 
 
+def resized(shot, width, height):
+    """Nearest-pixel native captures, without a runtime imaging dependency."""
+    sw, sh, pixels = shot
+    xs = [int(x * sw / width) * 3 for x in range(width)]
+    rows = []
+    for y in range(height):
+        start = int(y * sh / height) * sw * 3
+        rows.append(b"".join(pixels[start + x:start + x + 3] for x in xs))
+    return width, height, b"".join(rows)
+
+
+class NativeSizes(unittest.TestCase):
+    def test_real_narrow_one_is_not_silently_dropped(self):
+        original = fixtures.screen("eg_level_41")
+        ink = es._digits_ink(original, 1)
+        narrow = es._digit_grid(ink, es._digit_runs(ink)[-1])
+        self.assertEqual(es._scaled(narrow), es.DIGIT_VARIANTS[1][-1], 'the extra 1 shape comes from real pixels')
+        for width, height in [(480, 1040), (720, 1560)]:
+            self.assertEqual(es.level(resized(original, width, height), 1), 41)
+        self.assertIsNone(es.level(resized(original, 360, 780), 1))
+        # An unreadable suffix is never discarded to turn Lv.4? into Lv.4.
+        w, h, rgb = original
+        rgb = bytearray(rgb)
+        for y in range(688, 696):
+            for x in range(207, 209):
+                i = (y * w + x) * 3
+                rgb[i:i + 3] = bytes([255, 255, 255])
+        self.assertIsNone(es.level((w, h, bytes(rgb)), 1))
+
+    def test_cards_grid_and_unread_padlock_at_480_720_360(self):
+        original = shot()
+        original_cards = es.cards(original, TABLE["shapes"])
+        original_grid = es.grid(original, 5)
+        for width, height in [(480, 1040), (720, 1560), (360, 780)]:
+            with self.subTest(size=(width, height)):
+                native = resized(original, width, height)
+                cards = es.cards(native, TABLE["shapes"])
+                self.assertEqual(es.grid(native, 5), original_grid)
+                if width >= 480:
+                    self.assertEqual(cards, original_cards)
+                    self.assertTrue(es.title(native))
+                    self.assertEqual(es.weapon(native, NAMES, sw.CARD_FONT), "Vision")
+                    for index in range(8):
+                        self.assertEqual(es.level(native, index), LEVELS[index])
+                        self.assertIs(es.locked(native, index), True)
+                    left, top = es.card_box(2)
+                    x, y = round(left * 480), round(top * 1040)
+                    missing = resized(blank(original, (x + 50, y, x + 69, y + 16)), width, height)
+                    self.assertIsNone(es.locked(missing, 2), 'normalisation never invents a padlock')
+                else:
+                    # 360 loses thin strokes (39 can become 9). No precision
+                    # reader may authorise a gesture from those lost pixels.
+                    self.assertTrue(all(card[key] is None for card in cards
+                                        for key in ("shape", "level", "locked", "placed", "kind")))
+                    self.assertIsNone(es.level(native, 0))
+                    self.assertIsNone(es.locked(native, 0))
+                # Public tap points stay fractions of the actual screen.
+                for index in range(8):
+                    left, top = es.card_box(index)
+                    x, y = es.lock_point(index)
+                    self.assertTrue(left * width < x * width < (left + es.CARD_W) * width)
+                    self.assertTrue(top * height < y * height < (top + es.CARD_H) * height)
+
+    def test_open_closed_and_popup_gates_at_native_sizes(self):
+        for name in ("eg_cards_unlocked", "eg_cards_relocked", "eg_popup_locked", "eg_popup_unlocked"):
+            original = fixtures.screen(name)
+            expected_cards = es.cards(original, TABLE["shapes"])
+            expected_popup = es.popup_padlock(original)
+            for width, height in [(480, 1040), (720, 1560), (360, 780)]:
+                with self.subTest(fixture=name, width=width):
+                    native = resized(original, width, height)
+                    if width >= 480:
+                        self.assertEqual(es.cards(native, TABLE["shapes"]), expected_cards)
+                    else:
+                        self.assertTrue(all(card["locked"] is None for card in es.cards(native, TABLE["shapes"])))
+                    self.assertEqual(es.popup_padlock(native), expected_popup)
+
+    def test_preview_geometry_validity_and_cubes_at_native_sizes(self):
+        for name in ("eg_preview_base", "eg_preview_turned", "eg_preview_valid", "eg_grid_removed"):
+            original = fixtures.screen(name)
+            expected_bar, expected_cubes = es.bar(original), es.cubes(original)
+            for width, height in [(480, 1040), (720, 1560), (360, 780)]:
+                with self.subTest(fixture=name, width=width):
+                    native = resized(original, width, height)
+                    found = es.bar(native)
+                    self.assertEqual(es.cubes(native), expected_cubes)
+                    if expected_bar is None:
+                        self.assertIsNone(found)
+                    else:
+                        self.assertEqual(found["valid"], expected_bar["valid"])
+                        for button in ("cancel", "rotate", "confirm"):
+                            for axis in (0, 1):
+                                self.assertAlmostEqual(found[button][axis], expected_bar[button][axis], delta=2 / 480)
+
+
 class Screen(unittest.TestCase):
     def test_title_and_weapon(self):
         self.assertTrue(es.title(shot()))

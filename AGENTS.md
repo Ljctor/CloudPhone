@@ -24,6 +24,12 @@ reference docs are linked from there. Execution model and safety rules:
   change updates the part's `scripts/verify.sh` in the same commit.
 - One source of truth: runbooks call the part's scripts instead of copying
   their commands; the release tarball has the repository's layout.
+- After a production deployment, the deploying agent sends an ntfy message
+  explicitly identified as **Agent Codex — déploiement**, not as Cloud Phone
+  or the plugin. Include the version, shipped changes and actual verification
+  outcome; distinguish deployed code from unverified gameplay. Report failure
+  truthfully. Use the existing notification configuration without exposing its
+  private topic or changing subscription settings.
 - Before committing:
 
 ```sh

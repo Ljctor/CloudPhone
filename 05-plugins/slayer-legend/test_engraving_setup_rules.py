@@ -68,18 +68,34 @@ def filled(grid, cells):
 
 
 class Choose(unittest.TestCase):
-    def test_gold_cards_first_then_levels(self):
+    def test_highest_levels_then_gold_option_at_a_tie(self):
         self.assertEqual(rules.choose(ATK_CARDS, GOLD, gold=True), {"I": [6, 0], "L": [1, 4]})
         # Atk: the L only, by level, placed first among equals.
         self.assertEqual(rules.choose(ATK_CARDS, ATK), {"L": [1, 4, 5, 7]})
 
-    def test_a_gold_option_beats_a_level(self):
+    def test_a_higher_level_always_beats_a_gold_option(self):
         cards = changed(ATK_CARDS, c2={"level": 45, "kind": "atk"})
-        self.assertEqual(rules.choose(cards, GOLD, gold=True)["I"], [6, 0])
+        self.assertEqual(rules.choose(cards, GOLD, gold=True)["I"], [2, 6])
         self.assertEqual(rules.choose(cards, GOLD, gold=False)["I"], [2, 6])
+
+    def test_gold_only_breaks_a_tie_between_equal_levels(self):
+        cards = changed(ATK_CARDS, c2={"level": 40, "kind": "atk"}, c6={"kind": "gold"})
+        self.assertEqual(rules.choose(cards, GOLD, gold=True)["I"], [6, 2])
+
+    def test_unread_level_never_authorises_an_inventory_choice(self):
+        cards = changed(OLD_CARDS, c2={"level": None})
+        self.assertEqual(step(OLD_GRID, cards)[0], "fail")
+        self.assertTrue(rules.check(OLD_GRID, cards, GOLD, VISION["cells"], "Vision", "Gold-balanced", gold=True))
 
 
 class NextStep(unittest.TestCase):
+    def test_placed_lower_gold_card_is_replaced_by_higher_non_gold(self):
+        # The exact layout is already right, but its Lv39 Gold bar must
+        # give way to the free Lv45 bar even though that bar is not Gold.
+        cards = changed(OLD_CARDS, c2={"level": 45, "kind": "atk"})
+        self.assertEqual(step(OLD_GRID, cards), ("remove", [(0, 1), (0, 2), (0, 3), (0, 4)]))
+        self.assertTrue(rules.check(OLD_GRID, cards, GOLD, VISION["cells"], "Vision", "Gold-balanced", gold=True))
+
     def test_atk_to_gold_balanced_takes_the_wrong_pieces_out_first(self):
         self.assertEqual(step(ATK_GRID, ATK_CARDS), ("remove", [(0, 1), (0, 2), (0, 3), (1, 1)]))
         grid = emptied(ATK_GRID, [(0, 1), (0, 2), (0, 3), (1, 1)])

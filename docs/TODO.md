@@ -1,5 +1,95 @@
 # Known bugs
 
+## Active acceptance checklist
+
+This list tracks requested outcomes, not the number of patches or captures.
+An unchecked item stays open until its whole user-visible path is verified.
+Implementation, automated tests, deployment and in-game verification are
+separate milestones. Historical checked items below do not close a new regression.
+
+### Immediate priorities
+
+- [ ] Restore hourly counters end to end: gold, cubes, green/blue/red souls,
+  L3 weapons and L3 accessories. Read real changes, calculate per hour, show
+  correct values and icons; no stone or white-soul rates. Verify farming,
+  menu transitions, user inputs, spends/resets and stream reconnection.
+- [ ] Finish automatic Soul Weapon selection and engraving for each farming
+  target. Verify the actual weapon and pattern before acting; no successful
+  status until the requested setup is observed in the game.
+- [ ] Always select the highest-level eligible engraving pieces of the same
+  shape; an option bonus must not outrank level. Replace an already placed
+  lower-level piece. Unreadable levels cannot establish the best choice.
+- [ ] Relock every removed engraving piece, verify locks after placement,
+  and confirm all eight locks before closing. Preserve recovery after
+  interruption; resume only with current identity and readings verified.
+- [ ] Obtain real Equip/Unequip calibration evidence and complete the first
+  supervised engraving run required by part 05, including recorded results.
+
+### Mode, interface and notifications
+
+- [ ] Separate the persistent mode/consigne, execution status and current
+  intention (destination and purpose). A scan excursion is normal activity,
+  followed by a planned return; it is not itself a failure of the mode.
+- [ ] Show the complete calculated path for a new redirection. Notifications
+  name the destination, reason and outcome; replace opaque "repair" wording
+  and suppress repeats of the same attempt without hiding real blocking errors.
+- [ ] Simplify plugin options: editable target and one actionable status,
+  nested game menus, separate resources/analysis/display, technical details
+  folded. Avoid duplicate confirmations and implementation jargon.
+- [ ] Keep the game overlay to mode plus timer/default: white/green when
+  stable, blue during user control and the renewed five-second pause, orange
+  while returning to the target, red only for an actual blocking condition.
+- [ ] Confirm an expected overlay failure is visible in the web app and ntfy.
+- [ ] Distinguish local draft, server-accepted target and observed result;
+  handle rejected writes, deadlines and concurrent viewers without false success.
+
+### Exhaustive screen and resource coverage
+
+- [ ] Audit every reachable authorised screen with separate evidence for
+  archived capture, recognition, navigation, scroll positions and live readers.
+  Keep explicit reasons for unavailable data; a capture alone is not coverage.
+- [ ] Complete Companion including Beasts, Advancement and all three passive
+  panels for each companion; Skill; Adventure and region selection; Character
+  EXP; Equipment, weapons, accessories, classes and Black Orb/Obtain feathers.
+- [ ] Complete the requested resource catalogue with real icons and readings;
+  compact one-line rows, aligned icons, timestamps on the right in grey,
+  freshness white to light blue. Keep unknown values as `never read`.
+- [ ] Schedule guarded data refresh excursions during farming and observe user
+  navigation; persist examples and return to the mode's intended idle screen.
+- [ ] Verify annotation capture for allowed/forbidden taps, scannable rectangles,
+  vertical/horizontal sliders, before/after previews and visible feedback.
+  Track which annotations have actually improved recognition/navigation.
+- [ ] Verify fast screen-change detection, full/minimised/dimmed Battle,
+  implicit return via combat, separate settings-arrow positions, and zones
+  tracking scroll. Debug controls remain movable and minimisable.
+- [ ] Preserve the prohibition on the top-right menu, Mailbox, Settings,
+  Rankings, AUTO and other forbidden navigation/actions.
+
+### Counter presentation and release evidence
+
+- [ ] Verify cube balance: actual game font, black outline, gold-aligned number,
+  icon between the two gold-icon positions, separators, fixed position and
+  one-second estimate derived from a valid rate; freshness colour preserved.
+- [ ] Verify compact right-edge hourly rows with icons close to values, only
+  on full/minimised combat, dimmed with the game. Abbreviate resources and
+  hourly values; keep cube balance unabridged.
+- [ ] Correlate stream connection failures/freezes with existing telemetry,
+  including cases resumed by a hardware-key input, and verify the actual fix.
+- [ ] Pass relevant unit/browser checks, build, push, deploy and check the
+  served version. Keep live gameplay verification distinct from mocked tests.
+- [ ] Send ntfy for each production release with explicit sender
+  **Agent Codex — déploiement**, version, shipped changes and verification
+  outcome; report a failed release as failed. This is an agent announcement,
+  not a CloudPhone or plugin alert.
+
+Work stages for the current implementation batch:
+
+- [ ] Integrated regression suite passes after the final changes.
+- [ ] Release containing those exact changes is built and deployed.
+- [ ] Browser behavior on that release is verified.
+- [ ] Soul Weapon/engraving, counters and mapping acceptance above are verified
+  against actual gameplay, with remaining gaps still listed explicitly.
+
 ## CloudPhone Slayer Legend work in progress (2026-10-26)
 
 - [x] Deploy five modes, with Free play first and Agent mode last.

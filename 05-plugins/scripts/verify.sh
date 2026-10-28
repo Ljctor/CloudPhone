@@ -84,6 +84,10 @@ state = json.load(sys.stdin)
 assert {"text", "value", "rate", "rate_text", "span", "window", "read", "box", "shade", "souls"} <= state.keys()
 assert 0.2 <= state["shade"] <= 1.0
 assert {"green", "blue", "red", "white"} <= state["souls"].keys()
+assert {"cubes", "weapon_l3", "accessory_l3"} <= state["resources"].keys()
+for rate in state["resources"].values():
+    assert {"rate", "read", "status"} <= rate.keys()
+    assert rate["status"] in ("measured", "measuring", "unread", "stale")
 assert state["window"] in (60, 300)
 assert (state["rate"] is None) == (state["rate_text"] is None)
 if state["rate"] is not None:
@@ -111,8 +115,8 @@ assert "combatCountersVisible" in script
 assert "cubeRow.style.opacity" in script and "row.style.opacity" in script
 assert "left:36.1%;top:18.25%;transform:translateY(-50%)" in script
 assert "hourly * age / 3600" in script
-assert "['stone_green'" not in script and "['stone_yellow'" not in script
-assert "['stone_red'" not in script and "['stone_blue'" not in script
+assert all("[" + chr(39) + name + chr(39) not in script
+           for name in ("stone_green", "stone_yellow", "stone_red", "stone_blue"))
 assert "weapon_l3" in script and "accessory_l3" in script
 assert "EQUIPMENT_L3_ICONS.weapon" in script and "EQUIPMENT_L3_ICONS.accessory" in script
 assert "soul_white" not in script
@@ -216,4 +220,32 @@ curl -fsS "${base%/}/plugins/slayer-legend/page_screen_scan.js" | python3 -c '
 import sys
 assert "/screen?quick=1" in sys.stdin.read()
 print("Shared live screen scan: OK")
+'
+curl -fsS "${base%/}/api/v1/plugins/slayer-legend/farming" | python3 -c '
+import json, sys
+soul = json.load(sys.stdin)["soul_weapon"]
+assert "recovery" in soul
+assert soul["recovery"] is None or isinstance(soul["recovery"], dict)
+print("Persistent engraving recovery state: OK")
+'
+curl -fsS "${base%/}/api/v1/plugins/slayer-legend/loadout" | python3 -c '
+import json, sys
+for target in json.load(sys.stdin)["loadouts"].values():
+    assert isinstance(target["revision"], str) and len(target["revision"]) == 24
+    support = target["automation"]
+    assert support["scope"] == "static" and support["runtime_verified"] is False
+    assert isinstance(support["supported"], bool)
+print("Loadout applicability is distinct from runtime verification: OK")
+'
+curl -fsS "${base%/}/plugins/slayer-legend/page_power.js" | python3 -c '
+import sys
+script = sys.stdin.read()
+assert "confirmed" in script and "Arrêt non confirmé" in script
+print("Server-confirmed plugin power control: OK")
+'
+curl -fsS "${base%/}/plugins/slayer-legend/page_engraving.js" | python3 -c '
+import sys
+script = sys.stdin.read()
+assert "Appliquer" in script and "Modifications non appliquées" in script
+print("Explicit complete loadout application: OK")
 '

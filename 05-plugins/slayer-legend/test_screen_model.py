@@ -14,6 +14,9 @@ import re
 import statistics
 import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
+from unittest.mock import patch
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TODO = os.path.join(HERE, "..", "..", "docs", "TODO.md")
@@ -35,6 +38,47 @@ GAP = 0.3
 # look() on one capture, {screen, overlays}, in ms (the pixel font's
 # naming of an unknown screen apart).
 BUDGET_MS = 20
+
+
+class ConcurrentScreens(unittest.TestCase):
+    def test_direct_anchor_calls_do_not_reuse_the_last_capture(self):
+        anchor = screens._anchor({"share": "MANA_BAR", "test": "white", "above": .6, "step": 1})
+        self.assertGreater(anchor((4, 4, bytes([255, 255, 255]) * 16)), 0)
+        self.assertLess(anchor((4, 4, bytes(48))), 0)
+
+    def test_two_workers_never_share_capture_measurements(self):
+        white = (4, 4, bytes([255, 255, 255]) * 16)
+        black = (4, 4, bytes(48))
+        first_read, second_read, first_done = Event(), Event(), Event()
+        white_anchor = screens._anchor({"share": "MANA_BAR", "test": "white", "above": .6, "step": 1})
+        black_anchor = screens._anchor({"share": "MANA_BAR", "test": "white", "below": .4, "step": 1})
+
+        def interleaved(shot):
+            if shot is white:
+                first_read.set()
+                self.assertTrue(second_read.wait(3))
+            else:
+                second_read.set()
+                self.assertTrue(first_done.wait(3))
+            return black_anchor(shot)
+
+        def classify(shot):
+            if shot is black:
+                self.assertTrue(first_read.wait(3))
+            try:
+                return screens.look(shot)["screen"]
+            finally:
+                if shot is white:
+                    first_done.set()
+
+        registry = {name: {"status": "measured"} for name in ("white", "black")}
+        with patch.multiple(screens, BASES=["white", "black"], OVERLAYS=[], REGISTRY=registry,
+                            ANCHORS={"white": [white_anchor], "black": [interleaved]}, _seen=[]):
+            with ThreadPoolExecutor(max_workers=2) as workers:
+                first = workers.submit(classify, white)
+                second = workers.submit(classify, black)
+                self.assertEqual(first.result(timeout=5), "white")
+                self.assertEqual(second.result(timeout=5), "black")
 
 
 def screen(*names, background=(20, 16, 14)):

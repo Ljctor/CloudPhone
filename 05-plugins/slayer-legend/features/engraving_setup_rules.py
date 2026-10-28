@@ -7,10 +7,9 @@ The screen (engraving_screen.py) gives the grid (each cell "piece",
 orientation whatever the piece's orientation in the grid; the slots keep
 their card when a piece is taken out or placed.
 
-- choose(): for each shape the variant needs, its highest-level cards; a
-  Gold variant (Gold-maxed, Gold-balanced) takes the cards whose option is
-  gold first (the coin icon), then by level; among equals a placed card,
-  then the first.
+- choose(): for each shape the variant needs, its highest-level cards.
+  At equal level a Gold variant prefers the gold option (coin icon),
+  then a placed card, then the first. An option never outranks a level.
 - next_step(): the next move, from a fresh reading:
   ("lock", index): a card reads open (always first: a piece is never left
   unlocked); ("remove", cells): a placed piece that is not where the
@@ -82,7 +81,7 @@ def choose(cards, variant, gold=False):
     out = {}
     for shape, count in needed(variant).items():
         same = [card for card in cards if card["shape"] == shape and card["level"] is not None]
-        same.sort(key=lambda card: (gold and card.get("kind") != GOLD, -card["level"], not card["placed"],
+        same.sort(key=lambda card: (-card["level"], gold and card.get("kind") != GOLD, not card["placed"],
                                     card["index"]))
         out[shape] = [card["index"] for card in same[:count]]
     return out

@@ -332,7 +332,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
             raise Stop("vérification du preset {preset} sur le badge", preset=name)
         noted({"preset": name})
 
-    async def run(mode, steps, force=False):
+    async def run(mode, steps, force=False, preflight=None):
         """Runs steps ((name, step) pairs) under the lease: {result, text,
         timings: {name: seconds}}; ports.Busy when the lease cannot be had
         (the caller tries again shortly). A plan step is written to the log
@@ -342,7 +342,11 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         timings = {}
         async with ports.leased(HOLDER, f"farm {mode}", LEASE_SECONDS, **({"pause": False} if force else {})):
             try:
+                if preflight is not None:
+                    preflight()
                 for name, step in steps:
+                    if preflight is not None:
+                        preflight()
                     began = ports.clock.monotonic()
                     try:
                         await step()
@@ -351,6 +355,8 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
                         ports.log("normal", f"Stage change, plan only: {ports.english(e.t)}")
                     finally:
                         timings[name] = round(ports.clock.monotonic() - began, 1)
+            except Plan as e:
+                answer = {"result": "plan", "text_t": e.t}
             except Stop as e:
                 answer = {"result": "failed", "text_t": e.t}
             except ports.Busy:
@@ -381,6 +387,31 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
 
     def parks(mode):
         return bool(souls) and mode in FARMED and souls["switch"]() == "real"
+
+    def preflight_soul(mode, loadout=None):
+        """Reject an impossible or unauthorized requested loadout before
+        changing its stage/preset. Static support is never runtime readiness."""
+        part = loadout if loadout is not None else (soul["loadout"](mode) if souls else None)
+        chosen = (part or {}).get("soul_weapon")
+        if not chosen:
+            return
+        if souls is None:
+            raise Stop("capacité de configuration Soul Weapon indisponible")
+        if souls["switch"]() != "real":
+            raise Plan("Soul Weapon désactivée : configuration demandée non appliquée")
+        capability = soul.get("applicability")
+        if capability is None:
+            raise Stop("capacité de configuration Soul Weapon indisponible")
+        applicability = capability(chosen)
+        if not applicability["supported"]:
+            raise Stop(applicability["reason_t"] or t("capacité de configuration Soul Weapon indisponible"))
+        if applicability.get("engraving_required", True):
+            if not soul.get("engraving"):
+                raise Stop("capacité de configuration Soul Weapon indisponible")
+            if souls["state"]()["engraving"] != "real":
+                reason = t("gravure pas mise en place : premier passage supervisé en attente")
+                ports.log("error", f"Soul weapon: {ports.english(reason)}")
+                raise Stop("Soul Weapon : {why}", why=reason)
 
     async def equip_soul_weapon(mode, loadout=None):
         """The mode's loadout's soul weapon equipped (loadout: that one
@@ -428,7 +459,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         ports.Busy when the lease cannot be had (the caller retries). A
         weapon read equipped since the last relaunch or user input is not
         read again (≈0 s); another one is."""
-        return await run(mode, soul_steps(mode, loadout), force)
+        return await run(mode, soul_steps(mode, loadout), force, lambda: preflight_soul(mode, loadout))
 
     async def farm(stage, preset, mode, highest=None, force=False):
         """Farming stage with preset (None: kept as it is), then the
@@ -443,7 +474,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         if preset:
             steps.append(("preset", lambda: set_preset(preset)))
         steps += soul_steps(mode)
-        return await run(mode, steps, force)
+        return await run(mode, steps, force, lambda: preflight_soul(mode))
 
     async def after_relaunch(mode):
         """The soul weapon read again once the game is back: the lease
@@ -452,7 +483,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         since = ports.clock.monotonic()
         while True:
             try:
-                answer = await run(mode, soul_steps(mode))
+                answer = await run(mode, soul_steps(mode), preflight=lambda: preflight_soul(mode))
                 break
             except ports.Busy:
                 if ports.clock.monotonic() - since >= RELAUNCH_WAIT:

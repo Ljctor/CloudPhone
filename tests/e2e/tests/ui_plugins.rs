@@ -254,8 +254,9 @@ async fn wait_option(page: &Page, dialog: &str, label: &str, value: &str) -> Vec
 }
 
 #[test]
-fn slayer_legends_mpw18_loadout_is_chosen_in_its_dialog_and_saved_on_change() {
+fn slayer_legends_mpw18_loadout_is_edited_then_explicitly_applied() {
     let cp = CloudPhone::start_with(json!({"plugins": [SLAYER_LEGEND]}));
+    assert_eq!(cp.post_json("api/v1/plugins/slayer-legend/loadout", &json!({"mode": "mpw18", "stage": 940})).status(), 200);
     let phone = cp.clone();
     browser_test(&cp, Options::without_video(), |page| async move {
         page.open_options().await;
@@ -279,7 +280,9 @@ fn slayer_legends_mpw18_loadout_is_chosen_in_its_dialog_and_saved_on_change() {
         let grid = grid_shape(&page, settings, 16).await;
         assert_eq!((grid["slots"].as_u64(), grid["filled"].as_u64(), grid["empty"].as_u64()),
                    (Some(25), Some(16), Some(0)), "{grid}");
-        // Saved on change, with no button and no row saying so.
+        assert!(page.dialog_text(settings).await.contains("Cible"));
+        page.client.find(Locator::XPath("//div[@role='dialog']//button[normalize-space()='Appliquer']")).await.unwrap()
+            .click().await.unwrap();
         let p = phone.clone();
         blocking(move || wait_for("the loadout saved", Duration::from_secs(10), || {
             let saved = p.try_get_json("api/v1/plugins/slayer-legend/loadout")?;
@@ -304,8 +307,9 @@ fn slayer_legends_mpw18_loadout_is_chosen_in_its_dialog_and_saved_on_change() {
         assert_eq!(grid["sizes"].as_array().map(|s| s.len()), Some(1), "fixed-size cells: {grid}");
         assert_eq!(grid["text"], "", "no emoji: {grid}");
         assert_eq!(page.dialog_value(settings, "Attention").await, None);
-        // Choosing Vision's variant saves it too; the test then waits for
-        // it before checking what was kept.
+        // Editing keeps the accepted target until Apply sends the revision.
+        page.client.find(Locator::XPath("//div[@role='dialog']//button[normalize-space()='Appliquer']")).await.unwrap()
+            .click().await.unwrap();
         let p = phone.clone();
         blocking(move || wait_for("the loadout saved", Duration::from_secs(10), || {
             let saved = p.try_get_json("api/v1/plugins/slayer-legend/loadout")?;
@@ -344,16 +348,21 @@ fn slayer_legends_saved_loadout_survives_a_change_from_a_fresh_browser() {
         }
         assert_eq!(page.stored_settings().await["plugins"]["slayer-legend"]["mpw18Preset"], serde_json::Value::Null,
             "nothing chosen in this browser");
-        // A change here saves that field alone, at once: the rest is kept.
+        // A draft change sends nothing until explicitly applied.
         page.js("window.__posts = []; const f = window.fetch; window.fetch = (url, init) => { \
                  if (String(url).includes('/loadout') && init && init.method === 'POST') window.__posts.push(init.body); \
                  return f(url, init); }; return true", vec![]).await;
         page.control(settings, "Préréglage de combat").await.select_by_value("IV").await.unwrap();
+        page.sleep(Duration::from_millis(700)).await;
+        assert_eq!(page.js("return window.__posts.length", vec![]).await, json!(0), "editing does not apply");
+        page.client.find(Locator::XPath("//div[@role='dialog']//button[normalize-space()='Appliquer']")).await.unwrap()
+            .click().await.unwrap();
         page.wait_js("the POST sent", Duration::from_secs(10), "return window.__posts.length === 1", vec![]).await;
         let sent = page.js("return JSON.parse(window.__posts[0])", vec![]).await;
-        assert_eq!(sent, json!({"mode": "mpw18", "preset": "IV"}), "only what was chosen here");
+        assert_eq!(sent, json!({"mode": "mpw18", "stage": 940, "preset": "IV",
+            "soul_weapon": {"id": 32, "variant": "Gold-maxed"}}), "one complete target");
         page.sleep(Duration::from_millis(800)).await;
-        assert_eq!(page.js("return window.__posts.length", vec![]).await, json!(1), "once, debounced");
+        assert_eq!(page.js("return window.__posts.length", vec![]).await, json!(1), "one explicit apply");
         let p = phone.clone();
         let after = blocking(move || p.get_json("api/v1/plugins/slayer-legend/loadout"));
         let mut expected = before.clone();
@@ -611,5 +620,24 @@ fn slayer_legends_switch_on_hold_shows_in_the_state_row_with_free_play_and_resum
             assert!(start.elapsed() < Duration::from_secs(15), "the radio follows free play");
             tokio::time::sleep(Duration::from_millis(300)).await;
         }
+    });
+}
+
+#[test]
+fn slayer_legends_rejected_stop_remains_server_confirmed_on() {
+    let cp = CloudPhone::start_with(json!({"plugins": [SLAYER_LEGEND]}));
+    browser_test(&cp, Options::without_video(), |page| async move {
+        page.open_options().await;
+        page.wait_js("confirmed power", Duration::from_secs(15),
+            "return Array.from(document.querySelectorAll('label')).some(l=>l.textContent.trim()==='Plugin' && l.querySelector('select')?.value==='on')", vec![]).await;
+        page.js("const f=window.fetch; window.fetch=(url,init)=> { \
+            if(String(url).endsWith('/slayer-legend/enabled') && init?.method==='POST') \
+            return Promise.resolve(new Response(JSON.stringify({error:'rejected'}),{status:503,headers:{'Content-Type':'application/json'}})); \
+            return f(url,init); }; return true", vec![]).await;
+        page.control(O, "Plugin").await.select_by_value("off").await.unwrap();
+        page.wait_js("stop rejection shown", Duration::from_secs(10),
+            "const d=document.querySelector('[role=dialog]'); return !!d && d.innerText.includes('Arrêt non confirmé')", vec![]).await;
+        let state = page.control_state(&page.control(O, "Plugin").await).await;
+        assert_eq!(state["value"], "on", "a rejected stop cannot display disabled: {state}");
     });
 }

@@ -295,5 +295,16 @@
   "Black Mana": "Black Mana",
   "Âmes blanches": "White souls",
   "Ressources": "Resources",
-  "Combat": "Battle"
+  "Combat": "Battle",
+  "Soul Weapon désactivée : configuration demandée non appliquée": "Soul Weapon disabled: requested loadout not applied",
+  "capacité de configuration Soul Weapon indisponible": "Soul Weapon setup capability unavailable",
+  "Soul Weapon désactivée : opération arrêtée": "Soul Weapon disabled: operation stopped",
+  "Configuration modifiée ailleurs : recharge la cible avant d’appliquer": "Configuration changed elsewhere: reload the target before applying",
+  "gravure : aperçu non fermé": "engraving: preview not closed",
+  "gravure : détail de pièce non fermé": "engraving: piece details not closed",
+  "gravure : lectures instables ou grille illisible": "engraving: unstable readings or unreadable grid",
+  "gravure : récupération requise, les huit cadenas ne sont pas confirmés fermés": "engraving: recovery required; all eight padlocks are not confirmed closed",
+  "gravure désactivée : opération arrêtée": "engraving disabled: operation stopped",
+  "gravure interrompue : arme non identifiée, récupération suspendue": "engraving interrupted: weapon unidentified; recovery suspended",
+  "gravure interrompue : récupération non vérifiée": "engraving interrupted: recovery unverified"
 }

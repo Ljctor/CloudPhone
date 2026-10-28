@@ -1,7 +1,7 @@
 // Hourly gains at the right edge, below the top bar. Gold and souls are
-// measured by the gateway per second, then converted here. Other resource
-// gains need two verified snapshots. Gold changes from blue to white while
-// its measurement window fills.
+// measured by the gateway per second, then converted here. Legacy gateways
+// fall back to two verified resource snapshots. Gold changes from blue to
+// white while its measurement window fills.
 import { drawText } from './gold_text.js';
 import { GOLD_COUNTER_FONT } from './page_gold_counter_font.js';
 import { freshnessColour } from './page_freshness.js';
@@ -35,13 +35,29 @@ function resourceNumber(value) {
 // Snapshots are sparse: a rate exists only after two distinct scans of the
 // same counter. Spending resets the window instead of producing a fake loss.
 export function measureResourceRate(previous, row) {
-  if (!row?.verified) return previous ?? null;
+  if (!row?.verified) return previous ? { ...previous, hourly: null, invalidated: true } : null;
   const seen = Number(row?.seen);
   const value = resourceNumber(row?.value);
   if (!Number.isFinite(seen) || !seen || value === null) return previous ?? null;
-  if (!previous || seen <= previous.seen) return previous ?? { seen, value, hourly: null };
+  if (!previous || previous.invalidated || seen - previous.seen > 300) return { seen, value, hourly: null };
+  if (seen <= previous.seen) return previous;
   return { seen, value, hourly: value >= previous.value
     ? (value - previous.value) * 3600 / (seen - previous.seen) : null };
+}
+
+// /gold owns the measurement windows, including across page reloads. Older
+// gateways may omit resource rates; only then use the two-snapshot fallback.
+// A present null/stale rate is unknown, never an invented zero or old estimate.
+export function hourlyRate(answer, field, fallback = null, now = Date.now() / 1000) {
+  let source;
+  if (field === 'gold') source = answer;
+  else if (field.startsWith('soul_')) source = answer?.souls?.[field.slice(5)];
+  else if (Object.hasOwn(answer?.resources ?? {}, field)) source = answer.resources[field];
+  else return Number.isFinite(fallback?.hourly) && fallback.hourly >= 0
+    && !fallback.invalidated && now - fallback.seen >= 0 && now - fallback.seen <= 300 ? fallback.hourly : null;
+  if (!source || source.status === 'stale' || !Number.isFinite(source.rate) || source.rate < 0) return null;
+  if (source.read != null && (now - source.read < 0 || now - source.read > (source.window ?? 300) + 10)) return null;
+  return source.rate * 3600;
 }
 
 // The colours measured, each its game icon and rate: [{ icon, text }];
@@ -66,8 +82,9 @@ export function combatCountersVisible(scan, now = Date.now() / 1000) {
   const age = now - Number(scan?.at);
   if (scan?.screen !== 'battle' || !Number.isFinite(age) || age < 0 || age > 2) return false;
   if (typeof scan.plain !== 'boolean' || !Array.isArray(scan.overlays)) return false;
-  const allowed = new Set(['panel', 'equipment_weapon', 'equipment_accessories', 'better_weapon_toast']);
-  return scan.overlays.every((name) => allowed.has(name));
+  const allowed = new Set(['panel', 'equipment_weapon', 'equipment_accessories', 'soul_weapon', 'better_weapon_toast']);
+  return scan.overlays.every((name) => allowed.has(name))
+    && (!scan.overlays.includes('soul_weapon') || scan.plain === false);
 }
 
 export default function goldFeature(api, { overlay, enabled = () => true, screenScan = null }) {
@@ -77,6 +94,7 @@ export default function goldFeature(api, { overlay, enabled = () => true, screen
   let disposed = false;
   const currentScan = () => screenScan ? screenScan() : scan;
   api.get('/gold-font').catch(() => null).then((font) => {
+    if (disposed) return;
     gold.font = font;
     showGold();
   });
@@ -110,7 +128,7 @@ export default function goldFeature(api, { overlay, enabled = () => true, screen
     }
     const age = Math.max(0, Date.now() / 1000 - cube.seen);
     const base = resourceNumber(cube.value);
-    const hourly = gold.rates.cubes?.hourly;
+    const hourly = hourlyRate(gold.answer, 'cubes', gold.rates.cubes);
     const estimated = base !== null && Number.isFinite(hourly) && hourly >= 0
       ? Math.floor(base + hourly * age / 3600) : base;
     const value = estimated !== null ? estimated.toLocaleString('en-US') :
@@ -154,21 +172,15 @@ export default function goldFeature(api, { overlay, enabled = () => true, screen
   let drawn = '';
   let ratesDrawn = '';
   const showRates = (cell) => {
-    if (!cell || !gold.answer || !enabled() || !combatCountersVisible(currentScan())) {
+    if (!cell || !enabled() || !combatCountersVisible(currentScan())) {
       rateRows.forEach(({ row }) => row.remove());
       ratesDrawn = '';
       return;
     }
-    const souls = gold.answer?.souls ?? {};
     const entries = RATE_FIELDS.map(([field]) => {
-      if (field === 'gold') return api.setting('goldOverlay') === 'off' ? '' : gold.line;
-      if (api.setting('stonesOverlay') === 'off') return '';
-      if (field.startsWith('soul_')) {
-        const rate = souls[field.slice(5)]?.rate;
-        return typeof rate === 'number' ? `${shortNumber(rate * 3600)}/h` : '.../h';
-      }
-      const hourly = gold.rates[field]?.hourly;
-      return typeof hourly === 'number' ? `${shortNumber(hourly)}/h` : '.../h';
+      if (api.setting(field === 'gold' ? 'goldOverlay' : 'stonesOverlay') === 'off') return '';
+      const hourly = hourlyRate(gold.answer, field, gold.rates[field]);
+      return hourly !== null ? `${shortNumber(hourly)}/h` : '.../h';
     });
     const colour = rateColour(gold.answer, (Date.now() - gold.at) / 1000);
     rateRows.forEach(({ row }) => { row.style.opacity = String(gold.answer?.shade ?? 1); });
@@ -177,6 +189,7 @@ export default function goldFeature(api, { overlay, enabled = () => true, screen
       rateRows.forEach(({ row, icon, value }, index) => {
         if (!entries[index]) { row.remove(); return; }
         if (!row.isConnected) api.layer.append(row);
+        value.title = entries[index];
         drawText(value, gold.font, [{ text: entries[index], colour: index ? '#fff' : colour }], cell);
         const size = gold.font.height * cell;
         if (icon.tagName === 'IMG') {
@@ -196,7 +209,6 @@ export default function goldFeature(api, { overlay, enabled = () => true, screen
     if (!shown) {
       label.remove();
       drawn = '';
-      showRates(null);
       return;
     }
     if (!label.isConnected) api.layer.appendChild(label);
@@ -204,7 +216,6 @@ export default function goldFeature(api, { overlay, enabled = () => true, screen
     // As high as the level's text above it (8 game pixels, the screen
     // being 1040 of them high), not the gold counter's 13.
     const cell = api.layer.offsetHeight / 1040 * 8 / gold.font.height;
-    showRates(cell);
     const key = `${JSON.stringify(lines)}@${cell}`;
     if (key !== drawn) {
       drawText(label, gold.font, lines, cell);
@@ -240,6 +251,7 @@ export default function goldFeature(api, { overlay, enabled = () => true, screen
     gold.line = !fresh ? '.../h' : (typeof answer.rate === 'number'
       ? `${shortNumber(answer.rate * 3600)}/h` : '.../h');
     showLabel(Boolean((fresh || soulsFresh) && gold.font && enabled()));
+    showRates(gold.font ? api.layer.offsetHeight / 1040 * 8 / gold.font.height : null);
     showCube();
   };
   const askScreen = async () => {
@@ -256,6 +268,7 @@ export default function goldFeature(api, { overlay, enabled = () => true, screen
     const [answer, state] = await Promise.all([
       api.get('/gold').catch(() => null), api.get('/game').catch(() => null),
     ]);
+    if (disposed) return;
     gold.answer = answer;
     for (const row of state?.resources ?? []) {
       if (RATE_FIELDS.some(([field]) => field === row.field))

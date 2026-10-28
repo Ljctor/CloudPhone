@@ -26,8 +26,9 @@ screen, when the game shows it and the user is not playing. It
 starts at once on its trigger (POST /mode, or the timer's end: the watch
 wakes on it), within rules.SWITCH_BUDGET seconds; a switch that stops is
 tried again on its own with a backoff (rules.retry_after) while within
-that budget, and only then alerts once; a mode left failed is farming
-again once the watchdog sees it farm (api confirm); once set up, one
+that budget, and only then alerts once; a failed setup stays failed until
+the complete requested configuration is verified (health alone is not
+setup readiness). Once set up, one
 notification says how long it took since the mode was chosen ("Farming
 mpw18 ready in 34 s"), the slowest step named when over the budget. A
 change of the running farming mode's loadout (engraving's on_change:
@@ -84,6 +85,9 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         "mode", "default", "until", "highest", "configured")})
 
     game = getattr(ports, "game", None)
+    no_change = object()
+    replacements = {"pending": no_change, "task": None}
+    stopping = set()
 
     def highest():
         """The highest stage seen: the game's state (features/game.py)."""
@@ -287,12 +291,67 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
             return t("Farming {name} au stage {number}, preset {preset}", name=name, number=number, preset=preset)
         return t("Farming {name} au stage {number}", name=name, number=number)
 
-    def confirm(name):
-        """The watchdog saw mode name farm as its loadout says (a look, or
-        its repair done): a switch left failed is over."""
-        if status["mode"] == name and status["state"] == "failed":
-            ports.log("normal", f"Mode {name}: farming, as the watchdog sees it")
+    def confirm(name, *, verified_setup=False):
+        """Health alone cannot clear a failed loadout setup. Only a caller
+        that verified the complete requested setup may resolve that failure."""
+        if verified_setup and status["mode"] == name and status["state"] == "failed":
+            ports.log("normal", f"Mode {name}: complete setup verified")
             report("farming", farming_text(name, loadouts["stage"](name), loadouts["loadout"](name).get("preset")))
+
+    def replace_change(start):
+        """One coordinator drains cancellation before starting its successor.
+        Further requests replace only the queued command, never the draining
+        task. Even a successor cancelled before its first turn cannot let a
+        third request bypass its predecessor's unfinished cleanup."""
+        task = replacements["task"]
+        previous = status["change"]
+        if (task is None or task.done()) and (previous is None or previous.done()):
+            if previous is not None and not previous.cancelled():
+                previous.exception()
+            status["change"] = ports.spawn(start()) if start is not None else None
+            return
+        replacements["pending"] = start
+
+        def stop(previous):
+            if not previous.done() and previous not in stopping:
+                stopping.add(previous)
+                previous.add_done_callback(stopping.discard)
+                previous.cancel()
+
+        async def replace():
+            while replacements["pending"] is not no_change:
+                wanted = replacements["pending"]
+                replacements["pending"] = no_change
+                previous = status["change"]
+                if previous is not None:
+                    stop(previous)
+                    if not previous.done():
+                        terminal = asyncio.get_running_loop().create_future()
+
+                        def finished(task):
+                            if not terminal.done():
+                                terminal.set_result(None)
+
+                        previous.add_done_callback(finished)
+                        try:
+                            # Predecessor cancellation completes this future
+                            # normally; coordinator cancellation still propagates.
+                            # No Python3.11 Task.cancelling() dependency.
+                            await asyncio.shield(terminal)
+                        finally:
+                            previous.remove_done_callback(finished)
+                    if not previous.cancelled() and previous.exception() is not None:
+                        ports.log("error", f"Previous mode transaction failed while stopping: {previous.exception()!r}")
+                    status["change"] = None
+                if replacements["pending"] is not no_change:
+                    continue  # only the most recent request is still wanted
+                if wanted is not None:
+                    status["change"] = ports.spawn(wanted())
+
+        if task is None or task.done():
+            if previous is not None:
+                stop(previous)
+            replacements["task"] = ports.spawn(replace())
 
     async def enter(name, before=None):
         """What changing to mode name does (rules.entered): a stage change
@@ -300,21 +359,21 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         before: the mode it leaves (the switch's log line), its trigger
         now."""
         status.update(switch=(before or "?", name), switch_at=ports.clock.monotonic())
-        change = status["change"]
-        if change is not None and not change.done():
-            change.cancel()
-        status["change"] = None
         move = rules.entered(name, stages()["stage18"], stages()["stage4"])
-        if move[0] == "stage":
-            status["change"] = ports.spawn(set_stage(move[1], move[2]))
-        elif move[0] == "choose":
-            report("idle", t("Farming {name} : choisis le stage", name=f"mpw{move[1]}"))
-        elif move[0] in ("free", "agent"):
-            report("free", free_text() if name == "free" else t("Agent mode : agent autorisé à jouer"))
-        else:
-            report("mine", t("Mine"))
-        if move[0] in ("free", "agent", "mine") and "unpark" in farming:
-            status["change"] = ports.spawn(leave_park(name))
+
+        async def start():
+            if move[0] == "stage":
+                await set_stage(move[1], move[2])
+            elif move[0] == "choose":
+                report("idle", t("Farming {name} : choisis le stage", name=f"mpw{move[1]}"))
+            elif move[0] in ("free", "agent"):
+                report("free", free_text() if name == "free" else t("Agent mode : agent autorisé à jouer"))
+            else:
+                report("mine", t("Mine"))
+            if move[0] in ("free", "agent", "mine") and "unpark" in farming:
+                await leave_park(name)
+
+        replace_change(start)
 
     async def leave_park(name):
         """Free play or the mine starts: the farming modes' parking (the
@@ -340,17 +399,15 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
             return
         ports.log("normal", f"Mode {name}: loadout changed ({', '.join(sorted(fields))}), applied now")
         status.update(switch=(name, name), switch_at=ports.clock.monotonic())
-        change = status["change"]
-        if change is not None and not change.done():
-            change.cancel()
-        status["change"] = None
         if not after.get("stage"):
-            report("idle", t("Farming {name} : choisis le stage", name=name))
+            async def idle():
+                report("idle", t("Farming {name} : choisis le stage", name=name))
+            replace_change(idle)
             return
         step = None
         if fields == {"soul_weapon"} and "ensure_soul_weapon" in farming:
             step = lambda **forced: farming["ensure_soul_weapon"](name, after, **forced)
-        status["change"] = ports.spawn(set_stage(after["stage"], int(name[3:]), applied=True, step=step))
+        replace_change(lambda: set_stage(after["stage"], int(name[3:]), applied=True, step=step))
 
     def free_text():
         return (t("Jeu libre : rien n’est touché jusqu’à la fin du minuteur") if status["until"]

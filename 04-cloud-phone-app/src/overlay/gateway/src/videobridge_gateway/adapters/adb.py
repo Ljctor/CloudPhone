@@ -29,7 +29,7 @@ def reached(code, error_text):
     return False if any(marker in text for marker in OFFLINE_MARKERS) else None
 
 
-async def run(*args, timeout=10):
+async def _run_command(*args, timeout=10):
     """(exit code, stdout, stderr) of "adb -s SERIAL ARGS...". The code is
     None when adb could not start (stderr then says why, and adb does not
     reach Android), -1 when it did not finish within timeout seconds (it
@@ -45,9 +45,45 @@ async def run(*args, timeout=10):
     try:
         out, err = await asyncio.wait_for(process.communicate(), timeout)
     except asyncio.TimeoutError:
-        process.kill()
+        if process.returncode is None:
+            process.kill()
+        await process.communicate()
         await process.wait()
         return -1, "", f"adb did not answer within {timeout} s"
+    except asyncio.CancelledError:
+        # Normally only run() is cancelled and this command is drained to
+        # its own deadline. Gateway shutdown may also cancel child tasks:
+        # even then reap the client before allowing its ownership to end.
+        if process.returncode is None:
+            process.kill()
+        await process.communicate()
+        await process.wait()
+        raise
     errors = err.decode("utf-8", "replace")
     logs.adb_reached(reached(process.returncode, errors), errors)
     return process.returncode, out.decode("utf-8", "replace"), errors
+
+
+async def run(*args, timeout=10):
+    """Run one command to a terminal state before delivering cancellation.
+    A cancelled owner may already have sent an Android gesture: killing its
+    local adb client early cannot prove that gesture stopped. Keep waiting
+    under the command's original timeout, then propagate cancellation. This
+    also lets the plugin retain its lease until the in-flight command ends.
+    """
+    command = asyncio.create_task(_run_command(*args, timeout=timeout))
+    try:
+        return await asyncio.shield(command)
+    except asyncio.CancelledError:
+        # A second cancellation (another stop request) must not interrupt
+        # the drain and let a successor issue input while this client lives.
+        while not command.done():
+            try:
+                await asyncio.shield(command)
+            except asyncio.CancelledError:
+                continue
+            except Exception:
+                break
+        if not command.cancelled():
+            command.exception()  # cancellation wins, but consume any error
+        raise
