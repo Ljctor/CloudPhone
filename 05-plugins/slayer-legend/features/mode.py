@@ -39,15 +39,15 @@ stage, preset, soul weapon) runs the same path at once (loadout_changed),
 the soul weapon alone by its step alone (the stage change feature's
 ensure_soul_weapon), notified "Loadout mpw18 applied in 21 s".
 Each switch is one log line with its steps' seconds. While the user
-played in the last 10 s with the game in front (the lease refused:
+played in the last 5 s with the game in front (the lease refused:
 rules.USER_PLAYING; an input elsewhere, the game not running, is not
 playing: the switch goes on), the
 switch is on hold: one alert says so with the delay before its next try
-("Switch to farming mpw18 on hold: you are playing. Next try in 10
+("Switch to farming mpw18 on hold: you are playing. Next try in 5
 s."), once per switch however long the wait; GET /mode's hold gives it
 ({id, mode, left}) for the page's two buttons, POST /mode/hold their
 answer: « free » chooses free play, « resume » runs the switch now; with
-no answer it goes on by itself once the 10 s are over. The ready
+no answer it goes on by itself once the 5 s are over. The ready
 notification says the hold apart ("ready in 45 s (including 10 s waiting:
 you were playing)"). While
 farming mpw4 it looks for the
@@ -65,16 +65,16 @@ stage4 here are read from them and written to them.
 
 import asyncio
 import secrets
-import copy
 import math
 
 
 
-def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming):
+def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming, setup_factory):
     """mines: the mine feature's api (start, stop, state, set_until, ended);
     scroll: gold_scroll.py; loadouts: the engraving feature's api (loadout,
     stage, set_stage, adopt_stage), which holds the mpw18 and mpw4 stages
-    and presets; farming: the stage change feature's api (farm)."""
+    and presets; farming: the stage change feature's api (farm).
+    setup_factory: injected mode_setup factory; owns receipts and evidence."""
     t = ports.t
     status = {"mode": rules.DEFAULT, "default": rules.DEFAULT, "until": None, "highest": None,
               "configured": False, "state": "idle", "message": None, "task": None,
@@ -85,7 +85,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
               # ended last ({id, action}), wake: wakes the switch's wait.
               "hold": None, "last_hold": None, "wake": None,
               # watched(): the watchdog's last look ({mode, level}), once wired.
-              "watched": None, "intention": None, "resource_refresh": None, "setup_result": None, "launch_epoch": 0}
+              "watched": None, "intention": None, "resource_refresh": None}
     ports.store.register("mode", lambda: {key: status[key] for key in (
         "mode", "default", "until", "highest", "configured")})
 
@@ -93,6 +93,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
     no_change = object()
     replacements = {"pending": no_change, "task": None}
     stopping = set()
+    setup = setup_factory(ports, loadouts, farming)
 
     def highest():
         """The highest stage seen: the game's state (features/game.py)."""
@@ -109,56 +110,14 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         status["state"], status["message"] = state, message
         ports.store.save()
 
-    def input_mark():
-        latest = ports.last_input() if callable(getattr(ports, "last_input", None)) else None
-        return (latest.get("wall"), latest.get("monotonic")) if isinstance(latest, dict) else None
-
-    def setup_blocker():
-        name = status["mode"]
-        if name not in ("mpw18", "mpw4") or mines["state"]().get("enabled"):
-            return None
-        chosen = loadouts["loadout"](name).get("soul_weapon")
-        if not chosen:
-            return None
-        switch = farming.get("soul_weapon_switch")
-        if switch and switch() == "off":
-            return t("Soul Weapon désactivée : configuration demandée non appliquée")
-        capability = loadouts.get("applicability")
-        support = capability(chosen) if capability else None
-        if support and not support["supported"]:
-            return support.get("reason_t")
-        if (not support or support.get("engraving_required", True)) and engraving_off(name):
-            # An off switch does not tell us whether it is the initial gate
-            # or a later explicit stop. State the fact and supervision policy,
-            # never invent a never-completed first-run history.
-            return t("Gravure automatique désactivée · premier passage soumis à supervision")
-        return None
-
-    def current_setup_result():
-        result = status["setup_result"]
-        revision = loadouts.get("revision")
-        if not result or not revision or result["mode"] != status["mode"] or mines["state"]().get("enabled"):
-            return None
-        age = ports.clock.wall() - result["at"]
-        if (not 0 <= age <= 120 or result["revision"] != revision(result["mode"])
-                or result["input_mark"] != input_mark() or result["launch_epoch"] != status["launch_epoch"]):
-            return None
-        return {key: value for key, value in result.items() if key not in ("input_mark", "launch_epoch")}
-
-    def invalidate_setup_result(*_args):
-        status["launch_epoch"] += 1
-
-    if callable(getattr(ports, "on_relaunch", None)):
-        ports.on_relaunch(invalidate_setup_result)
-
     def state():
         answer = {key: status[key] for key in ("mode", "default", "until", "configured", "state")}
         answer["highest"] = highest()
         answer["message_t"] = status["message"]
-        answer["setup_blocker_t"] = setup_blocker()
-        answer["setup_result"] = current_setup_result()
+        answer["setup_blocker_t"] = setup.blocker(status["mode"], mines["state"]().get("enabled"))
+        answer["setup_result"] = setup.current_result(status["mode"], mines["state"]().get("enabled"))
         answer["setup_request"] = setup_request()
-        if status["state"] == "failed" and status["setup_result"] and answer["setup_result"] is None:
+        if status["state"] == "failed" and setup.has_result and answer["setup_result"] is None:
             answer["message_t"] = t("Configuration demandée non vérifiée")
         answer.update(stages())
         answer["setup"] = status["state"] in ("moving", "waiting")
@@ -176,28 +135,10 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         return answer
 
     def setup_request():
-        """A current target receipt, not evidence that it has been applied."""
-        name = status["mode"]
-        change = status["change"]
-        replacing = replacements["task"]
-        revision = loadouts.get("revision")
-        if (not ports.enabled() or not status["configured"] or name not in ("mpw18", "mpw4")
-                or mines["state"]().get("enabled") or not loadouts["stage"](name)
-                or not revision or setup_blocker()
-                or change is not None and not change.done()
-                or replacing is not None and not replacing.done()):
-            return None
-        return {"mode": name, "if_revision": revision(name)}
-
-    def engraving_off(name):
-        """The farming mode's loadout asks an engraving while the
-        engraving's switch is off (features/soul_weapon.py)."""
-        switch = farming.get("engraving_switch") if isinstance(farming, dict) else None
-        if name not in ("mpw18", "mpw4") or switch is None or switch() != "off":
-            return False
-        weapon = loadouts["loadout"](name).get("soul_weapon") or {}
-        variant = loadouts.get("variant")
-        return bool(weapon.get("variant") and variant and variant(weapon.get("id"), weapon["variant"]))
+        change, replacing = status["change"], replacements["task"]
+        busy = (change is not None and not change.done()) or (replacing is not None and not replacing.done())
+        return setup.request(status["mode"], configured=status["configured"],
+                             mine_enabled=mines["state"]().get("enabled"), busy=busy)
 
     def tone(mine):
         """The overlay's colour (rules.tone)."""
@@ -206,8 +147,9 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         playing = (ports.pause_left() or 0) > 0 if hasattr(ports, "pause_left") else False
         watched = look if look and look.get("mode") == name else None
         base = rules.tone(name, status["state"], status["hold"] is not None, playing,
-                          watched, mine.get("state") if name == "mine" else None, engraving_off(name))
-        if (name in ("mpw18", "mpw4") and setup_blocker() and not playing and not status["hold"]
+                          watched, mine.get("state") if name == "mine" else None, setup.engraving_off(name))
+        if (name in ("mpw18", "mpw4") and setup.blocker(name, mine.get("enabled"))
+                and not playing and not status["hold"]
                 and status["state"] not in ("moving", "waiting") and not (watched or {}).get("repairing")):
             return "error"
         return base
@@ -254,8 +196,8 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
                 status["wake"] = None
 
     async def on_hold(name, applied, owner, alerted):
-        """The user played in the last 10 s: the switch is on hold until
-        the 10 s are over (its hold made, or moved later), one alert the
+        """The user played in the last 5 s: the switch is on hold until
+        the 5 s are over (its hold made, or moved later), one alert the
         first time for this switch (alerted: it was sent). True once
         alerted."""
         left = ports.pause_left() or rules.BUSY_RETRY
@@ -291,12 +233,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         name = f"mpw{mpw}"
         parked = farming.get("soul_weapon_switch", lambda: "off")() == "real"
         owner = object()
-        revision = loadouts.get("revision")
-        mark = input_mark()
-        epoch = status["launch_epoch"]
-        target_revision = revision(name) if revision else None
-        target = copy.deepcopy(loadouts["loadout"](name))
-        status["setup_result"] = None
+        attempt = setup.begin_attempt(name, number)
         status["intention"] = {"owner": owner, "kind": "apply_loadout",
                                "destination": "soul_weapon" if parked or step else "battle",
                                "destination_t": t("Soul Weapon") if parked or step else t("Combat"),
@@ -304,11 +241,8 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
                                "route": None, "route_known": False}
         try:
             completed = await apply_stage(number, mpw, applied, step)
-            if (revision and status["mode"] == name and target_revision == revision(name)
-                    and target.get("stage") == number and mark == input_mark() and epoch == status["launch_epoch"]):
-                status["setup_result"] = {"mode": name, "revision": target_revision, "target": target,
-                                          "at": ports.clock.wall(), "result": "done" if completed else status["state"],
-                                          "message_t": status["message"], "input_mark": mark, "launch_epoch": epoch}
+            setup.complete_attempt(attempt, mode=status["mode"], completed=completed,
+                                   state=status["state"], message=status["message"])
             return completed
         finally:
             if status["intention"] and status["intention"]["owner"] is owner:
@@ -317,7 +251,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
     async def apply_stage(number, mpw, applied=False, step=None):
         """Brings the game to farming that stage with its loadout's preset.
         True once there; else one alert naming the step. While the
-        shared lease cannot be had (the user played in the last 10 s,
+        shared lease cannot be had (the user played in the last 5 s,
         another holder), it waits for its next look (WATCH_EVERY), at most
         rules.LEASE_WAIT: then one alert, for the user. While the user
         plays it is on hold (on_hold: one alert, POST /mode/hold's choice).
@@ -331,7 +265,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         report("moving", moving)
         since = status["switch_at"] if status["switch_at"] is not None else ports.clock.monotonic()
         waited, held, failures = 0.0, 0.0, 0
-        # force: resumed at the user's request, the user's 10 s are not
+        # force: resumed at the user's request, the user's 5 s are not
         # waited for, retries included, until an input of theirs stops it.
         me, alerted, force = object(), False, False
         try:
@@ -692,13 +626,15 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
                                  expected="{mode, if_revision}")}, status=400)
         expected = setup_request()
         if expected is None:
-            reason = setup_blocker() or t("Configuration indisponible ou application déjà en cours")
+            reason = (setup.blocker(status["mode"], mines["state"]().get("enabled"))
+                      or t("Configuration indisponible ou application déjà en cours"))
             return ports.respond(dict(state(), error_t=reason), status=409)
         if any(body[key] != value for key, value in expected.items()):
             return ports.respond(dict(state(), error_t=t("Configuration modifiée ailleurs : recharge la cible avant d’appliquer")), status=409)
         name = expected["mode"]
         number = loadouts["stage"](name)
-        status.update(switch=(name, name), switch_at=ports.clock.monotonic(), setup_result=None)
+        status.update(switch=(name, name), switch_at=ports.clock.monotonic())
+        setup.clear_result()
         report("moving", t("Application de la configuration {mode}", mode=name))
         replace_change(lambda: set_stage(number, int(name[3:]), applied=True))
         return ports.respond(state(), status=202)

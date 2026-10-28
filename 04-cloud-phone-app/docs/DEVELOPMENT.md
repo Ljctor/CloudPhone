@@ -426,7 +426,11 @@ seconds, or one under way, is given instead of a new one; a plugin's own
 `adb shell input` or reported browser input makes earlier ones stale). With `max_age=0`, a completed
 capture is never reused, but callers join the current capture under way.
 Acquisitions are serial: an old or input-invalidated capture finishes before
-its replacement starts. `screenshot_time(shot)` reports acquisition start in
+its replacement starts. `invalidate_screenshots()` invalidates both cached
+and in-flight generations after an application transition without changing
+the acquisition timestamp of an existing frame. Plugins also invalidate their
+local capture identities on process changes; older contexts fall back to a
+zero-age acquisition. `screenshot_time(shot)` reports acquisition start in
 Unix seconds, conservatively, rather than completion. `analyse(fn, *args)`
 runs resource work in two bounded workers; `detect(fn, *args)` uses one
 separate bounded detector worker. Cancelling a caller keeps its worker slot

@@ -287,6 +287,10 @@ class PluginContext:
         new one (shared by every plugin)."""
         return await self._screenshots.get(self.id, max_age)
 
+    def invalidate_screenshots(self):
+        """Invalidate captures across an application/process transition."""
+        self._screenshots.stale()
+
     def screenshot_time(self, shot):
         """Acquisition time of a recent screenshot, None when unknown."""
         return self._screenshots.captured_at(shot)

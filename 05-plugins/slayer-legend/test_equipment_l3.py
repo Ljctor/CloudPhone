@@ -19,7 +19,7 @@ screens = load("screens")
 weapon = load("soul_weapon")
 equipment = load("equipment_l3")
 rules = load("features/game_rules")
-game = load("features/game")
+game = load("features/game_readers")
 model_fixtures = load("test_screen_model")
 
 

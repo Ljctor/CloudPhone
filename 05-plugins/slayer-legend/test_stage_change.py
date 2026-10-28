@@ -37,6 +37,7 @@ def busy(text):
     return PORTS.Busy(PORTS.HELD, holder=holder) if holder else PORTS.Busy(text)
 feature = load("features/stage_change")
 mode_feature = load("features/mode")
+setup_feature = load("features/mode_setup")
 mode_rules = load("features/mode_rules")
 nav = load("nav")
 select = load("stage_select")
@@ -510,7 +511,7 @@ class Mode(unittest.TestCase):
         async def body():
             ports.spawn = lambda coroutine: asyncio.get_running_loop().create_task(coroutine)
             part = mode_feature.mode(ports, mode_rules, None, values, mines, None, scroll, loadouts,
-                                     {"farm": farm})
+                                     {"farm": farm}, setup_feature.mode_setup)
             handler = next(h for method, path, h in part["routes"] if method == "POST" and path == "/mode")
 
             class Request:

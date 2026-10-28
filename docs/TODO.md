@@ -7,6 +7,19 @@ An unchecked item stays open until its whole user-visible path is verified.
 Implementation, automated tests, deployment and in-game verification are
 separate milestones. Historical checked items below do not close a new regression.
 
+### Architecture refactor acceptance
+
+- [ ] Keep reader registry, fact storage, observation scheduling and capture
+  producer separate, with explicit composition and one module instance per plugin.
+- [ ] Separate target receipts and setup evidence from mode/timer orchestration;
+  preserve rejection after newer input, a changed target or a game relaunch.
+- [ ] Bound explicit scans even when callers repeatedly cancel; an action must
+  still receive readings from its own frame, never an unrelated newer frame.
+- [ ] Recheck the input lease after native UI discovery and invalidate captured
+  pixels across game starts/relaunches before any direct reader can reuse them.
+- [ ] Verify the refactored installed pipeline in Agent mode and the unchanged
+  farming target, with fresh gameplay evidence and no extra gesture permissions.
+
 ### Immediate priorities
 
 - [ ] Validate independent server capture, priority recognition, bounded readers

@@ -13,6 +13,82 @@ def load(name):
 
 feature, rules, engravings = load('features/mode'), load('features/mode_rules'), load('features/engraving')
 timer_rules = load('features/timer_rules')
+setup_feature = load('features/mode_setup')
+
+
+class SetupEvidence(unittest.TestCase):
+    """Evidence identity is independent of orchestration and device operations."""
+
+    def setUp(self):
+        self.now = 1000
+        self.input = None
+        self.revision = 'accepted-1'
+        self.target = {'stage': 970, 'preset': 'III', 'soul_weapon': {'id': 32, 'variant': 'Gold-maxed'}}
+        self.relaunch = []
+        ports = NS(t=rules.t, clock=NS(wall=lambda: self.now), last_input=lambda: self.input,
+                   enabled=lambda: True, on_relaunch=self.relaunch.append)
+        loadouts = {'revision': lambda mode: self.revision, 'loadout': lambda mode: self.target,
+                    'stage': lambda mode: self.target['stage']}
+        self.evidence = setup_feature.mode_setup(ports, loadouts, {})
+
+    def complete(self, attempt, **changes):
+        arguments = dict(mode='mpw18', completed=True, state='farming',
+                         message=rules.t('Farming {name} au stage {number}', name='mpw18', number=970))
+        self.evidence.complete_attempt(attempt, **dict(arguments, **changes))
+
+    def test_new_attempt_supersedes_an_old_outcome_and_public_results_are_detached(self):
+        previous = self.evidence.begin_attempt('mpw18', 970)
+        current = self.evidence.begin_attempt('mpw18', 970)
+        self.complete(previous)
+        self.assertFalse(self.evidence.has_result)
+        self.complete(current)
+        result = self.evidence.current_result('mpw18')
+        self.assertEqual(result['result'], 'done')
+        self.assertNotIn('input_mark', result)
+        self.assertNotIn('launch_epoch', result)
+        result['target']['soul_weapon']['variant'] = 'Atk'
+        result['message_t']['params']['number'] = 1
+        again = self.evidence.current_result('mpw18')
+        self.assertEqual(again['target']['soul_weapon']['variant'], 'Gold-maxed')
+        self.assertEqual(again['message_t']['params']['number'], 970)
+
+    def test_attempt_snapshots_the_nested_target_and_cannot_publish_after_identity_changes(self):
+        attempt = self.evidence.begin_attempt('mpw18', 970)
+        self.target['soul_weapon']['variant'] = 'Atk'
+        self.assertEqual(attempt.target['soul_weapon']['variant'], 'Gold-maxed')
+        self.revision = 'accepted-2'
+        self.complete(attempt)
+        self.assertIsNone(self.evidence.current_result('mpw18'))
+        for changed in ('input', 'launch', 'mode', 'stage'):
+            with self.subTest(changed=changed):
+                self.input = None
+                attempt = self.evidence.begin_attempt('mpw18', 971 if changed == 'stage' else 970)
+                if changed == 'input':
+                    self.input = {'wall': 1000, 'monotonic': 40}
+                if changed == 'launch':
+                    self.relaunch[0]('relaunch')
+                self.complete(attempt, mode='mpw4' if changed == 'mode' else 'mpw18')
+                self.assertFalse(self.evidence.has_result)
+
+    def test_result_is_bounded_in_time_mode_and_mine_context(self):
+        self.complete(self.evidence.begin_attempt('mpw18', 970))
+        self.assertIsNone(self.evidence.current_result('mpw4'))
+        self.assertIsNone(self.evidence.current_result('mpw18', mine_enabled=True))
+        for now, valid in ((999, False), (1000, True), (1120, True), (1120.001, False)):
+            self.now = now
+            self.assertEqual(self.evidence.current_result('mpw18') is not None, valid)
+
+    def test_receipt_is_not_evidence_and_clear_revokes_a_pending_attempt(self):
+        self.assertEqual(self.evidence.request('mpw18', configured=True),
+                         {'mode': 'mpw18', 'if_revision': 'accepted-1'})
+        self.assertFalse(self.evidence.has_result)
+        self.assertIsNone(self.evidence.request('mpw18', configured=True, busy=True))
+        self.assertIsNone(self.evidence.request('mpw18', configured=True, mine_enabled=True))
+        attempt = self.evidence.begin_attempt('mpw18', 970)
+        self.evidence.clear_result()
+        self.complete(attempt)
+        self.assertFalse(self.evidence.has_result)
+
 
 class SetupStatus(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
@@ -47,7 +123,7 @@ class SetupStatus(unittest.IsolatedAsyncioTestCase):
         self.mines = {'state': lambda: {'enabled': self.mine_active, 'state': 'farming' if self.mine_active else 'off'}, 'ended': False,
                       'start': lambda *a: None, 'stop': lambda: None, 'set_until': lambda *a: None}
         self.part = feature.mode(self.ports, rules, timer_rules, NS(time_or_none=lambda v: v, number_or_none=lambda v, n: v),
-            self.mines, None, NS(fresh=lambda: {'gold': None}), self.loadouts, self.farming)
+            self.mines, None, NS(fresh=lambda: {'gold': None}), self.loadouts, self.farming, setup_feature.mode_setup)
 
     async def asyncTearDown(self):
         for task in self.tasks: task.cancel()
@@ -81,7 +157,7 @@ class SetupStatus(unittest.IsolatedAsyncioTestCase):
     async def test_free_play_does_not_inherit_a_farm_engraving_blocker(self):
         self.ports.store.saved['mode'] = {'mode': 'free', 'default': 'free', 'configured': True}
         free = feature.mode(self.ports, rules, timer_rules, NS(time_or_none=lambda v: v, number_or_none=lambda v, n: v),
-            self.mines, None, NS(fresh=lambda: {'gold': None}), self.loadouts, self.farming)
+            self.mines, None, NS(fresh=lambda: {'gold': None}), self.loadouts, self.farming, setup_feature.mode_setup)
         self.assertIsNone(free['api']['state']()['setup_blocker_t'])
         self.assertNotEqual(free['api']['state']()['tone'], 'error')
 
@@ -109,6 +185,19 @@ class SetupStatus(unittest.IsolatedAsyncioTestCase):
         await self.attempt()
         self.assertEqual(self.part['api']['state']()['state'], 'moving')
         self.assertEqual(self.part['api']['state']()['tone'], 'setup')
+        self.assertIsNone(self.part['api']['state']()['setup_result'])
+
+    async def test_health_or_external_confirmation_cannot_synthesize_setup_evidence(self):
+        self.engraving = 'real'
+        await self.attempt()
+        self.assertEqual(self.part['api']['state']()['state'], 'failed')
+        self.part['api']['confirm']('mpw18')
+        self.assertEqual(self.part['api']['state']()['state'], 'failed')
+        # A separate caller may resolve execution status after its own
+        # full verification, but cannot manufacture this attempt's receipt.
+        self.parts['mpw18']['preset'] = 'V'
+        self.part['api']['confirm']('mpw18', verified_setup=True)
+        self.assertEqual(self.part['api']['state']()['state'], 'farming')
         self.assertIsNone(self.part['api']['state']()['setup_result'])
 
     async def call_setup(self, body):
@@ -191,7 +280,7 @@ class SetupStatus(unittest.IsolatedAsyncioTestCase):
         self.ports.store.saved['mode'] = {'mode': 'agent', 'default': 'mpw18', 'configured': True,
                                           'until': self.now + 60}
         part = feature.mode(self.ports, rules, timer_rules, NS(time_or_none=lambda v: v, number_or_none=lambda v, n: v),
-            self.mines, None, NS(fresh=lambda: {'gold': None}), self.loadouts, self.farming)
+            self.mines, None, NS(fresh=lambda: {'gold': None}), self.loadouts, self.farming, setup_feature.mode_setup)
         handler = next(handler for method, route, handler in part['routes'] if route == '/mode/timer')
         async def subtract(): return {'add': -30}
         answer, code = await handler(NS(json=subtract))
@@ -211,7 +300,7 @@ class SetupStatus(unittest.IsolatedAsyncioTestCase):
         self.ports.store.saved['mode'] = {'mode': 'agent', 'default': 'mpw18', 'configured': True,
                                           'until': self.now + 1}
         part = feature.mode(self.ports, rules, timer_rules, NS(time_or_none=lambda v: v, number_or_none=lambda v, n: v),
-            self.mines, None, NS(fresh=lambda: {'gold': None}), self.loadouts, self.farming)
+            self.mines, None, NS(fresh=lambda: {'gold': None}), self.loadouts, self.farming, setup_feature.mode_setup)
         await part['startup'][0](None)
         await self.settle()
         answer = part['api']['state']()
@@ -224,6 +313,6 @@ class SetupStatus(unittest.IsolatedAsyncioTestCase):
         self.mines['set_until'] = deadlines.append
         self.ports.store.saved['mode'] = {'mode': 'mine', 'default': 'mpw18', 'configured': True, 'until': None}
         part = feature.mode(self.ports, rules, timer_rules, NS(time_or_none=lambda v: v, number_or_none=lambda v, n: v),
-            self.mines, None, NS(fresh=lambda: {'gold': None}), self.loadouts, self.farming)
+            self.mines, None, NS(fresh=lambda: {'gold': None}), self.loadouts, self.farming, setup_feature.mode_setup)
         self.assertEqual(part['api']['state']()['until'], self.now + 1800)
         self.assertEqual(deadlines, [self.now + 1800])

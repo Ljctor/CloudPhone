@@ -33,12 +33,26 @@ Responsabilités actuelles :
 |---|---|
 | Gateway `Screenshots` | Une acquisition physique à la fois ; partage des demandes concurrentes ; invalidation sur input ; date de début d'acquisition conservée. |
 | Gateway `Analysis` | Une voie dédiée à la reconnaissance et une voie de deux workers pour les autres analyses ; capacité retenue jusqu'à la fin réelle du travail, même si l'appelant est annulé. |
-| `features/game.py` | Producteur serveur, reconnaissance, lecteurs, publication des faits et télémétrie. Une capture en attente remplace la précédente ; aucune file illimitée d'images. |
+| `features/game.py` | Façade des routes et de l’API consommée par les fonctionnalités ; assemble les réponses sans dupliquer les faits. |
+| `game_readers.ReaderRegistry` | Reconnaissance et registre des lecteurs ; fonctions de lecture sans stockage ni gestes. |
+| `game_facts.FactStore` | Faits datés, persistance, invalidation et journal des changements. |
+| `game_observation.ObservationPipeline` | Identité des captures, analyses bornées, lectures attendues sur une image précise et archivage différé. |
+| `game_observation.CaptureProducer` | Cadence de capture et sondes du processus/premier plan. |
+| `mode_setup.SetupEvidence` | Blocages, reçu de cible et résultat lié à la révision, aux inputs et à la génération du jeu. |
 | `features/game_rules.py` | Schéma, dépendances des lecteurs, fraîcheur, persistance, valeurs historiques et absence de preuve actuelle. |
 | `features/mode.py` | Consigne durable, échéance, configuration acceptée, demande d'application et résultat observé. Un accusé de réception n'est pas une réussite en jeu. |
 | Navigation et fonctionnalités | Choix et vérification des gestes selon les lecteurs et le garde de navigation ; bail partagé exclusif ; inputs humains prioritaires. |
 | Trace et debug | Captures, annotations, identité détectée et identité signalée. Un signalement humain est une preuve à examiner, pas une nouvelle règle de clic automatiquement autorisée. |
 | Modules `page_*` | Rendu, formulaires et commandes explicites. Pas de moteur autonome de farming dans la webapp. |
+
+## Construction et dépendances
+
+`gateway.py` construit les composants explicitement, avec une seule instance de
+chaque module par plugin. Les lecteurs ne connaissent ni le mode ni le stockage.
+Le registre de faits ne connaît pas la navigation. Les preuves de setup ne
+pilotent aucun geste : elles valident seulement la portée d’un résultat fourni
+par l’exécuteur. Les signatures des constructeurs rendent ces dépendances
+visibles ; aucun chargement caché ni bus global n’est nécessaire.
 
 ## Invariants
 
@@ -83,6 +97,9 @@ Le moteur de navigation n'est pas encore un planificateur unique : mode,
 surveillance, rafraîchissement et setup ont encore leurs coordinateurs. Le bail
 sérialise leurs gestes, mais leur unification et la publication du chemin complet
 restent ouvertes. Toutes les annotations ne sont pas consommées par les lecteurs.
+Certaines fonctionnalités récupèrent encore l’API de jeu via `ports.game` :
+l’ordre de construction reste explicite dans `gateway.py`, et cette dépendance
+sera à injecter directement lors de leur prochaine extraction.
 Les champs sans lecteur restent sans lecteur ; cette réorganisation ne remplace
 pas leur calibration. La validation de chaque demande reste suivie dans
 `SESSION-REQUESTS-AUDIT.md` et `TODO.md`.

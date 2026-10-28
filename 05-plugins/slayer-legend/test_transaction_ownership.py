@@ -19,6 +19,7 @@ def load(name):
 
 ports_module = load("features/ports")
 mode_feature = load("features/mode")
+setup_feature = load("features/mode_setup")
 mode_rules = load("features/mode_rules")
 nav = load("nav")
 SHOT = (480, 1040, b"")
@@ -154,7 +155,7 @@ class Ownership(unittest.IsolatedAsyncioTestCase):
                  "ended": False}
         values = NS(time_or_none=lambda v: v, number_or_none=lambda v, top: v)
         part = mode_feature.mode(self.ports, mode_rules, None, values, mines, None,
-                                 NS(fresh=lambda: {"gold": None}), loadouts, {"farm": farm})
+                                 NS(fresh=lambda: {"gold": None}), loadouts, {"farm": farm}, setup_feature.mode_setup)
         refresh = {"active": False, "intention": {"kind": "resource_refresh", "destination": "soul_weapon"}}
         part["api"]["resource_refresh_by"](lambda: refresh)
         self.assertIsNone(part["api"]["state"]()["intention"])

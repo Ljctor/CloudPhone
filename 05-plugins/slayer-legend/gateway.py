@@ -58,8 +58,14 @@ def load_sibling(directory, name):
 
 
 def setup(context):
+    # Each plugin instance owns one module graph. Factories and readers share
+    # the same calibrated modules; no global cache survives an application.
+    modules = {}
+
     def module(name):
-        return load_sibling(context.directory, name)
+        if name not in modules:
+            modules[name] = load_sibling(context.directory, name)
+        return modules[name]
 
     def feature(name):
         return module(f"features/{name}")
@@ -71,15 +77,23 @@ def setup(context):
     timer = feature("timer_rules")
     engraving = feature("engraving").engraving(ports, feature("engraving_rules"))
     screen_rules = feature("screen_rules")
-    # The scan: every capture read once, the game's state for the features.
+    # Composition root: readers know pixels, facts own persistence, observation
+    # owns bounded work, and the facade exposes their stable public API.
     game_feature = feature("game")
+    game_rules = feature("game_rules")
+    game_readers = feature("game_readers")
+    observation = feature("game_observation")
     examples = feature("screen_examples").examples(
         context.directory, context.data_dir, getattr(context, "prefix", "/api/v1/plugins/slayer-legend"))
-    game = game_feature.game(ports, screens, feature("game_rules"), game_feature.reader_table(
+    readers = game_readers.ReaderRegistry(screens, game_rules, game_readers.reader_table(
         screens, stage, module("stage_select"), module("gold"), module("soul_counters"), module("soul_weapon"),
         module("engraving_screen"), module("battle_controls"), screen_rules, table, engraving["api"]["table"],
-        module("cube_balance"), module("top_currencies"), module("equipment_l3")),
-        feature("screenshot_archive").archive(ports.data_path("screenshots")), examples["enrich"])
+        module("cube_balance"), module("top_currencies"), module("equipment_l3")))
+    facts = feature("game_facts").FactStore(ports, game_rules)
+    pipeline = observation.ObservationPipeline(ports, readers, facts,
+        archive=feature("screenshot_archive").archive(ports.data_path("screenshots")))
+    producer = observation.CaptureProducer(ports, pipeline)
+    game = game_feature.game(ports, game_rules, facts, pipeline, producer, examples=examples["enrich"])
     ports.game = game["api"]
     mine = feature("mine").mine(ports, screens, module("mine"), feature("mine_rules"), timer, values)
     launch = feature("launch").launch(ports, screens, feature("launch_rules"))
@@ -92,7 +106,7 @@ def setup(context):
     farming = feature("stage_change").stage_change(ports, screens, module("stage_select"), module("battle_controls"),
                                                    feature("stage_change_rules"), table, soul)
     mode = feature("mode").mode(ports, feature("mode_rules"), timer, values, mine["api"], screens,
-                                module("gold_scroll"), engraving["api"], farming["api"])
+                                module("gold_scroll"), engraving["api"], farming["api"], feature("mode_setup").mode_setup)
     gold = feature("gold").gold(ports, screens, stage, module("gold"), feature("gold_rules"),
                                 module("soul_counters"), table)
     refresh = feature("resource_refresh").resource_refresh(

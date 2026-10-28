@@ -150,7 +150,7 @@ def harness(game, scroll=None, saved=None):
     screens = SimpleNamespace(classify=lambda shot: "battle")
     ports.store = base.Store(saved)
     part = mode_feature.mode(ports, mode_rules, None, values, mines, screens, scroll, loadouts,
-                             {"farm": farm, "ensure_soul_weapon": ensure_soul_weapon})
+                             {"farm": farm, "ensure_soul_weapon": ensure_soul_weapon}, base.setup_feature.mode_setup)
     post = next(h for method, path, h in part["routes"] if method == "POST" and path == "/mode")
     get = next(h for method, path, h in part["routes"] if method == "GET")
     hold = next(h for method, path, h in part["routes"] if method == "POST" and path == "/mode/hold")

@@ -52,6 +52,7 @@ from videobridge_gateway.adapters import adb
 from videobridge_gateway.plugins import Analysis, PluginContext, Screenshots
 
 assert callable(PluginContext.screenshot_time)
+assert callable(PluginContext.invalidate_screenshots)
 assert callable(Screenshots.captured_at)
 assert callable(PluginContext.detect)
 assert callable(Analysis.close)

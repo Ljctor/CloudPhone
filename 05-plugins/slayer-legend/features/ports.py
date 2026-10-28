@@ -549,6 +549,7 @@ def build(context, nav):
         return None
 
     def relaunched(why):
+        invalidate_capture()
         for listener in list(relaunch_listeners):
             try:
                 listener(why)
@@ -557,6 +558,17 @@ def build(context, nav):
 
     capture_times = []
     notified_captures = []
+    capture_generation = {"epoch": 0, "stale": False}
+
+    def invalidate_capture():
+        capture_generation["epoch"] += 1
+        capture_generation["stale"] = True
+        notified_captures.clear()
+        invalidate = getattr(context, "invalidate_screenshots", None)
+        if invalidate:
+            invalidate()
+        # Keep acquisition metadata for old references; invalidating identity
+        # must never restamp an old frame as acquired after the transition.
 
     def capture_time(shot):
         """Conservative acquisition timestamp, unchanged on a cached read."""
@@ -565,8 +577,15 @@ def build(context, nav):
     async def capture(max_age=0):
         """The shared capture, each one handed to the capture listeners
         (the game's scan) as it comes."""
-        started = clock.wall() - max(0, max_age)
-        shot = await context.screenshot(max_age=max_age)
+        while True:
+            epoch = capture_generation["epoch"]
+            age = 0 if capture_generation["stale"] else max_age
+            started = clock.wall() - max(0, age)
+            shot = await context.screenshot(max_age=age)
+            if epoch == capture_generation["epoch"]:
+                break
+        if shot:
+            capture_generation["stale"] = False
         if shot:
             stamp = getattr(context, "screenshot_time", lambda shot: None)(shot)
             if stamp is None:
@@ -589,9 +608,13 @@ def build(context, nav):
         """True when Android started (or brought to the front) the game's
         activity, as the launcher does; never -S: a running game is not
         killed."""
-        code, _ = await adb("shell", "am", "start", "-n", ACTIVITY, "-a", "android.intent.action.MAIN",
-                            "-c", "android.intent.category.LAUNCHER", timeout=20)
-        return code == 0
+        invalidate_capture()
+        try:
+            code, _ = await adb("shell", "am", "start", "-n", ACTIVITY, "-a", "android.intent.action.MAIN",
+                                "-c", "android.intent.category.LAUNCHER", timeout=20)
+            return code == 0
+        finally:
+            invalidate_capture()
 
     async def dialog():
         code, out = await adb("shell", "dumpsys", "window")
@@ -605,6 +628,7 @@ def build(context, nav):
         is; False when it is not there."""
         check_lease()
         code, out = await adb("shell", "uiautomator", "dump", "/dev/tty", timeout=20)
+        check_lease()
         point = close_button(out, name) if code == 0 else None
         if not point:
             return False
@@ -613,6 +637,7 @@ def build(context, nav):
         if refusal:
             log("error", f"Action refused: {refusal}")
             raise Refused(refusal)
+        check_lease()
         await adb("shell", "input", "tap", str(point[0]), str(point[1]))
         return True
 

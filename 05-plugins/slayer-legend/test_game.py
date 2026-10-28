@@ -31,12 +31,23 @@ def load(name):
 screens = load("screens")
 rules = load("features/game_rules")
 game = load("features/game")
+reader_module = load("features/game_readers")
+fact_module = load("features/game_facts")
+observation_module = load("features/game_observation")
+
+
+def create_game(ports, screens, rules, readers, archive=None, examples=None):
+    registry = reader_module.ReaderRegistry(screens, rules, readers)
+    facts = fact_module.FactStore(ports, rules)
+    pipeline = observation_module.ObservationPipeline(ports, registry, facts, archive=archive)
+    producer = observation_module.CaptureProducer(ports, pipeline)
+    return game.game(ports, rules, facts, pipeline, producer, examples=examples)
 ports_module = load("features/ports")
 with open(os.path.join(HERE, "stages.json"), encoding="utf-8") as f:
     TABLE = json.load(f)
 with open(os.path.join(HERE, "engravings.json"), encoding="utf-8") as f:
     WEAPONS = json.load(f)
-READERS = game.reader_table(screens, load("stage"), load("stage_select"), load("gold"), load("soul_counters"),
+READERS = reader_module.reader_table(screens, load("stage"), load("stage_select"), load("gold"), load("soul_counters"),
                             load("soul_weapon"), load("engraving_screen"), load("battle_controls"),
                             load("features/screen_rules"), TABLE, WEAPONS, load("cube_balance"),
                             load("top_currencies"))
@@ -77,7 +88,7 @@ SCREENS = {
 class Mapping(unittest.TestCase):
     def test_real_top_bar_resources_are_scanned(self):
         shot = screen("top_currencies_battle", "battle_menu_labels", "battle_mana_bar")
-        _, readings, ran = game.read_all(screens, rules, READERS, shot)
+        _, readings, ran = reader_module.read_all(screens, rules, READERS, shot)
         self.assertIn("currencies", ran)
         self.assertEqual(readings["emerald"], {"text": "276,362", "value": 276362})
         self.assertEqual(readings["diamond"], {"text": "984", "value": 984})
@@ -87,7 +98,7 @@ class Mapping(unittest.TestCase):
         for case, (names, background, expected) in SCREENS.items():
             shot = screen(*names, background=background or (20, 16, 14))
             took = {}
-            look, readings, ran = game.read_all(screens, rules, READERS, shot, timings=took)
+            look, readings, ran = reader_module.read_all(screens, rules, READERS, shot, timings=took)
             facts, _ = rules.noted({}, readings, 1000.0)
             lasting = {field: fact["value"] for field, fact in rules.persisted(facts).items()}
             self.assertEqual(set(lasting), set(expected), f"{case}: {look['screen']} {look['overlays']} {ran}")
@@ -109,28 +120,28 @@ class Mapping(unittest.TestCase):
 
     def test_the_souls_row_reads_its_four_colours(self):
         names, background, _ = SCREENS["parked on the Soul Weapon screen"]
-        _, readings, _ = game.read_all(screens, rules, READERS, screen(*names))
+        _, readings, _ = reader_module.read_all(screens, rules, READERS, screen(*names))
         self.assertEqual({colour: count["text"] for colour, count in readings["souls"].items()},
                          {"green": "94.6C", "blue": "19.4C", "red": "16.1C", "white": "4.64C"})
 
     def test_the_engraving_grid_reads_its_pieces(self):
         names, background, _ = SCREENS["the engraving"]
-        _, readings, _ = game.read_all(screens, rules, READERS, screen(*names, background=background))
+        _, readings, _ = reader_module.read_all(screens, rules, READERS, screen(*names, background=background))
         cells = readings["engraving"]["cells"]
         self.assertEqual(readings["engraving"]["weapon"], "Vision")
         self.assertEqual((len(cells), {len(row) for row in cells}), (5, {5}))
         self.assertTrue(readings["engraving"]["pieces"])
 
     def test_an_engraving_title_alone_reads_no_grid(self):
-        _, readings, _ = game.read_all(screens, rules, READERS, screen("eg_title", background=(0, 0, 0)))
+        _, readings, _ = reader_module.read_all(screens, rules, READERS, screen("eg_title", background=(0, 0, 0)))
         self.assertIsNone(readings["engraving"])
 
     def test_a_slow_reader_waits_its_turn_unless_forced(self):
         shot = screen(*SCREENS["battle at stage 920"][0])
-        _, _, ran = game.read_all(screens, rules, READERS, shot, {"battle_stage": 100.0, "gold": 100.0}, 105.0)
+        _, _, ran = reader_module.read_all(screens, rules, READERS, shot, {"battle_stage": 100.0, "gold": 100.0}, 105.0)
         self.assertNotIn("battle_stage", ran)
         self.assertIn("progress", ran)
-        _, readings, ran = game.read_all(screens, rules, READERS, shot, {"battle_stage": 100.0}, 105.0,
+        _, readings, ran = reader_module.read_all(screens, rules, READERS, shot, {"battle_stage": 100.0}, 105.0,
                                          force=("battle_stage",))
         self.assertEqual(readings["stage"], 920)
 
@@ -145,7 +156,7 @@ class Mapping(unittest.TestCase):
         selectable = types.SimpleNamespace(
             regions=lambda _: ["Land of Prophecy"],
             view=lambda *_: {"region": 0, "rows": [{"stage": 973, "move": 0.5}]})
-        readers = game.reader_table(screens, load("stage"), selectable, load("gold"),
+        readers = reader_module.reader_table(screens, load("stage"), selectable, load("gold"),
                                     load("soul_counters"), load("soul_weapon"),
                                     load("engraving_screen"), load("battle_controls"),
                                     load("features/screen_rules"), TABLE, WEAPONS)
@@ -302,7 +313,7 @@ def fake_ports(data_dir, shot=None, holder=None):
 
 
 def build(ports):
-    built = game.game(ports, screens, rules, READERS)
+    built = create_game(ports, screens, rules, READERS)
     ports.store.flush()
     return built
 
@@ -326,7 +337,7 @@ class PassiveNavigation(unittest.TestCase):
             return {"weapon_l3" if "equipment_weapon" in overlays else "accessory_l3": shot[2][1]}
 
         readers["equipment_l3"] = equipment
-        api = game.game(ports, model, rules, readers)["api"]
+        api = create_game(ports, model, rules, readers)["api"]
         return ports, api, calls
 
     def test_fast_weapon_accessory_visits_read_each_panel_and_persist(self):
@@ -421,7 +432,7 @@ class Feature(unittest.TestCase):
             shot = screen(*SCREENS["Battle settings"][0])
             ports, _ = fake_ports(data_dir, shot)
             readers = dict(READERS, battle_settings=lambda *args: {"preset": None})
-            built = game.game(ports, screens, rules, readers)
+            built = create_game(ports, screens, rules, readers)
             built["api"]["note"]({"preset": "II"})
             seen = ports.clock.wall()
             ports.clock.now += .2
@@ -539,9 +550,8 @@ class ObservationPipeline(unittest.IsolatedAsyncioTestCase):
         ports.on_capture = ports.capture_hooks.append
         model = types.SimpleNamespace(look=lambda shot: {"screen": "battle", "overlays": ["battle_settings"]},
                                       classify=lambda shot: "battle")
-        readers = {name: (lambda *args: {}) for name in rules.READERS}
-        readers["battle_settings"] = reader
-        built = game.game(ports, model, rules, readers, archive=archive)
+        readers = {"battle_settings": reader}
+        built = create_game(ports, model, rules, readers, archive=archive)
         return ports, built
 
     async def turns(self, count=20):
@@ -580,7 +590,7 @@ class ObservationPipeline(unittest.IsolatedAsyncioTestCase):
                 return {'preset': 'II' if shot[2] == b'old' else None}
             ports, built = self.setup_pipeline(directory, read)
             async def analyse(fn, *args):
-                if fn is read and args[0][2] == b'old':
+                if args[0] == 'battle_settings' and args[1][2] == b'old':
                     await old_gate.wait()
                 return fn(*args)
             ports.analyse = analyse
@@ -647,7 +657,7 @@ class ObservationPipeline(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(captures, [0], 'a second startup must not create another producer')
             capture_gate.set()
             await self.turns()
-            self.assertEqual(sleeps, [game.OBSERVE_STABLE])
+            self.assertEqual(sleeps, [observation_module.OBSERVE_STABLE])
             response = await built['routes'][0][2](None)
             self.assertEqual(response['observation']['producer']['captures'], 1)
             self.assertTrue(response['observation']['producer']['foreground'])
@@ -668,3 +678,74 @@ class ObservationPipeline(unittest.IsolatedAsyncioTestCase):
             await built['startup'][0](None)
             await self.turns()
             self.assertEqual(sleeps, [rules.PROCESS_EVERY])
+
+    async def test_cancelled_explicit_scans_keep_admission_until_exact_frame_drains(self):
+        with tempfile.TemporaryDirectory() as directory:
+            gate = asyncio.Event()
+            ports, built = self.setup_pipeline(directory, lambda shot, *args: {
+                'preset': 'II' if shot[2] == b'old' else 'III'})
+            tracked, analysed = [], []
+            def track(task):
+                tracked.append(task)
+                return task
+            ports.track_task = track
+            async def analyse(fn, *args):
+                analysed.append(args[1][2])
+                if args[1][2] == b'old':
+                    await gate.wait()
+                return fn(*args)
+            ports.analyse = analyse
+            # Keep screen recognition independent of the blocked resource reader.
+            async def detect(fn, *args):
+                return fn(*args)
+            ports.detect = detect
+            first = asyncio.create_task(built['api']['scan']((1, 1, b'old')))
+            await self.turns()
+            first.cancel()
+            await self.turns()
+            self.assertFalse(first.done(), 'cancellation must drain its existing batch')
+            next_frame = asyncio.create_task(built['api']['scan']((1, 1, b'new')))
+            for index in range(20):
+                abandoned = asyncio.create_task(built['api']['scan']((1, 1, bytes([index]))))
+                await self.turns(2)
+                abandoned.cancel()
+                await asyncio.gather(abandoned, return_exceptions=True)
+                first.cancel()  # Repeated cancellation cannot surrender admission.
+            response = await built['routes'][0][2](None)
+            self.assertEqual(len(tracked), 1, 'request cancellation cannot accumulate reader jobs')
+            self.assertEqual(analysed, [b'old'])
+            self.assertEqual(response['observation']['reader_running'], 1)
+            self.assertEqual(response['observation']['reader_waiting'], 0)
+            self.assertFalse(next_frame.done())
+            gate.set()
+            with self.assertRaises(asyncio.CancelledError):
+                await first
+            self.assertEqual(await next_frame, {'preset': 'III'})
+            self.assertEqual(analysed, [b'old', b'new'])
+
+    async def test_shutdown_cancellation_drains_shared_background_reader(self):
+        with tempfile.TemporaryDirectory() as directory:
+            gate = asyncio.Event()
+            ports, built = self.setup_pipeline(directory, lambda *args: {'preset': 'III'})
+            jobs = []
+            ports.track_task = lambda task: jobs.append(task) or task
+            async def analyse(fn, *args):
+                await gate.wait()
+                return fn(*args)
+            async def detect(fn, *args):
+                return fn(*args)
+            ports.analyse, ports.detect = analyse, detect
+            shot = (1, 1, b'shared')
+            ports.capture_hooks[0](shot)
+            await self.turns()
+            explicit = asyncio.create_task(built['api']['scan'](shot))
+            await self.turns()
+            explicit.cancel()
+            await self.turns()
+            explicit.cancel()
+            self.assertEqual(len(jobs), 1, 'explicit and background scans share the same frame job')
+            jobs[0].cancel()  # The ports lifecycle cancels owned readers at shutdown.
+            with self.assertRaises(asyncio.CancelledError):
+                await explicit
+            self.assertFalse(built['api']['scan'].__self__.explicit_lock.locked())
+            self.assertNotIn('preset', built['api']['facts'](), 'cancelled OCR is never fresh evidence')

@@ -9,6 +9,7 @@ python3 "$(dirname "$0")/../slayer-legend/test_soul_weapon.py" Tag ActualNativeC
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_screen.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_mode_setup_status.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_mode_rules.py -q
+python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_transaction_ownership.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_game.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_navigation_debug.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_trace_feature.py -q

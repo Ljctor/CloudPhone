@@ -49,57 +49,43 @@ Check: `curl http://10.20.0.1:<WEB_PORT>/api/v1/plugins` lists
 `journalctl -u cloudphone-gateway`. Upgrading part 04 keeps the plugins; the
 release's `uninstall.sh` removes them with the rest of `/opt/cloudphone`.
 
-## Architecture: the scan
+## Architecture: observation and control
 
-Everything is scanned, then the features do what they must with it: the
-scan is the one producer of what the plugin knows of the game
-(`features/game.py`, `features/game_rules.py`).
+`gateway.py` is the composition root. It loads each module once per plugin
+instance and explicitly supplies dependencies to the following components:
 
-- Every capture any feature takes (`ports.capture`) is looked at once
-  (`screens.look`) and the readers its screen and overlays show run on it
-  (`game_rules.READERS`, `readers_for`: a pure mapping, base screen and
-  overlay to readers), only reading, never a tap. They are the plugin's
-  existing readers, wired (`game.reader_table`): `stage.py`,
-  `stage_select.py`, `gold.py`, `soul_counters.py`, `soul_weapon.py`,
-  `engraving_screen.py`, `battle_controls.py`. A slow reader (the pixel
-  font's text: the battle's stage name, the gold and souls counters, the
-  soul weapon's name, Select Region's rows) runs on a capture scanned as it
-  comes at most every few seconds, so that the looks keep their pace; a
-  feature that needs its value on its own capture forces it
-  (`scan(shot, force)`). `test_game.py` prints each reader's time on the
-  fixtures.
-- What they read is the game's state: per field its value, `seen` (Unix
-  time), `verified` and `source` (`scan`, `setup`: what a setup step
-  checked, the stage after Move, the preset on the badge, the soul weapon
-  and its variant once ready, the mine's floor and area once in the fight;
-  `page`: a stage a page saw). Kept in `state.json` (`game`): the highest
-  stage reached, the stage, the preset, AUTO, the gold and souls readings,
-  Select Region's region, the soul weapon selected and equipped, the
-  engraving variant and grid, the mine's floor and area. A value once seen
-  is never null again; the highest stage only goes up (a stage read, Select
-  Region's highest row with a Move button, `/stages?known=N`).
-- While the user plays (an input in the last minute, the game in front) a
-  capture is scanned every 5 s: what the user changes in the game becomes
-  the state, logged « User changed preset from II to III » when no feature
-  of the plugin holds the lease. A switch then compares the loadout with
-  the game as it reads it and acts only on what differs.
-- The game's process is looked at every few seconds (`ports.running`): gone,
-  or another process (relaunched, Android restarted), and every value turns
-  unverified (kept, greyed in the page) and the features' caches are
-  dropped: the soul weapon read equipped (its `cached` shortcut), the
-  preset and AUTO the watchdog read. The next setup reads again what it
-  depends on.
-- Features read the state: `game.get(field, max_age)`,
-  `game.require(fields, max_age)` give a value seen within `max_age`
-  seconds, else scan a fresh capture, else `{value: null, why: "not
-  readable on this screen"}` (or `"unread"`). Already on it: the gold and
-  souls rates, the highest stage (`/mode`, `/stages`, the stage change),
-  the watchdog's stage, numeral and progress bar, `/screen`'s stage. The
-  features still reading pixels on their own are listed in `docs/TODO.md`
-  (Planned work), the migration plan.
-- Values with no reader yet are in the schema marked pending (emeralds,
-  diamonds, the mine's feathers): their captures are on `docs/TODO.md`'s
-  calibration list.
+| Component | Owns | Does not own |
+|---|---|---|
+| `game_readers.ReaderRegistry` | Screen recognition, reader eligibility and calibrated pixel functions | Storage, gestures or background tasks |
+| `game_facts.FactStore` | Dated facts, persistence, change records and invalidation | Capture scheduling or navigation |
+| `game_observation.ObservationPipeline` | Frame identity, exact-frame scans, bounded reader work, stale-result rejection and deferred archive | Mode selection or gestures |
+| `game_observation.CaptureProducer` | Continuous capture cadence and foreground/process probes | Resource interpretation or target decisions |
+| `game` facade | Stable feature API and `/game` response | A second copy of facts or scheduler state |
+| `mode_setup.SetupEvidence` | Accepted-target receipts, blockers and attempt evidence bound to revision, input and launch generation | Executing the configuration or moving the phone |
+| `mode` | Mode, timer, transition coordination and intent | Reinterpreting a saved target as gameplay success |
+
+The observer runs on the server even without a connected page. Recognition
+publishes the screen before resource readers finish. Background queues retain
+only the latest pending frame; foreground actions wait for their own frame's
+required readings. A slow resource reader does not occupy the detector lane.
+All work belongs to the plugin lifecycle and is drained before shared services
+close.
+
+Facts distinguish historical values from current verified observations. An
+unread new capture cannot be overwritten by an older delayed result. A process
+change invalidates observations and setup evidence. The highest observed stage
+is a lower bound; selectable rows alone do not prove that a stage was reached.
+
+Existing feature consumers keep `get`, `require`, `fresh`, `scan`, `scan_visible`,
+`note`, `value`, `facts`, `view` and `relaunched`. The capture timestamp remains
+its acquisition time, not the end of analysis. Schema and reader rules remain in
+`game_rules.py`; unsupported fields remain unknown.
+
+Observation has independent bounded work; input has one exclusive lease.
+Navigation and equipment operations still check preconditions and postconditions
+around each gesture. Their separate coordinators are not yet a unified route
+planner. See [the architecture contracts](../../docs/OBSERVATION-AND-CONTROL.md)
+and [open acceptance work](../../docs/TODO.md).
 
 ## Files
 
@@ -118,7 +104,7 @@ a decision comes out.
 | `features/ports.py` | the ports the features get from the gateway's context: screenshots (with `max_age`), analysis, tap, hold and swipe (each through the guard of `nav.py`, refused otherwise, and only under the shared lease), the lease (`Lease`: one holder at a time, a reason, a time to live of at most 15 minutes renewed by its holder, released by its holder only, its expiry logged as a warning; a user input stops every holder but the user's own press for 5 s after the last input, only while the game is in front: an input on the launcher or another app, the game not running, is not playing and the relaunch or the switch goes on), whether the game is in front or running, starting it (the launch only), alerts, the clock, `state.json` |
 | `features/lease.py` | `GET`/`POST`/`DELETE /lease`: the shared lease for a holder outside the plugin (`{holder, reason, seconds}`, the page token needed): while it holds it, the launch, the mine and the watchdog do not tap |
 | `features/counters.py` | `GET /emerald-mask`: a counter's mask off a screenshot, for browsers that cannot read the video |
-| `features/game.py`, `game_rules.py` | `GET /game`: the scan of every capture and the game's state (see **Architecture: the scan**); `game_rules.py` holds the schema by screen, the screen → readers mapping and how a reading becomes the state |
+| `features/game.py`, `game_readers.py`, `game_facts.py`, `game_observation.py`, `game_rules.py` | Observation components and stable `/game` facade; responsibilities and contracts above |
 | `features/screen.py`, `screen_rules.py` | `GET /screen`, `GET /stages`: the screen and stage shown, every mpw18 and mpw4 stage and the highest seen (the game's state) |
 | `features/power.py` | `GET`/`POST /enabled`: the plugin's on/off switch (`ports.enabled`) |
 | `features/launch.py`, `launch_rules.py` | `GET`/`POST /launch`: the launch, as the watchdog's relaunch |
