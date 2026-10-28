@@ -14,6 +14,7 @@
 // hold that mode's loadout (page_engraving.js). The État row ends with
 // the watchdog's look at the selected mode (page_watchdog.js).
 import loadout from './page_engraving.js';
+import { withDeadline } from './page_request_deadline.js';
 
 // Where earlier versions kept when the timed mode ends, in this browser:
 // sent once to a gateway that knows no mode yet, then removed (the
@@ -52,6 +53,11 @@ const takeOld = (name) => {
 // watchdog part (page_watchdog.js: line, retry); stage: the stage's row,
 // under État (page_screen.js).
 export default function modeFeature(api, { known, watchdog, stage }) {
+  api.addTranslations?.({
+    'Appliquer la configuration': 'Apply configuration',
+    'Application demandée…': 'Application requested…',
+    'Application non confirmée · vérification en cours': 'Application unconfirmed · checking status',
+  });
   // chosen: when the mode was last chosen here; sending: a POST under way.
   // at: when answer came (Date.now()), for the hold's countdown.
   const farm = { answer: null, timer: null, stages: null, chosen: 0, sending: 0, at: 0,
@@ -124,6 +130,18 @@ export default function modeFeature(api, { known, watchdog, stage }) {
     if (result?.ok) remember(result.body);
     else if (result) api.warn(result.body?.error_t ?? `HTTP ${result.status}`);
     await askMode();
+  };
+  const applySetup = async (request) => {
+    if (farm.applying) return;
+    farm.applying = true; farm.error = null; api.refresh();
+    try {
+      const result = await withDeadline(api.post('/mode/setup', request), { onLate: askMode })
+        .catch(() => null);
+      if (result?.ok) remember(result.body);
+      else farm.error = result?.body?.error_t ?? 'Application non confirmée · vérification en cours';
+      // An accepted request is not a verified setup; read the execution state.
+      await askMode();
+    } finally { farm.applying = false; api.refresh(); }
   };
   // The hold's seconds left, counted down between two answers.
   const holdLeft = () => Math.max(1, Math.round((farm.answer?.hold?.left ?? 0) - (Date.now() - farm.at) / 1000));
@@ -262,9 +280,13 @@ export default function modeFeature(api, { known, watchdog, stage }) {
             return [{ label: 'Jeu libre', run: () => answerHold('free') },
               { label: 'Reprendre', run: () => answerHold('resume') }];
           }
+          const request = farm.answer?.setup_request;
+          if (request) return { label: 'Appliquer la configuration',
+            disabled: () => Boolean(farm.applying), run: () => applySetup(request) };
           return farm.answer ? watchdog?.retry(farm.answer.mode) ?? null : null;
         },
         value: () => {
+          if (farm.applying) return api.tr('Application demandée…');
           if (farm.error) return api.tr(farm.error);
           if (mode() === 'mine' && !Number(api.setting('mineFloor'))) return api.tr('Choisis l’étage et la zone');
           const answer = farm.answer;

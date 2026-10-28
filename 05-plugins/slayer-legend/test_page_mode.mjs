@@ -9,6 +9,7 @@ const settings = { mode: 'mpw18', defaultMode: 'mpw18' };
 const state = { configured: true, mode: 'mpw18', default: 'mpw18', state: 'farming', tone: 'ok', until: null,
   message_t: 'Stage 970 · III', intention: null };
 const posts = [];
+let setupResponse = null;
 let watchdogIntent = null;
 const api = { setting: (key) => settings[key] ?? null, addTranslations() {}, refresh() {},
   tr: (value, args = {}) => {
@@ -23,7 +24,9 @@ const api = { setting: (key) => settings[key] ?? null, addTranslations() {}, ref
     if (path === '/stages') return { mpw18: [{ number: 970 }], mpw4: [] };
     if (path === '/farming') return null;
     throw Error(path);
-  }, post(path, body) { posts.push({ path, body }); return Promise.resolve({ ok: true, body: structuredClone(state) }); },
+  }, post(path, body) { posts.push({ path, body });
+    if (path === '/mode/setup') return setupResponse;
+    return Promise.resolve({ ok: true, body: structuredClone(state) }); },
 };
 const ui = modeFeature(api, { known: () => null, stage: null,
   watchdog: { line: () => '', retry: () => null, intention: () => watchdogIntent } });
@@ -64,5 +67,62 @@ assert.match(statusRow.value(), /Gravure automatique désactivée.*supervision/,
 state.setup_result = null;
 state.hold = { id: 'hold', mode: 'mpw18', left: 5 }; state.tone = 'setup'; await poll();
 assert.match(statusRow.value(), /en attente.*tu joues/);
+// Explicit setup uses the current accepted receipt, not edited loadout
+// drafts, and keeps hold controls ahead of the optional apply action.
+state.setup_request = { mode: 'mpw18', if_revision: 'accepted-revision' };
+await poll();
+assert.deepEqual(statusRow.button().map((button) => button.label), ['Jeu libre', 'Reprendre']);
+state.hold = null; state.setup_blocker_t = null; state.setup_result = null;
+await poll();
+const apply = statusRow.button();
+assert.equal(apply.label, 'Appliquer la configuration');
+assert.equal(apply.disabled(), false);
+let resolveSetup;
+setupResponse = new Promise((resolve) => { resolveSetup = resolve; });
+const beforeSetup = posts.length;
+const applying = apply.run();
+assert.equal(apply.disabled(), true);
+assert.equal(statusRow.value(), 'Application demandée…');
+await apply.run();
+assert.deepEqual(posts.slice(beforeSetup), [{ path: '/mode/setup', body: { mode: 'mpw18', if_revision: 'accepted-revision' } }],
+  'a double click cannot start a second application');
+state.state = 'moving'; state.setup = true; state.setup_request = null;
+state.message_t = 'Application de la configuration mpw18';
+resolveSetup({ ok: true, status: 202, body: structuredClone(state) });
+await applying;
+assert.equal(statusRow.value(), 'Application de la configuration mpw18');
+assert.equal(state.setup_result, null, 'an accepted asynchronous request cannot claim verified success');
+assert.equal(statusRow.button(), null, 'the apply action disappears while the backend transaction is active');
+state.state = 'failed'; state.setup = false;
+state.setup_request = { mode: 'mpw18', if_revision: 'current-revision' };
+state.setup_result = { mode: 'mpw18', result: 'failed', at: Date.now() / 1000,
+  message_t: { template: 'Soul Weapon non équipée', params: {} } };
+await poll();
+assert.equal(statusRow.value(), 'Soul Weapon non équipée', 'actual application failure remains visible');
+setupResponse = Promise.resolve({ ok: false, status: 409,
+  body: { error_t: { template: 'Configuration modifiée ailleurs', params: {} } } });
+await statusRow.button().run();
+assert.equal(statusRow.value(), 'Configuration modifiée ailleurs', 'server rejection is visible even after reconciliation');
+await poll();
+assert.equal(statusRow.value(), 'Configuration modifiée ailleurs', 'polling cannot erase a rejected request');
+setupResponse = Promise.reject(Error('connection lost'));
+await statusRow.button().run();
+assert.equal(statusRow.value(), 'Application non confirmée · vérification en cours',
+  'a failed connection cannot claim that the request was applied');
+assert.equal(statusRow.button().disabled(), false, 'a failed request releases the UI action');
+let finishLate;
+setupResponse = new Promise((resolve) => { finishLate = resolve; });
+const existingTimers = new Set(timers.keys());
+const beforeDeadlinePosts = posts.length;
+const stalled = statusRow.button().run();
+const deadline = [...timers].find(([id]) => !existingTimers.has(id));
+assert.ok(deadline, 'an application request has a finite UI deadline');
+deadline[1]();
+await stalled;
+assert.equal(statusRow.value(), 'Application non confirmée · vérification en cours');
+assert.equal(statusRow.button().disabled(), false, 'deadline releases the action without claiming server cancellation');
+finishLate({ ok: true, status: 202, body: structuredClone(state) });
+await flush();
+assert.equal(posts.length, beforeDeadlinePosts + 1, 'late reconciliation does not automatically retry a mutation');
 ui.dispose();
 console.log('Requested mode, compact execution status and temporary destination/purpose: OK');

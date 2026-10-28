@@ -21,7 +21,7 @@ it never touches the game.
 
 
 
-def gold(ports, screens, stage, counter, rules, souls=None):
+def gold(ports, screens, stage, counter, rules, souls=None, table=None):
     """souls: soul_counters.py (None: no souls rates)."""
     colours = souls.COLOURS if souls else ()
     game = getattr(ports, "game", None)
@@ -157,6 +157,30 @@ def gold(ports, screens, stage, counter, rules, souls=None):
                              "text": window["text"], "value": samples[-1][1] if samples else None, "status": state}
         return answer
 
+    def farming():
+        """The observed stage's catalogued drop, never a selected mode's target.
+        Unknown, stale or pre-input readings do not choose a counter."""
+        empty = {"farming_stage": None, "farming_drop": None, "farming_read": None}
+        if game is None or table is None or "view" not in game or "facts" not in game:
+            return empty
+        fact = game["facts"]().get("stage")
+        view = game["view"]()
+        if not fact or not view or not fact.get("verified") or fact.get("source") != "scan":
+            return empty
+        look = view["look"]
+        base = look.get("classified") if look["screen"] == "unknown" else look["screen"]
+        age = ports.clock.wall() - fact["seen"]
+        last_input = ports.last_input() if hasattr(ports, "last_input") else None
+        if (base not in ("battle", "saver") or not 0 <= age <= 30
+                or last_input and last_input["wall"] > fact["seen"]):
+            return empty
+        number = fact["value"]
+        if not isinstance(number, int) or isinstance(number, bool) or not 1 <= number <= len(table["stages"]):
+            return empty
+        entry = dict(zip(table["fields"], table["stages"][number - 1]))
+        drop = {"W": "weapon", "A": "accessory"}.get(entry.get("drop"))
+        return {"farming_stage": number, "farming_drop": drop, "farming_read": fact["seen"]}
+
     async def handle_gold(request):
         rate, samples, seconds = asked()
         return ports.respond({
@@ -171,6 +195,7 @@ def gold(ports, screens, stage, counter, rules, souls=None):
             "shade": status["shade"],
             "souls": souls_now(),
             "resources": resources_now(),
+            **farming(),
         })
 
     async def handle_font(request):

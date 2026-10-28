@@ -87,6 +87,13 @@ export function recognisedScreen(scan) {
   return overlays.at(-1) ?? scan.screen;
 }
 
+// Detection evidence never authorises a navigation gesture.
+export function landmarksFor(screen, registry) {
+  return (registry?.tree?.[screen]?.landmarks ?? []).map((landmark) => ({
+    ...landmark, kind: 'scannable', detection: true,
+  }));
+}
+
 export const ANNOTATIONS = [
   { kind: 'navigation', label: 'Ajouter un bouton de navigation' },
   { kind: 'forbidden', label: 'Déclarer un bouton de navigation interdit' },
@@ -200,6 +207,10 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
   let rendered = '';
   let armedUntil = 0;
   let closePreview = null;
+  let snapshotPending = false;
+  let snapshotMessage = '';
+  let expectedScreen = '';
+  let correctionOpen = false;
   const active = () => !disposed && enabled() && api.setting('navigationDebug') === 'on';
   const busy = () => ['arming', 'armed', 'saving', 'cancelling'].includes(captureState);
   const clear = () => { closePreview?.(); closePreview = null; layer.replaceChildren(); layer.remove(); rendered = ''; };
@@ -237,7 +248,8 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
     } else {
       box.style.cssText += `;border:2px ${zone.conditional ? 'dashed' : 'solid'} ${colour};background:${colour}33;border-radius:3px`;
     }
-    box.title = zone.conditional ? `${zone.id} · ${api.tr('condition à vérifier')}` : zone.id;
+    box.setAttribute('data-zone-kind', zone.detection ? 'detection' : 'navigation');
+    box.title = zone.detection ? `${api.tr('Repère de détection')} · ${zone.id}` : zone.conditional ? `${zone.id} · ${api.tr('condition à vérifier')}` : zone.id;
     parent.append(box);
     return box;
   }
@@ -249,6 +261,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
     const zones = zonesFor(screen, graph, registry, scan);
     const tracked = tracker.update(screen, zones, registry?.tree?.[screen]?.scroll ?? []);
     zoneLayer.replaceChildren();
+    for (const zone of landmarksFor(screen, registry)) drawZone(zone, zoneLayer);
     for (const zone of zonesFor(screen, graph, registry, scan, tracked)) drawZone(zone, zoneLayer);
   }
 
@@ -256,7 +269,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
     if (!active() || !graph || !registry) { clear(); return; }
     floating.clamp();
     if (floating.dragging) { floating.afterDrag(render); return; }
-    const signature = JSON.stringify([screen, scan?.plain, scan?.overlays, captureState, captureId, captureKind, record]);
+    const signature = JSON.stringify([screen, scan?.plain, scan?.overlays, captureState, captureId, captureKind, record, snapshotPending, snapshotMessage, correctionOpen]);
     renderZones();
     if (signature === rendered && layer.isConnected) return;
     rendered = signature;
@@ -318,11 +331,12 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
       const button = document.createElement('button');
       button.type = 'button';
       button.textContent = api.tr(action.label);
-      button.disabled = busy();
+      button.disabled = busy() || snapshotPending;
       button.style.cssText = 'flex:1 1 130px;padding:5px;border:1px solid #888;border-radius:3px;background:#292929;color:#fff;font:inherit;cursor:pointer';
       button.onclick = async (event) => {
         stop(event);
-        if (busy()) return;
+        if (busy() || snapshotPending) return;
+        snapshotMessage = '';
         captureState = 'arming'; captureKind = action.kind; captureId = null; record = null;
         render();
         try {
@@ -337,19 +351,82 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
       actions.append(button);
     }
     content.append(actions);
+    if (!busy()) {
+      const snapshots = document.createElement('div');
+      snapshots.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;margin-top:6px';
+      const snapshotButton = (label, kind, callback) => {
+        const button = document.createElement('button');
+        button.type = 'button'; button.textContent = api.tr(label);
+        button.setAttribute('data-screen-evidence', kind);
+        button.disabled = snapshotPending;
+        button.style.cssText = 'flex:1;padding:5px;border:1px solid #888;border-radius:3px;background:#292929;color:#fff;font:inherit;cursor:pointer';
+        button.onclick = async (event) => { stop(event); if (!snapshotPending) await callback(); };
+        snapshots.append(button);
+      };
+      const captureScreen = async (correction = false) => {
+        if (snapshotPending || (correction && !expectedScreen)) return;
+        snapshotPending = true; snapshotMessage = 'Enregistrement de l’écran…'; render();
+        try {
+          const response = await api.post('/trace/capture', correction ? { expected_screen: expectedScreen } : {});
+          const answer = response?.body?.record ?? response?.body;
+          if (!response?.ok || !answer?.id) throw Error('capture failed');
+          record = answer; captureId = answer.id;
+          captureKind = correction ? 'screen_correction' : 'screen';
+          captureState = 'saved';
+          snapshotMessage = correction ? 'Erreur de détection enregistrée avec la capture' : 'Écran enregistré';
+          correctionOpen = false;
+        } catch { snapshotMessage = 'Échec de l’enregistrement'; }
+        snapshotPending = false; render();
+      };
+      snapshotButton('Enregistrer cet écran', 'capture', () => captureScreen());
+      snapshotButton('Mauvais écran détecté', 'correction', () => {
+        correctionOpen = !correctionOpen; render();
+      });
+      content.append(snapshots);
+      if (correctionOpen) {
+        const correction = document.createElement('div');
+        correction.style.cssText = 'display:flex;gap:4px;margin-top:6px';
+        const select = document.createElement('select');
+        select.setAttribute('data-expected-screen', '');
+        select.setAttribute('aria-label', api.tr('Écran réellement affiché'));
+        select.style.cssText = 'min-width:0;flex:1;background:#292929;color:#fff;font:inherit';
+        const choices = { unknown: { name: api.tr('Écran non identifié') }, ...registry.tree, ...graph.screens };
+        for (const [value, title] of [['', api.tr('Écran réellement affiché')],
+          ...Object.entries(choices).sort((a, b) => (a[1].name ?? a[0]).localeCompare(b[1].name ?? b[0]))
+            .map(([id, node]) => [id, node.name ?? id])]) {
+          const option = document.createElement('option');
+          option.value = value; option.textContent = title; select.append(option);
+        }
+        select.value = expectedScreen; select.disabled = snapshotPending;
+        const submit = document.createElement('button');
+        submit.type = 'button'; submit.textContent = api.tr('Enregistrer la correction');
+        submit.setAttribute('data-screen-evidence', 'submit');
+        submit.disabled = snapshotPending || !expectedScreen;
+        select.onchange = () => { expectedScreen = select.value; submit.disabled = snapshotPending || !expectedScreen; };
+        submit.onclick = async (event) => { stop(event); if (!submit.disabled) await captureScreen(true); };
+        correction.append(select); correction.append(submit); content.append(correction);
+      }
+      if (snapshotMessage) {
+        const feedback = document.createElement('div');
+        feedback.setAttribute('role', 'status'); feedback.setAttribute('data-screen-evidence-status', '');
+        feedback.textContent = api.tr(snapshotMessage); content.append(feedback);
+      }
+    }
     const status = document.createElement('div');
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
     status.style.cssText = 'margin-top:6px;line-height:1.5';
     const slider = ['vertical', 'horizontal'].includes(captureKind);
-    const message = ({ idle: 'Choisis un élément à déclarer', arming: 'Capture avant…',
+    const message = ['screen', 'screen_correction'].includes(captureKind) && captureState === 'saved'
+      ? (captureKind === 'screen_correction' ? 'Erreur de détection enregistrée avec la capture' : 'Écran enregistré')
+      : ({ idle: 'Choisis un élément à déclarer', arming: 'Capture avant…',
       armed: captureKind === 'scannable' ? 'Capture avant enregistrée · Trace un rectangle autour de l’élément'
         : slider ? 'Capture avant enregistrée · Trace le slider' : 'Capture avant enregistrée · Clique sur l’élément',
       saving: 'Capture avant enregistrée · Capture après…', saved: 'Captures avant et après enregistrées · Déclaration enregistrée',
       cancelling: 'Annulation…', cancelled: 'Capture annulée · Choisis une action',
       failed: 'Échec de l’enregistrement', expired: 'Capture expirée · Choisis une action' })[captureState];
     status.textContent = api.tr(message);
-    if (captureState !== 'idle') status.textContent = `${api.tr(ANNOTATIONS.find((item) => item.kind === captureKind)?.label ?? '')} · ${status.textContent}`;
+    if (captureState !== 'idle' && ANNOTATIONS.some((item) => item.kind === captureKind)) status.textContent = `${api.tr(ANNOTATIONS.find((item) => item.kind === captureKind)?.label ?? '')} · ${status.textContent}`;
     content.append(status);
     if (busy()) {
       const cancel = document.createElement('button');
@@ -371,6 +448,16 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
       content.append(cancel);
     }
     if (record && !busy()) {
+      if (record.expected_screen) {
+        const correction = document.createElement('div');
+        correction.setAttribute('data-screen-correction', '');
+        const detected = archivedScreen(record, 'before') ?? record.before_scan?.screen ?? record.before;
+        correction.textContent = api.tr('Détecté : {detected} · Attendu : {expected}', {
+          detected: graph.screens?.[detected]?.name ?? detected ?? api.tr('Écran non identifié'),
+          expected: graph.screens?.[record.expected_screen]?.name ?? record.expected_screen,
+        });
+        content.append(correction);
+      }
       for (const [key, label] of [['before_url', 'Capture avant'], ['after_url', 'Capture après']]) {
         if (!record[key]) continue;
         const link = document.createElement('a');
@@ -383,8 +470,8 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
           stop(event); closePreview?.();
           const identity = archivedScreen(record, side);
           const historicalScan = record[`${side}_scan`];
-          const zones = identity ? zonesFor(identity, graph, registry,
-            { ...historicalScan, at: Date.now() / 1000 }) : [];
+          const zones = identity ? [...landmarksFor(identity, registry), ...zonesFor(identity, graph, registry,
+            { ...historicalScan, at: Date.now() / 1000 })] : [];
           closePreview = capturePreview({ layer: api.layer, record, side, zones, drawZone, tr: api.tr });
         };
         link.textContent = api.tr(label);
@@ -451,7 +538,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
     debug: [{ type: 'choice', key: 'navigationDebug', label: 'Zones de navigation',
       choices: [{ value: 'off', label: 'Désactivé' }, { value: 'on', label: 'Activé' }] },
     { type: 'status', label: 'Légende navigation',
-      value: () => api.tr('Jaune : clic · chevrons bleus : vertical · chevrons violets : horizontal · pointillés : condition à vérifier') }],
+      value: () => api.tr('Vert : repère de détection · jaune : clic · chevrons bleus : vertical · chevrons violets : horizontal · pointillés : condition à vérifier') }],
     onSetting: (key) => { if (key === 'navigationDebug') update(); },
     update,
     dispose: () => { disposed = true; closePreview?.(); window.removeEventListener?.('resize', floating.clamp); stopTap?.(); window.clearInterval(timer); window.cancelAnimationFrame?.(animation); tracker.reset(); clear(); },

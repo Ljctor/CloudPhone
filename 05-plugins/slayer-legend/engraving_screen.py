@@ -116,6 +116,10 @@ DIGIT_VARIANTS = {digit: [shape] for digit, shape in DIGITS.items()}
 DIGIT_VARIANTS[1].append(tuple(tuple(ch == "#" for ch in row) for row in
     ["...##", "#####", "...##", "...##", "...##", "...##", "...##", "#####"]))
 
+# Real narrow 7 from eg_ambition_cards (card 4, Lv.47).
+DIGIT_VARIANTS[7].append(tuple(tuple(ch == "#" for ch in row) for row in
+    ["#####", "....#", "....#", "..##.", "..##.", "##...", "##...", "##..."]))
+
 # The padlock, locked, as each card's place renders it (white pixels, x 52
 # to 67 and y 1 to 13 from the card's top left; the places differ by a
 # pixel's phase: one leg can look short). Open padlocks have their own
@@ -150,10 +154,15 @@ def title(shot):
                for text, _, _ in font.read(shot, TITLE_AREA, font=TITLE_FONT))
 
 
+# The engraving header renders a narrower m than the Soul Weapon card.
+# Cut from the real eg_ambition_name capture; no OCR confidence change.
+ENGRAVING_NAME_FONT = {"m~engraving": ['000000', '333130', '999795', '934439', '934439', '934439', '823328', '000000', '000000']}
+
+
 @calibrated
 def weapon(shot, names, card_font):
     """The weapon's name under the title (one of names), or None."""
-    for text, _, _ in font.read(shot, WEAPON_AREA, font=card_font):
+    for text, _, _ in font.read(shot, WEAPON_AREA, font=dict(card_font, **ENGRAVING_NAME_FONT)):
         found = font.close(text, names, most=0.3, margin=2)
         if found:
             return found
@@ -270,8 +279,14 @@ def crystals(shot, index):
     the card's middle (not its icon, padlock, E or Lv text), each facet a
     group of at least 3 pixels, facets closer than 7 px merged."""
     x0, y0 = _card_px(shot, index)
+    def facet(x, y):
+        r, g, b = _pixel(shot, x, y)
+        # Red pieces have bright red links too. Their facets are neutral;
+        # exclude the tinted links, which would invent extra crystals.
+        return r + g >= 84 and not (r > g + 12 and r > b + 12)
+
     bright = {(x, y) for x in range(x0 + 14, x0 + 60) for y in range(y0 + 3, y0 + 56)
-              if sum(_pixel(shot, x, y)[:2]) >= 84 and not (x > x0 + 50 and y < y0 + 20)}
+              if facet(x, y) and not (x > x0 + 50 and y < y0 + 20)}
     groups, seen = [], set()
     for start in sorted(bright):
         if start in seen:
@@ -345,9 +360,9 @@ def shape_of(cells, shapes):
     return None
 
 
-def _digits_ink(shot, index):
+def _digits_ink(shot, index, neutral=False):
     x0, y0 = _card_px(shot, index)
-    return [[min(_pixel(shot, x, y)) >= 44 for x in range(x0 + 33, x0 + 53)] for y in range(y0 + 56, y0 + 64)]
+    return [[min(p := _pixel(shot, x, y)) >= 44 and (not neutral or max(p) - min(p) <= 1) for x in range(x0 + 33, x0 + 53)] for y in range(y0 + 56, y0 + 64)]
 
 
 def _digit_runs(ink):
@@ -387,7 +402,14 @@ def _scaled(glyph, cols=5):
 @calibrated
 def level(shot, index):
     """The card's level, None when a digit does not read."""
-    ink = _digits_ink(shot, index)
+    # Crystals behind the dim Lv text can add coloured pixels to a digit.
+    # Read the original mask first, then isolate the neutral text if it fails;
+    # both paths retain the same digit distance and ambiguity thresholds.
+    original = _level_from_ink(_digits_ink(shot, index))
+    return original if original is not None else _level_from_ink(_digits_ink(shot, index, neutral=True))
+
+
+def _level_from_ink(ink):
     runs = _digit_runs(ink)
     if not 1 <= len(runs) <= 2 or not DIGITS:
         return None
@@ -452,6 +474,12 @@ def kind(shot, index):
     cx, cy = x0 + 2, y0 + 2
     inner = [(x, y) for x in range(cx - 7, cx + 8) for y in range(cy - 7, cy + 8)
              if (x - cx) ** 2 + (y - cy) ** 2 <= 49]
+    # The red recovery icon (eg_ambition_cards, T) is neither coin nor
+    # sword. Its lack of coin texture must not make it read as ATK.
+    red = sum(1 for x, y in inner
+              if (p := _pixel(shot, x, y))[0] > max(p[1:]) + 12)
+    if red >= 20:
+        return None
     dim = sum(1 for x, y in inner if 25 <= _pixel(shot, x, y)[1] < 50)
     if dim >= 20:
         return "gold"

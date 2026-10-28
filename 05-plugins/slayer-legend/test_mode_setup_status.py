@@ -15,7 +15,7 @@ feature, rules, engravings = load('features/mode'), load('features/mode_rules'),
 
 class SetupStatus(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.now = 1000.0; self.input = None; self.playing = False; self.engraving = 'off'; self.soul = 'real'
+        self.now = 1000.0; self.input = None; self.playing = False; self.engraving = 'off'; self.soul = 'real'; self.enabled = True; self.farm_calls = []
         self.tasks = []; self.callbacks = []; self.relaunch = []; self.block = None; self.started = asyncio.Event(); self.mine_active = False
         self.parts = {name: {'stage': 970, 'preset': 'III', 'soul_weapon': {'id': 32, 'variant': 'Gold-maxed'}}
                       for name in ('mpw18', 'mpw4')}
@@ -24,6 +24,7 @@ class SetupStatus(unittest.IsolatedAsyncioTestCase):
         def spawn(coro):
             task = asyncio.create_task(coro); self.tasks.append(task); return task
         async def farm(*args, **kwargs):
+            self.farm_calls.append((args, kwargs))
             self.started.set()
             if self.block: await self.block.wait()
             return {'result': 'failed', 'text_t': rules.t('écran inattendu'), 'timings': {}}
@@ -31,7 +32,8 @@ class SetupStatus(unittest.IsolatedAsyncioTestCase):
             store=NS(saved={'mode': {'mode': 'mpw18', 'default': 'mpw18', 'configured': True}},
                      register=lambda *a: None, save=lambda: None),
             clock=NS(wall=lambda: self.now, monotonic=lambda: self.now, sleep=sleep), spawn=spawn,
-            enabled=lambda: True, pause_left=lambda: 5 if self.playing else 0, last_input=lambda: self.input,
+            respond=lambda body, status=200: (body, status),
+            enabled=lambda: self.enabled, pause_left=lambda: 5 if self.playing else 0, last_input=lambda: self.input,
             on_relaunch=self.relaunch.append, Busy=type('Busy', (Exception,), {}))
         self.loadouts = {'loadout': lambda name: dict(self.parts[name]), 'stage': lambda name: self.parts[name]['stage'],
             'set_stage': lambda name, n: self.parts[name].update(stage=n), 'adopt_stage': lambda *a: None,
@@ -107,3 +109,79 @@ class SetupStatus(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.part['api']['state']()['state'], 'moving')
         self.assertEqual(self.part['api']['state']()['tone'], 'setup')
         self.assertIsNone(self.part['api']['state']()['setup_result'])
+
+    async def call_setup(self, body):
+        async def json_body(): return body
+        handler = next(handler for method, route, handler in self.part['routes']
+                       if method == 'POST' and route == '/mode/setup')
+        return await handler(NS(json=json_body))
+
+    async def settle(self):
+        for _ in range(100): await asyncio.sleep(0)
+
+    async def test_explicit_setup_retries_unchanged_target_and_only_reports_actual_result(self):
+        self.engraving = 'real'
+        target = dict(self.parts['mpw18'])
+        receipt = self.part['api']['state']()['setup_request']
+        self.assertEqual(receipt, {'mode': 'mpw18', 'if_revision': engravings.revision(target)})
+        answer, code = await self.call_setup(receipt)
+        self.assertEqual(code, 202)
+        self.assertEqual(answer['state'], 'moving')
+        self.assertTrue(answer['setup'])
+        self.assertIsNone(answer['setup_request'])
+        self.assertIsNone(answer['setup_result'], 'accepting a request cannot certify that the setup ran')
+        await self.settle()
+        self.assertTrue(self.farm_calls)
+        self.assertTrue(all(args[:3] == (970, 'III', 'mpw18') and not kwargs.get('force')
+                            for args, kwargs in self.farm_calls))
+        self.assertEqual(self.parts['mpw18'], target, 'retrying does not mutate the accepted loadout')
+        result = self.part['api']['state']()['setup_result']
+        self.assertEqual(result['result'], 'failed', 'the actual failed setup remains failed after an accepted request')
+        self.assertEqual(result['revision'], receipt['if_revision'])
+        self.assertEqual(result['target'], target)
+        calls = len(self.farm_calls)
+        _, code = await self.call_setup(self.part['api']['state']()['setup_request'])
+        self.assertEqual(code, 202, 'a completed failed attempt can retry the same target again')
+        await self.settle()
+        self.assertGreater(len(self.farm_calls), calls)
+
+    async def test_setup_rejects_stale_revision_wrong_mode_and_malformed_requests(self):
+        self.engraving = 'real'
+        receipt = self.part['api']['state']()['setup_request']
+        for body in (dict(receipt, if_revision='old'), dict(receipt, mode='mpw4'),
+                     dict(receipt, mode='free'), dict(receipt, if_revision=None), None):
+            answer, code = await self.call_setup(body)
+            self.assertGreaterEqual(code, 400)
+            self.assertIn('error_t', answer)
+        await self.settle()
+        self.assertEqual(self.farm_calls, [])
+
+    async def test_setup_gates_do_not_queue_when_off_blocked_in_mine_or_without_stage(self):
+        self.engraving = 'real'
+        receipt = self.part['api']['state']()['setup_request']
+        for attribute, disabled in (('enabled', False), ('engraving', 'off'), ('soul', 'off'), ('mine_active', True)):
+            previous = getattr(self, attribute); setattr(self, attribute, disabled)
+            self.assertIsNone(self.part['api']['state']()['setup_request'])
+            _, code = await self.call_setup(receipt)
+            self.assertEqual(code, 409)
+            setattr(self, attribute, previous)
+        self.parts['mpw18']['stage'] = None
+        self.assertIsNone(self.part['api']['state']()['setup_request'])
+        _, code = await self.call_setup(receipt)
+        self.assertEqual(code, 409)
+        await self.settle()
+        self.assertEqual(self.farm_calls, [])
+
+    async def test_duplicate_setup_cannot_replace_an_active_transaction(self):
+        self.engraving = 'real'
+        self.block = asyncio.Event()
+        receipt = self.part['api']['state']()['setup_request']
+        replies = await asyncio.gather(self.call_setup(receipt), self.call_setup(receipt))
+        self.assertEqual(sorted(code for _, code in replies), [202, 409])
+        await self.started.wait()
+        self.assertEqual(len(self.farm_calls), 1)
+        self.assertIsNone(self.part['api']['state']()['setup_request'])
+        _, code = await self.call_setup(receipt)
+        self.assertEqual(code, 409)
+        self.assertEqual(len(self.farm_calls), 1)
+        self.assertFalse(self.tasks[-1].cancelled(), 'a duplicate request cannot cancel the running setup')

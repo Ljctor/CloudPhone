@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import trace from './page_trace.js';
 import capturePreview, { archivedScreen } from './page_navigation_preview.js';
-import navigationDebug, { ANNOTATIONS, annotationPoint, floatingDebugPanel, zonesFor, recognisedScreen } from './page_navigation_debug.js';
+import navigationDebug, { ANNOTATIONS, annotationPoint, floatingDebugPanel, landmarksFor, zonesFor, recognisedScreen } from './page_navigation_debug.js';
 
 const graph = JSON.parse(readFileSync(new URL('./navigation.json', import.meta.url)));
 const registry = JSON.parse(readFileSync(new URL('./screen_registry.json', import.meta.url)));
@@ -92,7 +92,7 @@ globalThis.window = { setInterval(fn) {
 const all = (node) => [node, ...node.children.flatMap(all)];
 const root = new Element('main'); root.root = true;
 const status = () => all(root).find((item) => item.attrs.role === 'status')?.textContent;
-const buttons = () => all(root).filter((item) => item.tagName === 'button' && !('data-debug-toggle' in item.attrs));
+const buttons = () => all(root).filter((item) => item.tagName === 'button' && !('data-debug-toggle' in item.attrs) && !('data-screen-evidence' in item.attrs));
 const event = (clientX = 30, clientY = 70) => ({ clientX, clientY, pointerId: 1,
   preventDefault() { this.prevented = true; }, stopPropagation() { this.stopped = true; } });
 // Yield one event-loop turn so shared request/finally chains settle without
@@ -107,6 +107,7 @@ const tapListeners = new Set();
 let traceTaps = 'on';
 let traceResponse = { ok: true, status: 202, body: { queued: true } };
 let nextId = 0;
+let snapshotResponse = { ok: true, body: { id: 'snapshot-1', kind: 'screen', capture_status: 'complete', before_url: '/snapshot', before_scan: { screen: 'battle', overlays: [] } } };
 const posts = [];
 const api = {
   layer: root, tr: (text) => text, setting: (key) => key === 'traceTaps' ? traceTaps : 'on',
@@ -122,6 +123,7 @@ const api = {
     posts.push({ path, body });
     if (path === '/trace/arm') return new Promise((resolve) => { armedReply = () => resolve(armResponse ?? { ok: true, status: 200, body: { armed: true, id: `capture-${++nextId}`, seconds: 30 } }); });
     if (path === '/trace') return Promise.resolve(traceResponse);
+    if (path === '/trace/capture') return Promise.resolve(snapshotResponse);
     if (path === '/trace/cancel') return Promise.resolve({ ok: true, status: 200, body: { cancelled: true } });
     throw Error(path);
   },
@@ -368,6 +370,45 @@ const rectangleUp = event(20, 40); surface.onpointerup(rectangleUp);
 for (const pointer of [rectangleDown, rectangleMove, rectangleUp]) assert.ok(pointer.prevented && pointer.stopped);
 assert.deepEqual(posts.at(-1).body, { x: .8, y: .8, kind: 'swipe', end: { x: .2, y: .2 } });
 ui.dispose();
+
+// Manual screenshots and classification corrections never synthesize a tap.
+archive = { clicks: [] };
+currentScreen = 'battle';
+const previousBattleRegistry = registry.tree.battle;
+registry.tree.battle = { ...previousBattleRegistry, landmarks: [{ id: 'battle_title', rect: [.2, .1, .8, .3] }] };
+ui = navigationDebug(api); await flush();
+const evidenceButton = (kind) => all(root).find((item) => item.attrs['data-screen-evidence'] === kind);
+await poll();
+const landmarkBox = all(root).find((item) => item.attrs['data-zone-kind'] === 'detection');
+assert.ok(landmarkBox.title.includes('battle_title'));
+assert.match(landmarkBox.style.cssText, /#52e99a/);
+const beforeSnapshot = posts.length;
+await evidenceButton('capture').onclick(event());
+assert.deepEqual(posts.slice(beforeSnapshot), [{ path: '/trace/capture', body: {} }]);
+assert.ok(all(root).some((item) => item.textContent === 'Écran enregistré'));
+assert.ok(all(root).some((item) => item.href === '/snapshot'));
+assert.ok(!all(root).some((item) => 'data-annotation-surface' in item.attrs));
+await evidenceButton('correction').onclick(event());
+const expectedSelect = all(root).find((item) => 'data-expected-screen' in item.attrs);
+assert.ok(expectedSelect.children.some((item) => item.value === 'title'));
+assert.ok(evidenceButton('submit').disabled, 'a correction requires an explicit expected screen');
+expectedSelect.value = 'title'; expectedSelect.onchange();
+snapshotResponse = { ok: true, body: { ...snapshotResponse.body, kind: 'screen_correction', expected_screen: 'title' } };
+await evidenceButton('submit').onclick(event());
+assert.deepEqual(posts.at(-1), { path: '/trace/capture', body: { expected_screen: 'title' } });
+assert.ok(all(root).some((item) => item.textContent === 'Erreur de détection enregistrée avec la capture'));
+assert.ok(all(root).some((item) => 'data-screen-correction' in item.attrs));
+snapshotResponse = { ok: false, body: { error: 'capture unavailable' } };
+await evidenceButton('capture').onclick(event());
+assert.ok(all(root).some((item) => item.attrs['data-screen-evidence-status'] === '' && item.textContent === 'Échec de l’enregistrement'));
+ui.dispose();
+if (previousBattleRegistry) registry.tree.battle = previousBattleRegistry;
+else delete registry.tree.battle;
+const detectionRegistry = { tree: { title: { landmarks: [{ id: 'game_title', rect: [.2, .1, .8, .3] }] } } };
+assert.deepEqual(landmarksFor('title', detectionRegistry), [{ id: 'game_title', rect: [.2, .1, .8, .3], kind: 'scannable', detection: true }]);
+assert.deepEqual(landmarksFor('unknown', detectionRegistry), []);
+assert.ok(!zonesFor('title', graph, detectionRegistry).some((zone) => zone.id === 'game_title'),
+  'detection landmarks never become clickable navigation zones');
 
 // The viewer resolves each archived side independently and shares the
 // image wrapper with its marker, zones, and swipe arrow.

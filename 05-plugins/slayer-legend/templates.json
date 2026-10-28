@@ -1,4 +1,6 @@
 {
+  "Application de la configuration {mode}": "Applying configuration {mode}",
+  "Configuration indisponible ou application déjà en cours": "Configuration unavailable or application already running",
   "Agent mode : agent autorisé à jouer": "Agent mode: agent allowed to play",
   "Android ne répond pas": "Android does not answer",
   "Arme : attendu {expected}": "Weapon: expected {expected}",

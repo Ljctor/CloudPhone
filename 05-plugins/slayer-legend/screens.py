@@ -39,7 +39,9 @@ _spec = importlib.util.spec_from_file_location(
 font = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(font)
 
-START_TEXT = (0.30, 0.80, 0.70, 0.87)   # "TAP TO START", white on dark
+# Historical prompt location, retained for false-positive regressions only.
+# Sparse white text here does not establish the Title screen.
+START_TEXT = (0.30, 0.80, 0.70, 0.87)
 START_TAP = (0.50, 0.836)
 CONFIRM_BUTTON = (0.26, 0.735, 0.37, 0.755)  # orange
 EXIT_BUTTON = (0.62, 0.735, 0.73, 0.755)     # grey

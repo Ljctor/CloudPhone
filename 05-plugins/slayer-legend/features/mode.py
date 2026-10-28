@@ -12,6 +12,8 @@ GET  /mode         {mode, default, until, stage18, stage4, highest, configured, 
 POST /mode         {mode, default, until, stage18, stage4, highest, floor, area}: a number
                    absent or null keeps its value; until absent keeps the
                    timer, null clears it (no time limit)
+POST /mode/setup   {mode, if_revision}: explicitly retry the accepted target; 202 queues
+                   the existing leased pipeline, never an equipment success
 POST /mode/timer   {add: minutes}: moves the end of the mode (and of the mine)
 POST /mode/hold    {action: "free" | "resume"[, hold: id]}: a switch on hold
                    while the user plays: free play instead, or the switch
@@ -154,6 +156,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
         answer["message_t"] = status["message"]
         answer["setup_blocker_t"] = setup_blocker()
         answer["setup_result"] = current_setup_result()
+        answer["setup_request"] = setup_request()
         if status["state"] == "failed" and status["setup_result"] and answer["setup_result"] is None:
             answer["message_t"] = t("Configuration demandée non vérifiée")
         answer.update(stages())
@@ -170,6 +173,20 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
             if look and look.get("mode") == answer["mode"]:
                 answer["message_t"] = look.get("message_t")
         return answer
+
+    def setup_request():
+        """A current target receipt, not evidence that it has been applied."""
+        name = status["mode"]
+        change = status["change"]
+        replacing = replacements["task"]
+        revision = loadouts.get("revision")
+        if (not ports.enabled() or not status["configured"] or name not in ("mpw18", "mpw4")
+                or mines["state"]().get("enabled") or not loadouts["stage"](name)
+                or not revision or setup_blocker()
+                or change is not None and not change.done()
+                or replacing is not None and not replacing.done()):
+            return None
+        return {"mode": name, "if_revision": revision(name)}
 
     def engraving_off(name):
         """The farming mode's loadout asks an engraving while the
@@ -653,6 +670,30 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
                 status["wake"].set()
         return ports.respond(state())
 
+    async def handle_setup(request):
+        """Explicitly recheck/apply the accepted target without changing it.
+        No force: user activity still pauses the existing leased pipeline."""
+        try:
+            body = await request.json()
+        except (ValueError, TypeError, AttributeError):
+            body = None
+        if (not isinstance(body, dict) or body.get("mode") not in ("mpw18", "mpw4")
+                or not isinstance(body.get("if_revision"), str)):
+            return ports.respond({"error_t": t("Attendu : {expected}",
+                                 expected="{mode, if_revision}")}, status=400)
+        expected = setup_request()
+        if expected is None:
+            reason = setup_blocker() or t("Configuration indisponible ou application déjà en cours")
+            return ports.respond(dict(state(), error_t=reason), status=409)
+        if any(body[key] != value for key, value in expected.items()):
+            return ports.respond(dict(state(), error_t=t("Configuration modifiée ailleurs : recharge la cible avant d’appliquer")), status=409)
+        name = expected["mode"]
+        number = loadouts["stage"](name)
+        status.update(switch=(name, name), switch_at=ports.clock.monotonic(), setup_result=None)
+        report("moving", t("Application de la configuration {mode}", mode=name))
+        replace_change(lambda: set_stage(number, int(name[3:]), applied=True))
+        return ports.respond(state(), status=202)
+
     async def resume(app):
         """At the gateway's start: the timed mode state.json kept goes on."""
         if rules.watched(status["mode"], status["default"]):
@@ -686,7 +727,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming)
 
     return {
         "routes": [("GET", "/mode", handle_state), ("POST", "/mode", handle_mode), ("POST", "/mode/timer", handle_timer),
-                   ("POST", "/mode/hold", handle_hold)],
+                   ("POST", "/mode/hold", handle_hold), ("POST", "/mode/setup", handle_setup)],
         "startup": [resume],
         # For the watchdog: the mode now (it runs only in the default one).
         "api": {"state": state, "confirm": confirm, "watched_by": watched_by,

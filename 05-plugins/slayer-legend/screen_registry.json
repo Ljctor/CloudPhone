@@ -39,12 +39,10 @@
       ],
       "fixtures": ["eg_title"], "background": [0, 0, 0]
     },
-    "title": {
-      "kind": "screen", "status": "measured", "legacy": "title",
-      "anchors": [
-        {"share": "START_TEXT", "test": "white", "above": 0.02, "step": 4},
-        {"share": "START_TEXT", "test": "white", "below": 0.4, "step": 4}
-      ]
+    "skill_mastery": {
+      "kind": "screen", "status": "registered", "legacy": "other",
+      "anchors": [{"patch": "skill_mastery_title", "limit": 0.6}],
+      "fixtures": ["skill_mastery_title"], "background": [0, 0, 0]
     },
     "save_notice": {
       "kind": "screen", "status": "measured", "legacy": "save",

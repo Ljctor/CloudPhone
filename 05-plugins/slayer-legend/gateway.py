@@ -93,7 +93,8 @@ def setup(context):
                                                    feature("stage_change_rules"), table, soul)
     mode = feature("mode").mode(ports, feature("mode_rules"), timer, values, mine["api"], screens,
                                 module("gold_scroll"), engraving["api"], farming["api"])
-    gold = feature("gold").gold(ports, screens, stage, module("gold"), feature("gold_rules"), module("soul_counters"))
+    gold = feature("gold").gold(ports, screens, stage, module("gold"), feature("gold_rules"),
+                                module("soul_counters"), table)
     refresh = feature("resource_refresh").resource_refresh(
         ports, screens, module("nav"), module("equipment_l3"), module("soul_weapon"), module("scrolling"),
         mode["api"], farming["api"], gold["api"], feature("resource_refresh_rules"))
@@ -111,9 +112,9 @@ def setup(context):
         feature("lease").lease(ports),
         feature("counters").counters(ports, module("emerald_mask")),
         feature("screen").screen(ports, screens, stage, screen_rules, values, table),
-        feature("navigation_debug").navigation_debug(ports, module("nav"), context.directory),
+        feature("navigation_debug").navigation_debug(ports, module("nav"), context.directory, screens),
         launch,
-        feature("trace").trace(ports, screens, module("trace"), feature("screenshot_archive")),
+        feature("trace").trace(ports, screens, module("trace"), feature("screenshot_archive"), game["api"]["scan_visible"]),
         gold,
         refresh,
         mine,

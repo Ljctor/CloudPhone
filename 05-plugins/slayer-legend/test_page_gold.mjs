@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import goldFeature, { combatCountersVisible, hourlyRate, measureResourceRate, estimatedCubes } from './page_gold.js';
+import goldFeature, { combatCountersVisible, equipmentRateVisible, hourlyRate, measureResourceRate, estimatedCubes } from './page_gold.js';
 import { GOLD_COUNTER_FONT as font, GOLD_COUNTER_SOURCES as sources } from './page_gold_counter_font.js';
 import { freshnessColour } from './page_freshness.js';
 import { drawText } from './gold_text.js';
@@ -74,18 +74,31 @@ const layer = document.createElement('div');
 layer.offsetHeight = 1560;
 layer.offsetWidth = 720;
 const answer = { box: [298 / 720, 0.2, 0.6, 0.21], read: 1000, shade: 1, rate: 1, span: 300, window: 300,
+  farming_stage: 800, farming_drop: 'weapon', farming_read: 1000,
   souls: { green: { ...measured, rate: .2 }, blue: { ...measured, rate: 0 }, red: { rate: null } },
   resources: { cubes: measured, weapon_l3: { ...measured, rate: .5 }, accessory_l3: { rate: null } } };
 let failGold = false;
-const api = { layer, setting() {}, refresh() {}, tr: (x) => x,
+let pluginEnabled = true;
+const settings = {};
+const api = { layer, setting(key) { return settings[key]; }, refresh() {}, tr: (x) => x,
   async get(path) {
-    if (path === '/gold-font') return { height: 13, glyphs: { '1': Array(13).fill('##') } };
+    if (path === '/gold-font') return { height: 13, glyphs: Object.fromEntries(
+      [...'MPW180:42'].map((char) => [char, Array(13).fill('##')])) };
     if (path === '/gold') { if (failGold) throw Error('temporary gateway failure'); return answer; }
     return { resources: [{ field: 'cubes', value: 1234567890, seen: 1000, verified: true }] };
   } };
 let scan = { screen: 'battle', overlays: [], plain: true, at: 1000 };
-const feature = goldFeature(api, { overlay: [() => []], screenScan: () => scan });
+const feature = goldFeature(api, { overlay: [() => ['MPW18', '00:42']],
+  enabled: () => pluginEnabled, screenScan: () => scan });
 await new Promise((resolve) => setImmediate(resolve));
+const label = layer.children.find((node) => node.style.cssText?.includes('left:3%'));
+assert.ok(label?.isConnected, 'mode and timer are drawn once the overlay font is ready');
+assert.equal(label.title, 'MPW18\n00:42', 'the visible overlay identifies both mode and timer');
+const labelCell = layer.offsetHeight / 1040 * 8 / 13;
+assert.ok(label.context.fills.some((fill) => fill.colour === '#ffa31a' && fill.rect[1] < 15 * labelCell),
+  'the mode line has visible ink');
+assert.ok(label.context.fills.some((fill) => fill.colour === '#ffa31a' && fill.rect[1] >= 17 * labelCell),
+  'the timer line has visible ink');
 const total = layer.children.find((node) => node.style.cssText?.includes('left:36.1%'));
 assert.ok(total, 'Cubes stay aligned with the Gold icon');
 const canvas = total.children[1];
@@ -96,10 +109,10 @@ const inkLeft = Math.min(...canvas.context.fills.filter((fill) => fill.colour ==
   .map((fill) => fill.rect[0]));
 assert.equal(.361 * layer.offsetWidth + parseFloat(canvas.style.left) + inkLeft, 298,
   'Cube number ink aligns with Gold number ink while the icon stays fixed');
-const rateRows = layer.children.filter((node) => node.style.cssText?.includes('right:1%'));
+const rateRows = nodes.filter((node) => node.style.cssText?.includes('right:1%'));
 assert.equal(rateRows.length, 7);
 assert.deepEqual(rateRows.map((row) => row.children[1].title),
-  ['3.60A/h', '7.20A/h', '720/h', '0/h', '.../h', '1.80A/h', '.../h']);
+  ['3.60A/h', '7.20A/h', '720/h', '0/h', '.../h', '1.80A/h', undefined]);
 assert.equal(new Set(rateRows.map((row) => row.style.width)).size, 1);
 assert.ok(parseFloat(rateRows[0].style.width) > 0);
 assert.ok(rateRows.every((row) => row.children[0].style.flexShrink === '0'));
@@ -111,10 +124,12 @@ feature.update();
 assert.equal(canvas.style.left, fixedLeft, 'Cube anchor does not follow the changing centred Gold number');
 now += 1000;
 scan.at = now / 1000;
+answer.farming_read = now / 1000;
 intervals[0]();
 assert.equal(canvas.title, '1,234,567,892', 'Cube estimate updates on the one-second overlay tick');
 now += 59000;
 scan.at = now / 1000;
+answer.farming_read = now / 1000;
 answer.resources.cubes = { ...measured, status: 'stale' };
 intervals[0]();
 assert.equal(canvas.title, '1,234,568,010', '60 seconds without a real counter read still advances the estimate');
@@ -122,6 +137,7 @@ assert.equal(rateRows[1].children[1].title, '.../h', 'a dated estimate does not 
 answer.resources.cubes = measured;
 now += 240000;
 scan.at = now / 1000;
+answer.farming_read = now / 1000;
 intervals[0]();
 assert.ok(canvas.context.fills.some((fill) => fill.colour === freshnessColour(300)), 'age changes colour without a new reading');
 feature.update();
@@ -130,12 +146,14 @@ assert.equal(canvas.context.fills.at(-1).colour, freshnessColour(300), 'refreshi
 // Old verified resources and recently read Gold never authorise counters
 // over another screen, an unknown modal, or an expired screen observation.
 answer.read = now / 1000;
+answer.farming_read = now / 1000;
 for (const hidden of [null, { ...scan, at: now / 1000 - 3 },
   { ...scan, screen: 'unknown' }, { ...scan, screen: 'quest' },
   ...['quest_panel', 'black_orb', 'weapon_details', 'soul_weapon', 'stage_select', 'battle_settings']
     .map((name) => ({ ...scan, overlays: ['panel', name] }))]) {
   scan = hidden;
   feature.update();
+  assert.equal(label.isConnected, true, 'mode and timer remain visible outside combat');
   assert.equal(total.isConnected, false, 'Cube total hidden outside visible combat');
   assert.ok(rateRows.every((row) => !row.isConnected), 'every hourly counter hidden outside visible combat');
 }
@@ -147,23 +165,87 @@ for (const visible of [
 ]) {
   scan = visible;
   answer.read = now / 1000;
+  answer.farming_read = now / 1000;
   feature.update();
   assert.equal(total.isConnected, true, 'Cube total restored on full or minimised combat');
-  assert.ok(rateRows.every((row) => row.isConnected), 'hourly counters restored on combat');
+  assert.ok(rateRows.slice(0, 6).every((row) => row.isConnected), 'relevant hourly counters restored on combat');
+  assert.equal(rateRows[6].isConnected, false, 'accessory rates stay hidden on a weapon stage');
 }
 answer.read = now / 1000 - 30;
 answer.souls = {};
 answer.resources.weapon_l3 = { ...measured, rate: .5, read: now / 1000 };
 feature.update();
-assert.ok(rateRows.every((row) => row.isConnected), 'resource rates do not disappear when Gold OCR is older than 25 seconds');
+assert.equal(label.isConnected, true, 'stale Gold and missing soul readings do not hide mode and timer');
+assert.ok(rateRows.slice(0, 6).every((row) => row.isConnected), 'resource rates do not disappear when Gold OCR is older than 25 seconds');
 assert.equal(rateRows[5].children[1].title, '1.80A/h', 'each resource rate renders independently');
+const lastGoldRead = answer.read;
+answer.read = 0;
+answer.box = null;
+feature.update();
+assert.equal(label.isConnected, true, 'unread Gold does not hide mode and timer');
+settings.goldOverlay = 'off';
+settings.stonesOverlay = 'off';
+feature.onSetting('goldOverlay');
+assert.equal(label.isConnected, true, 'disabled hourly counters do not hide mode and timer');
+assert.ok(rateRows.every((row) => !row.isConnected), 'disabled hourly counters stay hidden');
+delete settings.goldOverlay;
+delete settings.stonesOverlay;
+feature.onSetting('stonesOverlay');
+answer.read = lastGoldRead;
 failGold = true;
 await timeouts.at(-1)();
-assert.ok(rateRows.every((row) => row.isConnected), 'a failed rates fetch keeps explicit unknown rows on visible combat');
+assert.equal(label.isConnected, true, 'a failed Gold fetch does not hide mode and timer');
+assert.ok(rateRows.slice(0, 5).every((row) => row.isConnected), 'a failed rates fetch keeps explicit unknown rows on visible combat');
+assert.ok(rateRows.slice(5).every((row) => !row.isConnected), 'a failed rates fetch cannot certify the current equipment drop');
 assert.equal(rateRows[0].children[1].title, '.../h', 'fetch failure cannot display an old Gold rate as current');
+const combatScan = scan;
+scan = { ...scan, screen: 'unknown' };
+feature.update();
+assert.equal(label.isConnected, true, 'mode and timer remain visible on an unknown screen after a failed fetch');
+assert.equal(total.isConnected, false, 'a failed fetch cannot authorise the Cube total on an unknown screen');
+assert.ok(rateRows.every((row) => !row.isConnected), 'a failed fetch cannot authorise hourly counters on an unknown screen');
+scan = combatScan;
 failGold = false;
 await timeouts.at(-1)();
 assert.equal(rateRows[5].children[1].title, '1.80A/h', 'the next successful poll restores the measured resource rate');
+pluginEnabled = false;
+feature.update();
+assert.equal(label.isConnected, false, 'turning off the plugin hides mode and timer');
+assert.equal(total.isConnected, false, 'turning off the plugin hides the Cube total');
+assert.ok(rateRows.every((row) => !row.isConnected), 'turning off the plugin hides every hourly counter');
+pluginEnabled = true;
+feature.update();
+assert.equal(label.isConnected, true, 'turning the plugin back on restores mode and timer without a Gold read');
+// Equipment rows follow the observed stage's drop, even when a selected
+// mode disagrees. Unknown/expired observations cannot show either row.
+settings.mode = 'mpw18';
+answer.farming_drop = 'accessory';
+answer.farming_read = now / 1000;
+feature.update();
+assert.equal(rateRows[5].isConnected, false, 'weapon rate hidden on an observed accessory stage');
+assert.equal(rateRows[6].isConnected, true, 'accessory rate follows the observed stage despite selected mode');
+settings.mode = 'free';
+answer.farming_drop = 'weapon';
+feature.update();
+assert.equal(rateRows[5].isConnected, true, 'free play can show the observed weapon stage rate');
+assert.equal(rateRows[6].isConnected, false, 'free play cannot show an unrelated accessory rate');
+now += 31000;
+scan.at = now / 1000;
+intervals[0]();
+assert.ok(rateRows.slice(5).every((row) => !row.isConnected), 'the one-second tick expires stage evidence without a new poll');
+for (const observation of [
+  { farming_drop: null, farming_read: now / 1000 },
+  { farming_drop: 'weapon', farming_read: now / 1000 - 31 },
+  { farming_drop: 'accessory', farming_read: now / 1000 + 1 },
+  { farming_drop: 'weapon', farming_read: undefined },
+]) {
+  Object.assign(answer, observation);
+  feature.update();
+  assert.ok(rateRows.slice(5).every((row) => !row.isConnected), 'unproven current drop hides both equipment rows');
+  assert.ok(rateRows.slice(0, 5).every((row) => row.isConnected), 'other hourly counters remain available');
+}
+assert.equal(equipmentRateVisible({ farming_drop: 'weapon', farming_read: now / 1000 }, 'weapon_l3'), true);
+assert.equal(equipmentRateVisible({ farming_drop: 'weapon', farming_read: now / 1000 }, 'accessory_l3'), false);
 assert.equal(combatCountersVisible({ screen: 'battle', overlays: [], at: now / 1000 }), false,
   'missing geometry does not authorise counters');
 assert.equal(combatCountersVisible({ ...scan, at: now / 1000 + 1 }), false, 'future timestamps are refused');

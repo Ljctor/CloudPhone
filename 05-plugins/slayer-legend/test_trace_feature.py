@@ -1,5 +1,7 @@
 """Persistent typed annotations, with no game actions available to the feature."""
 import asyncio
+import base64
+import zlib
 import importlib.util
 import json
 from pathlib import Path
@@ -58,8 +60,8 @@ class Annotations(unittest.IsolatedAsyncioTestCase):
         self.restart()
 
     def restart(self):
-        api = feature.trace(self.ports, NS(classify=lambda shot: "battle", look=lambda shot: {"screen": "battle", "overlays": [], "plain": True, "unneeded": "omitted"}), graphs,
-                            NS(png=lambda shot: b"PNG"))
+        api = feature.trace(self.ports, NS(NAMES={"battle": "Battle", "title": "Title"}, TREE={}, classify=lambda shot: "battle", look=lambda shot: {"screen": "battle", "overlays": [], "plain": True, "unneeded": "omitted"}), graphs,
+                            NS(png=lambda shot: b"PNG"), getattr(self, "scan_visible", None))
         self.routes = {(method, path): handler for method, path, handler in api["routes"]}
 
     async def asyncTearDown(self):
@@ -75,6 +77,135 @@ class Annotations(unittest.IsolatedAsyncioTestCase):
     async def advance(self):
         for _ in range(200):
             await asyncio.sleep(0)
+
+    def encoded_frame(self, pixels=None):
+        return {"width": 12, "height": 26, "encoding": "deflate",
+                "rgb": base64.b64encode(zlib.compress(pixels if pixels is not None else bytes(12 * 26 * 3))).decode()}
+
+    async def test_passive_trace_uses_pre_input_pixels_and_skips_uncertified_sources(self):
+        # The after frame is white, while pointerdown really saw black.
+        self.frames = [(12, 26, bytes([255]) * (12 * 26 * 3))] * 3
+        token = {"session": "c" * 32, "sequence": 1}
+        await self.call("POST", "/trace/start", token)
+        data, status = await self.call("POST", "/trace", {"x": .2, "y": .3, "before_frame": self.encoded_frame(), **token})
+        self.assertEqual(status, 202)
+        self.assertTrue(data["before_verified"])
+        await self.advance()
+        self.release.set()
+        await self.advance()
+        graph = (await self.call("GET", "/trace/graph"))[0]
+        self.assertEqual(len(graph["edges"]), 1)
+        nodes = graph["nodes"]
+        self.assertEqual(len(nodes), 2, "source came from pre-input pixels, destination from later capture")
+        self.assertEqual(self.captures, 2, "no post-input capture masquerades as source")
+        data, _ = await self.call("POST", "/trace", {"x": .2, "y": .3})
+        self.assertFalse(data["before_verified"])
+        self.assertFalse(data["queued"])
+        await self.advance()
+        self.assertEqual((await self.call("GET", "/trace"))[0]["taps"], 1)
+
+    async def test_new_gesture_start_cancels_after_and_drops_transport_backlog(self):
+        session = "a" * 32
+        def token(n):
+            return {"session": session, "sequence": n}
+        def tap(n):
+            return {"x": .2, "y": .3, "before_frame": self.encoded_frame(), **token(n)}
+        self.assertTrue((await self.call("POST", "/trace/start", token(1)))[0]["accepted"])
+        await self.call("POST", "/trace", tap(1))
+        await self.advance()
+        await self.call("POST", "/trace/start", token(2))
+        await self.call("POST", "/trace/start", token(3))
+        self.release.set()
+        await self.advance()
+        self.assertEqual((await self.call("GET", "/trace"))[0]["taps"], 0,
+                         "first gesture cannot acquire the destination after the third")
+        stale, _ = await self.call("POST", "/trace", tap(2))
+        self.assertFalse(stale["queued"])
+        self.assertEqual(stale["reason"], "stale gesture")
+        self.assertFalse((await self.call("POST", "/trace/start", token(2)))[0]["accepted"])
+        await self.call("POST", "/trace", tap(3))
+        await self.advance()
+        self.assertEqual((await self.call("GET", "/trace"))[0]["taps"], 1)
+
+    async def test_consecutive_gesture_uses_next_pre_input_frame_as_prior_destination(self):
+        session = "b" * 32
+        first = {"session": session, "sequence": 1}
+        second = {"session": session, "sequence": 2}
+        await self.call("POST", "/trace/start", first)
+        await self.call("POST", "/trace", {"x": .2, "y": .3, "before_frame": self.encoded_frame(), **first})
+        await self.advance()
+        await self.call("POST", "/trace/start", second)
+        await self.call("POST", "/trace", {"x": .2, "y": .3, "before_frame": self.encoded_frame(bytes([255]) * 936), **second})
+        await self.advance()
+        self.assertEqual((await self.call("GET", "/trace"))[0]["taps"], 1)
+        self.assertEqual(self.captures, 0, "next pre-input frame supplies the previous destination")
+        for body in ({}, {"session": session, "sequence": 0}, {"session": session, "sequence": True}):
+            self.assertEqual((await self.call("POST", "/trace/start", body))[1], 400)
+
+    async def test_graph_identity_preserves_calibrated_panel_overlay(self):
+        api = feature.trace(self.ports, NS(classify=lambda shot: "menu",
+                            look=lambda shot: {"screen": "battle", "overlays": ["panel", "equipment_accessories", "better_weapon_toast"]}),
+                            graphs, NS(png=lambda shot: b"PNG"))
+        self.routes = {(method, path): handler for method, path, handler in api["routes"]}
+        record, _ = await self.call("POST", "/trace/capture", {})
+        self.assertEqual(record["before"], "equipment_accessories")
+
+    async def test_final_after_frame_refreshes_visible_readers_once(self):
+        scanned = []
+        async def scan(shot):
+            scanned.append(shot)
+        self.scan_visible = scan
+        self.restart()
+        final = (12, 26, bytes([255]) * (12 * 26 * 3))
+        self.frames = [final, final]
+        token = {"session": "d" * 32, "sequence": 1}
+        await self.call("POST", "/trace/start", token)
+        await self.call("POST", "/trace", {"x": .2, "y": .3, "before_frame": self.encoded_frame(), **token})
+        await self.advance()
+        self.release.set()
+        await self.advance()
+        self.assertEqual(scanned, [final])
+        self.assertEqual((await self.call("GET", "/trace"))[0]["taps"], 1)
+
+    async def test_rejects_invalid_or_oversized_pre_input_frames(self):
+        for frame in ({}, self.encoded_frame(b"short"), self.encoded_frame(bytes(1000)),
+                      {**self.encoded_frame(), "width": 1081},
+                      {**self.encoded_frame(), "rgb": "!"},
+                      {**self.encoded_frame(), "rgb": "A" * 900001}):
+            self.assertEqual((await self.call("POST", "/trace", {"x": .2, "y": .3, "before_frame": frame}))[1], 400)
+        self.assertEqual(self.tasks, [])
+
+    async def test_standalone_screen_report_survives_restart_without_graph_or_gesture(self):
+        armed, _ = await self.call("POST", "/trace/arm", {"kind": "navigation"})
+        report, status = await self.call("POST", "/trace/capture", {"expected_screen": "title"})
+        self.assertEqual(status, 200)
+        self.assertEqual(report["kind"], "screen_correction")
+        self.assertEqual(report["expected_screen"], "title")
+        self.assertEqual(report["before_scan"]["screen"], "battle")
+        self.assertEqual(report["capture_status"], "complete")
+        self.assertTrue(report["before_url"].endswith("/before"))
+        state = (await self.call("GET", "/trace"))[0]
+        self.assertEqual(state["armed"]["id"], armed["id"])
+        self.assertEqual(state["taps"], 0)
+        self.assertEqual(self.tasks, [])
+        self.restart()
+        records = (await self.call("GET", "/trace/manual"))[0]["clicks"]
+        restored = next(row for row in records if row["id"] == report["id"])
+        self.assertEqual(restored["expected_screen"], "title")
+        self.assertNotIn("tap", restored)
+        self.assertNotIn("after_url", restored)
+
+    async def test_standalone_capture_requires_visible_game_and_valid_identity(self):
+        for body in ([], None, {"expected_screen": "invented"}, {"expected_screen": None}):
+            self.assertEqual((await self.call("POST", "/trace/capture", body))[1], 400)
+        self.visible = False
+        self.assertEqual((await self.call("POST", "/trace/capture", {}))[1], 409)
+        self.assertEqual((await self.call("GET", "/trace/manual"))[0]["clicks"], [])
+        self.visible = True
+        record, status = await self.call("POST", "/trace/capture", {})
+        self.assertEqual(status, 200)
+        self.assertEqual(record["kind"], "screen")
+        self.assertNotIn("expected_screen", record)
 
     async def test_all_five_types_survive_restart_with_both_private_captures(self):
         for kind in feature.ANNOTATION_KINDS:

@@ -191,6 +191,32 @@ class Screen(unittest.TestCase):
                 self.assertTrue(left < x < left + 69 / 480 and top < y < top + 69 / 1040)
 
 
+class LiveAmbition(unittest.TestCase):
+    """Reviewed 2026-10-28 name/cards, without any surrounding account UI."""
+
+    def test_name_levels_and_red_piece_at_native_sizes(self):
+        original = fixtures.screen("eg_ambition_name", "eg_ambition_cards")
+        for width, height in ((480, 1040), (720, 1560)):
+            with self.subTest(width=width):
+                screen = resized(original, width, height)
+                self.assertEqual(es.weapon(screen, NAMES, sw.CARD_FONT), "Ambition")
+                self.assertIsNone(es.weapon(screen, NAMES + ["Ambitiom"], sw.CARD_FONT))
+                cards = es.cards(screen, TABLE["shapes"])
+                self.assertEqual([c["level"] for c in cards], [45, 46, 45, 44, 47, 45, 45, 46])
+                self.assertEqual([c["shape"] for c in cards], ["L", "I", "L", "I", "T", "I", "I", "L"])
+                self.assertEqual([c["locked"] for c in cards], [True] * 8)
+                self.assertEqual([c["placed"] for c in cards], [False, True, False, True, False, True, True, False])
+                self.assertIsNone(cards[4]["kind"], "red recovery icon cannot read as ATK")
+                self.assertEqual(cards[4]["cells"], [(0, 0), (1, 0), (1, 1), (2, 0)])
+
+    def test_missing_digit_does_not_become_known(self):
+        original = fixtures.screen("eg_ambition_cards")
+        # Erase only the 7 of the red card; the remaining 4 cannot be
+        # reconstructed from the formerly selected weapon or its level.
+        missing = blank(original, (117, 779, 126, 787))
+        self.assertNotEqual(es.level(missing, 4), 47)
+
+
 # Captures of 2026-10-22 (Vision): eg6 a piece just dragged out (its card
 # bright, padlock open), eg10 all locked again; eg2 and eg3 the piece popup
 # locked then unlocked; eg7, eg8, eg9 a preview (as dropped, turned,

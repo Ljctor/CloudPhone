@@ -307,6 +307,92 @@ def build(ports):
     return built
 
 
+class PassiveNavigation(unittest.TestCase):
+    """The scanner observes navigation without any gesture ports."""
+
+    def setup_scan(self, directory):
+        ports, _ = fake_ports(directory)
+        self.input = None
+        ports.last_input = lambda: self.input
+        model = types.SimpleNamespace(
+            look=lambda shot: {"screen": "battle", "plain": False,
+                               "overlays": ["equipment_weapon" if shot[2][0] == 1 else "equipment_accessories"]},
+            classify=lambda shot: "battle")
+        readers = {name: (lambda *args: {}) for name in rules.READERS}
+        calls = []
+
+        def equipment(shot, base, overlays, plain):
+            calls.append(shot[2][0])
+            return {"weapon_l3" if "equipment_weapon" in overlays else "accessory_l3": shot[2][1]}
+
+        readers["equipment_l3"] = equipment
+        api = game.game(ports, model, rules, readers)["api"]
+        return ports, api, calls
+
+    def test_fast_weapon_accessory_visits_read_each_panel_and_persist(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ports, api, calls = self.setup_scan(directory)
+            asyncio.run(api["scan"]((1, 1, bytes((1, 7, 0)))))
+            ports.clock.now += .2
+            asyncio.run(api["scan"]((1, 1, bytes((2, 9, 0)))))
+            self.assertEqual(calls, [1, 2])
+            self.assertEqual(api["value"]("weapon_l3"), 7)
+            self.assertEqual(api["value"]("accessory_l3"), 9)
+            with open(os.path.join(directory, "state.json"), encoding="utf-8") as file:
+                self.assertEqual(json.load(file)["game"]["accessory_l3"]["value"], 9)
+            # Identical panels still respect the normal reader interval.
+            ports.clock.now += .2
+            asyncio.run(api["scan"]((1, 1, bytes((2, 10, 0)))))
+            self.assertEqual(calls, [1, 2])
+
+    def test_user_scroll_refreshes_same_panel_once_and_preserves_capture_time(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ports, api, calls = self.setup_scan(directory)
+            asyncio.run(api["scan"]((1, 1, bytes((1, 7, 0)))))
+            ports.clock.now += .2
+            self.input = {"monotonic": ports.clock.now, "wall": ports.clock.now}
+            ports.clock.now += .1
+            acquired = ports.clock.wall()
+            asyncio.run(api["scan"]((1, 1, bytes((1, 8, 0)))))
+            self.assertEqual(calls, [1, 1])
+            self.assertEqual(api["facts"]()["weapon_l3"]["seen"], acquired)
+            ports.clock.now += .1
+            asyncio.run(api["scan"]((1, 1, bytes((1, 9, 0)))))
+            self.assertEqual(calls, [1, 1])
+
+    def test_capture_before_user_input_cannot_consume_refresh(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ports, api, calls = self.setup_scan(directory)
+            asyncio.run(api["scan"]((1, 1, bytes((1, 7, 0)))))
+            ports.clock.now += .2
+            before = ports.clock.wall()
+            ports.clock.now += .1
+            self.input = {"monotonic": ports.clock.now, "wall": ports.clock.now}
+            ports.capture_time = lambda shot: before
+            asyncio.run(api["scan"]((1, 1, bytes((1, 8, 0)))))
+            self.assertEqual(calls, [1])
+            ports.clock.now += .1
+            ports.capture_time = lambda shot: ports.clock.wall()
+            asyncio.run(api["scan"]((1, 1, bytes((1, 9, 0)))))
+            self.assertEqual(calls, [1, 1])
+            self.assertEqual(api["value"]("weapon_l3"), 9)
+
+    def test_settled_gesture_frame_reads_after_intermediate_animation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ports, api, calls = self.setup_scan(directory)
+            asyncio.run(api["scan"]((1, 1, bytes((1, 7, 0)))))
+            ports.clock.now += .2
+            self.input = {"monotonic": ports.clock.now, "wall": ports.clock.now}
+            asyncio.run(api["scan"]((1, 1, bytes((1, 8, 0)))))
+            ports.clock.now += .2
+            settled = (1, 1, bytes((1, 9, 0)))
+            asyncio.run(api["scan"](settled))
+            self.assertEqual(api["value"]("weapon_l3"), 8)
+            asyncio.run(api["scan_visible"](settled))
+            self.assertEqual(api["value"]("weapon_l3"), 9)
+            self.assertEqual(calls, [1, 1, 1])
+
+
 class Feature(unittest.TestCase):
     def test_seen_is_capture_time_not_slow_ocr_completion(self):
         shot = screen(*SCREENS["Battle settings"][0])

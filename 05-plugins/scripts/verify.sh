@@ -6,6 +6,11 @@ base=${1:?Usage: verify.sh http://LISTEN_ADDRESS:WEB_PORT}
 # this check stays deterministic and never gestures on the installed game.
 python3 "$(dirname "$0")/../slayer-legend/test_screen_model.py" EngravingPreview
 python3 "$(dirname "$0")/../slayer-legend/test_soul_weapon.py" Tag ActualNativeCaptures
+python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_screen.py -q
+python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_mode_setup_status.py -q
+python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_game.py -q
+python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_navigation_debug.py -q
+python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_trace_feature.py -q
 curl -fsS "${base%/}/api/v1/plugins/slayer-legend/game" | python3 -c '
 import json, re, sys
 state = json.load(sys.stdin)
@@ -86,6 +91,8 @@ curl -fsS "${base%/}/api/v1/plugins/slayer-legend/gold" | python3 -c '
 import json, sys
 state = json.load(sys.stdin)
 assert {"text", "value", "rate", "rate_text", "span", "window", "read", "box", "shade", "souls"} <= state.keys()
+assert state["farming_drop"] in (None, "weapon", "accessory")
+assert state["farming_read"] is None or isinstance(state["farming_read"], (int, float))
 assert 0.2 <= state["shade"] <= 1.0
 assert {"green", "blue", "red", "white"} <= state["souls"].keys()
 assert {"cubes", "weapon_l3", "accessory_l3"} <= state["resources"].keys()
@@ -120,6 +127,8 @@ assert "cubeRow.style.opacity" in script and "row.style.opacity" in script
 assert "left:36.1%;top:18.25%;transform:translateY(-50%)" in script
 assert "estimatedCubes(cube, gold.answer" in script
 assert "CUBE_NUMBER_LEFT = 298 / 720" in script
+assert "showLabel(Boolean(gold.font && enabled()))" in script
+assert "(fresh || soulsFresh)" not in script
 assert all("[" + chr(39) + name + chr(39) not in script
            for name in ("stone_green", "stone_yellow", "stone_red", "stone_blue"))
 assert "weapon_l3" in script and "accessory_l3" in script
@@ -267,7 +276,10 @@ print("Explicit complete loadout application: OK")
 curl -fsS "${base%/}/api/v1/plugins/slayer-legend/mode" | python3 -c '
 import json, sys
 state = json.load(sys.stdin)
-assert {"setup_blocker_t", "setup_result"} <= state.keys()
+assert {"setup_blocker_t", "setup_result", "setup_request"} <= state.keys()
+request = state["setup_request"]
+assert request is None or (request["mode"] == state["mode"]
+                           and len(request["if_revision"]) == 24 and not state["setup"])
 blocker = state["setup_blocker_t"]
 assert blocker is None or isinstance(blocker, dict) and "template" in blocker
 result = state["setup_result"]

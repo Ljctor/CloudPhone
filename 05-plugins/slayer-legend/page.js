@@ -40,6 +40,19 @@ import trace from './page_trace.js';
 import watchdog from './page_watchdog.js';
 
 const ENGLISH = {
+  'Application demandée…': 'Application requested…',
+  'Application non confirmée · vérification en cours': 'Application unconfirmed · checking status',
+  'Détecté : {detected} · Attendu : {expected}': 'Detected: {detected} · Expected: {expected}',
+  'Repère de détection': 'Detection landmark',
+  'Enregistrer cet écran': 'Record this screen',
+  'Mauvais écran détecté': 'Wrong screen detected',
+  'Écran réellement affiché': 'Actual screen displayed',
+  'Enregistrer la correction': 'Record correction',
+  'Enregistrement de l’écran…': 'Recording screen…',
+  'Erreur de détection enregistrée avec la capture': 'Detection error saved with screenshot',
+  'Écran enregistré': 'Screen recorded',
+  'Vert : repère de détection · jaune : clic · chevrons bleus : vertical · chevrons violets : horizontal · pointillés : condition à vérifier':
+    'Green: detection landmark · yellow: tap · blue chevrons: vertical · purple chevrons: horizontal · dashed: condition to check',
   "Intention": "Intention",
   "Détail de l’arme": "Weapon details",
   "Vers {destination} · {purpose}": "Going to {destination} · {purpose}",
@@ -81,8 +94,6 @@ const ENGLISH = {
   'Capture avant': 'Before capture',
   'Capture après': 'After capture',
   'condition à vérifier': 'condition to check',
-  'Jaune : clic · chevrons bleus : vertical · chevrons violets : horizontal · pointillés : condition à vérifier':
-    'Yellow: tap · blue chevrons: vertical · purple chevrons: horizontal · dashed: condition to check',
   '{mode} · en attente : tu joues · nouvel essai dans {seconds} s': '{mode} · on hold: you are playing · next try in {seconds} s',
   'Reprendre': 'Resume',
   'Affiché': 'Shown',

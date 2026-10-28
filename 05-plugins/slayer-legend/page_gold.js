@@ -107,8 +107,17 @@ export function combatCountersVisible(scan, now = Date.now() / 1000) {
     && (!scan.overlays.includes('soul_weapon') || scan.plain === false);
 }
 
+// Equipment gains follow the stage actually read, including free play.
+// A selected farming mode or an old stage cannot identify the current drop.
+export function equipmentRateVisible(answer, field, now = Date.now() / 1000) {
+  if (!['weapon_l3', 'accessory_l3'].includes(field)) return true;
+  const age = now - answer?.farming_read;
+  return Number.isFinite(answer?.farming_read) && age >= 0 && age <= 30
+    && answer?.farming_drop === (field === 'weapon_l3' ? 'weapon' : 'accessory');
+}
+
 export default function goldFeature(api, { overlay, enabled = () => true, screenScan = null }) {
-  const gold = { answer: null, at: 0, timer: null, font: null, line: '', cube: null, rates: {} };
+  const gold = { answer: null, at: 0, timer: null, font: null, cube: null, rates: {} };
   let scan = null;
   let screenPending = false;
   let disposed = false;
@@ -170,7 +179,7 @@ export default function goldFeature(api, { overlay, enabled = () => true, screen
   };
   const rateRows = RATE_FIELDS.map(([field, src], index) => {
     const row = document.createElement('div');
-    row.style.cssText = `position:absolute;right:1%;top:${RATE_TOP + index * RATE_STEP}%;display:flex;align-items:center;gap:2px;pointer-events:none`;
+    row.style.cssText = `position:absolute;right:1%;top:${RATE_TOP + Math.min(index, 5) * RATE_STEP}%;display:flex;align-items:center;gap:2px;pointer-events:none`;
     const icon = document.createElement('img');
     icon.src = src;
     icon.alt = RATE_NAMES[field] ?? field;
@@ -192,7 +201,8 @@ export default function goldFeature(api, { overlay, enabled = () => true, screen
       return;
     }
     const entries = RATE_FIELDS.map(([field]) => {
-      if (api.setting(field === 'gold' ? 'goldOverlay' : 'stonesOverlay') === 'off') return '';
+      if (api.setting(field === 'gold' ? 'goldOverlay' : 'stonesOverlay') === 'off'
+          || !equipmentRateVisible(gold.answer, field)) return '';
       const hourly = hourlyRate(gold.answer, field, gold.rates[field]);
       return hourly !== null ? `${shortNumber(hourly)}/h` : '.../h';
     });
@@ -227,6 +237,7 @@ export default function goldFeature(api, { overlay, enabled = () => true, screen
     }
     if (!label.isConnected) api.layer.appendChild(label);
     const lines = overlay.flatMap((lines) => lines());
+    label.title = lines.map((line) => typeof line === 'string' ? line : line.text).join('\n');
     // As high as the level's text above it (8 game pixels, the screen
     // being 1040 of them high), not the gold counter's 13.
     const cell = api.layer.offsetHeight / 1040 * 8 / gold.font.height;
@@ -255,16 +266,9 @@ export default function goldFeature(api, { overlay, enabled = () => true, screen
     return parts.length ? parts : api.tr('pas encore mesuré');
   };
   const showGold = () => {
-    const answer = gold.answer;
-    const box = answer?.box;
-    // Only while the counter was read lately: it moves with the game's
-    // panels and Power Saving Mode hides it.
-    const fresh = box && answer.read && Date.now() / 1000 - answer.read < 25;
-    const soulsFresh = Object.values(answer?.souls ?? {}).some((part) =>
-      part.read && Date.now() / 1000 - part.read < 25);
-    gold.line = !fresh ? '.../h' : (typeof answer.rate === 'number'
-      ? `${shortNumber(answer.rate * 3600)}/h` : '.../h');
-    showLabel(Boolean((fresh || soulsFresh) && gold.font && enabled()));
+    // Mode and timer describe the plugin, even when a menu hides the game's
+    // counters or OCR has not produced a reading yet.
+    showLabel(Boolean(gold.font && enabled()));
     showRates(gold.font ? api.layer.offsetHeight / 1040 * 8 / gold.font.height : null);
     showCube();
   };

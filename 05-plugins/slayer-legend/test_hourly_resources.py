@@ -124,5 +124,40 @@ class HourlyResources(unittest.TestCase):
         self.assertEqual(result["cubes"]["read"], 113)
 
 
+class ObservedStageDrop(unittest.TestCase):
+    def answer(self, *, number=1, verified=True, source="scan", age=0, screen="battle", input_after=False):
+        now = 100.0
+        queued = []
+        fact = {"value": number, "seen": now - age, "verified": verified, "source": source}
+        ports = NS(clock=NS(wall=lambda: now, monotonic=lambda: now),
+                   game={"facts": lambda: {"stage": fact},
+                         "view": lambda: {"at": now, "look": {"screen": screen}}},
+                   last_input=lambda: {"wall": now + 1} if input_after else None,
+                   spawn=lambda coroutine: queued.append(coroutine), respond=lambda value: value)
+        counter = NS(rate_text=lambda rate: str(rate))
+        table = {"fields": ["name", "drop"], "stages": [["Observed weapon stage", "W"],
+                                                          ["Observed accessory stage", "A"]]}
+        part = feature.gold(ports, None, None, counter, rules, table=table)
+        handler = next(fn for method, path, fn in part["routes"] if path == "/gold")
+        try:
+            result = asyncio.run(handler(None))
+        finally:
+            for coroutine in queued:
+                coroutine.close()
+        return {key: value for key, value in result.items() if key.startswith("farming_")}
+
+    def test_catalogue_drop_uses_only_the_recently_observed_stage(self):
+        self.assertEqual(self.answer(), {"farming_stage": 1, "farming_drop": "weapon", "farming_read": 100})
+        self.assertEqual(self.answer(number=2, screen="saver"),
+                         {"farming_stage": 2, "farming_drop": "accessory", "farming_read": 100})
+
+    def test_stale_unverified_pre_input_or_unmapped_stage_does_not_choose_a_counter(self):
+        for kwargs in ({"age": 30.1}, {"verified": False}, {"source": "setup"}, {"number": 999},
+                       {"number": 0}, {"screen": "unknown"}, {"input_after": True}, {"age": -1}):
+            with self.subTest(kwargs=kwargs):
+                self.assertEqual(self.answer(**kwargs),
+                                 {"farming_stage": None, "farming_drop": None, "farming_read": None})
+
+
 if __name__ == "__main__":
     unittest.main()

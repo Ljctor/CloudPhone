@@ -141,22 +141,28 @@ def reader_table(screens, stage, select, counter, souls, weapon, engraving, cont
             "region": region, "engraving": engraving_grid}
 
 
-def read_all(screens, rules, readers, shot, last_runs=None, now=0.0, timings=None, force=(), done=()):
+def read_all(screens, rules, readers, shot, last_runs=None, now=0.0, timings=None, force=(), done=(), previous_look=None):
     """One scan of shot, pure but for the readers' work: (look, readings,
     ran). Each reader its screen shows runs once when due (last_runs:
     {reader: when it last ran}, None: all due) or forced, unless it is in
     done (it ran on this shot already); readings {field: value} (None: read
-    nothing there); timings, when given, gets each reader's seconds."""
+    nothing there); timings, when given, gets each reader's seconds. A
+    changed observed screen/overlay runs its visible readers immediately."""
     import time
     look = screens.look(shot)
     classified = screens.classify(shot) if look["screen"] == "unknown" else None
     base, overlays, plain = rules.seen_screen(look, classified)
     look = {**look, "classified": classified}
+    # A reader shared by several panels (notably Weapon/Accessories)
+    # must read the newly visible panel even inside its normal poll interval.
+    def identity(view):
+        return (rules.seen_screen(view, view.get("classified")), view.get("quest_tab"))
+    changed_screen = previous_look is not None and identity(previous_look) != identity(look)
     readings, ran = {}, []
     for reader in rules.readers_for(look, classified):
         if reader in done:
             continue
-        if last_runs is not None and not rules.due(reader, last_runs.get(reader), now, force):
+        if last_runs is not None and not changed_screen and not rules.due(reader, last_runs.get(reader), now, force):
             continue
         began = time.perf_counter()
         for field, value in readers[reader](shot, base, overlays, plain).items():
@@ -173,7 +179,7 @@ def game(ports, screens, rules, readers, archive=None, examples=None):
     clock = ports.clock
     state = {"facts": rules.fresh(ports.store.saved.get("game"), clock.wall()), "saved_at": clock.monotonic(),
              "last_runs": {}, "scans": 0, "last": None, "lock": None, "pending": None, "task": None,
-             "playing": False, "epoch": 0, "relaunched_at": None}
+             "playing": False, "epoch": 0, "relaunched_at": None, "input": None}
     observations = []
 
     def observed(shot):
@@ -247,15 +253,25 @@ def game(ports, screens, rules, readers, archive=None, examples=None):
                 return done["readings"]
             last = state["last"] if state["last"] and state["last"]["pixels"] is shot[2] else None
             now = clock.monotonic()
+            user = ports.last_input() if hasattr(ports, "last_input") else None
+            # Only a capture taken after the input can refresh its readings.
+            # Never relabel an older cached frame as the result of that input.
+            user_mark = user.get("monotonic") if user else None
+            changed_input = (user_mark is not None and (state["input"] is None or user_mark > state["input"])
+                             and isinstance(user.get("wall"), (int, float)) and user["wall"] <= captured_at)
+            requested = tuple(readers) if changed_input else tuple(force)
+            previous_look = state["last"]["look"] if state["last"] else None
             look, readings, ran = await ports.analyse(read_all, screens, rules, readers, shot,
-                                                      dict(state["last_runs"]), now, None, tuple(force),
-                                                      tuple(last["ran"]) if last else ())
+                                                      dict(state["last_runs"]), now, None, requested,
+                                                      tuple(last["ran"]) if last else (), previous_look)
             if epoch != state["epoch"]:
                 return {}  # A relaunch during OCR invalidates its old pixels.
             if archive:
                 await ports.analyse(archive, look, shot, captured_at)
             if epoch != state["epoch"]:
                 return {}
+            if changed_input:
+                state["input"] = user_mark
             for reader in ran:
                 state["last_runs"][reader] = now
             state["scans"] += 1
@@ -292,6 +308,10 @@ def game(ports, screens, rules, readers, archive=None, examples=None):
         """(shot, readings) of a capture at most max_age seconds old."""
         shot = await ports.capture(max_age=max_age)
         return shot, (await scan(shot, force) if shot else {})
+
+    async def scan_visible(shot):
+        """Read every calibrated reader shown by a user's final gesture frame."""
+        return await scan(shot, tuple(readers))
 
     def readable_here():
         last = state["last"]
@@ -379,6 +399,9 @@ def game(ports, screens, rules, readers, archive=None, examples=None):
         ports.on_capture(saw)
     if hasattr(ports, "on_relaunch"):
         ports.on_relaunch(relaunched)
-    api = {"get": get, "require": require, "fresh": fresh, "scan": scan, "note": note, "value": value,
-           "relaunched": relaunched, "facts": lambda: state["facts"]}
+    api = {"get": get, "require": require, "fresh": fresh, "scan": scan, "scan_visible": scan_visible,
+           "note": note, "value": value,
+           "relaunched": relaunched, "facts": lambda: state["facts"],
+           "view": lambda: ({"at": state["last"]["at"], "look": state["last"]["look"]}
+                            if state["last"] else None)}
     return {"routes": [("GET", "/game", handle_game)], "startup": [start], "api": api}

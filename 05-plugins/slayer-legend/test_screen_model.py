@@ -264,6 +264,12 @@ class Recognised(unittest.TestCase):
         for crop in ("weapon_detail_tabs_720", "weapon_detail_close_720"):
             self.assertNotIn("weapon_detail", screens.look(screen("battle_emerald", crop))["overlays"])
 
+    def test_skill_mastery_real_title_at_supported_capture_sizes(self):
+        for width, height in ((360, 780), (480, 1040), (720, 1560)):
+            shot = scaled(made("skill_mastery"), width, height)
+            self.assertEqual(screens.look(shot)["screen"], "skill_mastery")
+            self.assertEqual(nav.guard("skill_mastery", "close", .08, .95), None)
+
     def test_every_registered_screen_from_its_fixtures_with_a_margin(self):
         for key in REGISTERED:
             entry = screens.REGISTRY[key]
@@ -383,8 +389,7 @@ class Confusion(unittest.TestCase):
                 owners = self.owners(names)
                 bases = {key if screens.REGISTRY[key]["kind"] == "screen" else screens.REGISTRY[key]["over"][0]
                          for key in owners}
-                # A measured screen (no fixture yet, e.g. title from a share
-                # of white) may take a stray crop: only registered ones are held.
+                # A measured screen may take a stray crop: only registered ones are held.
                 if seen["screen"] in REGISTERED and seen["screen"] not in bases:
                     confused.append((names, background, seen["screen"]))
                 for overlay in seen["overlays"]:
@@ -394,9 +399,14 @@ class Confusion(unittest.TestCase):
 
 
 class Unknown(unittest.TestCase):
+    def test_real_mount_capture_never_establishes_title(self):
+        for width, height in ((480, 1040), (360, 780), (720, 1560)):
+            shot = scaled(screen("not_title_beast_mount"), width, height)
+            self.assertNotEqual(screens.look(shot)["screen"], "title")
+            self.assertIn("title", screens.pending())
+
     def test_no_registered_screen_on_stripes(self):
-        # title is recognised from a share of white only (measured, no
-        # fixture yet): stripes pass it. A registered screen never does.
+        # Generic stripes cannot establish a registered screen.
         stripes = (W, H, bytes((x * 7) % 256 for x in range(W * H * 3)))
         self.assertNotIn(screens.look(stripes)["screen"], REGISTERED)
 

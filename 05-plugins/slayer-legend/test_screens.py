@@ -55,10 +55,11 @@ class Classify(unittest.TestCase):
     def test_the_save_notice_confirm_orange_exit_grey(self):
         self.assertEqual(screens.classify(shot((screens.CONFIRM_BUTTON, ORANGE), (screens.EXIT_BUTTON, GREY))), "save")
 
-    def test_the_title_white_tap_to_start_near_the_bottom(self):
+    def test_sparse_white_text_near_start_button_does_not_establish_title(self):
         # The letters cover part of their area, not all of it.
         left, top, right, bottom = screens.START_TEXT
-        self.assertEqual(screens.classify(shot(((left, top, left + 0.06, bottom), WHITE))), "title")
+        self.assertEqual(screens.classify(shot(((left, top, left + 0.06, bottom), WHITE))), "other")
+        self.assertEqual(screens.classify(pasted("not_title_beast_mount")), "other")
 
     def test_battle_and_a_panel_over_it(self):
         # The emerald is a real crop (fixtures/): a green square is not it.
