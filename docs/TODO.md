@@ -72,7 +72,10 @@ separate milestones. Historical checked items below do not close a new regressio
   rate advances the Cube total on each one-second tick.
 - [x] Add real native Cube glyph evidence for the previously unread zero
   variant, without relaxing ambiguous-digit rejection.
-- [ ] Verify the new Cube reader and dated hourly model together in production.
+- [x] Verify the new Cube reader and dated hourly model together in production:
+  release `b4dac8a`, two new acquired readings produce a positive rate;
+  the browser displays five increasing estimates at the same fixed position.
+  This does not certify the still-pending automatic refresh circuit.
 - [ ] Complete the first supervised resource circuit before enabling its
   automatic cadence. Calibration flags alone do not establish this first run.
 - [ ] Complete the still-pending Equip calibration and supervised engraving;
@@ -107,6 +110,20 @@ Work stages for the current implementation batch:
   Browser writes are intercepted; these checks do not validate live equipment changes.
 - [ ] Soul Weapon/engraving, counters and mapping acceptance above are verified
   against actual gameplay, with remaining gaps still listed explicitly.
+
+Follow-up release evidence:
+
+- [x] `b4dac8a` passes 675 plugin tests (one missing Equip-fixture skip),
+  seven browser-module suites, plus 31 focused tests after the acquisition-time
+  and initial-sampling fixes. Shell checks and the exact-commit build pass.
+- [x] Plugin deployment, read-only verification and served-source comparisons
+  pass. Real Cube readings produce a new rate after restart; browser checks
+  confirm a stationary number anchor and increasing one-second estimates.
+- [x] Six additional private calibration examples are persisted; the weapon
+  detail and Soul Weapon variants are referenced by the screen catalogue.
+- [ ] The resource circuit's first supervised run and the engraving first run
+  remain pending. Their inactive state must not be described as completed
+  automatic gameplay; Equip remains uncalibrated.
 
 ## CloudPhone Slayer Legend work in progress (2026-10-26)
 
