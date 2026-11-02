@@ -100,6 +100,7 @@ def setup(context):
     soul = {"feature": feature("soul_weapon").soul_weapon, "reader": module("soul_weapon"),
             "rules": feature("soul_weapon_rules"), "table": engraving["api"]["table"],
             "loadout": engraving["api"]["loadout"],
+            "revision": engraving["api"]["revision"],
             "applicability": engraving["api"]["applicability"],
             "engraving": {"setup": feature("engraving_setup").engraving_setup, "screen": module("engraving_screen"),
                           "rules": feature("engraving_setup_rules"), "variant": engraving["api"]["variant"]}}
@@ -107,6 +108,9 @@ def setup(context):
                                                    feature("stage_change_rules"), table, soul)
     mode = feature("mode").mode(ports, feature("mode_rules"), timer, values, mine["api"], screens,
                                 module("gold_scroll"), engraving["api"], farming["api"], feature("mode_setup").mode_setup)
+    farming["api"]["bind_agent_context"](lambda: mode["api"]["state"]()["mode"] == "agent"
+                                        and mode["api"]["state"]()["state"] not in ("moving", "waiting")
+                                        and not mine["api"]["state"]()["enabled"])
     gold = feature("gold").gold(ports, screens, stage, module("gold"), feature("gold_rules"),
                                 module("soul_counters"), table)
     refresh = feature("resource_refresh").resource_refresh(

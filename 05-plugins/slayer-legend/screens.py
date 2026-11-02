@@ -569,6 +569,8 @@ def _anchor(spec):
 
 
 ANCHORS = {key: [_anchor(spec) for spec in entry["anchors"]] for key, entry in REGISTRY.items()}
+PARENT_ANCHORS = {key: [_anchor(spec) for spec in entry["parent_anchors"]]
+                  for key, entry in REGISTRY.items() if entry.get("identifies_parent")}
 SIGNATURES = {key: [Patch(spec["patch"], spec.get("box")).signature for spec in entry["anchors"] if "patch" in spec]
               for key, entry in REGISTRY.items()}
 
@@ -617,6 +619,17 @@ def _look(shot):
         screen, sure = "unknown", max(margins.values())
     if sure < MARGIN:
         screen = "unknown"
+    if screen == "unknown":
+        # Some opaque panels dim the battle's emerald below its colour
+        # gate. Only a complete independently calibrated overlay can then
+        # establish its parent; a title alone never establishes battle.
+        parents = []
+        for key, anchors in PARENT_ANCHORS.items():
+            parent_margin = min(anchor(shot) for anchor in anchors)
+            if parent_margin >= MARGIN and margin(shot, key) >= MARGIN:
+                parents.append((REGISTRY[key]["over"][0], parent_margin))
+        if len(parents) == 1:
+            screen, sure = parents[0]
     overlays = []
     for key in OVERLAYS:
         if screen in REGISTRY[key]["over"]:

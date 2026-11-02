@@ -13,6 +13,8 @@ python3 "$(dirname "$0")/../slayer-legend/test_soul_weapon.py" \
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_screen.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_geometry.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_recovery.py -q
+python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_agent_soul_weapon.py -q
+python3 "$(dirname "$0")/../slayer-legend/test_stage_change.py" Sequence.test_recognized_settings_closes_without_changing_preset
 python3 "$(dirname "$0")/../slayer-legend/test_watchdog.py" \
   GoldTrigger.test_persisted_incomplete_grid_is_repaired_with_backoff_even_when_parked \
   GoldTrigger.test_failed_setup_only_clears_after_full_verified_transaction \
@@ -347,7 +349,7 @@ assert blocker is None or isinstance(blocker, dict) and "template" in blocker
 result = state["setup_result"]
 if result is not None:
     assert {"mode", "revision", "target", "at", "result", "message_t"} <= result.keys()
-    assert result["mode"] in ("mpw18", "mpw4")
+    assert result["mode"] in ("mpw18", "mpw4", "soul")
     assert isinstance(result["revision"], str) and len(result["revision"]) == 24
     assert isinstance(result["target"], dict) and isinstance(result["at"], (int, float))
 print("Explicit setup blocker and target-bound attempt result: OK")

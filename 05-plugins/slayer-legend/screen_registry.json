@@ -110,10 +110,16 @@
     },
     "battle_settings": {
       "kind": "overlay", "over": ["battle"], "status": "registered",
+      "identifies_parent": true,
+      "parent_anchors": [
+        {"patch": "settings_live_header", "limit": 0.45},
+        {"patch": "settings_live_presets_ii", "limit": 0.45},
+        {"patch": "settings_live_close", "limit": 0.45}
+      ],
       "anchors": [
         {"patch": "settings_title", "limit": 0.6}
       ],
-      "fixtures": ["battle_emerald", "settings_title"]
+      "fixtures": ["battle_emerald", "settings_title", "settings_live_header", "settings_live_presets_ii", "settings_live_close"]
     },
     "better_weapon_toast": {
       "kind": "overlay", "over": ["battle"], "status": "registered",

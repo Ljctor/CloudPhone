@@ -134,6 +134,18 @@ def todo_line(prefix):
 
 
 class Registry(unittest.TestCase):
+    def test_complete_battle_settings_identifies_its_dimmed_parent(self):
+        parts = ['settings_live_header', 'settings_live_presets_ii', 'settings_live_close']
+        found = screens.look(screen(*parts))
+        self.assertEqual(found['screen'], 'battle')
+        self.assertIn('battle_settings', found['overlays'])
+        self.assertFalse(found['plain'])
+        for missing in parts:
+            with self.subTest(missing=missing):
+                found = screens.look(screen(*(part for part in parts if part != missing)))
+                self.assertEqual(found['screen'], 'unknown')
+                self.assertNotIn('battle_settings', found['overlays'])
+
     def test_every_id_is_a_navigation_screen_or_a_named_overlay(self):
         overlays_only = {"panel", "better_weapon_toast"}
         for key, entry in screens.REGISTRY.items():

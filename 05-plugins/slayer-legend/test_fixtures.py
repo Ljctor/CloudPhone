@@ -145,6 +145,11 @@ class Readings(unittest.TestCase):
         self.assertTrue(controls.settings_open(shot))
         self.assertEqual(controls.selected(shot), "III")
 
+    def test_native_battle_settings_with_dimmed_battle(self):
+        shot = screen("settings_live_header", "settings_live_presets_ii", "settings_live_close")
+        self.assertTrue(controls.settings_open(shot))
+        self.assertEqual(controls.selected(shot), "II")
+
 
 class ProgressBar(unittest.TestCase):
     """The stage progress bar under the stage's name (stage.progress), on

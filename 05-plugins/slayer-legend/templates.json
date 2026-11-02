@@ -348,5 +348,7 @@
   "Configuration demandée non vérifiée": "Requested configuration unverified",
   "vérification finale de l’équipement (lu : {name}, {tag})": "final equipment verification (read: {name}, {tag})",
   "gravure : pivot non calibré pour {shape}": "Engraving: rotation pivot not calibrated for {shape}",
-  "gravure : récupération requise, grille incomplète ou illisible": "Engraving incomplete: recovery required"
+  "gravure : récupération requise, grille incomplète ou illisible": "Engraving incomplete: recovery required",
+  "Test Soul Weapon interrompu : mode Agent ou configuration modifiés": "Soul Weapon test stopped: Agent mode or configuration changed",
+  "fermer Battle settings": "close Battle settings"
 }

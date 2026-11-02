@@ -252,7 +252,8 @@ def readers(game):
         return "on" if second[2]["auto"] else "off"
 
     fake_screens = SimpleNamespace(look=lambda shot: {"screen": shot[2]["screen"], "plain": plain(shot),
-                                                    "overlays": ["panel"] if open_tab(shot) else []},
+                                                    "overlays": (["battle_settings"] if shot[2]["screen"] == "settings"
+                                                                 else ["panel"] if open_tab(shot) else [])},
                                    plain_battle=plain, open_tab=open_tab, quest_panel=lambda shot: False,
                                    TAB_TAP_Y=screens.TAB_TAP_Y,
                                    classify=lambda shot: shot[2]["screen"], SAVER_TAP=screens.SAVER_TAP,
@@ -288,6 +289,12 @@ def done():
 
 
 class Sequence(unittest.TestCase):
+    def test_recognized_settings_closes_without_changing_preset(self):
+        game = Game(screen="settings", selected="II", preset="II")
+        self.assertEqual(run(game, lambda api: api['change_stage'](915)), done())
+        self.assertEqual(game.moves, [('battle_settings', 'close')])
+        self.assertEqual(game.state['preset'], 'II')
+
     def test_from_a_panel_to_920_keeps_the_requested_preset(self):
         game = Game(panel="shop_summon")
         self.assertEqual(run(game, lambda api: api["farm"](920, "III", "mpw18")), done())

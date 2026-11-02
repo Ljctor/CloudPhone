@@ -62,6 +62,7 @@ or "failed", text_t: why or the plan, a status text, or None}. read_controls() f
 on one unfold, or None. relaunched(mode) for the watchdog's relaunch.
 """
 
+import asyncio
 import copy
 from types import SimpleNamespace
 
@@ -137,6 +138,8 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
     names = select.regions(table)
     switches = kept_switches((ports.store.saved.get("farming") or {}).get("switches"))
     status = {"last": None}
+    agent_context = [lambda: False]
+    agent_guards = {}
     ports.store.register("farming", lambda: {"switches": dict(switches)})
 
     def real(name):
@@ -166,8 +169,13 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
             await ports.clock.sleep(POLL)
 
     async def front():
+        guard = agent_guards.get(asyncio.current_task())
+        if guard:
+            guard()
         if not await ports.focused():
             raise Stop("le jeu n’est plus au premier plan")
+        if guard:
+            guard()
 
     async def tap(shot, screen, move, point, verified=False, seen=None):
         await front()
@@ -186,6 +194,8 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         Weapon screen), or None (another screen)."""
         if screens.quest_panel(shot):
             return "quest"
+        if controls.settings_open(shot) and "battle_settings" in screens.look(shot)["overlays"]:
+            return "settings"
         if screens.plain_battle(shot):
             return "plain"
         if screens.classify(shot) == "saver":
@@ -205,6 +215,11 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         parking) by its red X first. The game's « Better Soul Weapon »
         toast is no obstacle (screens.better_weapon_toast)."""
         shot, seen = await settle(battle_or_panel)
+        if seen == "settings":
+            if not may_tap:
+                raise Plan("fermer Battle settings")
+            await tap(shot, "battle_settings", "close", SETTINGS_CLOSE, verified=True)
+            shot, seen = await settle(battle_or_panel, accept=lambda value: value not in (None, "settings"))
         if seen == "quest":
             if not may_tap:
                 raise Plan("fermer Quest")
@@ -506,7 +521,13 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         if highest and stage > highest:
             ports.log("normal", f"Stage change: stage {stage} past the highest seen farmed ({highest}), tried")
         target = copy.deepcopy(soul["loadout"](mode)) if soul else None
-        steps = [("stage", lambda: change_stage(stage))]
+        recovery = (souls["state"]().get("recovery") or {}) if souls else {}
+        # A restarted game may already be on battle with an unfinished grid.
+        # Restore its completion bonus before unrelated stage/preset gates
+        # can stop the full transaction. This stays inside the same lease.
+        steps = ([("engraving_recovery", lambda: equip_soul_weapon(mode, target))]
+                 if recovery.get("required") else [])
+        steps.append(("stage", lambda: change_stage(stage)))
         if preset:
             steps.append(("preset", lambda: set_preset(preset)))
         steps += soul_steps(mode)
@@ -567,6 +588,48 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         return ports.respond({"switches": dict(switches), "last": last,
                               "soul_weapon": souls["state"]() if souls else None})
 
+    async def handle_soul_weapon(request):
+        """Explicit Agent test of one accepted weapon; no stage/preset repair."""
+        try:
+            body = await request.json()
+        except (ValueError, TypeError, AttributeError):
+            body = None
+        if (not isinstance(body, dict) or set(body) != {"mode", "if_revision"}
+                or body.get("mode") not in FARMED or not isinstance(body.get("if_revision"), str)):
+            return ports.respond({"error_t": t("Attendu : {expected}", expected="{mode, if_revision}")}, status=400)
+        name = body["mode"]
+        revision = (soul or {}).get("revision")
+        target = copy.deepcopy(soul["loadout"](name)) if soul else None
+        input_mark = copy.deepcopy(ports.last_input()) if callable(getattr(ports, "last_input", None)) else None
+
+        def guard():
+            if (not ports.enabled() or not agent_context[0]() or not revision
+                    or revision(name) != body["if_revision"] or soul["loadout"](name) != target
+                    or not (target or {}).get("soul_weapon")
+                    or (callable(getattr(ports, "last_input", None)) and ports.last_input() != input_mark)):
+                raise Stop("Test Soul Weapon interrompu : mode Agent ou configuration modifiés")
+
+        try:
+            guard()
+        except Stop as exc:
+            return ports.respond({"error_t": exc.t}, status=409)
+        task = asyncio.current_task()
+        agent_guards[task] = guard
+        try:
+            answer = await ensure_soul_weapon(name, target)
+            guard()
+        except ports.Busy as exc:
+            return ports.respond({"error_t": exc.t}, status=409)
+        except Stop as exc:
+            return ports.respond({"result": "failed", "verified_weapon": False, "text_t": exc.t})
+        finally:
+            agent_guards.pop(task, None)
+        answer = dict(answer, mode=name, if_revision=body["if_revision"],
+                      verified_weapon=answer["result"] == "done")
+        # This route deliberately has no verified_setup receipt and never
+        # acknowledges the selected mode's stage or battle preset.
+        return ports.respond(answer)
+
     async def handle_post(request):
         try:
             body = await request.json()
@@ -592,6 +655,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         return await handle_get(request)
 
     api = {"farm": farm,
+           "bind_agent_context": lambda current: agent_context.__setitem__(0, current),
            "change_stage": lambda stage, mode="mpw18": run(mode, [("stage", lambda: change_stage(stage))]),
            "set_preset": lambda name, mode="mpw18": run(mode, [("preset", lambda: set_preset(name))]),
            "read_controls": read_controls, "switches": lambda: dict(switches),
@@ -604,4 +668,5 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
            "engraving_switch": lambda: souls["state"]()["engraving"] if souls else "off",
            "soul_weapon": lambda mode="mpw18": ensure_soul_weapon(mode),
            "battle_stage": lambda shot, shade=1.0: select.battle_stage(shot, names, shade)}
-    return {"api": api, "routes": [("GET", "/farming", handle_get), ("POST", "/farming", handle_post)]}
+    return {"api": api, "routes": [("GET", "/farming", handle_get), ("POST", "/farming", handle_post),
+                                    ("POST", "/farming/soul-weapon", handle_soul_weapon)]}
