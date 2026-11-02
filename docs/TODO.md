@@ -60,10 +60,13 @@ separate milestones. Historical checked items below do not close a new regressio
   an interrupted preview and a piece requiring relocking.
 - [x] Keep preview navigation bounds aligned with the calibrated button reader,
   including a bar below the grid, while preserving strict action verification.
-- [ ] Treat known policy/configuration refusals as actionable blockers instead
-  of retrying them like transient capture or animation failures.
-  Typed preset refusals and target-bound observation are implemented; verify
-  installed idle behaviour, explicit retry, and the rendered blocker in options.
+- [x] Treat observed preset-policy refusals as actionable blockers instead
+  of retrying them like transient capture or animation failures. Verify repeated
+  installed observation cycles without further actions/countdowns and the
+  rendered exact blocker. Explicit retries remain available; target/input
+  changes invalidate old refusals, and pending engraving still takes priority.
+- [x] Show completed engraving recovery as dated verified grid/lock evidence,
+  separately from current equipment and full farming-configuration readiness.
 - [x] Explain an observed preset mismatch before forbidden preset changes;
   check before stage navigation when the preset is already readable.
 - [x] Reject incomplete Gold-maxed recipes before Equip and explain the
