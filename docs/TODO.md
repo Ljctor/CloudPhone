@@ -43,9 +43,15 @@ separate milestones. Historical checked items below do not close a new regressio
   Retain complete real-capture fixtures for the available T/L/I forms.
 - [x] Keep the target recipe durable across failed and interrupted setup;
   recovery must finish coverage and verify all eight locks before closure.
-- [ ] Verify the installed plugin completes an interrupted real engraving,
-  chooses the highest-level cards, restores the completion bonus and clears
-  failure only after the entire requested setup is observed.
+- [x] Exercise interrupted Ambition Gold-maxed through the plugin's Agent
+  entry point: fill the four I columns, select the highest-level eligible
+  cards, verify the completion bonus and all eight locks.
+- [ ] Verify the entire farming setup after engraving recovery, including
+  stage and preset; clear failure only after all requested conditions pass.
+- [x] Retry transient unreadable weapon names within a bounded observation
+  window, without permitting gestures on unknown or mismatched identities.
+- [x] Reuse matching engraving recovery within the same setup call, retaining
+  a fresh equipment check and invalidation on user input or game relaunch.
 - [ ] Calibrate O, mirrored L and both zigzag shapes when available. Their
   absence must not be replaced by an assumed pivot or an unverified gesture.
 - [ ] Add a verified previous-loadout fallback if repeated target repair fails.

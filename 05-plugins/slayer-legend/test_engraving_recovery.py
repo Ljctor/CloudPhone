@@ -184,6 +184,109 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(setup.state()['verified'])
         self.assertTrue(setup.state()['required'])
 
+    async def test_transient_unread_identity_is_observed_until_two_named_grid_frames(self):
+        game = sw.vision_game(screen='engraving')
+        view = sw.fake_engraving_screen(game)
+        view.weapon = lambda shot, *args: None if 0 < shot[2]['now'] < .75 else 'Vision'
+        setup, ports = self.setup_for(game, view=view)
+        inputs = []
+        swipe = ports.swipe
+
+        async def timed_swipe(*args, **kwargs):
+            inputs.append(game.now)
+            await swipe(*args, **kwargs)
+
+        # helpers.tap captured ports.tap during construction; record game
+        # application itself as well, including padlock corner inputs.
+        original_apply = game.apply
+        def applied(*args, **kwargs):
+            inputs.append(game.now)
+            return original_apply(*args, **kwargs)
+        game.apply = applied
+        ports.swipe = timed_swipe
+        with self.assertLogs(level='WARNING') as logs:
+            _, result = await self.apply(setup, game)
+        self.assertTrue(result['ok'])
+        self.assert_complete(game)
+        self.assertGreaterEqual(min(inputs), 1.0)
+        self.assertTrue(any('steady' in line and 'captures=4 unread=2' in line and 'matched=True' in line
+                            for line in logs.output))
+
+    async def test_lock_polling_waits_read_only_for_transient_unread_name(self):
+        game = sw.vision_game(screen='engraving')
+        unavailable_until = [0]
+        view = sw.fake_engraving_screen(game)
+        view.weapon = lambda shot, *args: None if shot[2]['now'] < unavailable_until[0] else 'Vision'
+        original = game.apply
+        def apply(screen, move, point, end=None):
+            original(screen, move, point, end)
+            if move == 'lock':
+                unavailable_until[0] = game.now + .75
+        game.apply = apply
+        setup, _ = self.setup_for(game, view=view)
+        with self.assertLogs(level='WARNING') as logs:
+            _, result = await self.apply(setup, game)
+        self.assertTrue(result['ok'])
+        self.assert_complete(game)
+        self.assertTrue(any('(wait)' in line and 'unread=2' in line and 'matched=True' in line
+                            for line in logs.output))
+
+    async def test_persistently_unread_identity_after_remove_times_out_without_cleanup_input(self):
+        game = sw.vision_game(screen='engraving')
+        removed_at = []
+        original = game.apply
+        def apply(screen, move, point, end=None):
+            original(screen, move, point, end)
+            if move == 'remove_piece':
+                removed_at.append(game.now)
+        game.apply = apply
+        view = sw.fake_engraving_screen(game)
+        view.weapon = lambda shot, *args: None if removed_at else 'Vision'
+        setup, _ = self.setup_for(game, view=view)
+        with self.assertLogs(level='WARNING') as logs:
+            with self.assertRaises(sw.stage_change.Stop):
+                await self.apply(setup, game)
+        self.assertEqual(sw.engraving_moves(game), ['remove_piece'])
+        self.assertLessEqual(game.now - removed_at[0], 3.25)
+        self.assertTrue(setup.state()['required'])
+        self.assertFalse(setup.state()['verified'])
+        self.assertTrue(any('steady' in line and 'unread=12' in line and 'matched=False' in line
+                            for line in logs.output))
+
+    async def test_readable_wrong_name_after_remove_stops_on_first_capture(self):
+        game = sw.vision_game(screen='engraving')
+        removed_at = []
+        original = game.apply
+        def apply(screen, move, point, end=None):
+            original(screen, move, point, end)
+            if move == 'remove_piece':
+                removed_at.append(game.now)
+        game.apply = apply
+        view = sw.fake_engraving_screen(game)
+        view.weapon = lambda shot, *args: 'Ambition' if removed_at else 'Vision'
+        setup, _ = self.setup_for(game, view=view)
+        with self.assertRaises(sw.stage_change.Stop):
+            await self.apply(setup, game)
+        self.assertEqual(sw.engraving_moves(game), ['remove_piece'])
+        self.assertLessEqual(game.now - removed_at[0], .25)
+        self.assertTrue(setup.state()['required'])
+
+    async def test_gesture_identity_remains_strict_after_stable_observation(self):
+        game = sw.vision_game(screen='engraving')
+        game.state['engraving']['cards'][0]['locked'] = False
+        view = sw.fake_engraving_screen(game)
+        def lock_point(index):
+            # Invalidate identity after the stable read but before the tap's
+            # own guard. Last-known identity must never authorize this input.
+            view.weapon = lambda *args: None
+            return sw.es.lock_point(index)
+        view.lock_point = lock_point
+        setup, _ = self.setup_for(game, view=view)
+        with self.assertRaises(sw.stage_change.Stop):
+            await self.apply(setup, game)
+        self.assertEqual(game.moves, [])
+        self.assertTrue(setup.state()['required'])
+
     async def test_forbidden_relock_stops_before_removal(self):
         game = sw.vision_game(screen='engraving')
         setup, ports = self.setup_for(game)

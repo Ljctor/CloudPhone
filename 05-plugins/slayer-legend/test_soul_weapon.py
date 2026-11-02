@@ -616,7 +616,8 @@ def fake_screens():
         s = shot[2]
         return (0.41, "equipment_weapon") if s["screen"] == "equipment" else None
 
-    return SimpleNamespace(quest_panel=lambda shot: False, plain_battle=plain, open_tab=open_tab, TAB_TAP_Y=screens.TAB_TAP_Y,
+    return SimpleNamespace(quest_panel=lambda shot: False, plain_battle=plain, open_tab=open_tab,
+                           TAB_TAP_Y=screens.TAB_TAP_Y, PARKED_SHADE=screens.PARKED_SHADE,
                            classify=lambda shot: shot[2]["screen"],
                            look=lambda shot: {"screen": "battle" if shot[2]["screen"] in ("battle", "equipment") else shot[2]["screen"],
                                               "plain": plain(shot), "overlays": [] if plain(shot) else ["panel"]})
@@ -634,7 +635,7 @@ def build(game, loadout=None, engraving=None, stage_reader=None):
     if stage_reader is not None and not hasattr(stage_reader, "view"):
         stage_reader.view = lambda shot, names: {"popup": False}
     part = stage_change.stage_change(ports, fake_screens(), stage_reader or SimpleNamespace(regions=lambda table: []),
-                                     SimpleNamespace(), stage_rules, STAGES, soul)
+                                     SimpleNamespace(settings_open=lambda shot: False), stage_rules, STAGES, soul)
     return ports, part["api"]
 
 
@@ -825,7 +826,7 @@ class Sequence(unittest.TestCase):
         soul = {"feature": feature.soul_weapon, "reader": fake_reader(game), "rules": rules, "table": TABLE,
                 "loadout": lambda mode: {"soul_weapon": {"id": AMBITION, "variant": "Atk"}}}
         part = stage_change.stage_change(ports, fake_screens(), SimpleNamespace(regions=lambda table: []),
-                                         SimpleNamespace(), stage_rules, STAGES, soul)
+                                         SimpleNamespace(settings_open=lambda shot: False), stage_rules, STAGES, soul)
         post = next(h for m, p, h in part["routes"] if m == "POST")
 
         class Request:
@@ -1198,8 +1199,10 @@ class Engraving(unittest.TestCase):
         resumed = game.moves[before:]
         close_at = resumed.index(("soul_weapon_engraving", "close"))
         self.assertIn(("soul_weapon_engraving_preview", "confirm"), resumed[:close_at])
-        self.assertEqual(resumed[close_at:close_at + 3], [("soul_weapon_engraving", "close"),
-                         ("soul_weapon", "close"), ("equipment_weapon", "close_tab")])
+        # Keeping the already-correct stage parked is valid; any later
+        # navigation is allowed only after the recovery's completed recipe.
+        self.assertNotIn(("soul_weapon", "close"), resumed[:close_at])
+        self.assertNotIn(("equipment_weapon", "close_tab"), resumed[:close_at])
         self.assertEqual(game.leases[-1], ("stage_change", "farm mpw18"))
         self.assert_gold_balanced(game)
         self.assertTrue(all(card["locked"] for card in game.state["engraving"]["cards"]))
@@ -1600,7 +1603,7 @@ class Engraving(unittest.TestCase):
                 "loadout": lambda mode: loadout[mode], "engraving": part,
                 "applicability": lambda chosen: {"supported": True}}
         built = stage_change.stage_change(ports, fake_screens(), SimpleNamespace(regions=lambda table: []),
-                                          SimpleNamespace(), stage_rules, STAGES, soul)
+                                          SimpleNamespace(settings_open=lambda shot: False), stage_rules, STAGES, soul)
         post = next(h for m, p, h in built["routes"] if m == "POST")
 
         class Request:

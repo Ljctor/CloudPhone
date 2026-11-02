@@ -126,15 +126,18 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
         done = {"locked": [], "removed": [], "placed": [], "corner_failed": False}
         problems = []
 
-        def identity(shot, source=False):
+        def identity(shot, source=False, allow_unread=False):
             """Bind every raw observation to this target, including under
-            a piece popup/preview. A changed or unread name stops the owner;
-            no cleanup can act on another weapon's engraving."""
+            a piece popup/preview. Polling can wait for an unread name;
+            gestures always require a fresh exact name. A different readable
+            name stops immediately, including during polling."""
             require_enabled()
             if source:
                 named = source_weapon(shot, names) if source_weapon and back_on(shot) else None
             else:
                 named = screen.weapon(shot, names, card_font) if screen.title(shot) else None
+            if named is None and allow_unread:
+                return None
             if named != entry["name"]:
                 raise Stop("l’écran montre {seen}, pas {name}", seen=named or ports.t("un nom illisible"),
                            name=entry["name"])
@@ -148,36 +151,44 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
             return await ports.analyse(observed, shot, reader, *args)
 
         async def wait_for(reader, most=None, transition=None):
+            captures, unread = 0, 0
+            since = ports.clock.monotonic()
+
+            def named(shot, source=False):
+                nonlocal unread
+                result = identity(shot, source=source, allow_unread=True)
+                if result is None:
+                    unread += 1
+                return result is not None
+
             def checked(shot):
-                if transition == "opening":
-                    require_enabled()
-                    if not screen.title(shot):
-                        if back_on(shot):
-                            identity(shot, source=True)
-                        return False
-                    # The title can render before the weapon name. Wait
-                    # within the opening deadline without any gesture; a
-                    # readable different name still fails identity below.
-                    if screen.weapon(shot, names, card_font) is None:
-                        return False
-                if transition == "closing":
-                    require_enabled()
+                nonlocal captures
+                require_enabled()
+                captures += 1
+                if transition == "opening" and not screen.title(shot):
                     if back_on(shot):
-                        # The Soul Weapon title can precede its card name,
-                        # just as the engraving title can on opening. Read
-                        # again without touching anything until the bounded
-                        # closing deadline; a different name is never waited.
-                        if source_weapon and source_weapon(shot, names) is None:
-                            return False
-                        identity(shot, source=True)
-                        return reader(shot)
-                    if screen.title(shot):
-                        identity(shot)
+                        named(shot, source=True)
                     return False
-                return observed(shot, reader)
+                if transition == "closing":
+                    if back_on(shot):
+                        return reader(shot) if named(shot, source=True) else False
+                    if screen.title(shot):
+                        named(shot)
+                    return False
+                # Rendering may temporarily hide the name during any bounded
+                # observation phase, not only the title transitions. Do not
+                # read grid/cards/controls or issue input on that capture.
+                return reader(shot) if named(shot) else False
+
             if transition and most is None:
                 most = TRANSITION_WAIT
-            return await poll(checked) if most is None else await poll(checked, most)
+            result = await poll(checked) if most is None else await poll(checked, most)
+            if unread:
+                ports.log("warning", f"Engraving identity polling ({transition or 'wait'}): "
+                          f"captures={captures} unread={unread} "
+                          f"elapsed={round(ports.clock.monotonic() - since, 2)}s "
+                          f"matched={bool(result[1])}")
+            return result
 
         async def tap(shot, screen_id, *args, **kwargs):
             await ports.analyse(identity, shot, screen_id == "soul_weapon")
@@ -192,16 +203,37 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
             await ports.swipe(shot, *args, **kwargs)
 
         async def steady(size, shapes, most=3.0):
-            """Two matching target-bound observations, never a timeout."""
-            last, end = None, ports.clock.monotonic() + most
+            """Two matching target-bound observations within a fixed deadline."""
+            since = ports.clock.monotonic()
+            last, end = None, since + most
+            captures, unread = 0, 0
+
+            def read_named(shot):
+                if identity(shot, allow_unread=True) is None:
+                    return None
+                return read(shot, size, shapes)
+
+            def diagnostic(matched):
+                if unread or not matched:
+                    ports.log("warning", "Engraving identity polling (steady): "
+                              f"captures={captures} unread={unread} "
+                              f"elapsed={round(ports.clock.monotonic() - since, 2)}s matched={matched}")
+
             while True:
                 await ports.clock.sleep(.25)
                 shot = await helpers.look()
-                reading = await observe(read, shot, size, shapes)
-                if last is not None and signature(reading) is not None and signature(reading) == signature(last):
-                    return shot, reading
-                last = reading
+                captures += 1
+                reading = await ports.analyse(read_named, shot)
+                if reading is None:
+                    unread += 1
+                    last = None
+                else:
+                    if last is not None and signature(reading) is not None and signature(reading) == signature(last):
+                        diagnostic(True)
+                        return shot, reading
+                    last = reading
                 if ports.clock.monotonic() >= end:
+                    diagnostic(False)
                     raise Stop("gravure : lectures instables ou grille illisible")
 
         def remember(cards):

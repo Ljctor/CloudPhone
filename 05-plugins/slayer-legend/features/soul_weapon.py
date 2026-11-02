@@ -51,6 +51,7 @@ present (POST /farming {engraving}).
 
 
 import asyncio
+import copy
 
 
 SCREEN_WAIT_MOST = 10.0
@@ -167,7 +168,10 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
                               f"polls={polls} changed_seen={changed_seen}")
                 return shot, None
 
-    async def recover_engraving_run(shot):
+    def input_mark():
+        return copy.deepcopy(ports.last_input()) if callable(getattr(ports, "last_input", None)) else None
+
+    async def recover_engraving_run(shot, receipt=None):
         """Recover a recognised interrupted engraving under the caller's lease.
 
         Identification and eight verified locks are required before its own
@@ -175,6 +179,7 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
         different recipe; it returns the recovered Soul Weapon screen.
         """
         require_enabled()
+        original_input, original_launch = input_mark(), status["relaunched"]
         if setup and await ports.analyse(engraving["screen"].title, shot):
             name = await ports.analyse(engraving["screen"].weapon, shot, names, reader.CARD_FONT)
             matches = [entry for entry in by_id.values() if entry["name"] == name]
@@ -184,13 +189,16 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
                                           table["shapes"], recovery_only=True)
             if not recovered["ok"]:
                 raise Stop("gravure interrompue : récupération non vérifiée")
+            if receipt is not None:
+                receipt.update(state=copy.deepcopy(setup.state()), done=recovered,
+                               input=original_input, launch=original_launch)
             return shot
         raise Stop("gravure interrompue : écran non reconnu, récupération suspendue")
 
     async def recover_engraving(shot):
         return await tracked(recover_engraving_run, shot)
 
-    async def open_screen():
+    async def open_screen(recovery_receipt=None):
         """The Soul Weapon screen, open already (parked) or opened from the
         battle."""
         require_enabled()
@@ -198,7 +206,7 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
         if await ports.analyse(reader.title, shot):
             return shot
         if setup and await ports.analyse(engraving["screen"].title, shot):
-            return await recover_engraving_run(shot)
+            return await recover_engraving_run(shot, recovery_receipt)
         shot = await helpers.to_battle()
         await tap(shot, "battle", "menu_equipment", EQUIPMENT_TAP)
         shot, tab = await wait_for(reader.tab, most=SCREEN_WAIT_MOST)
@@ -305,7 +313,8 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
             status["last"] = {"result": "cached", "weapon": target, "seconds": 0.0}
             return "cached"
         status["cache"] = None
-        shot = await open_screen()
+        recovered = {}
+        shot = await open_screen(recovered)
         memory = rules.fresh_memory(status["direction"])
         view = await ports.analyse(view_of, shot)
         result, moves = "equipped", 0
@@ -338,8 +347,22 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
             status["direction"] = memory["direction"]
             ports.store.save()
         began = ports.clock.monotonic()
-        shot, mismatch, done = await engrave(shot, entry, variant)
-        engraved = round(ports.clock.monotonic() - began, 1)
+        state = recovered.get("state", {})
+        recipe = state.get("recipe") or {}
+        def recovery_current():
+            return recovered.get("input") == input_mark() and recovered.get("launch") == status["relaunched"]
+        reuse = bool(recovered and moves == 0 and state.get("verified") and not state.get("required")
+                     and state.get("completion_verified") and state.get("weapon_id") == target_id
+                     and state.get("variant") == variant and recipe.get("name") == variant
+                     and recipe.get("weapon_id") == target_id
+                     and recipe.get("variant") == engraving["variant"](target_id, variant)
+                     and recovery_current())
+        if reuse:
+            mismatch, done = None, recovered["done"]
+            ports.log("normal", "Soul weapon: same-call completed engraving recovery reused")
+        else:
+            shot, mismatch, done = await engrave(shot, entry, variant)
+        engraved = done["seconds"] if reuse else round(ports.clock.monotonic() - began, 1)
         if done:
             ports.log("normal", f"Soul weapon: engraving step took {engraved} s ({done['gestures']} gestures)")
         # Engraving verifies its selected weapon, not whether that weapon
@@ -354,6 +377,8 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
             shot = await helpers.look()
             final = await ports.analyse(final_view, shot)
             require_enabled()
+            if reuse and not recovery_current():
+                raise Stop("gravure récupérée : saisie utilisateur ou relance pendant la vérification finale")
             selected = final.get("selected")
             # A readable different name or tag is evidence of failure. Only
             # incomplete transition readings may wait, without any action.

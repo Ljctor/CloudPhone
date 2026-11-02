@@ -13,6 +13,7 @@ python3 "$(dirname "$0")/../slayer-legend/test_soul_weapon.py" \
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_screen.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_geometry.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_recovery.py -q
+python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_reuse.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_agent_soul_weapon.py -q
 python3 "$(dirname "$0")/../slayer-legend/test_stage_change.py" Sequence.test_recognized_settings_closes_without_changing_preset
 python3 "$(dirname "$0")/../slayer-legend/test_watchdog.py" \
