@@ -23,7 +23,7 @@ const UNTIL = 'cloudphone-slayer-legend-mode-until';
 // A timed mode starts with this timer (then +30 … −30 to adjust it).
 const TIMED_MINUTES = 30;
 const DOTS = { green: '🟢', blue: '🔵', red: '🔴' };
-const MODE_NAMES = { mpw18: 'Farming mpw18', mpw4: 'Farming mpw4', free: 'Jeu libre',
+const MODE_NAMES = { mpw18: 'Farming mpw18', mpw4: 'Farming mpw4', soul: 'Soul Farming', free: 'Jeu libre',
   agent: 'Agent mode', mine: 'Mine fermée' };
 // The overlay's colour per tone (GET /mode).
 const TONES = { ok: '#ffffff', hold: '#409cff', error: '#ff4040', setup: '#ffa31a' };
@@ -160,13 +160,13 @@ export default function modeFeature(api, { known, watchdog, stage }) {
     farm.stages = await api.get('/stages').catch(() => null);
     api.refresh();
   };
-  const stageChoices = (mpw) => {
+  const stageChoices = (mode) => {
     const highest = farm.stages?.highest ?? farm.answer?.highest;
     return [
       { value: '', label: api.tr('— choisir —') },
-      ...(farm.stages?.[`mpw${mpw}`] ?? []).map((stage) => ({
+      ...(farm.stages?.[mode] ?? []).map((stage) => ({
         value: String(stage.number),
-        label: `${DOTS[stage.colour] ?? '⚪'} mpw${mpw} · ${stage.number}`,
+        label: `${DOTS[stage.colour] ?? '⚪'} ${mode === 'soul' ? stage.name ?? api.tr('Soul Farming') : mode} · ${stage.number}`,
         muted: Boolean(highest && stage.number > highest),
       })),
     ];
@@ -218,7 +218,7 @@ export default function modeFeature(api, { known, watchdog, stage }) {
         type: 'dialog', label: 'Farming mpw18',
         select: { key: 'mode', value: 'mpw18', default: 'mpw18' },
         options: [
-          ...loadouts.options('mpw18', () => stageChoices(18)),
+          ...loadouts.options('mpw18', () => stageChoices('mpw18')),
         ],
       },
       {
@@ -226,8 +226,13 @@ export default function modeFeature(api, { known, watchdog, stage }) {
         // Only once configured: its stage chosen.
         select: { key: 'mode', value: 'mpw4', default: 'mpw18', disabled: () => !loadouts.stage('mpw4') },
         options: [
-          ...loadouts.options('mpw4', () => stageChoices(4)),
+          ...loadouts.options('mpw4', () => stageChoices('mpw4')),
         ],
+      },
+      {
+        type: 'dialog', label: 'Soul Farming',
+        select: { key: 'mode', value: 'soul', default: 'mpw18', disabled: () => !loadouts.stage('soul') },
+        options: loadouts.options('soul', () => stageChoices('soul')),
       },
       {
         type: 'dialog', label: 'Mine fermée',
@@ -258,6 +263,8 @@ export default function modeFeature(api, { known, watchdog, stage }) {
           { value: 'mpw18', label: api.tr('Farming mpw18') },
           ...(loadouts.stage('mpw4') || defaultMode() === 'mpw4'
             ? [{ value: 'mpw4', label: api.tr('Farming mpw4') }] : []),
+          ...(loadouts.stage('soul') || defaultMode() === 'soul'
+            ? [{ value: 'soul', label: api.tr('Soul Farming') }] : []),
           { value: 'free', label: api.tr('Jeu libre') },
           { value: 'agent', label: api.tr('Agent mode') },
         ],
@@ -310,7 +317,7 @@ export default function modeFeature(api, { known, watchdog, stage }) {
           const looked = watchdog?.line(answer.mode) ?? '';
           if (answer.mode === 'mine') return api.tr(answer.mine?.message_t || 'Mine') + warning(answer.mine?.gold) + looked;
           // mpw4 farming: the gateway's gold scroll check (gold, mpw4 only).
-          return api.tr(answer.message_t || 'Farming mpw18') + warning(answer.gold) + looked;
+          return api.tr(answer.message_t || MODE_NAMES[answer.mode] || answer.mode) + warning(answer.gold) + looked;
         },
       },
       { type: 'status', label: 'Intention', visible: () => Boolean(activeIntention()),

@@ -516,7 +516,7 @@ class Game:
                 s["equipped"] = s["selected"]
         elif screen == "soul_weapon" and move == "close":
             s["screen"] = "equipment"
-        elif move == "close":
+        elif move in ("close", "close_tab"):
             s["screen"], s["panel"] = "battle", None
 
     def ports(self):
@@ -571,6 +571,7 @@ class Game:
         store = SimpleNamespace(saved={}, sections={}, save=lambda: None)
         store.register = lambda name, snapshot: store.sections.__setitem__(name, snapshot)
         return SimpleNamespace(capture=capture, analyse=analyse, tap=tap, taps=None, swipe=swipe, focused=focused,
+                               action_allowed=nav.action_allowed,
                                notify=notify, clock=SimpleNamespace(sleep=sleep, wall=lambda: 1e9 + game.now,
                                                                      monotonic=lambda: game.now),
                                leased=leased, Busy=Busy, store=store, last_input=lambda: None, spawn=spawn,
@@ -615,7 +616,7 @@ def fake_screens():
         s = shot[2]
         return (0.41, "equipment_weapon") if s["screen"] == "equipment" else None
 
-    return SimpleNamespace(plain_battle=plain, open_tab=open_tab, TAB_TAP_Y=screens.TAB_TAP_Y,
+    return SimpleNamespace(quest_panel=lambda shot: False, plain_battle=plain, open_tab=open_tab, TAB_TAP_Y=screens.TAB_TAP_Y,
                            classify=lambda shot: shot[2]["screen"],
                            look=lambda shot: {"screen": "battle" if shot[2]["screen"] in ("battle", "equipment") else shot[2]["screen"],
                                               "plain": plain(shot), "overlays": [] if plain(shot) else ["panel"]})
@@ -630,6 +631,8 @@ def build(game, loadout=None, engraving=None, stage_reader=None):
             # Equipment-only tests deliberately omit engraving; production
             # injects the complete recipe capability from the loadout feature.
             "applicability": lambda chosen: {"supported": True, "engraving_required": bool(engraving)}}
+    if stage_reader is not None and not hasattr(stage_reader, "view"):
+        stage_reader.view = lambda shot, names: {"popup": False}
     part = stage_change.stage_change(ports, fake_screens(), stage_reader or SimpleNamespace(regions=lambda table: []),
                                      SimpleNamespace(), stage_rules, STAGES, soul)
     return ports, part["api"]
@@ -910,7 +913,7 @@ class Parking(unittest.TestCase):
         _, api = build(game)
         self.assertTrue(api["parked"](game.snapshot()))
         self.assertEqual(outcome(asyncio.run(api["unpark"]("free"))), ("done", ""))
-        self.assertEqual(game.moves, [("soul_weapon", "close"), ("equipment_weapon", "close")])
+        self.assertEqual(game.moves, [("soul_weapon", "close"), ("equipment_weapon", "close_tab")])
         self.assertEqual(game.state["screen"], "battle")
         # On the battle already: nothing.
         self.assertEqual(outcome(asyncio.run(api["unpark"]("free"))), ("done", ""))
@@ -931,9 +934,10 @@ class Parking(unittest.TestCase):
 # card's padlock corner toggles it (or nothing, corner_works False); a tap
 # on its middle opens its popup, whose padlock toggles it; a piece dragged
 # out of the grid comes out unlocked; a card dragged onto the grid shows
-# its preview in its card orientation, HOLD_ROWS above the finger, turned
-# a quarter clockwise by rotate, moved by a drag of a cube, placed by
-# confirm only where it fits (valid).
+# its preview in its card orientation. Actual T/L/I calibration places
+# its lower-left bounding anchor .7 rows above release and turns around
+# a fixed shape pivot; any preview drag uses that same release anchor.
+# Confirm places it only where it fits (valid).
 VISION_ID = 36
 VISION = next(e for e in TABLE["weapons"] if e["id"] == VISION_ID)
 VISION_VARIANTS = engraving_rules.variants(VISION, engraving_rules.any_orientation(TABLE))
@@ -997,17 +1001,29 @@ class EngravingGame(Game):
             index = next(i for i in range(8) if es.drag_point(i) == point)
             base = setup_rules.normalised([tuple(c) for c in TABLE["shapes"][eng["cards"][index]["shape"]]["cells"]])
             row, col = cell_at(end)
-            eng["preview"] = {"card": index, "turns": 0, "centre": (row - es.HOLD_ROWS, col), "base": base}
-            self.lay()
+            top = round(row - .7) - max(r for r, _ in base)
+            left = round(col)
+            # Measured game behaviour: release controls the lower-left
+            # bounding anchor; turns preserve a fixed shape-relative pivot.
+            pivots = {"I": (2, 0), "L": (1, 0), "T": (1, 0)}
+            pr, pc = pivots[eng["cards"][index]["shape"]]
+            eng["preview"] = {"card": index, "turns": 0, "pivot": (top + pr, left + pc), "base": base,
+                              "cells": [(r + top, c + left) for r, c in base]}
         elif move == "rotate":
-            eng["preview"]["turns"] += 1
-            self.lay()
+            preview = eng["preview"]
+            pr, pc = preview["pivot"]
+            preview["cells"] = [(pr + c - pc, pc - r + pr) for r, c in preview["cells"]]
+            preview["turns"] += 1
         elif move == "move":
-            a, b = cell_at(point), cell_at(end)
-            dr, dc = round(b[0] - a[0]), round(b[1] - a[1])
-            eng["preview"]["cells"] = [(r + dr, c + dc) for r, c in eng["preview"]["cells"]]
-            r0, c0 = eng["preview"]["centre"]
-            eng["preview"]["centre"] = (r0 + dr, c0 + dc)
+            # The touched cube selects the piece; the absolute release
+            # anchor places it. A finger delta does not predict the landing.
+            preview = eng["preview"]
+            row, col = cell_at(end)
+            dr = round(row - .7) - max(r for r, _ in preview["cells"])
+            dc = round(col) - min(c for _, c in preview["cells"])
+            preview["cells"] = [(r + dr, c + dc) for r, c in preview["cells"]]
+            pr, pc = preview["pivot"]
+            preview["pivot"] = (pr + dr, pc + dc)
         elif move == "confirm":
             preview = eng["preview"]
             if self.valid():
@@ -1018,15 +1034,6 @@ class EngravingGame(Game):
             eng["preview"] = None
         else:
             super().apply(screen, move, point)
-
-    def lay(self):
-        """The preview's cells: its shape turned, centred where it is held."""
-        preview = self.state["engraving"]["preview"]
-        shape = setup_rules.turned(preview["base"], preview["turns"])
-        height, width = max(r for r, _ in shape) + 1, max(c for _, c in shape) + 1
-        top = round(preview["centre"][0] - (height - 1) / 2)
-        left = round(preview["centre"][1] - (width - 1) / 2)
-        preview["cells"] = [(r + top, c + left) for r, c in shape]
 
     def valid(self):
         cells = self.state["engraving"]["preview"]["cells"]
@@ -1185,8 +1192,14 @@ class Engraving(unittest.TestCase):
         before = len(game.moves)
         answer = asyncio.run(api["farm"](920, None, "mpw18"))
         self.assertEqual(answer["result"], "done", answer)
-        self.assertEqual(game.moves[before:before + 3], [("soul_weapon_engraving", "close"),
-                         ("soul_weapon", "close"), ("equipment_weapon", "close")])
+        # Recovery finishes its saved recipe before stage navigation can
+        # leave this weapon with its completion bonus missing.
+        self.assertTrue(answer["verified_setup"])
+        resumed = game.moves[before:]
+        close_at = resumed.index(("soul_weapon_engraving", "close"))
+        self.assertIn(("soul_weapon_engraving_preview", "confirm"), resumed[:close_at])
+        self.assertEqual(resumed[close_at:close_at + 3], [("soul_weapon_engraving", "close"),
+                         ("soul_weapon", "close"), ("equipment_weapon", "close_tab")])
         self.assertEqual(game.leases[-1], ("stage_change", "farm mpw18"))
         self.assert_gold_balanced(game)
         self.assertTrue(all(card["locked"] for card in game.state["engraving"]["cards"]))
@@ -1341,6 +1354,25 @@ class Engraving(unittest.TestCase):
         self.assertEqual(len(game.alerts), 1)
         self.assertIn("ready", game.alerts[0])
 
+    def test_uncalibrated_target_shape_preserves_current_weapon_before_any_input(self):
+        for shape in ("O", "J", "S", "Z"):
+            with self.subTest(shape=shape):
+                game = vision_game(screen="soul")
+                game.state["equipped"] = AMBITION
+                before = copy.deepcopy(game.state)
+                requested = {"pieces": [{"shape": shape, "cells": TABLE["shapes"][shape]["cells"]}]}
+                part = {"setup": engraving_setup.engraving_setup, "screen": fake_engraving_screen(game),
+                        "rules": setup_rules, "variant": lambda *args: requested}
+                loadouts = {"mpw18": {"stage": 920, "preset": None,
+                                      "soul_weapon": {"id": VISION_ID, "variant": "Gold-balanced"}}}
+                _, api = build(game, loadouts, part)
+                answer = asyncio.run(api["soul_weapon"]("mpw18"))
+                self.assertEqual(answer["result"], "failed")
+                self.assertIn("pivot non calibré", french(answer["text_t"]))
+                self.assertIn(shape, french(answer["text_t"]))
+                self.assertEqual(game.moves, [], "refuse before Equip can replace the completed weapon")
+                self.assertEqual(game.state, before)
+
     def test_a_corner_tap_without_effect_goes_through_the_popup_with_an_error(self):
         game = vision_game(corner_works=False)
         answer, _ = engrave(game, "Gold-balanced")
@@ -1433,7 +1465,8 @@ class Engraving(unittest.TestCase):
         answer, _ = self.run_custom_reader(game, view, "Gold-balanced")
         self.assertEqual(answer["result"], "failed")
         self.assertIn("forme de Vision", french(answer["text_t"]))
-        self.assertEqual(engraving_moves(game), ["close"])
+        self.assertEqual(engraving_moves(game), [])
+        self.assertEqual(game.state["screen"], "engraving")
 
     def run_custom_reader(self, game, view, variant="Atk"):
         part = {"setup": engraving_setup.engraving_setup, "screen": view, "rules": setup_rules,

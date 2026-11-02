@@ -154,7 +154,7 @@ AWAY_AFTER = 2
 # Google's windows in front are the sign-in path, not another app.
 GMS = "com.google.android.gms"
 # The modes the watchdog checks, by the name its texts give them.
-MODE_NAMES = {"mpw18": t("Farming mpw18"), "mpw4": t("Farming mpw4"), "mine": t("Mine fermée")}
+MODE_NAMES = {"soul": t("Soul Farming"), "mpw18": t("Farming mpw18"), "mpw4": t("Farming mpw4"), "mine": t("Mine fermée")}
 # The mine: the game gone or away this many looks (2 minutes) is its alert.
 MINE_AWAY_LOOKS = 8
 # Looks seen at the gateway's start before any repair.
@@ -225,7 +225,7 @@ ESCALATE = (480, 1800)
 KINDS = tuple(REPAIR_NAMES)
 # Error level: adb gone, the ANR, a stalled bar, and another screen (the
 # plugin does not know it: a bug report).
-ERRORS = ("adb_missing", "anr", "after_mode_screen", "progress_stalled", "unexpected")
+ERRORS = ("adb_missing", "anr", "after_mode_screen", "progress_stalled", "unexpected", "wrong_loadout")
 # Alert-only symptoms said again when they last this long (seconds).
 TIERED = ("progress_stalled",)
 # Repairs that are never plan-only.
@@ -261,10 +261,28 @@ def redirect_intention(kind, target):
 
 
 def redirect_notice(intention, observed=None):
-    """One concrete notice per redirect, never one notice per gesture."""
+    """Short action/target for the phone; route and observations stay in options/logs."""
+    template = {
+        "relaunch": "Relance du jeu pour reprendre {mode}",
+        "mine_relaunch": "Jeu hors écran : relance et retour dans la mine",
+        "back_to_battle": "Retour au combat pour {mode}",
+        "stage_change": "Reprise de {mode} : stage {stage}, preset {preset}",
+        "select_preset": "Rétablissement du preset {preset} pour {mode}",
+        "loadout": "Vérification de l’arme et de la gravure pour {mode}",
+        "park": "Retour à Soul Weapon pour suivre les âmes",
+    }[intention["kind"]]
+    return t(template, **intention["purpose_t"].get("params", {}))
+
+
+def redirect_details(intention, observed=None):
+    """Detailed diagnostic record, never the phone notification."""
     return t("Constat : {observed} · destination : {destination} · objectif : {purpose} · étapes intermédiaires à confirmer à l’écran",
              observed=observed or t("Contrôle du mode"), destination=intention["destination_t"],
              purpose=intention["purpose_t"])
+
+
+def blocked_notice(mode, reason):
+    return t("{mode} bloqué : {why}", mode=MODE_NAMES.get(mode, mode), why=reason)
 
 
 def park_wanted(mode, switch, state=None, hold=None):
@@ -273,7 +291,7 @@ def park_wanted(mode, switch, state=None, hold=None):
     "off" stops it), and no switch running or waiting (state "moving" or
     "waiting": its own sequence parks at its end) nor on hold (hold: the
     user plays)."""
-    return mode in ("mpw18", "mpw4") and switch == "real" and state not in ("moving", "waiting") and hold is None
+    return mode in ("mpw18", "mpw4", "soul") and switch == "real" and state not in ("moving", "waiting") and hold is None
 
 
 def kept_backoff(saved):
@@ -418,6 +436,8 @@ def judge(seen, profile, numeral_of, last_input, resumed, memory, now, after_mod
         return "start_screen", SYMPTOMS["start_screen"], {}, memory
     if screen == "sign_in":
         return "sign_in", SYMPTOMS["sign_in"], {}, memory
+    if screen == "engraving" and seen.get("loadout"):
+        return "wrong_loadout", SYMPTOMS["wrong_loadout"], {"what": seen["loadout"]}, memory
     if screen == "menu":
         since = now if menu_since is None else menu_since
         memory["menu_since"] = since
@@ -454,7 +474,7 @@ def judge(seen, profile, numeral_of, last_input, resumed, memory, now, after_mod
     symptom = "after_mode_screen" if after_mode else "unexpected"
     # A screen the plugin knows (seen["screen"] "known", seen["named"]
     # its name) is stated as open; only a screen matched by nothing is unknown.
-    return symptom, (KNOWN if screen == "known" else SYMPTOMS)[symptom], named, memory
+    return symptom, (KNOWN if screen in ("known", "engraving") else SYMPTOMS)[symptom], named, memory
 
 
 def _mine(seen, away, memory):
@@ -775,7 +795,7 @@ def profile(loadout, stage18, mode="mpw18", park=False):
     variant = weapon.get("variant") if isinstance(weapon, dict) else None
     return {
         "mode": mode,
-        "park": bool(park) and mode in ("mpw18", "mpw4"),
+        "park": bool(park) and mode in ("mpw18", "mpw4", "soul"),
         "stage": stage18 if isinstance(stage18, int) and not isinstance(stage18, bool) and stage18 > 0 else None,
         "preset": preset if preset in ("I", "II", "III", "IV", "V") else None,
         "soul_weapon": ({"id": weapon_id, "variant": variant if isinstance(variant, str) else None}

@@ -38,6 +38,14 @@ MOST_PREVIEW = 8
 # with the user): no engraving gesture, this error instead.
 NOT_SET_UP = "gravure pas mise en place : premier passage supervisé en attente"
 
+# Pivots in normalised base-cell coordinates, inferred from reviewed real
+# one-turn crops: eg_relax_preview_t-rotate-1-after and
+# eg_relax_preview_l-{drop-pivot-after,rotate-1-before,rotate-1-after},
+# eg_relax_preview_i-{drop-after,rotate-1-after}.
+# test_engraving_geometry reconstructs these pivots from those observations.
+# Other shapes stay unknown until their own real observations pass.
+ROTATION_PIVOTS = {"T": (1, 0), "L": (1, 0), "I": (2, 0)}
+
 
 def normalised(cells):
     rows = min(r for r, _ in cells)
@@ -179,6 +187,128 @@ def fit(visible, hidden, cells):
     return out
 
 
+def preview_locations(before, now, base, turns):
+    """Positions compatible with the complete known shape at this rotation."""
+    before, now = set(before), set(now)
+    visible = now - before
+    hidden = before | {(r, c) for r in range(-3, 9) for c in range(-3, 9)
+                       if not (-1 <= r <= 5 and -1 <= c <= 5)}
+    return fit(visible, hidden, turned(base, turns)) if visible else []
+
+
+def unique_preview_cells(before, now, base, turns):
+    """The full preview cellset, or None when its position is ambiguous.
+
+    Occupied cells can hide preview cubes. A plausible fit alone does not
+    identify a piece's position and must not become a calibration sample.
+    """
+    spots = preview_locations(before, now, base, turns)
+    if len(spots) != 1:
+        return None
+    row, col = spots[0]
+    return tuple(sorted((r + row, c + col) for r, c in turned(base, turns)))
+
+
+def clockwise_rotation_pivot(before_cells, after_cells):
+    """Infer a clockwise turn's pivot in (row, col) cell-centre units.
+
+    Both arguments must be complete, uniquely identified observations of
+    the same piece, separated by exactly one rotate tap and no drag. The
+    caller establishes that provenance; these cells only test geometry.
+    Return None for missing cells or an incompatible orientation. A pivot
+    can lie between cell centres; do not round it to a grabbed cube.
+    """
+    before = set(map(tuple, before_cells))
+    after = set(map(tuple, after_cells))
+    if not before or len(before) != len(after):
+        return None
+    rotated = {(c, -r) for r, c in before}
+    if normalised(rotated) != normalised(after):
+        return None
+    source, dest = min(rotated), min(after)
+    dr, dc = dest[0] - source[0], dest[1] - source[1]
+    # after = R(before) + pivot - R(pivot), R(r, c) = (c, -r).
+    return ((dr + dc) / 2, (dc - dr) / 2)
+
+
+def initial_placement_cells(base, target, pivot):
+    """Unrotated cells whose measured pivot turns the piece onto target.
+
+    pivot is relative to the normalised base's cell centres, established
+    from real clockwise observations. None keeps unknown shapes closed.
+    Use the first matching clockwise rotation, as preview_step does for
+    symmetric shapes; later rotations can move their apparent anchor.
+    """
+    if not base or not target or pivot is None:
+        return None
+    base = normalised(base)
+    target = sorted(set(map(tuple, target)))
+    if len(base) != len(target):
+        return None
+    rotated = [(r - pivot[0], c - pivot[1]) for r, c in base]
+    for _ in range(4):
+        around_pivot = [(r + pivot[0], c + pivot[1]) for r, c in rotated]
+        if normalised(around_pivot) == normalised(target):
+            source, dest = min(around_pivot), min(target)
+            dr, dc = dest[0] - source[0], dest[1] - source[1]
+            return tuple(sorted((r + dr, c + dc) for r, c in base))
+        rotated = [(c, -r) for r, c in rotated]
+    return None
+
+
+def drag_response(before_cells, after_cells, start, end):
+    """Describe one observed drag, with no assumed lift or grab offset.
+
+    All points use (row, col) grid units, including fractional gesture
+    endpoints. Complete uniquely identified piece cells must precede and
+    follow this one drag without rotation. None means it cannot calibrate.
+    ``residual`` is observed piece displacement minus finger displacement;
+    it includes lift/snap, and quantised cell readings cannot resolve its
+    continuous components. ``grab`` identifies the start relative to the
+    piece's top-left cell; reuse requires the same grab and orientation.
+    """
+    before = set(map(tuple, before_cells))
+    after = set(map(tuple, after_cells))
+    if not before or len(before) != len(after) or normalised(before) != normalised(after):
+        return None
+    source, dest = min(before), min(after)
+    piece_delta = tuple(dest[i] - source[i] for i in range(2))
+    finger_delta = tuple(end[i] - start[i] for i in range(2))
+    return {"shape": tuple(normalised(before)),
+            "grab": tuple(start[i] - source[i] for i in range(2)),
+            "piece_delta": piece_delta, "finger_delta": finger_delta,
+            "residual": tuple(piece_delta[i] - finger_delta[i] for i in range(2))}
+
+
+def landing_response(cells, endpoint):
+    """Learn endpoint-to-piece offset from one complete observed landing.
+
+    Unlike drag_response this does not assume that the game preserves the
+    touched cube under the finger. The caller associates it with the card,
+    orientation and gesture type (inventory drop or preview drag). Unknown
+    or ambiguous observations must not be passed as complete cells.
+    """
+    cells = set(map(tuple, cells))
+    if not cells:
+        return None
+    anchor = min(cells)
+    return {"shape": tuple(normalised(cells)),
+            "endpoint_offset": tuple(endpoint[i] - anchor[i] for i in range(2))}
+
+
+def landing_endpoint(target, response):
+    """Endpoint reproducing a measured landing at target, or None.
+
+    No response means no calibrated endpoint. The caller must also match
+    the card and gesture type; this function checks the exact orientation.
+    """
+    target = set(map(tuple, target))
+    if not target or not response or tuple(normalised(target)) != response["shape"]:
+        return None
+    anchor = min(target)
+    return tuple(anchor[i] + response["endpoint_offset"][i] for i in range(2))
+
+
 def preview_step(before, now, valid, base, turns, target):
     """The next preview move: ("rotate",), ("move", from_cell, to_cell),
     ("confirm",) or ("cancel", why). before: the cubes before the drag
@@ -186,14 +316,13 @@ def preview_step(before, now, valid, base, turns, target):
     card's shape in its base orientation; turns: the rotate taps so far;
     target: the cells to fill."""
     visible = {cell for cell in now if cell not in before}
-    hidden = set(before) | {(r, c) for r in range(-3, 9) for c in range(-3, 9) if not (-1 <= r <= 5 and -1 <= c <= 5)}
     shape = turned(base, turns)
     if not visible:
         return ("cancel", t("aperçu pas vu"))
     if shape != normalised(target):
         # A turn needs no position (in place, eg7 to eg8).
         return ("rotate",) if turns < 3 else ("cancel", t("aucune rotation ne correspond"))
-    spots = fit(visible, hidden, shape)
+    spots = preview_locations(before, now, base, turns)
     if not spots:
         return ("cancel", t("aperçu pas situé"))
     # Several fits (cubes hidden): the one hiding fewest under placed cubes

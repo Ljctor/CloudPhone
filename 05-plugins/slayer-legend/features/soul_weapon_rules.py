@@ -11,7 +11,8 @@ is kept (state.json) for the next time.
 
 view (soul_weapon.view): {open, selected (a name or None), owned (0, 1,
 None), tag ("Equip", "Unequip", None), tag_box, tags, rows: [{top,
-bottom, selected}], badge (True: the card shows it equipped, None: not
+bottom, selected}], list_icons (stable interior icon samples for motion),
+badge (True: the card shows it equipped, None: not
 told)}.
 
 plan() answers one of:
@@ -34,6 +35,9 @@ MOST_MOVES = 10
 # and how long at most.
 POLL = 0.25
 WAIT_MOST = 3.0
+# Scrolling can require slow capture/analysis plus a second fresh stable
+# observation. This allowance never retries the gesture.
+SCROLL_WAIT_MOST = 10.0
 
 
 def order_names(table):
@@ -141,9 +145,10 @@ def plan(view, target, memory, names, tag_learned=False):
 
 
 def signature(view):
-    """What a move should change."""
+    """What a move should change, including contents at equal row positions."""
     return (view.get("selected"), selected_row(view), view.get("tag"),
-            tuple(round(row["top"], 3) for row in view.get("rows") or []))
+            tuple(round(row["top"], 3) for row in view.get("rows") or []),
+            view.get("list_icons"))
 
 
 def progressed(before, after):

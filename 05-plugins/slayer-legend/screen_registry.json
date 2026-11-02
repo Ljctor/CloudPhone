@@ -54,9 +54,13 @@
     "panel": {
       "kind": "overlay", "over": ["battle"], "status": "measured",
       "anchors": [
-        {"share": "MENU_LABELS", "test": "light", "below": 0.01},
         {"reader": "battle_panel"}
       ]
+    },
+    "character_enhance": {
+      "kind": "overlay", "over": ["battle"], "status": "registered",
+      "anchors": [{"reader": "character_enhance"}],
+      "fixtures": ["battle_emerald", "character_panel_selected_tab", "character_enhance_header"]
     },
     "quest_panel": {
       "kind": "overlay", "over": ["battle"], "status": "registered",
@@ -137,7 +141,7 @@
     }
   },
   "tree": {
-    "character_enhance": {"name": "Character: Enhance", "parent": "battle", "screen": "character_enhance", "via": "battle/menu_character", "back": "character_enhance/close", "look": "panel", "visit": true, "example": "screenshots/character_enhance.png", "readings": {"exp": {"box": [110, 627, 278, 639], "format": "current / required", "status": "never_read", "fixtures": ["fixtures/character_exp_enhance.txt", "fixtures/character_exp_growth.txt"], "why": "small digits touch; existing pixel_font reader returns unknown glyphs"}}},
+    "character_enhance": {"name": "Character: Enhance", "parent": "battle", "screen": "character_enhance", "via": "battle/menu_character", "back": "character_enhance/close", "look": "character_enhance", "visit": true, "example": "screenshots/character_enhance.png", "readings": {"exp": {"box": [110, 627, 278, 639], "format": "current / required", "status": "never_read", "fixtures": ["fixtures/character_exp_enhance.txt", "fixtures/character_exp_growth.txt"], "why": "small digits touch; existing pixel_font reader returns unknown glyphs"}}},
     "character_growth": {"name": "Character: Growth", "parent": "character_enhance", "screen": "character_growth", "via": "character_enhance/growth", "back": "character_growth/enhance", "look": "panel", "visit": true, "example": "screenshots/character_growth.png"},
     "character_growth_icon_1": {"name": "Character: Growth, first sub-tab icon", "parent": "character_growth", "screen": null, "via": null, "look": "panel", "visit": false, "why": "not explored: what it does is not known, so the tour does not tap it (icon at 0.48, 0.632)"},
     "character_growth_icon_2": {"name": "Character: Growth, second sub-tab icon", "parent": "character_growth", "screen": null, "via": null, "look": "panel", "visit": false, "why": "not explored: what it does is not known, so the tour does not tap it (icon at 0.615, 0.632)"},

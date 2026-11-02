@@ -421,9 +421,67 @@ _quest_patches = None
 
 
 def battle_panel(shot):
-    """Dark menu labels also occur on full battle; its blue mana bar
-    distinguishes that state from a bottom panel covering the skill grid."""
-    return share(shot, MANA_BAR, blue) <= 0.5
+    """A bottom panel covers the full battle's blue mana bar. Its selected
+    bottom tab may light the label: bright Character text is positive tab
+    evidence, not evidence that the panel disappeared. Dark labels retain
+    the existing fallback for panels whose selected tab is not readable."""
+    return share(shot, MANA_BAR, blue) <= 0.5 and (
+        share(shot, MENU_LABELS, light) < 0.01 or open_tab(shot) is not None)
+
+
+
+# The selected header and coin icons are real independent crops. This reader
+# observes a user action; it never permits a paid button to be pressed.
+_CHARACTER_TABS = ((26, 550, 88, 566), (121, 550, 171, 566), (204, 550, 274, 566))
+_CHARACTER_PAID = ((353, 704, 454, 753), (353, 807, 454, 856), (353, 909, 454, 958))
+_character_patches = None
+
+
+def _character_templates():
+    global _character_patches
+    if _character_patches is None:
+        _character_patches = (Patch("character_enhance_header", limit=.45),
+                              [Patch(f"character_enhance_gold_button_{i + 1}", limit=.45) for i in range(3)])
+    return _character_patches
+
+
+def _character_area(box):
+    left, top, right, bottom = box
+    return left / 480, top / 1040, right / 480, bottom / 1040
+
+
+def character_enhance(shot):
+    """The calibrated Enhance header is selected on the Character panel.
+
+    A lit Character menu tab alone cannot distinguish Growth/Promotion.
+    Full Battle, unknown headers and ambiguous selected tabs stay unknown.
+    """
+    if open_tab(shot) != (.073, "character_enhance") or share(shot, MANA_BAR, blue) > .5:
+        return False
+    header, _ = _character_templates()
+    selected = [i for i, box in enumerate(_CHARACTER_TABS)
+                if share(shot, _character_area(box), white, step=1) > .08]
+    return selected == [0] and header.margin(shot) > 0
+
+
+def character_enhance_actions(shot):
+    """Only paid-row buttons independently observed on the current frame."""
+    # The tiny coin crop is calibrated at native 480x1040. Resizing aliases
+    # its outline: unsupported sizes stay unknown instead of relaxing it.
+    if shot[:2] != (480, 1040) or not character_enhance(shot):
+        return []
+    _, coins = _character_templates()
+    return [{"id": f"enhance_stat_{i + 1}", "move": "enhance_stat", "rect": _character_area(box),
+             "semantic_kind": "action", "forbidden": True}
+            for i, box in enumerate(_CHARACTER_PAID)
+            if share(shot, _character_area(box), orange, step=2) > .55 and coins[i].margin(shot) > 0]
+
+
+def gold_spend_at(shot, x, y):
+    """A user tap/hold inside a freshly recognised gold Enhance button."""
+    return any(left <= x <= right and top <= y <= bottom
+               for button in character_enhance_actions(shot)
+               for left, top, right, bottom in [button["rect"]])
 
 
 def quest_tab(shot):

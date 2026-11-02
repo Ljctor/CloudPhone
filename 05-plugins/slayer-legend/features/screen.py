@@ -135,6 +135,7 @@ def screen(ports, screens, stage, rules, values, table):
             pass
         number = highest_now()
         return ports.respond({"highest": number, "mpw18": rules.stage_list(table, 18, None),
-                              "mpw4": rules.stage_list(table, 4, None)})
+                              "mpw4": rules.stage_list(table, 4, None),
+                              "soul": rules.stage_list(table, None, None)})
 
     return {"routes": [("GET", "/screen", handle_screen), ("GET", "/stages", handle_stages)]}

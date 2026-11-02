@@ -141,7 +141,7 @@ class Timer(unittest.TestCase):
 
 
 class Merge(unittest.TestCase):
-    STORED = {"stage18": 920, "stage4": 31, "highest": 950, "floor": 161, "area": 2}
+    STORED = {"stage18": 920, "stage4": 31, "stageSoul": 970, "highest": 950, "floor": 161, "area": 2}
 
     def test_a_post_with_a_null_field_leaves_the_value_in_place(self):
         asked, error = rules.request({"mode": "mpw18", "stage18": None, "stage4": 40}, self.STORED)
@@ -209,7 +209,7 @@ class Hold(unittest.TestCase):
                          "Farming mpw18 ready in 95 s (including 60 s waiting: you were playing)")
         self.assertEqual(rules.ready_text("mpw18", 34, held=0.3), "Farming mpw18 ready in 34 s")
         self.assertEqual(rules.ready_text("mpw4", 80, applied=True, alert="X", held=50),
-                         "Loadout mpw4 applied in 80 s (including 50 s waiting: you were playing); X")
+                         "Loadout mpw4 applied in 80 s (including 50 s waiting: you were playing)")
 
     def test_free_or_resume_while_on_hold(self):
         hold = {"id": "a1", "action": None}

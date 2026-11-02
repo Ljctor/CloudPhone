@@ -20,6 +20,8 @@ SHORT once it reads full digits.
 # Readings every SECONDS; the slope over WINDOW (SHORT in full digits);
 # the readings stop IDLE seconds after the last page asked.
 SECONDS = 10
+# Exact Gold moves on each wave; acquire its first slope within a few seconds.
+GOLD_SECONDS = 2
 WINDOW = 300
 SHORT = 60
 IDLE = 600

@@ -251,6 +251,23 @@ class Padlocks(unittest.TestCase):
 
 
 class Preview(unittest.TestCase):
+    def test_native_invalid_crystal_pulses_keep_controls_and_all_cells(self):
+        expected = {(1, -1), (1, 0), (1, 1), (2, 0)}
+        for name in ("eg_relax_preview_t-rotate-1-after", "eg_relax_preview_t-rotate-2-before", "eg_relax_preview_t-move-naive-before"):
+            with self.subTest(capture=name):
+                screen = fixtures.screen(name)
+                found = es.bar(screen)
+                self.assertIsNotNone(found)
+                self.assertFalse(found['valid'])
+                self.assertEqual(set(es.cubes(screen)), expected)
+                self.assertAlmostEqual(found['cancel'][0] * 480, 111.4, delta=1)
+                self.assertAlmostEqual(found['cancel'][1] * 1040, 419.1, delta=1)
+
+    def test_native_valid_piece_after_measured_drag(self):
+        screen = fixtures.screen("eg_relax_preview_t-move-naive-after")
+        self.assertTrue(es.bar(screen)['valid'])
+        self.assertEqual(set(es.cubes(screen)), {(0, 0), (0, 1), (0, 2), (1, 1)})
+
     def test_as_dropped_invalid(self):
         screen = fixtures.screen("eg_preview_base")
         found = es.bar(screen)
@@ -292,10 +309,11 @@ class Preview(unittest.TestCase):
         self.assertEqual(len(removed["pieces"]), 3)
 
     def test_hold_point(self):
-        # eg7: dropped at (0.44, 0.30), the L's cells rows -1 to 1, cols 1-2.
+        # Reviewed l-drop-pivot: the endpoint targets the lower-left
+        # bounding anchor, with the observed .7 row lift.
         x, y = es.hold_point([(-1, 1), (0, 1), (1, 1), (1, 2)])
-        self.assertAlmostEqual(x, 0.44, places=2)
-        self.assertAlmostEqual(y, 0.30, places=2)
+        self.assertAlmostEqual(x, 0.3848958333333333)
+        self.assertAlmostEqual(y, 0.35538461538461535)
 
 
 if __name__ == "__main__":

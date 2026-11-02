@@ -54,11 +54,11 @@ def higher(highest, number):
 
 
 def stage_list(table, mpw, highest):
-    """Stages with that many monsters per wave, at most `highest`,
+    """Stages with that many monsters per wave (None: all), at most `highest`,
     highest first: [{number, name, colour}]."""
     found = []
     for number in range(min(highest or len(table["stages"]), len(table["stages"])), 0, -1):
         row = table["stages"][number - 1]
-        if row[1] == mpw:
+        if mpw is None or row[1] == mpw:
             found.append({"number": number, "name": row[0], "colour": row[4]})
     return found

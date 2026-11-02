@@ -62,6 +62,7 @@ or "failed", text_t: why or the plan, a status text, or None}. read_controls() f
 on one unfold, or None. relaunched(mode) for the watchdog's relaunch.
 """
 
+import copy
 from types import SimpleNamespace
 
 # After a move: a fresh capture every POLL seconds until the screen
@@ -81,6 +82,7 @@ LOOK_GAP = 0.4
 FOLD_SETTLE = 4.0
 SETTINGS_CLOSE = (0.09, 0.965)
 BATTLE_RETURN = (0.5, 0.18)
+QUEST_CLOSE = (0.895, 0.183)
 LEASE_SECONDS = 240
 # After a relaunch, the soul weapon's check waits for the lease this often,
 # this long at most (seconds).
@@ -89,7 +91,7 @@ RELAUNCH_WAIT = 300
 HOLDER = "stage_change"
 SWITCHES = ("stage_change", "preset")
 # The modes that park on the Soul Weapon screen.
-FARMED = ("mpw18", "mpw4")
+FARMED = ("mpw18", "mpw4", "soul")
 
 
 def t(template, **params):
@@ -182,6 +184,8 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
     def battle_or_panel(shot):
         """"plain", the open panel's tab, "saver", "parked" (the Soul
         Weapon screen), or None (another screen)."""
+        if screens.quest_panel(shot):
+            return "quest"
         if screens.plain_battle(shot):
             return "plain"
         if screens.classify(shot) == "saver":
@@ -201,6 +205,13 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         parking) by its red X first. The game's « Better Soul Weapon »
         toast is no obstacle (screens.better_weapon_toast)."""
         shot, seen = await settle(battle_or_panel)
+        if seen == "quest":
+            if not may_tap:
+                raise Plan("fermer Quest")
+            # Quest can cover Battle or Shop. Close only its calibrated X,
+            # then identify the exposed screen before any further move.
+            await tap(shot, "quest_panel", "close_overlay", QUEST_CLOSE, verified=True)
+            shot, seen = await settle(battle_or_panel, accept=lambda v: v not in (None, "quest"))
         if seen == "engraving":
             if not may_tap:
                 raise Plan("quitter l’écran Soul Weapon")
@@ -229,9 +240,13 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         if not may_tap:
             raise Plan("fermer le panneau ({panel})", panel=tab[1])
         reduced = await ports.analyse(screens.look, shot)
-        await tap(shot, tab[1], "close", BATTLE_RETURN, verified=True,
-                  seen={"look": reduced, "combat_visible": reduced["screen"] == "battle"})
-        shot, plain = await settle(screens.plain_battle)
+        # The Equipment tab toggles its panel; tapping visible combat can
+        # leave this panel unchanged. Only use the tab the fresh reader lit.
+        move, point = ("close_tab", (tab[0], screens.TAB_TAP_Y)) if tab[1] == "equipment_weapon" else ("close", BATTLE_RETURN)
+        await tap(shot, tab[1], move, point, verified=True,
+                  seen={"look": reduced, "combat_visible": reduced["screen"] == "battle",
+                        "active_tab": tab[1]})
+        shot, plain = await settle(screens.plain_battle, timeout=10.0 if move == "close_tab" else SETTLE)
         if not plain:
             raise Stop("fermeture du panneau du menu du bas")
         return shot
@@ -242,15 +257,25 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         shot = await look()
         if parked(shot) and await ports.analyse(select.battle_stage, shot, names, screens.PARKED_SHADE) == target:
             return  # parked on the target stage: nothing to leave
-        shot = await to_battle(real("stage_change"))
-        seen = await ports.analyse(select.battle_stage, shot, names)
-        if seen == target:
-            return
-        if not real("stage_change"):
+        # An interrupted attempt may have left Select Region open. Its
+        # recognised title is the entry point; never close a guessed bottom
+        # panel or tap the battle map through this overlay.
+        view = await ports.analyse(select.view, shot, names)
+        if not view["popup"]:
+            shot = await to_battle(real("stage_change"))
+            seen = await ports.analyse(select.battle_stage, shot, names)
+            if seen == target:
+                return
+            if not real("stage_change"):
+                raise Plan("stage {seen} → {stage} : Select Region, région {region}, Move sur la ligne lue comme {stage}",
+                           seen=seen or t("illisible"), stage=target, region=names[rules.region_of(target)])
+            await tap(shot, "battle", "stage_select", select.STAGE_MAP_TAP)
+        elif not real("stage_change"):
             raise Plan("stage {seen} → {stage} : Select Region, région {region}, Move sur la ligne lue comme {stage}",
-                       seen=seen or t("illisible"), stage=target, region=names[rules.region_of(target)])
-        await tap(shot, "battle", "stage_select", select.STAGE_MAP_TAP)
-        shot, view = await settle(select.view, names, accept=lambda v: v["popup"] and v["rows"], stable=True)
+                       seen=t("illisible"), stage=target, region=names[rules.region_of(target)])
+        shot, view = await settle(select.view, names,
+                                  accept=lambda v: v["popup"] and v["region"] is not None and v["rows"],
+                                  stable=True)
         if not view["popup"]:
             raise Stop("ouverture de Select Region")
         for _ in range(rules.MOST_MOVES):
@@ -480,11 +505,25 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         not open fails at the check after Move. force: see run."""
         if highest and stage > highest:
             ports.log("normal", f"Stage change: stage {stage} past the highest seen farmed ({highest}), tried")
+        target = copy.deepcopy(soul["loadout"](mode)) if soul else None
         steps = [("stage", lambda: change_stage(stage))]
         if preset:
             steps.append(("preset", lambda: set_preset(preset)))
         steps += soul_steps(mode)
-        return await run(mode, steps, force, lambda: preflight_soul(mode))
+        answer = await run(mode, steps, force, lambda: preflight_soul(mode))
+        # Only the complete transaction can acknowledge a failed setup.
+        # A parking move and a healthy battle frame carry no such evidence.
+        current = soul["loadout"](mode) if soul else None
+        recovery = (souls["state"]().get("recovery") or {}) if souls else {}
+        chosen = (target or {}).get("soul_weapon")
+        engraving_required = bool(chosen and chosen.get("variant"))
+        answer["verified_setup"] = bool(
+            answer["result"] == "done" and target == current
+            and (not target or target.get("stage") == stage and target.get("preset") == preset)
+            and (not engraving_required or recovery.get("verified") and not recovery.get("required")
+                 and recovery.get("weapon_id") == chosen.get("id")
+                 and recovery.get("variant") == chosen.get("variant")))
+        return answer
 
     async def after_relaunch(mode):
         """The soul weapon read again once the game is back: the lease
@@ -505,7 +544,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
 
     def relaunched(mode):
         """For the watchdog, once its relaunch brought the game back."""
-        if not souls or mode not in ("mpw18", "mpw4"):
+        if not souls or mode not in ("mpw18", "mpw4", "soul"):
             return None
         souls["relaunched"]()
         if not (soul["loadout"](mode) or {}).get("soul_weapon") or souls["switch"]() != "real":
@@ -560,6 +599,8 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
            "park": lambda mode: run(mode, [("park", lambda: park(mode))]), "parked": parked, "unpark": unpark,
            "soul_weapon_switch": lambda: souls["switch"]() if souls else "off",
            "soul_weapon_state": lambda: souls["state"]() if souls else None,
+           "engraving_open": lambda shot: bool(soul and soul.get("engraving")
+                                                and soul["engraving"]["screen"].title(shot)),
            "engraving_switch": lambda: souls["state"]()["engraving"] if souls else "off",
            "soul_weapon": lambda mode="mpw18": ensure_soul_weapon(mode),
            "battle_stage": lambda shot, shade=1.0: select.battle_stage(shot, names, shade)}

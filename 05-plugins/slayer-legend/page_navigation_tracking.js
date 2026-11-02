@@ -1,7 +1,7 @@
 // Read-only visual tracking for debug rectangles. Gesture distances are not
 // content distances (inertia and list boundaries), so only pixels move zones.
 export function scrollViewport(zone, scrolls) {
-  if (zone.kind !== 'tap') return null;
+  if (!['tap', 'action', 'draggable'].includes(zone.kind)) return null;
   const [l, t, r, b] = zone.rect;
   return scrolls.find(({ rect, direction }) => rect && ['vertical', 'horizontal'].includes(direction)
     && rect[0] <= (l + r) / 2 && (l + r) / 2 <= rect[2]

@@ -100,7 +100,13 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
         return game["value"]("highest") if game is not None else status["highest"]
 
     def stages():
-        return {"stage18": loadouts["stage"]("mpw18"), "stage4": loadouts["stage"]("mpw4")}
+        # Older standalone integrations have only the original two loadouts.
+        try:
+            soul_stage = loadouts["stage"]("soul")
+        except KeyError:
+            soul_stage = None
+        return {"stage18": loadouts["stage"]("mpw18"), "stage4": loadouts["stage"]("mpw4"),
+                "stageSoul": soul_stage}
 
     def report(state, message):
         """The mode's state and its message (a status text)."""
@@ -148,7 +154,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
         watched = look if look and look.get("mode") == name else None
         base = rules.tone(name, status["state"], status["hold"] is not None, playing,
                           watched, mine.get("state") if name == "mine" else None, setup.engraving_off(name))
-        if (name in ("mpw18", "mpw4") and setup.blocker(name, mine.get("enabled"))
+        if (name in ("mpw18", "mpw4", "soul") and setup.blocker(name, mine.get("enabled"))
                 and not playing and not status["hold"]
                 and status["state"] not in ("moving", "waiting") and not (watched or {}).get("repairing")):
             return "error"
@@ -165,7 +171,9 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
         before, after = status["switch"] or ("?", status["mode"])
         line, alert = rules.switch_report(before, after, ports.clock.monotonic() - since - waited,
                                           answer.get("timings") or {}, waited, applied)
-        ports.log("warning" if alert else "normal", f"{line}, {answer['result']}", notify=bool(alert))
+        ports.log("warning" if alert else "normal", f"{line}, {answer['result']}")
+        if alert:
+            ports.log("warning", alert)
         return alert
 
     def end_hold(action):
@@ -230,7 +238,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
         status["resource_refresh"] = getter
 
     async def set_stage(number, mpw, applied=False, step=None):
-        name = f"mpw{mpw}"
+        name = "soul" if mpw == "soul" else f"mpw{mpw}"
         parked = farming.get("soul_weapon_switch", lambda: "off")() == "real"
         owner = object()
         attempt = setup.begin_attempt(name, number)
@@ -259,7 +267,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
         (applied: since its loadout changed), naming the slowest step when
         over rules.SWITCH_BUDGET. step: what runs in place of farm() (a
         coroutine function: the soul weapon step alone, taking force)."""
-        name = f"mpw{mpw}"
+        name = "soul" if mpw == "soul" else f"mpw{mpw}"
         preset = loadouts["loadout"](name).get("preset")
         moving = t("Passage au stage {number} ({name})", number=number, name=name)
         report("moving", moving)
@@ -286,8 +294,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
                         since = ports.clock.monotonic()
                     if ports.clock.monotonic() - since >= rules.LEASE_WAIT:
                         report("failed", t("{switch} : bail toujours pris après 30 min ({why})", switch=moving, why=e.t))
-                        await ports.notify(f"Switch to stage {number} ({name}) failed: lease still taken after 30 min "
-                                           f"({e})")
+                        await ports.notify(rules.blocked_text(name, number, "another action is still running after 30 min"))
                         return False
                     if e.t["template"] == rules.USER_PLAYING:
                         force = False
@@ -321,7 +328,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
             await ports.notify(rules.ready_text(name, ports.clock.monotonic() - since, applied, alert, held))
         if answer["result"] == "failed":
             report("failed", t("{switch} arrêté : {why}", switch=moving, why=answer["text_t"]))
-            await ports.notify(f"Switch to stage {number} ({name}) stopped: {ports.english(answer['text_t'])}")
+            await ports.notify(rules.blocked_text(name, number, ports.english(answer["text_t"])))
             return False
         if answer["result"] == "plan":
             report("plan", t("{switch}, plan seul : {plan}", switch=moving, plan=answer["text_t"]))
@@ -338,6 +345,9 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
         """Health alone cannot clear a failed loadout setup. Only a caller
         that verified the complete requested setup may resolve that failure."""
         if verified_setup and status["mode"] == name and status["state"] == "failed":
+            # A successful full repair supersedes the failed attempt displayed
+            # by the options. A healthy frame alone never enters this branch.
+            setup.clear_result()
             ports.log("normal", f"Mode {name}: complete setup verified")
             report("farming", farming_text(name, loadouts["stage"](name), loadouts["loadout"](name).get("preset")))
 
@@ -402,13 +412,13 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
         before: the mode it leaves (the switch's log line), its trigger
         now."""
         status.update(switch=(before or "?", name), switch_at=ports.clock.monotonic())
-        move = rules.entered(name, stages()["stage18"], stages()["stage4"])
+        move = rules.entered(name, stages()["stage18"], stages()["stage4"], stages()["stageSoul"])
 
         async def start():
             if move[0] == "stage":
                 await set_stage(move[1], move[2])
             elif move[0] == "choose":
-                report("idle", t("Farming {name} : choisis le stage", name=f"mpw{move[1]}"))
+                report("idle", t("Farming {name} : choisis le stage", name="Soul Farming" if move[1] == "soul" else f"mpw{move[1]}"))
             elif move[0] in ("free", "agent"):
                 report("free", free_text() if name == "free" else t("Agent mode : agent autorisé à jouer"))
             else:
@@ -446,7 +456,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
         retried, one notification « Configuration mpwN appliquée en N
         s »); the soul weapon alone by its step alone."""
         fields = rules.loadout_changes(before, after)
-        if not status["configured"] or name != status["mode"] or name not in ("mpw18", "mpw4") or not fields:
+        if not status["configured"] or name != status["mode"] or name not in ("mpw18", "mpw4", "soul") or not fields:
             return
         ports.log("normal", f"Mode {name}: loadout changed ({', '.join(sorted(fields))}), applied now")
         status.update(switch=(name, name), switch_at=ports.clock.monotonic())
@@ -458,7 +468,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
         step = None
         if fields == {"soul_weapon"} and "ensure_soul_weapon" in farming:
             step = lambda **forced: farming["ensure_soul_weapon"](name, after, **forced)
-        replace_change(lambda: set_stage(after["stage"], int(name[3:]), applied=True, step=step))
+        replace_change(lambda: set_stage(after["stage"], "soul" if name == "soul" else int(name[3:]), applied=True, step=step))
 
     def free_text():
         return (t("Jeu libre : rien n’est touché jusqu’à la fin du minuteur") if status["until"]
@@ -469,7 +479,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
         (« Mode par défaut »), by the same switch; one alert says why."""
         before, default = status["mode"], status["default"]
         status.update(mode=default, until=None)
-        stage = loadouts["stage"](default) if default in ("mpw18", "mpw4") else None
+        stage = loadouts["stage"](default) if default in ("mpw18", "mpw4", "soul") else None
         detail = ports.english(mines["state"]().get("message_t"))
         await ports.notify(rules.back_text(why, default, stage, detail))
         await enter(default, before)
@@ -546,6 +556,8 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
             status["highest"] = numbers["highest"]
         loadouts["set_stage"]("mpw18", numbers["stage18"])
         loadouts["set_stage"]("mpw4", numbers["stage4"])
+        if numbers["stageSoul"] is not None:
+            loadouts["set_stage"]("soul", numbers["stageSoul"])
         if name == "mine":
             mines["start"](numbers["floor"], numbers["area"], until)
         else:
@@ -620,7 +632,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
             body = await request.json()
         except (ValueError, TypeError, AttributeError):
             body = None
-        if (not isinstance(body, dict) or body.get("mode") not in ("mpw18", "mpw4")
+        if (not isinstance(body, dict) or body.get("mode") not in ("mpw18", "mpw4", "soul")
                 or not isinstance(body.get("if_revision"), str)):
             return ports.respond({"error_t": t("Attendu : {expected}",
                                  expected="{mode, if_revision}")}, status=400)
@@ -636,7 +648,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
         status.update(switch=(name, name), switch_at=ports.clock.monotonic())
         setup.clear_result()
         report("moving", t("Application de la configuration {mode}", mode=name))
-        replace_change(lambda: set_stage(number, int(name[3:]), applied=True))
+        replace_change(lambda: set_stage(number, "soul" if name == "soul" else int(name[3:]), applied=True))
         return ports.respond(state(), status=202)
 
     async def resume(app):
@@ -652,7 +664,9 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
                   until=values.time_or_none(saved.get("until")), configured=saved.get("configured") is True,
                   highest=values.number_or_none(saved.get("highest"), 99999))
     # Earlier versions kept the stages here: they move to the loadouts.
-    for key, name in (("stage18", "mpw18"), ("stage4", "mpw4")):
+    for key, name in (("stage18", "mpw18"), ("stage4", "mpw4"), ("stageSoul", "soul")):
+        if name == "soul" and saved.get(key) is None:
+            continue
         loadouts["adopt_stage"](name, values.number_or_none(saved.get(key), 99999))
     before = status["mode"]
     status["mode"], status["until"], ended = rules.restored(status["mode"], status["until"],

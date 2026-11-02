@@ -520,7 +520,7 @@ def automation(weapon_id, table, rotate=False, variant=None):
     return result("supported")
 
 
-MODES = ("mpw18", "mpw4")
+MODES = ("mpw18", "mpw4", "soul")
 PRESETS = ("I", "II", "III", "IV", "V")
 
 

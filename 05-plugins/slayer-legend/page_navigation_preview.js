@@ -59,15 +59,17 @@ export default function capturePreview({ layer, record, side, zones = [], drawZo
   frame.append(image);
   for (const zone of zones) drawZone?.(zone, frame);
   const tap = record.tap;
-  const area = record.rect ?? (record.kind === 'scannable' && tap?.end
+  const rectangle = ['scannable', 'action', 'draggable'].includes(record.kind);
+  const area = record.rect ?? (rectangle && tap?.end
     ? [Math.min(tap.x, tap.end.x), Math.min(tap.y, tap.end.y), Math.max(tap.x, tap.end.x), Math.max(tap.y, tap.end.y)] : null);
   if (area?.length === 4 && area.every(Number.isFinite)) {
+    const colour = record.kind === 'action' ? '#ff9a23' : record.kind === 'draggable' ? '#ff65bd' : '#52e99a';
     const box = document.createElement('div');
     box.setAttribute('data-recorded-rect', '');
-    box.style.cssText = `position:absolute;left:${area[0] * 100}%;top:${area[1] * 100}%;width:${(area[2] - area[0]) * 100}%;height:${(area[3] - area[1]) * 100}%;border:2px solid #52e99a;background:#52e99a33;box-sizing:border-box;pointer-events:none;z-index:2`;
+    box.style.cssText = `position:absolute;left:${area[0] * 100}%;top:${area[1] * 100}%;width:${(area[2] - area[0]) * 100}%;height:${(area[3] - area[1]) * 100}%;border:2px solid ${colour};background:${colour}33;box-sizing:border-box;pointer-events:none;z-index:2`;
     frame.append(box);
   }
-  if (tap && Number.isFinite(tap.x) && Number.isFinite(tap.y)) {
+  if (!rectangle && tap && Number.isFinite(tap.x) && Number.isFinite(tap.y)) {
     const marker = document.createElement('div');
     marker.setAttribute('data-recorded-tap', '');
     marker.style.cssText = `position:absolute;left:${tap.x * 100}%;top:${tap.y * 100}%;width:28px;height:28px;transform:translate(-50%,-50%);border:3px solid #ff4040;border-radius:50%;box-sizing:border-box;box-shadow:0 0 0 1px #000,0 0 7px #000;pointer-events:none;z-index:3`;
@@ -77,7 +79,7 @@ export default function capturePreview({ layer, record, side, zones = [], drawZo
       marker.append(cross);
     }
     frame.append(marker);
-    if (record.kind !== 'scannable' && tap.end && Number.isFinite(tap.end.x) && Number.isFinite(tap.end.y)) {
+    if (!rectangle && tap.end && Number.isFinite(tap.end.x) && Number.isFinite(tap.end.y)) {
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       svg.setAttribute('viewBox', '0 0 100 100'); svg.setAttribute('preserveAspectRatio', 'none');
       svg.setAttribute('data-recorded-swipe', '');

@@ -95,7 +95,7 @@ class SetupStatus(unittest.IsolatedAsyncioTestCase):
         self.now = 1000.0; self.input = None; self.playing = False; self.engraving = 'off'; self.soul = 'real'; self.enabled = True; self.farm_calls = []
         self.tasks = []; self.callbacks = []; self.relaunch = []; self.block = None; self.started = asyncio.Event(); self.mine_active = False
         self.parts = {name: {'stage': 970, 'preset': 'III', 'soul_weapon': {'id': 32, 'variant': 'Gold-maxed'}}
-                      for name in ('mpw18', 'mpw4')}
+                      for name in ('mpw18', 'mpw4', 'soul')}
         async def sleep(seconds): self.now += seconds; await asyncio.sleep(0)
         async def notify(*args, **kwargs): pass
         def spawn(coro):
@@ -187,18 +187,32 @@ class SetupStatus(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.part['api']['state']()['tone'], 'setup')
         self.assertIsNone(self.part['api']['state']()['setup_result'])
 
-    async def test_health_or_external_confirmation_cannot_synthesize_setup_evidence(self):
+    async def test_failed_result_clears_only_after_verified_full_repair_of_same_mode(self):
         self.engraving = 'real'
         await self.attempt()
-        self.assertEqual(self.part['api']['state']()['state'], 'failed')
+        failed = self.part['api']['state']()
+        self.assertEqual(failed['state'], 'failed')
+        self.assertEqual(failed['setup_result']['result'], 'failed')
+        self.assertEqual(failed['tone'], 'error')
+        target = failed['setup_result']['target']
+        revision = failed['setup_result']['revision']
+        # Seeing healthy combat proves neither the configured weapon nor its
+        # engraving. Keep the same revision, so this exercises real clearing
+        # instead of merely making the failed receipt stale.
+        self.part['api']['watched_by'](lambda: {'mode': 'mpw18', 'level': None, 'blocked': False})
         self.part['api']['confirm']('mpw18')
-        self.assertEqual(self.part['api']['state']()['state'], 'failed')
-        # A separate caller may resolve execution status after its own
-        # full verification, but cannot manufacture this attempt's receipt.
-        self.parts['mpw18']['preset'] = 'V'
+        self.part['api']['confirm']('mpw4', verified_setup=True)
+        unchanged = self.part['api']['state']()
+        self.assertEqual(unchanged['state'], 'failed')
+        self.assertEqual(unchanged['tone'], 'error')
+        self.assertEqual(unchanged['setup_result'], failed['setup_result'])
         self.part['api']['confirm']('mpw18', verified_setup=True)
-        self.assertEqual(self.part['api']['state']()['state'], 'farming')
-        self.assertIsNone(self.part['api']['state']()['setup_result'])
+        repaired = self.part['api']['state']()
+        self.assertEqual(repaired['state'], 'farming')
+        self.assertEqual(repaired['tone'], 'ok')
+        self.assertIsNone(repaired['setup_result'], 'the old failure must disappear after the full repair')
+        self.assertEqual(self.parts['mpw18'], target)
+        self.assertEqual(engravings.revision(self.parts['mpw18']), revision)
 
     async def call_setup(self, body):
         async def json_body(): return body

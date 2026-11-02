@@ -9,6 +9,7 @@
    "moves": [
     {
      "id": "start",
+     "semantic_kind": "navigation",
      "to": "save_notice",
      "tap": [
       0.5,
@@ -25,6 +26,7 @@
    "moves": [
     {
      "id": "confirm",
+     "semantic_kind": "navigation",
      "to": "loading",
      "tap": [
       0.314,
@@ -34,6 +36,7 @@
     },
     {
      "id": "exit",
+     "semantic_kind": "navigation",
      "to": "title",
      "tap": [
       0.68,
@@ -52,6 +55,7 @@
    "moves": [
     {
      "id": "google",
+     "semantic_kind": "navigation",
      "to": "account_chooser",
      "tap": [
       0.5,
@@ -61,6 +65,7 @@
     },
     {
      "id": "apple",
+     "semantic_kind": "navigation",
      "to": "unknown",
      "area": [
       0.245,
@@ -81,6 +86,7 @@
    "moves": [
     {
      "id": "account",
+     "semantic_kind": "navigation",
      "to": "save_notice",
      "area": [
       0.0,
@@ -106,6 +112,7 @@
    "moves": [
     {
      "id": "leave",
+     "semantic_kind": "navigation",
      "to": "battle",
      "hold": [
       0.5,
@@ -123,6 +130,7 @@
    "moves": [
     {
      "id": "better_weapon_toast",
+     "semantic_kind": "action",
      "to": "unknown",
      "area": [
       0.7,
@@ -136,6 +144,7 @@
     },
     {
      "id": "menu_character",
+     "semantic_kind": "navigation",
      "to": "character_enhance",
      "tap": [
       0.073,
@@ -145,6 +154,7 @@
     },
     {
      "id": "menu_skill",
+     "semantic_kind": "navigation",
      "to": "skill",
      "tap": [
       0.24,
@@ -154,6 +164,7 @@
     },
     {
      "id": "menu_equipment",
+     "semantic_kind": "navigation",
      "to": "equipment_weapon",
      "tap": [
       0.41,
@@ -163,6 +174,7 @@
     },
     {
      "id": "menu_companion",
+     "semantic_kind": "navigation",
      "to": "companion",
      "tap": [
       0.585,
@@ -172,6 +184,7 @@
     },
     {
      "id": "menu_adventure",
+     "semantic_kind": "navigation",
      "to": "adventure_map",
      "tap": [
       0.755,
@@ -181,6 +194,7 @@
     },
     {
      "id": "menu_shop",
+     "semantic_kind": "navigation",
      "to": "shop_summon",
      "tap": [
       0.925,
@@ -190,6 +204,7 @@
     },
     {
      "id": "stage_select",
+     "semantic_kind": "navigation",
      "to": "stage_select",
      "tap": [
       0.3,
@@ -199,6 +214,7 @@
     },
     {
      "id": "preset_arrow",
+     "semantic_kind": "navigation",
      "to": "battle",
      "tap": [
       0.975,
@@ -210,6 +226,7 @@
     },
     {
      "id": "preset_badge",
+     "semantic_kind": "navigation",
      "to": "battle_settings",
      "tap": [
       0.965,
@@ -220,6 +237,7 @@
     },
     {
      "id": "auto",
+     "semantic_kind": "action",
      "to": "battle",
      "tap": [
       0.93,
@@ -232,6 +250,7 @@
     },
     {
      "id": "top_menu",
+     "semantic_kind": "navigation",
      "to": "top_menu",
      "tap": [
       0.935,
@@ -243,6 +262,7 @@
     },
     {
      "id": "quest",
+     "semantic_kind": "navigation",
      "to": "quest_panel",
      "tap": [
       0.94,
@@ -253,6 +273,7 @@
     },
     {
      "id": "scroll",
+     "semantic_kind": "action",
      "to": "unknown",
      "tap": [
       0.94,
@@ -264,6 +285,7 @@
     },
     {
      "id": "event",
+     "semantic_kind": "navigation",
      "to": "unknown",
      "tap": [
       0.12,
@@ -273,6 +295,7 @@
     },
     {
      "id": "back_key",
+     "semantic_kind": "navigation",
      "to": "quit_dialog",
      "key": "BACK",
      "label": "Android Back on the battle screen",
@@ -288,6 +311,7 @@
    "moves": [
     {
      "id": "better_weapon_toast",
+     "semantic_kind": "action",
      "to": "unknown",
      "area": [
       0.7,
@@ -301,6 +325,7 @@
     },
     {
      "id": "close",
+     "semantic_kind": "navigation",
      "to": "battle",
      "tap": [
       0.5,
@@ -316,6 +341,7 @@
     },
     {
      "id": "menu_skill",
+     "semantic_kind": "navigation",
      "to": "skill",
      "tap": [
       0.24,
@@ -325,6 +351,7 @@
     },
     {
      "id": "menu_equipment",
+     "semantic_kind": "navigation",
      "to": "equipment_weapon",
      "tap": [
       0.41,
@@ -334,6 +361,7 @@
     },
     {
      "id": "menu_companion",
+     "semantic_kind": "navigation",
      "to": "companion",
      "tap": [
       0.585,
@@ -343,6 +371,7 @@
     },
     {
      "id": "menu_adventure",
+     "semantic_kind": "navigation",
      "to": "adventure_map",
      "tap": [
       0.755,
@@ -352,6 +381,7 @@
     },
     {
      "id": "menu_shop",
+     "semantic_kind": "navigation",
      "to": "shop_summon",
      "tap": [
       0.925,
@@ -361,6 +391,7 @@
     },
     {
      "id": "growth",
+     "semantic_kind": "navigation",
      "to": "character_growth",
      "tap": [
       0.31,
@@ -370,6 +401,7 @@
     },
     {
      "id": "promotion",
+     "semantic_kind": "navigation",
      "to": "character_promotion",
      "tap": [
       0.5,
@@ -379,6 +411,7 @@
     },
     {
      "id": "level_up",
+     "semantic_kind": "action",
      "to": "character_enhance",
      "tap": [
       0.84,
@@ -390,6 +423,7 @@
     },
     {
      "id": "enhance_stat",
+     "semantic_kind": "action",
      "to": "character_enhance",
      "area": [
       0.72,
@@ -410,6 +444,7 @@
    "moves": [
     {
      "id": "close",
+     "semantic_kind": "navigation",
      "to": "battle",
      "tap": [
       0.5,
@@ -425,6 +460,7 @@
     },
     {
      "id": "menu_skill",
+     "semantic_kind": "navigation",
      "to": "skill",
      "tap": [
       0.24,
@@ -434,6 +470,7 @@
     },
     {
      "id": "menu_equipment",
+     "semantic_kind": "navigation",
      "to": "equipment_weapon",
      "tap": [
       0.41,
@@ -443,6 +480,7 @@
     },
     {
      "id": "menu_companion",
+     "semantic_kind": "navigation",
      "to": "companion",
      "tap": [
       0.585,
@@ -452,6 +490,7 @@
     },
     {
      "id": "menu_adventure",
+     "semantic_kind": "navigation",
      "to": "adventure_map",
      "tap": [
       0.755,
@@ -461,6 +500,7 @@
     },
     {
      "id": "menu_shop",
+     "semantic_kind": "navigation",
      "to": "shop_summon",
      "tap": [
       0.925,
@@ -470,6 +510,7 @@
     },
     {
      "id": "enhance",
+     "semantic_kind": "navigation",
      "to": "character_enhance",
      "tap": [
       0.15,
@@ -479,6 +520,7 @@
     },
     {
      "id": "promotion",
+     "semantic_kind": "navigation",
      "to": "character_promotion",
      "tap": [
       0.5,
@@ -488,6 +530,7 @@
     },
     {
      "id": "stat_plus",
+     "semantic_kind": "action",
      "to": "character_growth",
      "area": [
       0.85,
@@ -501,6 +544,7 @@
     },
     {
      "id": "stat_reset",
+     "semantic_kind": "action",
      "to": "unknown",
      "tap": [
       0.955,
@@ -519,6 +563,7 @@
    "moves": [
     {
      "id": "close",
+     "semantic_kind": "navigation",
      "to": "battle",
      "tap": [
       0.5,
@@ -534,6 +579,7 @@
     },
     {
      "id": "menu_skill",
+     "semantic_kind": "navigation",
      "to": "skill",
      "tap": [
       0.24,
@@ -543,6 +589,7 @@
     },
     {
      "id": "menu_equipment",
+     "semantic_kind": "navigation",
      "to": "equipment_weapon",
      "tap": [
       0.41,
@@ -552,6 +599,7 @@
     },
     {
      "id": "menu_companion",
+     "semantic_kind": "navigation",
      "to": "companion",
      "tap": [
       0.585,
@@ -561,6 +609,7 @@
     },
     {
      "id": "menu_adventure",
+     "semantic_kind": "navigation",
      "to": "adventure_map",
      "tap": [
       0.755,
@@ -570,6 +619,7 @@
     },
     {
      "id": "menu_shop",
+     "semantic_kind": "navigation",
      "to": "shop_summon",
      "tap": [
       0.925,
@@ -579,6 +629,7 @@
     },
     {
      "id": "enhance",
+     "semantic_kind": "navigation",
      "to": "character_enhance",
      "tap": [
       0.15,
@@ -588,6 +639,7 @@
     },
     {
      "id": "growth",
+     "semantic_kind": "navigation",
      "to": "character_growth",
      "tap": [
       0.31,
@@ -597,6 +649,7 @@
     },
     {
      "id": "scroll",
+     "semantic_kind": "navigation",
      "to": "character_promotion",
      "swipe": [0.5, 0.87, 0.5, 0.67],
      "label": "scroll the promotion list without opening a class or bonus page",
@@ -604,6 +657,7 @@
     },
     {
      "id": "class",
+     "semantic_kind": "action",
      "to": "unknown",
      "tap": [
       0.62,
@@ -615,6 +669,7 @@
     },
     {
      "id": "additional_ability",
+     "semantic_kind": "navigation",
      "to": "promotion_bonus",
      "tap": [
       0.83,
@@ -633,6 +688,7 @@
    "moves": [
     {
      "id": "better_weapon_toast",
+     "semantic_kind": "action",
      "to": "unknown",
      "area": [
       0.7,
@@ -646,6 +702,7 @@
     },
     {
      "id": "close",
+     "semantic_kind": "navigation",
      "to": "battle",
      "tap": [
       0.5,
@@ -661,6 +718,7 @@
     },
     {
      "id": "menu_character",
+     "semantic_kind": "navigation",
      "to": "character_enhance",
      "tap": [
       0.073,
@@ -670,6 +728,7 @@
     },
     {
      "id": "menu_equipment",
+     "semantic_kind": "navigation",
      "to": "equipment_weapon",
      "tap": [
       0.41,
@@ -679,6 +738,7 @@
     },
     {
      "id": "menu_companion",
+     "semantic_kind": "navigation",
      "to": "companion",
      "tap": [
       0.585,
@@ -688,6 +748,7 @@
     },
     {
      "id": "menu_adventure",
+     "semantic_kind": "navigation",
      "to": "adventure_map",
      "tap": [
       0.755,
@@ -697,6 +758,7 @@
     },
     {
      "id": "menu_shop",
+     "semantic_kind": "navigation",
      "to": "shop_summon",
      "tap": [
       0.925,
@@ -706,6 +768,7 @@
     },
     {
      "id": "preset",
+     "semantic_kind": "action",
      "to": "skill",
      "area": [
       0.27,
@@ -719,6 +782,7 @@
     },
     {
      "id": "skill_plus",
+     "semantic_kind": "action",
      "to": "skill",
      "area": [
       0.07,
@@ -732,6 +796,7 @@
     },
     {
      "id": "element_1",
+     "semantic_kind": "navigation",
      "to": "familiar",
      "tap": [
       0.58,
@@ -742,6 +807,7 @@
     },
     {
      "id": "element_2",
+     "semantic_kind": "navigation",
      "to": "skill_refinement_grounds",
      "tap": [
       0.665,
@@ -752,6 +818,7 @@
     },
     {
      "id": "element_3",
+     "semantic_kind": "navigation",
      "to": "skill_mastery",
      "tap": [
       0.76,
@@ -762,6 +829,7 @@
     },
     {
      "id": "element_4",
+     "semantic_kind": "navigation",
      "to": "skill_rave_mantra",
      "tap": [
       0.85,
@@ -777,8 +845,8 @@
    "recognise": "full-screen training room with three Hellfire Slash slots and Skill Refinement Time",
    "source": "seen 2026-10-26",
    "moves": [
-    {"id": "close", "to": "skill", "tap": [0.1, 0.955], "label": "red X at the lower left"},
-    {"id": "refine", "to": "skill_refinement_grounds", "area": [0.34, 0.86, 0.66, 0.96], "label": "Skill Refinement", "forbidden": true, "reason": "starts or changes a refinement; user choice only"}
+    {"id": "close", "semantic_kind": "navigation", "to": "skill", "tap": [0.1, 0.955], "label": "red X at the lower left"},
+    {"id": "refine", "semantic_kind": "action", "to": "skill_refinement_grounds", "area": [0.34, 0.86, 0.66, 0.96], "label": "Skill Refinement", "forbidden": true, "reason": "starts or changes a refinement; user choice only"}
    ]
   },
   "skill_mastery": {
@@ -786,8 +854,8 @@
    "recognise": "full-screen mastery tree with connected nodes, blue currency counter and red X",
    "source": "seen 2026-10-26",
    "moves": [
-    {"id": "close", "to": "skill", "tap": [0.08, 0.95], "label": "red X at lower left"},
-    {"id": "node", "to": "skill_mastery", "area": [0.1, 0.2, 0.9, 0.9], "label": "mastery nodes", "forbidden": true, "reason": "may spend mastery currency; user choice only"}
+    {"id": "close", "semantic_kind": "navigation", "to": "skill", "tap": [0.08, 0.95], "label": "red X at lower left"},
+    {"id": "node", "semantic_kind": "action", "to": "skill_mastery", "area": [0.1, 0.2, 0.9, 0.9], "label": "mastery nodes", "forbidden": true, "reason": "may spend mastery currency; user choice only"}
    ]
   },
   "skill_rave_mantra": {
@@ -795,8 +863,8 @@
    "recognise": "dark skill panel with two gold skill icons labelled Rave and Mantra",
    "source": "seen 2026-10-26",
    "moves": [
-    {"id": "close", "to": "skill", "tap": [0.948, 0.563], "label": "white X at upper right of this panel"},
-    {"id": "plus", "to": "skill_rave_mantra", "area": [0.2, 0.67, 0.75, 0.81], "label": "Rave or Mantra +", "forbidden": true, "reason": "may spend resources; user choice only"}
+    {"id": "close", "semantic_kind": "navigation", "to": "skill", "tap": [0.948, 0.563], "label": "white X at upper right of this panel"},
+    {"id": "plus", "semantic_kind": "action", "to": "skill_rave_mantra", "area": [0.2, 0.67, 0.75, 0.81], "label": "Rave or Mantra +", "forbidden": true, "reason": "may spend resources; user choice only"}
    ]
   },
   "familiar": {
@@ -804,10 +872,10 @@
    "recognise": "purple Familiar screen with Attribute, Battle and Weapon familiars",
    "source": "seen 2026-10-26",
    "moves": [
-    {"id": "close", "to": "skill", "tap": [0.5, 0.955], "label": "purple X at bottom centre"},
-    {"id": "presets", "to": "familiar", "area": [0.27, 0.79, 0.75, 0.83], "label": "familiar presets", "forbidden": true, "reason": "changes the user's selected preset"},
-    {"id": "combine", "to": "familiar", "area": [0.03, 0.93, 0.27, 1.0], "label": "Combine Familiars", "forbidden": true, "reason": "consumes familiars"},
-    {"id": "summon", "to": "familiar", "area": [0.72, 0.93, 0.97, 1.0], "label": "Summon Familiar", "forbidden": true, "reason": "spends resources"}
+    {"id": "close", "semantic_kind": "navigation", "to": "skill", "tap": [0.5, 0.955], "label": "purple X at bottom centre"},
+    {"id": "presets", "semantic_kind": "action", "to": "familiar", "area": [0.27, 0.79, 0.75, 0.83], "label": "familiar presets", "forbidden": true, "reason": "changes the user's selected preset"},
+    {"id": "combine", "semantic_kind": "action", "to": "familiar", "area": [0.03, 0.93, 0.27, 1.0], "label": "Combine Familiars", "forbidden": true, "reason": "consumes familiars"},
+    {"id": "summon", "semantic_kind": "action", "to": "familiar", "area": [0.72, 0.93, 0.97, 1.0], "label": "Summon Familiar", "forbidden": true, "reason": "spends resources"}
    ]
   },
   "equipment_weapon": {
@@ -815,8 +883,10 @@
    "recognise": "tabs Weapon/Accessories/Relic/Spirit at y 0.414, Weapon selected, weapon grid, Batch Combine",
    "source": "explored 2026-10-18",
    "moves": [
+    {"id": "close_tab", "semantic_kind": "navigation", "to": "battle", "tap": [0.41, 0.966], "label": "toggle the freshly lit Equipment bottom tab closed", "precondition": "fresh capture recognises reduced battle and the Equipment bottom tab as the only active tab; verify plain Battle after the tap", "needs": {"reduced_battle": true, "active_tab": "equipment_weapon"}},
     {
      "id": "better_weapon_toast",
+     "semantic_kind": "action",
      "to": "unknown",
      "area": [
       0.7,
@@ -830,6 +900,7 @@
     },
     {
      "id": "close",
+     "semantic_kind": "navigation",
      "to": "battle",
      "tap": [
       0.5,
@@ -845,6 +916,7 @@
     },
     {
      "id": "menu_character",
+     "semantic_kind": "navigation",
      "to": "character_enhance",
      "tap": [
       0.073,
@@ -854,6 +926,7 @@
     },
     {
      "id": "menu_skill",
+     "semantic_kind": "navigation",
      "to": "skill",
      "tap": [
       0.24,
@@ -863,6 +936,7 @@
     },
     {
      "id": "menu_companion",
+     "semantic_kind": "navigation",
      "to": "companion",
      "tap": [
       0.585,
@@ -872,6 +946,7 @@
     },
     {
      "id": "menu_adventure",
+     "semantic_kind": "navigation",
      "to": "adventure_map",
      "tap": [
       0.755,
@@ -881,6 +956,7 @@
     },
     {
      "id": "menu_shop",
+     "semantic_kind": "navigation",
      "to": "shop_summon",
      "tap": [
       0.925,
@@ -890,6 +966,7 @@
     },
     {
      "id": "accessories",
+     "semantic_kind": "navigation",
      "to": "equipment_accessories",
      "tap": [
       0.31,
@@ -899,6 +976,7 @@
     },
     {
      "id": "relic",
+     "semantic_kind": "navigation",
      "to": "equipment_relic",
      "tap": [
       0.5,
@@ -908,6 +986,7 @@
     },
     {
      "id": "spirit",
+     "semantic_kind": "navigation",
      "to": "spirit",
      "tap": [
       0.69,
@@ -917,6 +996,7 @@
     },
     {
      "id": "soul_weapon",
+     "semantic_kind": "navigation",
      "to": "soul_weapon",
      "tap": [
       0.92,
@@ -926,6 +1006,7 @@
     },
     {
      "id": "inspect_weapon",
+     "semantic_kind": "navigation",
      "to": "weapon_detail",
      "tap": [
       0.15,
@@ -936,6 +1017,7 @@
     },
     {
      "id": "scroll",
+     "semantic_kind": "navigation",
      "to": "equipment_weapon",
      "swipe": [0.27, 0.81, 0.27, 0.55],
      "label": "scroll weapon grid through the gap between columns",
@@ -943,6 +1025,7 @@
     },
     {
      "id": "batch_combine",
+     "semantic_kind": "navigation",
      "to": "equipment_weapon",
      "tap": [
       0.5,
@@ -961,6 +1044,7 @@
    "moves": [
     {
      "id": "close",
+     "semantic_kind": "navigation",
      "to": "equipment_weapon",
      "tap": [
       0.5,
@@ -970,6 +1054,7 @@
     },
     {
      "id": "enhance",
+     "semantic_kind": "action",
      "to": "weapon_detail",
      "area": [
       0.1,
@@ -983,6 +1068,7 @@
     },
     {
      "id": "equip",
+     "semantic_kind": "action",
      "to": "weapon_detail",
      "area": [
       0.51,
@@ -1003,6 +1089,7 @@
    "moves": [
     {
      "id": "close",
+     "semantic_kind": "navigation",
      "to": "battle",
      "tap": [
       0.5,
@@ -1018,6 +1105,7 @@
     },
     {
      "id": "menu_character",
+     "semantic_kind": "navigation",
      "to": "character_enhance",
      "tap": [
       0.073,
@@ -1027,6 +1115,7 @@
     },
     {
      "id": "menu_skill",
+     "semantic_kind": "navigation",
      "to": "skill",
      "tap": [
       0.24,
@@ -1036,6 +1125,7 @@
     },
     {
      "id": "menu_companion",
+     "semantic_kind": "navigation",
      "to": "companion",
      "tap": [
       0.585,
@@ -1045,6 +1135,7 @@
     },
     {
      "id": "menu_adventure",
+     "semantic_kind": "navigation",
      "to": "adventure_map",
      "tap": [
       0.755,
@@ -1054,6 +1145,7 @@
     },
     {
      "id": "menu_shop",
+     "semantic_kind": "navigation",
      "to": "shop_summon",
      "tap": [
       0.925,
@@ -1063,6 +1155,7 @@
     },
     {
      "id": "weapon",
+     "semantic_kind": "navigation",
      "to": "equipment_weapon",
      "tap": [
       0.12,
@@ -1072,6 +1165,7 @@
     },
     {
      "id": "relic",
+     "semantic_kind": "navigation",
      "to": "equipment_relic",
      "tap": [
       0.5,
@@ -1081,6 +1175,7 @@
     },
     {
      "id": "spirit",
+     "semantic_kind": "navigation",
      "to": "spirit",
      "tap": [
       0.69,
@@ -1090,6 +1185,7 @@
     },
     {
      "id": "scroll",
+     "semantic_kind": "navigation",
      "to": "equipment_accessories",
      "swipe": [0.27, 0.81, 0.27, 0.55],
      "label": "scroll accessories through the gap between columns",
@@ -1097,6 +1193,7 @@
     },
     {
      "id": "batch_combine",
+     "semantic_kind": "navigation",
      "to": "equipment_accessories",
      "tap": [
       0.5,
@@ -1108,6 +1205,7 @@
     },
     {
      "id": "black_orb",
+     "semantic_kind": "navigation",
      "to": "black_orb",
      "tap": [
       0.93,
@@ -1124,6 +1222,7 @@
    "moves": [
     {
      "id": "close",
+     "semantic_kind": "navigation",
      "to": "battle",
      "tap": [
       0.5,
@@ -1139,6 +1238,7 @@
     },
     {
      "id": "menu_character",
+     "semantic_kind": "navigation",
      "to": "character_enhance",
      "tap": [
       0.073,
@@ -1148,6 +1248,7 @@
     },
     {
      "id": "menu_skill",
+     "semantic_kind": "navigation",
      "to": "skill",
      "tap": [
       0.24,
@@ -1157,6 +1258,7 @@
     },
     {
      "id": "menu_companion",
+     "semantic_kind": "navigation",
      "to": "companion",
      "tap": [
       0.585,
@@ -1166,6 +1268,7 @@
     },
     {
      "id": "menu_adventure",
+     "semantic_kind": "navigation",
      "to": "adventure_map",
      "tap": [
       0.755,
@@ -1175,6 +1278,7 @@
     },
     {
      "id": "menu_shop",
+     "semantic_kind": "navigation",
      "to": "shop_summon",
      "tap": [
       0.925,
@@ -1184,6 +1288,7 @@
     },
     {
      "id": "weapon",
+     "semantic_kind": "navigation",
      "to": "equipment_weapon",
      "tap": [
       0.12,
@@ -1193,6 +1298,7 @@
     },
     {
      "id": "accessories",
+     "semantic_kind": "navigation",
      "to": "equipment_accessories",
      "tap": [
       0.31,
@@ -1202,6 +1308,7 @@
     },
     {
      "id": "spirit",
+     "semantic_kind": "navigation",
      "to": "spirit",
      "tap": [
       0.69,
@@ -1211,6 +1318,7 @@
     },
     {
      "id": "scroll",
+     "semantic_kind": "navigation",
      "to": "equipment_relic",
      "swipe": [0.5, 0.84, 0.5, 0.56],
      "label": "scroll relic list through text between the icons and Enhance MAX buttons",
@@ -1218,6 +1326,7 @@
     },
     {
      "id": "enhance",
+     "semantic_kind": "action",
      "to": "equipment_relic",
      "area": [
       0.72,
@@ -1238,6 +1347,7 @@
    "moves": [
     {
      "id": "close",
+     "semantic_kind": "navigation",
      "to": "equipment_weapon",
      "tap": [
       0.5,
@@ -1247,6 +1357,7 @@
     },
     {
      "id": "preset",
+     "semantic_kind": "action",
      "to": "spirit",
      "area": [
       0.25,
@@ -1260,6 +1371,7 @@
     },
     {
      "id": "equip",
+     "semantic_kind": "action",
      "to": "spirit",
      "area": [
       0.03,
@@ -1273,6 +1385,7 @@
     },
     {
      "id": "evolution",
+     "semantic_kind": "action",
      "to": "unknown",
      "tap": [
       0.15,
@@ -1284,6 +1397,7 @@
     },
     {
      "id": "summon",
+     "semantic_kind": "action",
      "to": "unknown",
      "tap": [
       0.85,
@@ -1302,6 +1416,7 @@
    "moves": [
     {
      "id": "close",
+     "semantic_kind": "navigation",
      "to": "equipment_weapon",
      "tap": [
       0.5,
@@ -1311,6 +1426,7 @@
     },
     {
      "id": "select",
+     "semantic_kind": "navigation",
      "to": "soul_weapon",
      "area": [
       0.0,
@@ -1326,6 +1442,7 @@
     },
     {
      "id": "scroll",
+     "semantic_kind": "navigation",
      "to": "soul_weapon",
      "swipe": [
       0.087,
@@ -1341,6 +1458,7 @@
     },
     {
      "id": "equip",
+     "semantic_kind": "action",
      "to": "soul_weapon",
      "area": [
       0.0,
@@ -1359,6 +1477,7 @@
     },
     {
      "id": "unequip",
+     "semantic_kind": "action",
      "to": "soul_weapon",
      "on_tag": "Unequip",
      "label": "the same tag on the equipped weapon, reading Unequip (seen 2026-10-21 at 0.09, 0.847)",
@@ -1367,6 +1486,7 @@
     },
     {
      "id": "engraving",
+     "semantic_kind": "navigation",
      "to": "soul_weapon_engraving",
      "tap": [
       0.33,
@@ -1376,6 +1496,7 @@
     },
     {
      "id": "craft",
+     "semantic_kind": "action",
      "to": "unknown",
      "tap": [
       0.47,
@@ -1387,6 +1508,7 @@
     },
     {
      "id": "breakdown",
+     "semantic_kind": "action",
      "to": "unknown",
      "area": [
       0.66,
@@ -1407,6 +1529,7 @@
    "moves": [
     {
      "id": "close",
+     "semantic_kind": "navigation",
      "to": "soul_weapon",
      "tap": [
       0.11,
@@ -1416,6 +1539,7 @@
     },
     {
      "id": "lock",
+     "semantic_kind": "action",
      "to": "soul_weapon_engraving",
      "area": [
       0.15,
@@ -1428,6 +1552,7 @@
     },
     {
      "id": "piece",
+     "semantic_kind": "draggable",
      "to": "soul_weapon_engraving_piece",
      "area": [
       0.15,
@@ -1440,6 +1565,7 @@
     },
     {
      "id": "drag_piece",
+     "semantic_kind": "draggable",
      "to": "soul_weapon_engraving_preview",
      "area": [
       0.15,
@@ -1453,6 +1579,7 @@
     },
     {
      "id": "remove_piece",
+     "semantic_kind": "draggable",
      "to": "soul_weapon_engraving",
      "area": [
       0.2,
@@ -1466,6 +1593,7 @@
     },
     {
      "id": "settings",
+     "semantic_kind": "navigation",
      "to": "unknown",
      "tap": [
       0.87,
@@ -1477,6 +1605,7 @@
     },
     {
      "id": "percent",
+     "semantic_kind": "navigation",
      "to": "unknown",
      "tap": [
       0.83,
@@ -1488,6 +1617,7 @@
     },
     {
      "id": "change",
+     "semantic_kind": "action",
      "to": "soul_weapon_engraving",
      "area": [
       0.3,
@@ -1508,6 +1638,7 @@
    "moves": [
     {
      "id": "padlock",
+     "semantic_kind": "action",
      "to": "soul_weapon_engraving_piece",
      "tap": [
       0.595,
@@ -1518,6 +1649,7 @@
     },
     {
      "id": "close",
+     "semantic_kind": "navigation",
      "to": "soul_weapon_engraving",
      "tap": [
       0.5,
@@ -1527,6 +1659,7 @@
     },
     {
      "id": "change",
+     "semantic_kind": "action",
      "to": "soul_weapon_engraving_piece",
      "area": [
       0.3,
@@ -1547,6 +1680,7 @@
    "moves": [
     {
      "id": "rotate",
+     "semantic_kind": "action",
      "to": "soul_weapon_engraving_preview",
      "area": [
       0.1,
@@ -1559,6 +1693,7 @@
     },
     {
      "id": "move",
+     "semantic_kind": "draggable",
      "to": "soul_weapon_engraving_preview",
      "area": [
       0.1,
@@ -1572,6 +1707,7 @@
     },
     {
      "id": "confirm",
+     "semantic_kind": "action",
      "to": "soul_weapon_engraving",
      "area": [
       0.1,
@@ -1584,6 +1720,7 @@
     },
     {
      "id": "cancel",
+     "semantic_kind": "navigation",
      "to": "soul_weapon_engraving",
      "area": [
       0.1,
@@ -1596,6 +1733,7 @@
     },
     {
      "id": "settings",
+     "semantic_kind": "navigation",
      "to": "unknown",
      "tap": [
       0.87,
@@ -1607,6 +1745,7 @@
     },
     {
      "id": "percent",
+     "semantic_kind": "navigation",
      "to": "unknown",
      "tap": [
       0.83,
@@ -1618,6 +1757,7 @@
     },
     {
      "id": "change",
+     "semantic_kind": "action",
      "to": "soul_weapon_engraving_preview",
      "area": [
       0.3,
@@ -1638,6 +1778,7 @@
    "moves": [
     {
      "id": "better_weapon_toast",
+     "semantic_kind": "action",
      "to": "unknown",
      "area": [
       0.7,
@@ -1651,6 +1792,7 @@
     },
     {
      "id": "close",
+     "semantic_kind": "navigation",
      "to": "battle",
      "tap": [
       0.5,
@@ -1666,6 +1808,7 @@
     },
     {
      "id": "menu_character",
+     "semantic_kind": "navigation",
      "to": "character_enhance",
      "tap": [
       0.073,
@@ -1675,6 +1818,7 @@
     },
     {
      "id": "menu_skill",
+     "semantic_kind": "navigation",
      "to": "skill",
      "tap": [
       0.24,
@@ -1684,6 +1828,7 @@
     },
     {
      "id": "menu_equipment",
+     "semantic_kind": "navigation",
      "to": "equipment_weapon",
      "tap": [
       0.41,
@@ -1693,6 +1838,7 @@
     },
     {
      "id": "menu_adventure",
+     "semantic_kind": "navigation",
      "to": "adventure_map",
      "tap": [
       0.755,
@@ -1702,6 +1848,7 @@
     },
     {
      "id": "menu_shop",
+     "semantic_kind": "navigation",
      "to": "shop_summon",
      "tap": [
       0.925,
@@ -1711,6 +1858,7 @@
     },
     {
      "id": "beast",
+     "semantic_kind": "navigation",
      "to": "beast",
      "tap": [
       0.31,
@@ -1720,6 +1868,7 @@
     },
     {
      "id": "advancement",
+     "semantic_kind": "navigation",
      "to": "companion_advancement",
      "tap": [
       0.905,
@@ -1734,13 +1883,13 @@
    "recognise": "Companion panel with five Roman numeral tabs and class portrait grid",
    "source": "seen 2026-10-26",
    "moves": [
-    {"id": "close", "to": "companion", "tap": [0.12, 0.466], "label": "Companion tab"},
-    {"id": "tier_i", "to": "companion_advancement", "tap": [0.1, 0.505], "label": "tier I"},
-    {"id": "tier_ii", "to": "companion_advancement", "tap": [0.3, 0.505], "label": "tier II"},
-    {"id": "tier_iii", "to": "companion_advancement", "tap": [0.5, 0.505], "label": "tier III"},
-    {"id": "tier_iv", "to": "companion_advancement", "tap": [0.7, 0.505], "label": "tier IV"},
-    {"id": "tier_v", "to": "companion_advancement", "tap": [0.9, 0.505], "label": "tier V"},
-    {"id": "scroll", "to": "companion_advancement", "swipe": [0.27, 0.85, 0.27, 0.63],
+    {"id": "close", "semantic_kind": "navigation", "to": "companion", "tap": [0.12, 0.466], "label": "Companion tab"},
+    {"id": "tier_i", "semantic_kind": "navigation", "to": "companion_advancement", "tap": [0.1, 0.505], "label": "tier I"},
+    {"id": "tier_ii", "semantic_kind": "navigation", "to": "companion_advancement", "tap": [0.3, 0.505], "label": "tier II"},
+    {"id": "tier_iii", "semantic_kind": "navigation", "to": "companion_advancement", "tap": [0.5, 0.505], "label": "tier III"},
+    {"id": "tier_iv", "semantic_kind": "navigation", "to": "companion_advancement", "tap": [0.7, 0.505], "label": "tier IV"},
+    {"id": "tier_v", "semantic_kind": "navigation", "to": "companion_advancement", "tap": [0.9, 0.505], "label": "tier V"},
+    {"id": "scroll", "semantic_kind": "navigation", "to": "companion_advancement", "swipe": [0.27, 0.85, 0.27, 0.63],
      "label": "scroll class portraits through the gap between columns",
      "precondition": "fresh capture shows Advancement list and gap between portrait columns"}
    ]
@@ -1752,6 +1901,7 @@
    "moves": [
     {
      "id": "close",
+     "semantic_kind": "navigation",
      "to": "battle",
      "tap": [
       0.095,
@@ -1761,6 +1911,7 @@
     },
     {
      "id": "mount",
+     "semantic_kind": "navigation",
      "to": "beast_mount",
      "tap": [
       0.515,
@@ -1770,6 +1921,7 @@
     },
     {
      "id": "scouting",
+     "semantic_kind": "navigation",
      "to": "beast_scouting",
      "tap": [
       0.645,
@@ -1779,6 +1931,7 @@
     },
     {
      "id": "shop",
+     "semantic_kind": "navigation",
      "to": "unknown",
      "tap": [
       0.77,
@@ -1790,6 +1943,7 @@
     },
     {
      "id": "call",
+     "semantic_kind": "action",
      "to": "unknown",
      "tap": [
       0.895,
@@ -1806,8 +1960,8 @@
    "recognise": "landscape with selected beast, Affection bar and orange Mount button",
    "source": "seen on a real capture 2026-10-26",
    "moves": [
-    {"id": "close", "to": "beast", "tap": [0.095, 0.955], "label": "red back arrow at lower left"},
-    {"id": "mount_action", "to": "beast_mount", "area": [0.36, 0.92, 0.64, 0.99], "label": "Mount (1/1)", "forbidden": true, "reason": "changes the user's mounted beast"}
+    {"id": "close", "semantic_kind": "navigation", "to": "beast", "tap": [0.095, 0.955], "label": "red back arrow at lower left"},
+    {"id": "mount_action", "semantic_kind": "action", "to": "beast_mount", "area": [0.36, 0.92, 0.64, 0.99], "label": "Mount (1/1)", "forbidden": true, "reason": "changes the user's mounted beast"}
    ]
   },
   "beast_scouting": {
@@ -1815,9 +1969,9 @@
    "recognise": "three fixed region blocks Underground Cave, Red twilight and Rising Strata",
    "source": "seen on a real capture 2026-10-26",
    "moves": [
-    {"id": "close", "to": "beast", "tap": [0.095, 0.955], "label": "red back arrow at lower left"},
-    {"id": "info", "to": "beast_scouting_info", "tap": [0.91, 0.078], "label": "magnifier at top right opens scouting instructions"},
-    {"id": "scout_action", "to": "beast_scouting", "area": [0.04, 0.14, 0.96, 0.82], "label": "Auto Registration, Scout Reward or Scout Complete", "forbidden": true, "reason": "starts a scout, changes beasts or claims rewards"}
+    {"id": "close", "semantic_kind": "navigation", "to": "beast", "tap": [0.095, 0.955], "label": "red back arrow at lower left"},
+    {"id": "info", "semantic_kind": "navigation", "to": "beast_scouting_info", "tap": [0.91, 0.078], "label": "magnifier at top right opens scouting instructions"},
+    {"id": "scout_action", "semantic_kind": "action", "to": "beast_scouting", "area": [0.04, 0.14, 0.96, 0.82], "label": "Auto Registration, Scout Reward or Scout Complete", "forbidden": true, "reason": "starts a scout, changes beasts or claims rewards"}
    ]
   },
   "beast_scouting_info": {
@@ -1825,7 +1979,7 @@
    "recognise": "dark overlay with five scouting explanation bullets",
    "source": "seen on a real capture 2026-10-26",
    "moves": [
-    {"id": "close", "to": "beast_scouting", "tap": [0.915, 0.855], "label": "tap clear background below the text"}
+    {"id": "close", "semantic_kind": "navigation", "to": "beast_scouting", "tap": [0.915, 0.855], "label": "tap clear background below the text"}
    ]
   },
   "adventure_map": {
@@ -1835,6 +1989,7 @@
    "moves": [
     {
      "id": "better_weapon_toast",
+     "semantic_kind": "action",
      "to": "unknown",
      "area": [
       0.7,
@@ -1848,6 +2003,7 @@
     },
     {
      "id": "close",
+     "semantic_kind": "navigation",
      "to": "battle",
      "tap": [
       0.5,
@@ -1863,6 +2019,7 @@
     },
     {
      "id": "menu_character",
+     "semantic_kind": "navigation",
      "to": "character_enhance",
      "tap": [
       0.073,
@@ -1872,6 +2029,7 @@
     },
     {
      "id": "menu_skill",
+     "semantic_kind": "navigation",
      "to": "skill",
      "tap": [
       0.24,
@@ -1881,6 +2039,7 @@
     },
     {
      "id": "menu_equipment",
+     "semantic_kind": "navigation",
      "to": "equipment_weapon",
      "tap": [
       0.41,
@@ -1890,6 +2049,7 @@
     },
     {
      "id": "menu_companion",
+     "semantic_kind": "navigation",
      "to": "companion",
      "tap": [
       0.585,
@@ -1899,6 +2059,7 @@
     },
     {
      "id": "menu_shop",
+     "semantic_kind": "navigation",
      "to": "shop_summon",
      "tap": [
       0.925,
@@ -1908,6 +2069,7 @@
     },
     {
      "id": "dungeon",
+     "semantic_kind": "navigation",
      "to": "dungeon_map",
      "tap": [
       0.4,
@@ -1917,6 +2079,7 @@
     },
     {
      "id": "guild",
+     "semantic_kind": "navigation",
      "to": "guild",
      "tap": [
       0.63,
@@ -1926,6 +2089,7 @@
     },
     {
      "id": "region",
+     "semantic_kind": "navigation",
      "to": "adventure_quest",
      "area": [
       0.15,
@@ -1937,6 +2101,7 @@
     },
     {
      "id": "story",
+     "semantic_kind": "navigation",
      "to": "adventure_story_main",
      "tap": [
       0.12,
@@ -1953,6 +2118,7 @@
    "moves": [
     {
      "id": "close",
+     "semantic_kind": "navigation",
      "to": "adventure_map",
      "tap": [
       0.5,
@@ -1960,10 +2126,11 @@
      ],
      "label": "red X"
     },
-    {"id": "quest_i", "to": "adventure_quest", "tap": [0.18, 0.64], "label": "Quest List I; updates displayed WANTED quest only"},
-    {"id": "quest_x", "to": "adventure_quest", "tap": [0.82, 0.74], "label": "Quest List X; updates displayed WANTED quest only"},
+    {"id": "quest_i", "semantic_kind": "navigation", "to": "adventure_quest", "tap": [0.18, 0.64], "label": "Quest List I; updates displayed WANTED quest only"},
+    {"id": "quest_x", "semantic_kind": "navigation", "to": "adventure_quest", "tap": [0.82, 0.74], "label": "Quest List X; updates displayed WANTED quest only"},
     {
      "id": "start",
+     "semantic_kind": "action",
      "to": "unknown",
      "tap": [
       0.5,
@@ -1980,11 +2147,11 @@
    "recognise": "SLAYER STORY title, Main tab selected, Easy/Normal/Hard banners",
    "source": "seen on a real capture 2026-10-26",
    "moves": [
-    {"id": "close", "to": "adventure_map", "tap": [0.081, 0.944], "label": "red X at lower left"},
-    {"id": "sub", "to": "adventure_story_sub", "tap": [0.733, 0.267], "label": "Sub tab"},
-    {"id": "easy", "to": "adventure_story_easy", "tap": [0.504, 0.387], "label": "Easy episode list"},
-    {"id": "normal", "to": "unknown", "tap": [0.5, 0.5], "label": "Normal episode list (not yet captured)"},
-    {"id": "hard", "to": "unknown", "tap": [0.5, 0.615], "label": "Hard episode list (not yet captured)"}
+    {"id": "close", "semantic_kind": "navigation", "to": "adventure_map", "tap": [0.081, 0.944], "label": "red X at lower left"},
+    {"id": "sub", "semantic_kind": "navigation", "to": "adventure_story_sub", "tap": [0.733, 0.267], "label": "Sub tab"},
+    {"id": "easy", "semantic_kind": "navigation", "to": "adventure_story_easy", "tap": [0.504, 0.387], "label": "Easy episode list"},
+    {"id": "normal", "semantic_kind": "navigation", "to": "unknown", "tap": [0.5, 0.5], "label": "Normal episode list (not yet captured)"},
+    {"id": "hard", "semantic_kind": "navigation", "to": "unknown", "tap": [0.5, 0.615], "label": "Hard episode list (not yet captured)"}
    ]
   },
   "adventure_story_easy": {
@@ -1992,9 +2159,9 @@
    "recognise": "SLAYER STORY Easy subtitle, list of Episode rows with COMPLETE",
    "source": "seen on a real capture 2026-10-26",
    "moves": [
-    {"id": "back", "to": "adventure_story_main", "tap": [0.081, 0.944], "label": "red back arrow"},
-    {"id": "scroll", "to": "adventure_story_easy", "swipe": [0.498, 0.823, 0.496, 0.382], "label": "scroll Easy episode rows through the centre", "precondition": "fresh capture shows Easy episode list and swipe does not open an episode"},
-    {"id": "start", "to": "adventure_story_easy", "label": "start an episode", "forbidden": true, "reason": "would change game progression; user choice only"}
+    {"id": "back", "semantic_kind": "navigation", "to": "adventure_story_main", "tap": [0.081, 0.944], "label": "red back arrow"},
+    {"id": "scroll", "semantic_kind": "navigation", "to": "adventure_story_easy", "swipe": [0.498, 0.823, 0.496, 0.382], "label": "scroll Easy episode rows through the centre", "precondition": "fresh capture shows Easy episode list and swipe does not open an episode"},
+    {"id": "start", "semantic_kind": "action", "to": "adventure_story_easy", "label": "start an episode", "forbidden": true, "reason": "would change game progression; user choice only"}
    ]
   },
   "adventure_story_sub": {
@@ -2002,11 +2169,11 @@
    "recognise": "SLAYER STORY title, Sub tab selected, Ellie/Zeke/Milro banners",
    "source": "seen on a real capture 2026-10-26",
    "moves": [
-    {"id": "close", "to": "adventure_map", "tap": [0.081, 0.944], "label": "red X at lower left"},
-    {"id": "main", "to": "adventure_story_main", "tap": [0.26, 0.267], "label": "Main tab"},
-    {"id": "ellie", "to": "adventure_story_ellie", "tap": [0.5, 0.383], "label": "Ellie episode list"},
-    {"id": "zeke", "to": "unknown", "tap": [0.5, 0.5], "label": "Zeke episode list (not yet captured)"},
-    {"id": "milro", "to": "unknown", "tap": [0.5, 0.615], "label": "Milro episode list (not yet captured)"}
+    {"id": "close", "semantic_kind": "navigation", "to": "adventure_map", "tap": [0.081, 0.944], "label": "red X at lower left"},
+    {"id": "main", "semantic_kind": "navigation", "to": "adventure_story_main", "tap": [0.26, 0.267], "label": "Main tab"},
+    {"id": "ellie", "semantic_kind": "navigation", "to": "adventure_story_ellie", "tap": [0.5, 0.383], "label": "Ellie episode list"},
+    {"id": "zeke", "semantic_kind": "navigation", "to": "unknown", "tap": [0.5, 0.5], "label": "Zeke episode list (not yet captured)"},
+    {"id": "milro", "semantic_kind": "navigation", "to": "unknown", "tap": [0.5, 0.615], "label": "Milro episode list (not yet captured)"}
    ]
   },
   "adventure_story_ellie": {
@@ -2014,8 +2181,8 @@
    "recognise": "SLAYER STORY Ellie subtitle, Episode 1 Ellie's Memory",
    "source": "seen on a real capture 2026-10-26",
    "moves": [
-    {"id": "back", "to": "adventure_story_sub", "tap": [0.081, 0.944], "label": "red back arrow"},
-    {"id": "start", "to": "adventure_story_ellie", "label": "start an episode", "forbidden": true, "reason": "would change game progression; user choice only"}
+    {"id": "back", "semantic_kind": "navigation", "to": "adventure_story_sub", "tap": [0.081, 0.944], "label": "red back arrow"},
+    {"id": "start", "semantic_kind": "action", "to": "adventure_story_ellie", "label": "start an episode", "forbidden": true, "reason": "would change game progression; user choice only"}
    ]
   },
   "dungeon_map": {
@@ -2025,6 +2192,7 @@
    "moves": [
     {
      "id": "close",
+     "semantic_kind": "navigation",
      "to": "battle",
      "tap": [
       0.5,
@@ -2040,6 +2208,7 @@
     },
     {
      "id": "menu_character",
+     "semantic_kind": "navigation",
      "to": "character_enhance",
      "tap": [
       0.073,
@@ -2049,6 +2218,7 @@
     },
     {
      "id": "menu_skill",
+     "semantic_kind": "navigation",
      "to": "skill",
      "tap": [
       0.24,
@@ -2058,6 +2228,7 @@
     },
     {
      "id": "menu_equipment",
+     "semantic_kind": "navigation",
      "to": "equipment_weapon",
      "tap": [
       0.41,
@@ -2067,6 +2238,7 @@
     },
     {
      "id": "menu_companion",
+     "semantic_kind": "navigation",
      "to": "companion",
      "tap": [
       0.585,
@@ -2076,6 +2248,7 @@
     },
     {
      "id": "menu_shop",
+     "semantic_kind": "navigation",
      "to": "shop_summon",
      "tap": [
       0.925,
@@ -2085,6 +2258,7 @@
     },
     {
      "id": "adventure",
+     "semantic_kind": "navigation",
      "to": "adventure_map",
      "tap": [
       0.16,
@@ -2094,6 +2268,7 @@
     },
     {
      "id": "guild",
+     "semantic_kind": "navigation",
      "to": "guild",
      "tap": [
       0.63,
@@ -2103,6 +2278,7 @@
     },
     {
      "id": "dragon_valley",
+     "semantic_kind": "navigation",
      "to": "airfield",
      "tap": [
       0.5,
@@ -2112,6 +2288,7 @@
     },
     {
      "id": "closed_mine",
+     "semantic_kind": "navigation",
      "to": "mine_list",
      "tap": [
       0.31,
@@ -2121,6 +2298,7 @@
     },
     {
      "id": "shelter",
+     "semantic_kind": "navigation",
      "to": "dungeon_shelter",
      "tap": [
       0.83,
@@ -2130,6 +2308,7 @@
     },
     {
      "id": "rift",
+     "semantic_kind": "navigation",
      "to": "dungeon_rift",
      "tap": [
       0.66,
@@ -2139,6 +2318,7 @@
     },
     {
      "id": "forest",
+     "semantic_kind": "navigation",
      "to": "dungeon_forest",
      "tap": [
       0.69,
@@ -2148,6 +2328,7 @@
     },
     {
      "id": "kingdom",
+     "semantic_kind": "navigation",
      "to": "dungeon_kingdom",
      "tap": [
       0.36,
@@ -2157,6 +2338,7 @@
     },
     {
      "id": "training",
+     "semantic_kind": "navigation",
      "to": "dungeon_training",
      "tap": [
       0.76,
@@ -2171,9 +2353,9 @@
    "recognise": "Shelter title, Dragon Power and Dragon Spark choice",
    "source": "seen on a real capture 2026-10-26",
    "moves": [
-    {"id": "back", "to": "dungeon_map", "tap": [0.11, 0.96], "label": "red back arrow"},
-    {"id": "dragon_power", "to": "dungeon_shelter", "tap": [0.344, 0.49], "label": "Dragon Power choice", "forbidden": true, "reason": "may spend entry resources or change dungeon choice"},
-    {"id": "dragon_spark", "to": "dungeon_shelter", "tap": [0.66, 0.49], "label": "Dragon Spark choice", "forbidden": true, "reason": "may spend entry resources or change dungeon choice"}
+    {"id": "back", "semantic_kind": "navigation", "to": "dungeon_map", "tap": [0.11, 0.96], "label": "red back arrow"},
+    {"id": "dragon_power", "semantic_kind": "action", "to": "dungeon_shelter", "tap": [0.344, 0.49], "label": "Dragon Power choice", "forbidden": true, "reason": "may spend entry resources or change dungeon choice"},
+    {"id": "dragon_spark", "semantic_kind": "action", "to": "dungeon_shelter", "tap": [0.66, 0.49], "label": "Dragon Spark choice", "forbidden": true, "reason": "may spend entry resources or change dungeon choice"}
    ]
   },
   "dungeon_rift": {
@@ -2181,8 +2363,8 @@
    "recognise": "purple Dimensional Rift screen, Devourtionist and difficulty number",
    "source": "seen on a real capture 2026-10-26",
    "moves": [
-    {"id": "back", "to": "dungeon_map", "tap": [0.11, 0.96], "label": "red back arrow"},
-    {"id": "enter", "to": "dungeon_rift", "tap": [0.5, 0.865], "label": "Enter", "forbidden": true, "reason": "spends feathers"}
+    {"id": "back", "semantic_kind": "navigation", "to": "dungeon_map", "tap": [0.11, 0.96], "label": "red back arrow"},
+    {"id": "enter", "semantic_kind": "action", "to": "dungeon_rift", "tap": [0.5, 0.865], "label": "Enter", "forbidden": true, "reason": "spends feathers"}
    ]
   },
   "dungeon_forest": {
@@ -2190,9 +2372,9 @@
    "recognise": "dark cyan Forest of Circulation screen with numbered difficulty rows",
    "source": "seen on a real capture 2026-10-26",
    "moves": [
-    {"id": "back", "to": "dungeon_map", "tap": [0.11, 0.96], "label": "red back arrow"},
-    {"id": "scroll", "to": "dungeon_forest", "swipe": [0.5, 0.822, 0.5, 0.466], "label": "scroll difficulty rows down to 160–165", "precondition": "fresh capture shows Forest of Circulation list and swipe starts between row controls"},
-    {"id": "floor", "to": "dungeon_forest", "label": "choose a floor", "forbidden": true, "reason": "may spend feathers or change dungeon state"}
+    {"id": "back", "semantic_kind": "navigation", "to": "dungeon_map", "tap": [0.11, 0.96], "label": "red back arrow"},
+    {"id": "scroll", "semantic_kind": "navigation", "to": "dungeon_forest", "swipe": [0.5, 0.822, 0.5, 0.466], "label": "scroll difficulty rows down to 160–165", "precondition": "fresh capture shows Forest of Circulation list and swipe starts between row controls"},
+    {"id": "floor", "semantic_kind": "action", "to": "dungeon_forest", "label": "choose a floor", "forbidden": true, "reason": "may spend feathers or change dungeon state"}
    ]
   },
   "dungeon_kingdom": {
@@ -2200,8 +2382,8 @@
    "recognise": "Select Square modal over Dungeon map with squares 1–20",
    "source": "seen on a real capture 2026-10-26",
    "moves": [
-    {"id": "close", "to": "dungeon_map", "tap": [0.902, 0.397], "label": "white X at modal upper right"},
-    {"id": "square", "to": "dungeon_kingdom", "area": [0.05, 0.42, 0.95, 0.62], "label": "Select Square 1–20", "forbidden": true, "reason": "changes dungeon selection"}
+    {"id": "close", "semantic_kind": "navigation", "to": "dungeon_map", "tap": [0.902, 0.397], "label": "white X at modal upper right"},
+    {"id": "square", "semantic_kind": "action", "to": "dungeon_kingdom", "area": [0.05, 0.42, 0.95, 0.62], "label": "Select Square 1–20", "forbidden": true, "reason": "changes dungeon selection"}
    ]
   },
   "dungeon_training": {
@@ -2209,9 +2391,9 @@
    "recognise": "Training Cave screen with numbered Areas in a vertical list",
    "source": "seen on a real capture 2026-10-26",
    "moves": [
-    {"id": "back", "to": "dungeon_map", "tap": [0.11, 0.96], "label": "red back arrow"},
-    {"id": "scroll", "to": "dungeon_training", "swipe": [0.5, 0.823, 0.5, 0.473], "label": "scroll area rows down to 845–850", "precondition": "fresh capture shows Training Cave list and swipe path stays inside rows"},
-    {"id": "area", "to": "dungeon_training", "label": "select an Area", "forbidden": true, "reason": "may start a fight or change dungeon state"}
+    {"id": "back", "semantic_kind": "navigation", "to": "dungeon_map", "tap": [0.11, 0.96], "label": "red back arrow"},
+    {"id": "scroll", "semantic_kind": "navigation", "to": "dungeon_training", "swipe": [0.5, 0.823, 0.5, 0.473], "label": "scroll area rows down to 845–850", "precondition": "fresh capture shows Training Cave list and swipe path stays inside rows"},
+    {"id": "area", "semantic_kind": "action", "to": "dungeon_training", "label": "select an Area", "forbidden": true, "reason": "may start a fight or change dungeon state"}
    ]
   },
   "raid_camp": {
@@ -2221,6 +2403,7 @@
    "moves": [
     {
      "id": "back",
+     "semantic_kind": "navigation",
      "to": "dungeon_map",
      "tap": [
       0.11,
@@ -2230,6 +2413,7 @@
     },
     {
      "id": "ranking",
+     "semantic_kind": "navigation",
      "to": "unknown",
      "tap": [
       0.16,
@@ -2239,6 +2423,7 @@
     },
     {
      "id": "raid",
+     "semantic_kind": "action",
      "to": "unknown",
      "tap": [
       0.54,
@@ -2250,6 +2435,7 @@
     },
     {
      "id": "cooking",
+     "semantic_kind": "action",
      "to": "unknown",
      "tap": [
       0.66,
@@ -2261,6 +2447,7 @@
     },
     {
      "id": "special_dish",
+     "semantic_kind": "action",
      "to": "unknown",
      "tap": [
       0.785,
@@ -2272,6 +2459,7 @@
     },
     {
      "id": "bag",
+     "semantic_kind": "navigation",
      "to": "unknown",
      "tap": [
       0.9,
@@ -2286,9 +2474,10 @@
    "recognise": "mine.floor_list(): 'Closed Mine' title, yellow '<n> Floor' rows",
    "source": "plugin code (mine.py), verified on a real capture 2026-10-26",
    "moves": [
-    {"id": "back", "to": "dungeon_map", "tap": [0.11, 0.96], "label": "red back arrow"},
+    {"id": "back", "semantic_kind": "navigation", "to": "dungeon_map", "tap": [0.11, 0.96], "label": "red back arrow"},
     {
      "id": "floor",
+     "semantic_kind": "navigation",
      "to": "mine_area",
      "area": [
       0.3,
@@ -2300,6 +2489,7 @@
     },
     {
      "id": "scroll",
+     "semantic_kind": "navigation",
      "to": "mine_list",
      "swipe": [
       0.5,
@@ -2316,9 +2506,10 @@
    "recognise": "mine.area_popup(): five grey Area buttons",
    "source": "plugin code (mine.py)",
    "moves": [
-    {"id": "close", "to": "mine_list", "tap": [0.881, 0.761], "label": "small X on Area modal"},
+    {"id": "close", "semantic_kind": "navigation", "to": "mine_list", "tap": [0.881, 0.761], "label": "small X on Area modal"},
     {
      "id": "area",
+     "semantic_kind": "navigation",
      "to": "mine_feathers",
      "area": [
       0.15,
@@ -2335,9 +2526,10 @@
    "recognise": "mine.feather_popup(): three orange feather buttons",
    "source": "plugin code (mine.py)",
    "moves": [
-    {"id": "close", "to": "mine_area", "tap": [0.921, 0.628], "label": "tap outside feather choice on the right"},
+    {"id": "close", "semantic_kind": "navigation", "to": "mine_area", "tap": [0.921, 0.628], "label": "tap outside feather choice on the right"},
     {
      "id": "feathers",
+     "semantic_kind": "action",
      "to": "mine_fight",
      "area": [
       0.1,
@@ -2356,6 +2548,7 @@
    "moves": [
     {
      "id": "repeat",
+     "semantic_kind": "action",
      "to": "mine_fight",
      "tap": [
       0.9625,
@@ -2372,6 +2565,7 @@
    "moves": [
     {
      "id": "close",
+     "semantic_kind": "navigation",
      "to": "battle",
      "tap": [
       0.5,
@@ -2381,6 +2575,7 @@
     },
     {
      "id": "previous_region",
+     "semantic_kind": "navigation",
      "to": "stage_select",
      "tap": [
       0.125,
@@ -2390,6 +2585,7 @@
     },
     {
      "id": "next_region",
+     "semantic_kind": "navigation",
      "to": "stage_select",
      "tap": [
       0.875,
@@ -2399,6 +2595,7 @@
     },
     {
      "id": "scroll",
+     "semantic_kind": "navigation",
      "to": "stage_select",
      "swipe": [
       0.504,
@@ -2410,6 +2607,7 @@
     },
     {
      "id": "move",
+     "semantic_kind": "navigation",
      "to": "battle",
      "area": [
       0.68,
@@ -2422,6 +2620,7 @@
     },
     {
      "id": "info",
+     "semantic_kind": "navigation",
      "to": "unknown",
      "area": [
       0.12,
@@ -2442,6 +2641,7 @@
    "moves": [
     {
      "id": "close",
+     "semantic_kind": "navigation",
      "to": "battle",
      "tap": [
       0.935,
@@ -2453,6 +2653,7 @@
     },
     {
      "id": "ranking",
+     "semantic_kind": "navigation",
      "to": "top_ranking",
      "tap": [
       0.785,
@@ -2464,6 +2665,7 @@
     },
     {
      "id": "settings",
+     "semantic_kind": "navigation",
      "to": "top_settings",
      "tap": [
       0.86,
@@ -2475,6 +2677,7 @@
     },
     {
      "id": "mail",
+     "semantic_kind": "navigation",
      "to": "top_mail",
      "tap": [
       0.86,
@@ -2486,6 +2689,7 @@
     },
     {
      "id": "power_saving",
+     "semantic_kind": "navigation",
      "to": "saver",
      "tap": [
       0.935,
@@ -2504,6 +2708,7 @@
    "moves": [
     {
      "id": "better_weapon_toast",
+     "semantic_kind": "action",
      "to": "unknown",
      "area": [
       0.7,
@@ -2517,6 +2722,7 @@
     },
     {
      "id": "close",
+     "semantic_kind": "navigation",
      "to": "battle",
      "tap": [
       0.5,
@@ -2531,6 +2737,7 @@
     },
     {
      "id": "menu_character",
+     "semantic_kind": "navigation",
      "to": "character_enhance",
      "tap": [
       0.073,
@@ -2540,6 +2747,7 @@
     },
     {
      "id": "menu_skill",
+     "semantic_kind": "navigation",
      "to": "skill",
      "tap": [
       0.24,
@@ -2549,6 +2757,7 @@
     },
     {
      "id": "menu_equipment",
+     "semantic_kind": "navigation",
      "to": "equipment_weapon",
      "tap": [
       0.41,
@@ -2558,6 +2767,7 @@
     },
     {
      "id": "menu_companion",
+     "semantic_kind": "navigation",
      "to": "companion",
      "tap": [
       0.585,
@@ -2567,6 +2777,7 @@
     },
     {
      "id": "menu_adventure",
+     "semantic_kind": "navigation",
      "to": "adventure_map",
      "tap": [
       0.755,
@@ -2574,12 +2785,13 @@
      ],
      "label": "Adventure"
     },
-    {"id": "package", "to": "shop_package", "tap": [0.315, 0.438], "label": "Package tab (view only)"},
-    {"id": "goods", "to": "shop_goods", "tap": [0.5, 0.438], "label": "Goods tab (view only)"},
-    {"id": "golden_key", "to": "shop_golden_key", "tap": [0.69, 0.438], "label": "Golden Key tab (view only)"},
-    {"id": "event", "to": "shop_event", "tap": [0.883, 0.438], "label": "Event tab (view only)"},
+    {"id": "package", "semantic_kind": "navigation", "to": "shop_package", "tap": [0.315, 0.438], "label": "Package tab (view only)"},
+    {"id": "goods", "semantic_kind": "navigation", "to": "shop_goods", "tap": [0.5, 0.438], "label": "Goods tab (view only)"},
+    {"id": "golden_key", "semantic_kind": "navigation", "to": "shop_golden_key", "tap": [0.69, 0.438], "label": "Golden Key tab (view only)"},
+    {"id": "event", "semantic_kind": "navigation", "to": "shop_event", "tap": [0.883, 0.438], "label": "Event tab (view only)"},
     {
      "id": "summon",
+     "semantic_kind": "action",
      "to": "unknown",
      "area": [
       0.33,
@@ -2593,6 +2805,7 @@
     },
     {
      "id": "ad_summon_weapon",
+     "semantic_kind": "action",
      "to": "unknown",
      "tap": [
       0.88,
@@ -2602,6 +2815,7 @@
     },
     {
      "id": "ad_summon_accessories",
+     "semantic_kind": "action",
      "to": "unknown",
      "tap": [
       0.88,
@@ -2611,6 +2825,7 @@
     },
     {
      "id": "ad_summon_skill",
+     "semantic_kind": "action",
      "to": "unknown",
      "tap": [
       0.88,
@@ -2620,6 +2835,7 @@
     },
     {
      "id": "equipment_tab",
+     "semantic_kind": "navigation",
      "to": "shop_summon",
      "tap": [
       0.27,
@@ -2630,6 +2846,7 @@
     },
     {
      "id": "relic_tab",
+     "semantic_kind": "navigation",
      "to": "shop_summon",
      "tap": [
       0.77,
@@ -2645,12 +2862,12 @@
    "recognise": "Package tab selected, featured and other package cards with prices",
    "source": "seen on a real capture 2026-10-26",
    "moves": [
-    {"id": "summon", "to": "shop_summon", "tap": [0.117, 0.438], "label": "Summon tab"},
-    {"id": "goods", "to": "shop_goods", "tap": [0.5, 0.438], "label": "Goods tab"},
-    {"id": "golden_key", "to": "shop_golden_key", "tap": [0.69, 0.438], "label": "Golden Key tab"},
-    {"id": "event", "to": "shop_event", "tap": [0.883, 0.438], "label": "Event tab"},
-    {"id": "scroll", "to": "shop_package", "swipe": [0.494, 0.822, 0.496, 0.509], "label": "scroll package cards through the centre gap", "precondition": "fresh capture shows Package tab and swipe avoids price buttons"},
-    {"id": "purchase", "to": "shop_package", "label": "priced package cards", "forbidden": true, "reason": "spends money"}
+    {"id": "summon", "semantic_kind": "navigation", "to": "shop_summon", "tap": [0.117, 0.438], "label": "Summon tab"},
+    {"id": "goods", "semantic_kind": "navigation", "to": "shop_goods", "tap": [0.5, 0.438], "label": "Goods tab"},
+    {"id": "golden_key", "semantic_kind": "navigation", "to": "shop_golden_key", "tap": [0.69, 0.438], "label": "Golden Key tab"},
+    {"id": "event", "semantic_kind": "navigation", "to": "shop_event", "tap": [0.883, 0.438], "label": "Event tab"},
+    {"id": "scroll", "semantic_kind": "navigation", "to": "shop_package", "swipe": [0.494, 0.822, 0.496, 0.509], "label": "scroll package cards through the centre gap", "precondition": "fresh capture shows Package tab and swipe avoids price buttons"},
+    {"id": "purchase", "semantic_kind": "action", "to": "shop_package", "label": "priced package cards", "forbidden": true, "reason": "spends money"}
    ]
   },
   "shop_goods": {
@@ -2658,11 +2875,11 @@
    "recognise": "Goods tab selected, diamond and emerald offers with ADS and prices",
    "source": "seen on a real capture 2026-10-26",
    "moves": [
-    {"id": "summon", "to": "shop_summon", "tap": [0.117, 0.438], "label": "Summon tab"},
-    {"id": "package", "to": "shop_package", "tap": [0.315, 0.438], "label": "Package tab"},
-    {"id": "golden_key", "to": "shop_golden_key", "tap": [0.69, 0.438], "label": "Golden Key tab"},
-    {"id": "event", "to": "shop_event", "tap": [0.883, 0.438], "label": "Event tab"},
-    {"id": "purchase", "to": "shop_goods", "label": "ADS or priced offers", "forbidden": true, "reason": "scan must not start ads or spend money"}
+    {"id": "summon", "semantic_kind": "navigation", "to": "shop_summon", "tap": [0.117, 0.438], "label": "Summon tab"},
+    {"id": "package", "semantic_kind": "navigation", "to": "shop_package", "tap": [0.315, 0.438], "label": "Package tab"},
+    {"id": "golden_key", "semantic_kind": "navigation", "to": "shop_golden_key", "tap": [0.69, 0.438], "label": "Golden Key tab"},
+    {"id": "event", "semantic_kind": "navigation", "to": "shop_event", "tap": [0.883, 0.438], "label": "Event tab"},
+    {"id": "purchase", "semantic_kind": "action", "to": "shop_goods", "label": "ADS or priced offers", "forbidden": true, "reason": "scan must not start ads or spend money"}
    ]
   },
   "shop_golden_key": {
@@ -2670,11 +2887,11 @@
    "recognise": "Golden Key tab selected, special chest rewards and a key counter",
    "source": "seen on a real capture 2026-10-26",
    "moves": [
-    {"id": "summon", "to": "shop_summon", "tap": [0.117, 0.438], "label": "Summon tab"},
-    {"id": "package", "to": "shop_package", "tap": [0.315, 0.438], "label": "Package tab"},
-    {"id": "goods", "to": "shop_goods", "tap": [0.5, 0.438], "label": "Goods tab"},
-    {"id": "event", "to": "shop_event", "tap": [0.883, 0.438], "label": "Event tab"},
-    {"id": "open", "to": "shop_golden_key", "label": "open a chest", "forbidden": true, "reason": "spends Golden Keys"}
+    {"id": "summon", "semantic_kind": "navigation", "to": "shop_summon", "tap": [0.117, 0.438], "label": "Summon tab"},
+    {"id": "package", "semantic_kind": "navigation", "to": "shop_package", "tap": [0.315, 0.438], "label": "Package tab"},
+    {"id": "goods", "semantic_kind": "navigation", "to": "shop_goods", "tap": [0.5, 0.438], "label": "Goods tab"},
+    {"id": "event", "semantic_kind": "navigation", "to": "shop_event", "tap": [0.883, 0.438], "label": "Event tab"},
+    {"id": "open", "semantic_kind": "action", "to": "shop_golden_key", "label": "open a chest", "forbidden": true, "reason": "spends Golden Keys"}
    ]
   },
   "shop_event": {
@@ -2684,6 +2901,7 @@
    "moves": [
     {
      "id": "close",
+     "semantic_kind": "navigation",
      "to": "battle",
      "tap": [
       0.5,
@@ -2696,12 +2914,12 @@
       "reduced_battle": true
      }
     },
-    {"id": "quest", "to": "quest_panel", "tap": [0.935, 0.087], "label": "Quest at top right"},
-    {"id": "summon", "to": "shop_summon", "tap": [0.117, 0.269], "label": "Summon tab in higher tab row"},
-    {"id": "package", "to": "shop_package", "tap": [0.315, 0.269], "label": "Package tab in higher tab row"},
-    {"id": "goods", "to": "shop_goods", "tap": [0.5, 0.269], "label": "Goods tab in higher tab row"},
-    {"id": "golden_key", "to": "shop_golden_key", "tap": [0.69, 0.269], "label": "Golden Key tab in higher tab row"},
-    {"id": "purchase", "to": "shop_event", "label": "event packages", "forbidden": true, "reason": "spends money"}
+    {"id": "quest", "semantic_kind": "navigation", "to": "quest_panel", "tap": [0.935, 0.087], "label": "Quest at top right"},
+    {"id": "summon", "semantic_kind": "navigation", "to": "shop_summon", "tap": [0.117, 0.269], "label": "Summon tab in higher tab row"},
+    {"id": "package", "semantic_kind": "navigation", "to": "shop_package", "tap": [0.315, 0.269], "label": "Package tab in higher tab row"},
+    {"id": "goods", "semantic_kind": "navigation", "to": "shop_goods", "tap": [0.5, 0.269], "label": "Goods tab in higher tab row"},
+    {"id": "golden_key", "semantic_kind": "navigation", "to": "shop_golden_key", "tap": [0.69, 0.269], "label": "Golden Key tab in higher tab row"},
+    {"id": "purchase", "semantic_kind": "action", "to": "shop_event", "label": "event packages", "forbidden": true, "reason": "spends money"}
    ]
   },
   "quest_panel": {
@@ -2709,8 +2927,10 @@
    "recognise": "dark overlay, title 'Quest', tabs Daily Quest / Repeat Quest / Achievement at y 0.225, rows with a reward button on the right",
    "source": "explored 2026-10-19",
    "moves": [
+    {"id": "close_overlay", "semantic_kind": "navigation", "to": "unknown", "tap": [0.895, 0.183], "label": "Quest X; underlying screen must be freshly recognised", "precondition": "fresh capture recognises Quest title and exactly one calibrated Quest tab; underlying destination is unknown"},
     {
      "id": "close",
+     "semantic_kind": "navigation",
      "to": "battle",
      "tap": [
       0.895,
@@ -2719,9 +2939,10 @@
      "label": "X after opening Quest from Battle",
      "precondition": "Quest was opened from Battle"
     },
-    {"id": "close_to_shop_event", "to": "shop_event", "tap": [0.895, 0.183], "label": "X after opening Quest from Shop Event", "precondition": "Quest was opened from Shop Event"},
+    {"id": "close_to_shop_event", "semantic_kind": "navigation", "to": "shop_event", "tap": [0.895, 0.183], "label": "X after opening Quest from Shop Event", "precondition": "Quest was opened from Shop Event"},
     {
      "id": "daily",
+     "semantic_kind": "navigation",
      "to": "quest_panel",
      "tap": [
       0.2,
@@ -2731,6 +2952,7 @@
     },
     {
      "id": "repeat",
+     "semantic_kind": "navigation",
      "to": "quest_panel",
      "tap": [
       0.5,
@@ -2740,6 +2962,7 @@
     },
     {
      "id": "achievement",
+     "semantic_kind": "navigation",
      "to": "quest_panel",
      "tap": [
       0.79,
@@ -2747,9 +2970,10 @@
      ],
      "label": "Achievement tab"
     },
-    {"id": "scroll_repeat", "to": "quest_panel", "swipe": [0.475, 0.843, 0.473, 0.43], "label": "scroll Repeat Quest rows through the progress bars", "precondition": "fresh capture shows Repeat Quest tab and swipe path clear of reward buttons"},
+    {"id": "scroll_repeat", "semantic_kind": "navigation", "to": "quest_panel", "swipe": [0.475, 0.843, 0.473, 0.43], "label": "scroll Repeat Quest rows through the progress bars", "precondition": "fresh capture shows Repeat Quest tab and swipe path clear of reward buttons"},
     {
      "id": "claim",
+     "semantic_kind": "action",
      "to": "quest_panel",
      "area": [
       0.67,
@@ -2779,6 +3003,7 @@
    "moves": [
     {
      "id": "back",
+     "semantic_kind": "navigation",
      "to": "adventure_map",
      "tap": [
       0.11,
@@ -2787,12 +3012,12 @@
      "label": "red back button after entering from Adventure map's Guild tab",
      "precondition": "navigation history shows Guild entered from Adventure tab"
     },
-    {"id": "back_to_dungeon", "to": "dungeon_map", "tap": [0.11, 0.96], "label": "red back button after Airfield opened from Dungeon map", "precondition": "navigation history shows Airfield entered from Dungeon map Dragon Valley"},
-    {"id": "divine_beast", "to": "guild_divine_beast", "tap": [0.41, 0.955], "label": "Divine Beast"},
-    {"id": "shop", "to": "guild_shop_normal", "tap": [0.54, 0.955], "label": "Guild Shop"},
-    {"id": "request", "to": "guild_request", "tap": [0.665, 0.955], "label": "Guild Request"},
-    {"id": "airfield", "to": "airfield", "tap": [0.785, 0.955], "label": "Airfield"},
-    {"id": "info", "to": "guild_info_basic", "tap": [0.905, 0.955], "label": "Guild Info"}
+    {"id": "back_to_dungeon", "semantic_kind": "navigation", "to": "dungeon_map", "tap": [0.11, 0.96], "label": "red back button after Airfield opened from Dungeon map", "precondition": "navigation history shows Airfield entered from Dungeon map Dragon Valley"},
+    {"id": "divine_beast", "semantic_kind": "navigation", "to": "guild_divine_beast", "tap": [0.41, 0.955], "label": "Divine Beast"},
+    {"id": "shop", "semantic_kind": "navigation", "to": "guild_shop_normal", "tap": [0.54, 0.955], "label": "Guild Shop"},
+    {"id": "request", "semantic_kind": "navigation", "to": "guild_request", "tap": [0.665, 0.955], "label": "Guild Request"},
+    {"id": "airfield", "semantic_kind": "navigation", "to": "airfield", "tap": [0.785, 0.955], "label": "Airfield"},
+    {"id": "info", "semantic_kind": "navigation", "to": "guild_info_basic", "tap": [0.905, 0.955], "label": "Guild Info"}
    ]
   },
   "guild_divine_beast": {
@@ -2800,8 +3025,8 @@
    "recognise": "Divine Beast modal over Guild hall, beast level and Connection Reward",
    "source": "seen on a real capture 2026-10-26",
    "moves": [
-    {"id": "close", "to": "guild", "tap": [0.5, 0.926], "label": "red X below modal"},
-    {"id": "clean", "to": "guild_divine_beast", "tap": [0.5, 0.81], "label": "Clean", "forbidden": true, "reason": "changes Guild Divine Beast state"}
+    {"id": "close", "semantic_kind": "navigation", "to": "guild", "tap": [0.5, 0.926], "label": "red X below modal"},
+    {"id": "clean", "semantic_kind": "action", "to": "guild_divine_beast", "tap": [0.5, 0.81], "label": "Clean", "forbidden": true, "reason": "changes Guild Divine Beast state"}
    ]
   },
   "guild_shop_normal": {
@@ -2809,10 +3034,10 @@
    "recognise": "Sana at left, Today's Item, Daily and Weekly item cards",
    "source": "seen on a real capture 2026-10-26",
    "moves": [
-    {"id": "back", "to": "guild", "tap": [0.11, 0.96], "label": "red back arrow"},
-    {"id": "appearance", "to": "guild_shop_appearance", "tap": [0.735, 0.427], "label": "Appearance Shop tab"},
-    {"id": "scroll", "to": "guild_shop_normal", "swipe": [0.5, 0.837, 0.5, 0.478], "label": "scroll item list between purchase buttons", "precondition": "fresh capture shows Normal Shop and clear central gap for the full swipe"},
-    {"id": "purchase", "to": "guild_shop_normal", "label": "priced item buttons", "forbidden": true, "reason": "spends Guild currency"}
+    {"id": "back", "semantic_kind": "navigation", "to": "guild", "tap": [0.11, 0.96], "label": "red back arrow"},
+    {"id": "appearance", "semantic_kind": "navigation", "to": "guild_shop_appearance", "tap": [0.735, 0.427], "label": "Appearance Shop tab"},
+    {"id": "scroll", "semantic_kind": "navigation", "to": "guild_shop_normal", "swipe": [0.5, 0.837, 0.5, 0.478], "label": "scroll item list between purchase buttons", "precondition": "fresh capture shows Normal Shop and clear central gap for the full swipe"},
+    {"id": "purchase", "semantic_kind": "action", "to": "guild_shop_normal", "label": "priced item buttons", "forbidden": true, "reason": "spends Guild currency"}
    ]
   },
   "guild_shop_appearance": {
@@ -2820,10 +3045,10 @@
    "recognise": "appearance item rows, equipped character, orange Guild coin price buttons",
    "source": "seen on a real capture 2026-10-26",
    "moves": [
-    {"id": "back", "to": "guild", "tap": [0.11, 0.96], "label": "red back arrow"},
-    {"id": "normal", "to": "guild_shop_normal", "tap": [0.25, 0.427], "label": "Normal Shop tab"},
-    {"id": "scroll", "to": "guild_shop_appearance", "swipe": [0.325, 0.82, 0.327, 0.485], "label": "scroll appearance list through text on the left", "precondition": "fresh capture shows Appearance Shop and the swipe path clear of priced buttons"},
-    {"id": "purchase", "to": "guild_shop_appearance", "label": "priced appearance buttons", "forbidden": true, "reason": "spends Guild currency"}
+    {"id": "back", "semantic_kind": "navigation", "to": "guild", "tap": [0.11, 0.96], "label": "red back arrow"},
+    {"id": "normal", "semantic_kind": "navigation", "to": "guild_shop_normal", "tap": [0.25, 0.427], "label": "Normal Shop tab"},
+    {"id": "scroll", "semantic_kind": "navigation", "to": "guild_shop_appearance", "swipe": [0.325, 0.82, 0.327, 0.485], "label": "scroll appearance list through text on the left", "precondition": "fresh capture shows Appearance Shop and the swipe path clear of priced buttons"},
+    {"id": "purchase", "semantic_kind": "action", "to": "guild_shop_appearance", "label": "priced appearance buttons", "forbidden": true, "reason": "spends Guild currency"}
    ]
   },
   "airfield": {
@@ -2831,9 +3056,9 @@
    "recognise": "Airfield title and tall tree with branch platforms and portal",
    "source": "seen on a real capture 2026-10-26",
    "moves": [
-    {"id": "back", "to": "guild", "tap": [0.11, 0.96], "label": "red back arrow"},
-    {"id": "recipes", "to": "airfield_recipes_appetizer", "tap": [0.805, 0.96], "label": "open Recipes book without selecting or making a dish"},
-    {"id": "boarding", "to": "airfield_boarding_status", "tap": [0.91, 0.96], "label": "Boarding Status"}
+    {"id": "back", "semantic_kind": "navigation", "to": "guild", "tap": [0.11, 0.96], "label": "red back arrow"},
+    {"id": "recipes", "semantic_kind": "navigation", "to": "airfield_recipes_appetizer", "tap": [0.805, 0.96], "label": "open Recipes book without selecting or making a dish"},
+    {"id": "boarding", "semantic_kind": "navigation", "to": "airfield_boarding_status", "tap": [0.91, 0.96], "label": "Boarding Status"}
    ]
   },
   "airfield_recipes_appetizer": {
@@ -2841,10 +3066,10 @@
    "recognise": "open cookbook with green Appetizer tab and recipe progress at bottom",
    "source": "seen on a real capture 2026-10-26",
    "moves": [
-    {"id": "back", "to": "airfield", "tap": [0.11, 0.96], "label": "red back arrow closes cookbook"},
-    {"id": "main", "to": "airfield_recipes_main", "tap": [0.5, 0.189], "label": "Main Dish tab"},
-    {"id": "dessert", "to": "airfield_recipes_dessert", "tap": [0.73, 0.189], "label": "Dessert tab"},
-    {"id": "make", "to": "airfield_recipes_appetizer", "label": "select or make a recipe", "forbidden": true, "reason": "recipe preparation is a user action"}
+    {"id": "back", "semantic_kind": "navigation", "to": "airfield", "tap": [0.11, 0.96], "label": "red back arrow closes cookbook"},
+    {"id": "main", "semantic_kind": "navigation", "to": "airfield_recipes_main", "tap": [0.5, 0.189], "label": "Main Dish tab"},
+    {"id": "dessert", "semantic_kind": "navigation", "to": "airfield_recipes_dessert", "tap": [0.73, 0.189], "label": "Dessert tab"},
+    {"id": "make", "semantic_kind": "action", "to": "airfield_recipes_appetizer", "label": "select or make a recipe", "forbidden": true, "reason": "recipe preparation is a user action"}
    ]
   },
   "airfield_recipes_main": {
@@ -2852,10 +3077,10 @@
    "recognise": "open cookbook with orange Main Dish tab",
    "source": "seen on a real capture 2026-10-26",
    "moves": [
-    {"id": "back", "to": "airfield", "tap": [0.11, 0.96], "label": "red back arrow closes cookbook"},
-    {"id": "appetizer", "to": "airfield_recipes_appetizer", "tap": [0.27, 0.189], "label": "Appetizer tab"},
-    {"id": "dessert", "to": "airfield_recipes_dessert", "tap": [0.73, 0.189], "label": "Dessert tab"},
-    {"id": "make", "to": "airfield_recipes_main", "label": "select or make a recipe", "forbidden": true, "reason": "recipe preparation is a user action"}
+    {"id": "back", "semantic_kind": "navigation", "to": "airfield", "tap": [0.11, 0.96], "label": "red back arrow closes cookbook"},
+    {"id": "appetizer", "semantic_kind": "navigation", "to": "airfield_recipes_appetizer", "tap": [0.27, 0.189], "label": "Appetizer tab"},
+    {"id": "dessert", "semantic_kind": "navigation", "to": "airfield_recipes_dessert", "tap": [0.73, 0.189], "label": "Dessert tab"},
+    {"id": "make", "semantic_kind": "action", "to": "airfield_recipes_main", "label": "select or make a recipe", "forbidden": true, "reason": "recipe preparation is a user action"}
    ]
   },
   "airfield_recipes_dessert": {
@@ -2863,11 +3088,11 @@
    "recognise": "open cookbook with yellow Dessert tab",
    "source": "seen on a real capture 2026-10-26",
    "moves": [
-    {"id": "back", "to": "airfield", "tap": [0.11, 0.96], "label": "red back arrow closes cookbook"},
-    {"id": "appetizer", "to": "airfield_recipes_appetizer", "tap": [0.27, 0.189], "label": "Appetizer tab"},
-    {"id": "main", "to": "airfield_recipes_main", "tap": [0.5, 0.189], "label": "Main Dish tab"},
-    {"id": "scroll", "to": "airfield_recipes_dessert", "swipe": [0.527, 0.588, 0.527, 0.303], "label": "scroll the dessert list through the gap between cards", "precondition": "fresh capture shows Dessert tab and swipe path clear of recipe selection"},
-    {"id": "make", "to": "airfield_recipes_dessert", "label": "select or make a recipe", "forbidden": true, "reason": "recipe preparation is a user action"}
+    {"id": "back", "semantic_kind": "navigation", "to": "airfield", "tap": [0.11, 0.96], "label": "red back arrow closes cookbook"},
+    {"id": "appetizer", "semantic_kind": "navigation", "to": "airfield_recipes_appetizer", "tap": [0.27, 0.189], "label": "Appetizer tab"},
+    {"id": "main", "semantic_kind": "navigation", "to": "airfield_recipes_main", "tap": [0.5, 0.189], "label": "Main Dish tab"},
+    {"id": "scroll", "semantic_kind": "navigation", "to": "airfield_recipes_dessert", "swipe": [0.527, 0.588, 0.527, 0.303], "label": "scroll the dessert list through the gap between cards", "precondition": "fresh capture shows Dessert tab and swipe path clear of recipe selection"},
+    {"id": "make", "semantic_kind": "action", "to": "airfield_recipes_dessert", "label": "select or make a recipe", "forbidden": true, "reason": "recipe preparation is a user action"}
    ]
   },
   "airfield_boarding_status": {
@@ -2875,10 +3100,10 @@
    "recognise": "Boarding Status title and airship with left and right arrows",
    "source": "seen on a real capture 2026-10-26",
    "moves": [
-    {"id": "back", "to": "airfield", "tap": [0.11, 0.96], "label": "red back arrow"},
-    {"id": "next", "to": "airfield_boarding_status", "tap": [0.923, 0.463], "label": "next airship"},
-    {"id": "previous", "to": "airfield_boarding_status", "tap": [0.073, 0.463], "label": "previous airship"},
-    {"id": "my_location", "to": "airfield_boarding_status", "tap": [0.904, 0.968], "label": "My Location changes the airship currently displayed"}
+    {"id": "back", "semantic_kind": "navigation", "to": "airfield", "tap": [0.11, 0.96], "label": "red back arrow"},
+    {"id": "next", "semantic_kind": "navigation", "to": "airfield_boarding_status", "tap": [0.923, 0.463], "label": "next airship"},
+    {"id": "previous", "semantic_kind": "navigation", "to": "airfield_boarding_status", "tap": [0.073, 0.463], "label": "previous airship"},
+    {"id": "my_location", "semantic_kind": "navigation", "to": "airfield_boarding_status", "tap": [0.904, 0.968], "label": "My Location changes the airship currently displayed"}
    ]
   },
   "guild_request": {
@@ -2886,9 +3111,9 @@
    "recognise": "Guild Request title, reward milestones and six WANTED posters",
    "source": "seen on a real capture 2026-10-26",
    "moves": [
-    {"id": "back", "to": "guild", "tap": [0.11, 0.96], "label": "red back arrow"},
-    {"id": "wanted", "to": "guild_request", "area": [0.11, 0.47, 0.9, 0.81], "label": "WANTED posters", "forbidden": true, "reason": "may start a fight or change Guild request"},
-    {"id": "reward", "to": "guild_request", "area": [0.13, 0.2, 0.94, 0.32], "label": "Guild reward milestones", "forbidden": true, "reason": "claims a reward"}
+    {"id": "back", "semantic_kind": "navigation", "to": "guild", "tap": [0.11, 0.96], "label": "red back arrow"},
+    {"id": "wanted", "semantic_kind": "action", "to": "guild_request", "area": [0.11, 0.47, 0.9, 0.81], "label": "WANTED posters", "forbidden": true, "reason": "may start a fight or change Guild request"},
+    {"id": "reward", "semantic_kind": "action", "to": "guild_request", "area": [0.13, 0.2, 0.94, 0.32], "label": "Guild reward milestones", "forbidden": true, "reason": "claims a reward"}
    ]
   },
   "guild_info_basic": {
@@ -2896,8 +3121,8 @@
    "recognise": "Guild Info modal, guild emblem, membership, Notice and Divine Blessing",
    "source": "seen on a real capture 2026-10-26",
    "moves": [
-    {"id": "close", "to": "guild", "tap": [0.5, 0.916], "label": "red X below modal"},
-    {"id": "members", "to": "guild_info_members", "tap": [0.695, 0.845], "label": "Guild Member tab"}
+    {"id": "close", "semantic_kind": "navigation", "to": "guild", "tap": [0.5, 0.916], "label": "red X below modal"},
+    {"id": "members", "semantic_kind": "navigation", "to": "guild_info_members", "tap": [0.695, 0.845], "label": "Guild Member tab"}
    ]
   },
   "guild_info_members": {
@@ -2905,9 +3130,9 @@
    "recognise": "Guild Info modal with scrollable member list and Basic Info/Guild Member tabs",
    "source": "seen on a real capture 2026-10-26",
    "moves": [
-    {"id": "close", "to": "guild", "tap": [0.5, 0.916], "label": "red X below modal"},
-    {"id": "basic", "to": "guild_info_basic", "tap": [0.3, 0.845], "label": "Basic Info tab"},
-    {"id": "scroll", "to": "guild_info_members", "swipe": [0.498, 0.757, 0.496, 0.436], "label": "scroll member list down", "precondition": "fresh capture shows Guild Member list; swipe stays inside list and away from bottom tabs"}
+    {"id": "close", "semantic_kind": "navigation", "to": "guild", "tap": [0.5, 0.916], "label": "red X below modal"},
+    {"id": "basic", "semantic_kind": "navigation", "to": "guild_info_basic", "tap": [0.3, 0.845], "label": "Basic Info tab"},
+    {"id": "scroll", "semantic_kind": "navigation", "to": "guild_info_members", "swipe": [0.498, 0.757, 0.496, 0.436], "label": "scroll member list down", "precondition": "fresh capture shows Guild Member list; swipe stays inside list and away from bottom tabs"}
    ]
   },
   "battle_settings": {
@@ -2917,6 +3142,7 @@
    "moves": [
     {
      "id": "close",
+     "semantic_kind": "navigation",
      "to": "battle",
      "tap": [
       0.09,
@@ -2926,6 +3152,7 @@
     },
     {
      "id": "preset",
+     "semantic_kind": "action",
      "to": "battle_settings",
      "area": [
       0.1,
@@ -2944,6 +3171,7 @@
    "moves": [
     {
      "id": "dice",
+     "semantic_kind": "action",
      "to": "promotion_bonus",
      "area": [
       0,
@@ -2970,6 +3198,7 @@
    "moves": [
     {
      "id": "close",
+     "semantic_kind": "navigation",
      "label": "Close app / Fermer l’application",
      "area": [
       0.0,
@@ -2982,6 +3211,7 @@
     },
     {
      "id": "app_info",
+     "semantic_kind": "navigation",
      "label": "App info / Infos sur l’appli",
      "forbidden": true,
      "reason": "opens Android's settings of the game (Force stop, Clear storage)",
@@ -2996,6 +3226,7 @@
    "moves": [
     {
      "id": "wait",
+     "semantic_kind": "navigation",
      "label": "Wait / Attendre",
      "area": [
       0.0,
@@ -3008,6 +3239,7 @@
     },
     {
      "id": "close",
+     "semantic_kind": "navigation",
      "label": "Close app / Fermer l’application",
      "forbidden": true,
      "reason": "kills the game (the plugin never kills it)",
@@ -3015,6 +3247,7 @@
     },
     {
      "id": "app_info",
+     "semantic_kind": "navigation",
      "label": "App info / Infos sur l’appli",
      "forbidden": true,
      "reason": "opens Android's settings of the game (Force stop, Clear storage)",
@@ -3035,6 +3268,7 @@
    "moves": [
     {
      "id": "close",
+     "semantic_kind": "navigation",
      "to": "equipment_accessories",
      "tap": [
       0.09,
@@ -3044,6 +3278,7 @@
     },
     {
      "id": "accessory_left",
+     "semantic_kind": "navigation",
      "to": "black_orb_accessory",
      "tap": [
       0.15,
@@ -3053,6 +3288,7 @@
     },
     {
      "id": "accessory_right",
+     "semantic_kind": "navigation",
      "to": "black_orb_accessory",
      "tap": [
       0.85,
@@ -3062,6 +3298,7 @@
     },
     {
      "id": "orb",
+     "semantic_kind": "action",
      "to": "unknown",
      "area": [
       0.25,
@@ -3075,6 +3312,7 @@
     },
     {
      "id": "summon",
+     "semantic_kind": "action",
      "to": "unknown",
      "area": [
       0.25,
@@ -3088,6 +3326,7 @@
     },
     {
      "id": "obtain",
+     "semantic_kind": "action",
      "to": "unknown",
      "area": [
       0.79,
@@ -3108,6 +3347,7 @@
    "moves": [
     {
      "id": "close",
+     "semantic_kind": "navigation",
      "to": "black_orb",
      "tap": [0.104, 0.43],
      "label": "tap outside the card on the Black Orb title; Android Back opens Exit game instead",
@@ -3115,6 +3355,7 @@
     },
     {
      "id": "awaken",
+     "semantic_kind": "action",
      "to": "unknown",
      "area": [
       0.33,
@@ -3128,6 +3369,7 @@
     },
     {
      "id": "reroll",
+     "semantic_kind": "action",
      "to": "unknown",
      "area": [
       0.7,
@@ -3148,6 +3390,7 @@
    "moves": [
     {
      "id": "close",
+     "semantic_kind": "navigation",
      "to": "battle",
      "key": "BACK",
      "label": "Android Back (assumed: it closes most of the game's panels; on the battle screen it opens the quit dialog, so only sent while this screen shows)",
@@ -3163,6 +3406,7 @@
    "moves": [
     {
      "id": "close",
+     "semantic_kind": "navigation",
      "to": "battle",
      "key": "BACK",
      "label": "Android Back (assumed: it closes most of the game's panels; on the battle screen it opens the quit dialog, so only sent while this screen shows)",
@@ -3178,6 +3422,7 @@
    "moves": [
     {
      "id": "close",
+     "semantic_kind": "navigation",
      "to": "battle",
      "key": "BACK",
      "label": "Android Back (assumed: it closes most of the game's panels; on the battle screen it opens the quit dialog, so only sent while this screen shows)",

@@ -253,7 +253,8 @@ def readers(game):
 
     fake_screens = SimpleNamespace(look=lambda shot: {"screen": shot[2]["screen"], "plain": plain(shot),
                                                     "overlays": ["panel"] if open_tab(shot) else []},
-                                   plain_battle=plain, open_tab=open_tab, TAB_TAP_Y=screens.TAB_TAP_Y,
+                                   plain_battle=plain, open_tab=open_tab, quest_panel=lambda shot: False,
+                                   TAB_TAP_Y=screens.TAB_TAP_Y,
                                    classify=lambda shot: shot[2]["screen"], SAVER_TAP=screens.SAVER_TAP,
                                    SAVER_HOLD_MS=screens.SAVER_HOLD_MS)
     fake_select = SimpleNamespace(regions=select.regions, view=view_of, battle_stage=battle_stage,
@@ -277,6 +278,7 @@ def run(game, call, switches="real"):
     answer = asyncio.run(call(part["api"]))
     if isinstance(answer, dict):
         game.timings = answer.pop("timings", None)
+        game.verified_setup = answer.pop("verified_setup", False)
         answer["text"] = french(answer.pop("text_t"))
     return answer
 
@@ -286,15 +288,16 @@ def done():
 
 
 class Sequence(unittest.TestCase):
-    def test_from_a_panel_to_920_preset_iv(self):
+    def test_from_a_panel_to_920_keeps_the_requested_preset(self):
         game = Game(panel="shop_summon")
-        self.assertEqual(run(game, lambda api: api["farm"](920, "IV", "mpw18")), done())
-        self.assertEqual((game.state["stage"], game.state["preset"], game.state["auto"]), (920, "IV", True))
+        self.assertEqual(run(game, lambda api: api["farm"](920, "III", "mpw18")), done())
+        self.assertTrue(game.verified_setup)
+        self.assertEqual((game.state["stage"], game.state["preset"], game.state["auto"]), (920, "III", True))
         until_move = game.moves[:game.moves.index(("stage_select", "move")) + 1]
         self.assertEqual(until_move[:2], [("shop_summon", "close"), ("battle", "stage_select")])
         self.assertEqual(set(until_move[2:-1]), {("stage_select", "scroll")})
         self.assertNotIn(("battle", "auto"), game.moves)
-        self.assertIn(("battle_settings", "preset"), game.moves)
+        self.assertNotIn(("battle_settings", "preset"), game.moves)
         self.assertEqual(game.leases, [("stage_change", "farm mpw18")])
 
     def test_next_region(self):
@@ -342,7 +345,7 @@ class Sequence(unittest.TestCase):
     def test_auto_off_is_never_tapped(self):
         # The user's order, 2026-10-22: no AUTO step, no AUTO api.
         game = Game(stage=915, auto=False)
-        self.assertEqual(run(game, lambda api: api["farm"](920, "IV", "mpw18")), done())
+        self.assertEqual(run(game, lambda api: api["farm"](920, "III", "mpw18")), done())
         self.assertNotIn(("battle", "auto"), game.moves)
         self.assertFalse(game.state["auto"])
         self.assertNotIn("auto", game.timings)
@@ -350,19 +353,22 @@ class Sequence(unittest.TestCase):
 
     def test_unfold_and_badge_from_folded_in_one_call(self):
         game = Game(stage=920, preset="III")
-        run(game, lambda api: api["set_preset"]("IV"))
+        answer = run(game, lambda api: api["set_preset"]("IV"))
         self.assertIn(["preset_arrow", "preset_badge"], game.calls)
-        self.assertEqual(game.state["preset"], "IV")
+        self.assertEqual(answer["result"], "failed")
+        self.assertIn("paused by the user", answer["text"])
+        self.assertNotIn(("battle_settings", "preset"), game.moves)
+        self.assertEqual(game.state["preset"], "III")
 
     def test_unfolded_controls_get_the_badge_tap_alone(self):
         # Read unfolded, the arrow would fold them: the badge alone.
         game = Game(stage=920, preset="III", unfolded_forever=True)
-        self.assertEqual(run(game, lambda api: api["set_preset"]("IV")), done())
+        answer = run(game, lambda api: api["set_preset"]("IV"))
+        self.assertEqual(answer["result"], "failed")
+        self.assertIn("paused by the user", answer["text"])
         self.assertEqual(game.calls[0], ["preset_badge"])
-        # Only the check on the badge afterwards unfolds them again.
-        self.assertEqual(game.moves[:3], [("battle", "preset_badge"), ("battle_settings", "preset"),
-                                          ("battle_settings", "close")])
-        self.assertEqual(game.state["preset"], "IV")
+        self.assertEqual(game.moves, [("battle", "preset_badge")])
+        self.assertEqual(game.state["preset"], "III")
         self.assertTrue(game.state["auto"])
 
     def test_unknown_controls_tap_nothing(self):
@@ -475,7 +481,7 @@ class Store:
 
 
 class Mode(unittest.TestCase):
-    def enter(self, answers, confirm=None, verified_setup=False):
+    def enter(self, answers, confirm=None, verified_setup=False, watch_timer=False):
         """answers: what farm does each time: an answer ({result, text}:
         its text a template), or Busy's text."""
         game = Game()
@@ -494,6 +500,11 @@ class Mode(unittest.TestCase):
         ports = game.ports()
 
         async def wait(seconds):
+            # These scenarios drive entry's clock. Advancing the independent
+            # timer watcher too would expire mpw4 while entry is still being
+            # asserted; only the explicit lease-timeout scenario drives it.
+            if not watch_timer and asyncio.current_task().get_coro().__qualname__.endswith(".watch"):
+                await asyncio.Event().wait()
             game.now += seconds
             if not answers:
                 await asyncio.Event().wait()  # the timed mode's watch waits: only entering is tested
@@ -506,11 +517,13 @@ class Mode(unittest.TestCase):
                     "stage": lambda mode: {"mpw18": 920, "mpw4": 931}[mode], "set_stage": lambda mode, n: None,
                     "adopt_stage": lambda mode, n: None}
         values = SimpleNamespace(time_or_none=lambda v: v, number_or_none=lambda v, top: v)
-        scroll = SimpleNamespace(fresh=lambda: {"gold": None})
+        scroll = SimpleNamespace(fresh=lambda: {"gold": None}, seen=lambda *args: None,
+                                 look=lambda kept, seen: (kept, None))
 
         async def body():
             ports.spawn = lambda coroutine: asyncio.get_running_loop().create_task(coroutine)
-            part = mode_feature.mode(ports, mode_rules, None, values, mines, None, scroll, loadouts,
+            part = mode_feature.mode(ports, mode_rules, None,
+                                     values, mines, SimpleNamespace(classify=lambda shot: "other"), scroll, loadouts,
                                      {"farm": farm}, setup_feature.mode_setup)
             handler = next(h for method, path, h in part["routes"] if method == "POST" and path == "/mode")
 
@@ -587,12 +600,12 @@ class Mode(unittest.TestCase):
 
     def test_the_lease_waited_for_30_min_at_most_then_one_alert(self):
         held = 1 + mode_rules.LEASE_WAIT // mode_rules.BUSY_RETRY
-        calls, state, alerts = self.enter(["bail tenu par mine"] * held + [done()])
+        calls, state, alerts = self.enter(["bail tenu par mine"] * held + [done()], watch_timer=True)
         # mpw4 gave up after LEASE_WAIT (one alert); its timer then ended:
         # back to mpw18, which farms.
         self.assertEqual([mode for _, _, mode in calls], ["mpw4"] * held + ["mpw18"])
-        self.assertIn("failed: lease still taken after 30 min (lease held by mine)", alerts[0])
-        self.assertEqual(len([a for a in alerts if "lease" in a]), 1)
+        self.assertEqual(alerts[0], "Farming mpw4 blocked at stage 931: another action is still running after 30 min")
+        self.assertEqual(len([a for a in alerts if "blocked" in a]), 1)
 
     def test_plan_is_said_not_alerted(self):
         calls, state, alerts = self.enter([{"result": "plan", "text": "stage 915 → 931"}])

@@ -33,6 +33,24 @@ separate milestones. Historical checked items below do not close a new regressio
 - [ ] Remove remaining private module loaders in legacy readers and inject their
   shared dependencies. Composition-root caching does not eliminate these copies.
 
+### Engraving completion and motion acceptance
+
+- [x] Separate the lower-left release anchor from the rotation pivot. Reviewed
+  native captures calibrate T and L pivots at (1, 0), I at (2, 0), in each
+  normalized base shape. Compute the initial drop before rotating; verify the
+  actual preview cells before confirmation.
+- [x] Recognise invalid red crystal pulses independently of the cancel button.
+  Retain complete real-capture fixtures for the available T/L/I forms.
+- [x] Keep the target recipe durable across failed and interrupted setup;
+  recovery must finish coverage and verify all eight locks before closure.
+- [ ] Verify the installed plugin completes an interrupted real engraving,
+  chooses the highest-level cards, restores the completion bonus and clears
+  failure only after the entire requested setup is observed.
+- [ ] Calibrate O, mirrored L and both zigzag shapes when available. Their
+  absence must not be replaced by an assumed pivot or an unverified gesture.
+- [ ] Add a verified previous-loadout fallback if repeated target repair fails.
+  An unequipped weapon cannot be prepared: the actual game hides its inventory.
+
 ### Immediate priorities
 
 - [ ] Validate independent server capture, priority recognition, bounded readers

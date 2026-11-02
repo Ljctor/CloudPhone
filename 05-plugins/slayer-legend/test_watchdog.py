@@ -607,7 +607,8 @@ class GoldTrigger(unittest.TestCase):
 
     def looks(self, count, auto, viewers=lambda look: 0, stage=920, answer=None, mode="mpw18", entering=False,
               game=True, launched=False, bar=lambda look: look * 0.27 % 1, screen=lambda look: "battle",
-              park=None, hold=None, intention=None, user_input=lambda look: None):
+              park=None, hold=None, intention=None, user_input=lambda look: None,
+              failed_setup=False, recovery=None, setup_real=True):
         """count looks, AUTO read as auto, viewers(look) connected, the
         stage progress bar read as bar(look) (None: unreadable; by default
         it moves) on screen(look); park: the soul weapon's switch when the
@@ -688,6 +689,7 @@ class GoldTrigger(unittest.TestCase):
         self.intentions = intentions = []
         self.farmed = farmed = []
         self.confirmed = confirmed = []
+        self.verified = verified = []
         self.launches = launches_made = []
         self.reentered = reentered = []
 
@@ -708,6 +710,10 @@ class GoldTrigger(unittest.TestCase):
 
         farming = {"read_controls": read_controls, "battle_stage": lambda shot, shade=1.0: stage,
                    "farm": farm, "switches": lambda: {"stage_change": "real", "preset": "plan"}}
+        if recovery is not None or failed_setup:
+            farming.update(soul_weapon_state=lambda: {"recovery": recovery},
+                           soul_weapon_switch=lambda: "real", engraving_switch=lambda: "real" if setup_real else "off",
+                           switches=lambda: {"stage_change": "real", "preset": "real"})
         self.parks = parks = []
         if park:
             async def parking(name):
@@ -717,11 +723,16 @@ class GoldTrigger(unittest.TestCase):
 
             farming.update(park=parking, parked=lambda shot: True, soul_weapon_switch=lambda: park)
         gold = {"current": lambda: {"rate": 0, "span": 300, "last": Ports.clock.wall() - 1}}
+        def confirm(name, *, verified_setup=False):
+            confirmed.append(name)
+            if verified_setup:
+                verified.append(name)
+
         built = feature.watchdog(
             Ports, None, None, rules, NUMERALS.get,
-            {"state": lambda: {"mode": mode, "highest": 925, "state": "moving" if entering else "farming",
+            {"state": lambda: {"mode": mode, "highest": 925, "state": "moving" if entering else "failed" if failed_setup else "farming",
                                "hold": hold, "intention": intention},
-             "confirm": confirmed.append},
+             "confirm": confirm},
             {"state": lambda: {"enabled": mode == "mine"}, "reenter": reenter},
             {"running": lambda: False, "start": start, "state": lambda: {"state": "done", "message": ""}},
             lambda name: {"mpw18": {"stage": 920, "preset": 1}, "mpw4": {"stage": 915, "preset": "II"}}[name],
@@ -739,11 +750,38 @@ class GoldTrigger(unittest.TestCase):
         self.retry = lambda body: asyncio.run(built["routes"][1][2](types.SimpleNamespace(json=lambda: body())))
         return read, alerts, other
 
+    def test_persisted_incomplete_grid_is_repaired_with_backoff_even_when_parked(self):
+        self.looks(80, "on", park="real", screen=lambda look: "parked", recovery={"required": True},
+                   answer={"result": "failed", "text_t": TEXTS["t"]("écran inattendu")})
+        self.assertGreater(len(self.farmed), 1)
+        self.assertLess(len(self.farmed), 8, "failed engraving must not loop every watchdog tick")
+        self.assertEqual(self.parks, [], "parking cannot complete a grid")
+        self.assertEqual(self.verified, [])
+        self.assertIn("loadout", self.state["counters"]["next_attempt"])
+
+    def test_failed_setup_only_clears_after_full_verified_transaction(self):
+        for receipt in (False, True):
+            self.looks(4, "on", failed_setup=True,
+                       answer={"result": "done", "text_t": None, "verified_setup": receipt})
+            self.assertTrue(self.farmed)
+            self.assertEqual(bool(self.verified), receipt)
+
+    def test_an_open_interrupted_engraving_can_be_repaired_but_unknown_popup_cannot(self):
+        self.looks(8, "on", recovery={"required": True}, screen=lambda look: "engraving")
+        self.assertTrue(self.farmed)
+        self.looks(8, "on", recovery={"required": True}, screen=lambda look: "other")
+        self.assertEqual(self.farmed, [])
+
+    def test_pending_engraving_respects_switch_and_free_play(self):
+        for options in ({"setup_real": False}, {"mode": "free"}):
+            self.looks(8, "on", recovery={"required": True}, **options)
+            self.assertEqual(self.farmed, [])
+
     def test_a_stopped_stage_change_is_one_failure_and_retry_clears_it(self):
         _, alerts, _ = self.looks(8, "on", stage=940, answer={"result": "failed", "text_t": TEXTS["t"]("écran inattendu")})
         self.assertEqual(len(self.farmed), 1, "then its passive watch and delay")
         self.assertEqual(self.state["counters"]["next_attempt"]["stage_change"]["failures"], 1, "counted once")
-        stopped = [a for a in alerts if "Action stopped" in a]
+        stopped = [a for a in alerts if "Farming mpw18 blocked:" in a]
         self.assertEqual(len(stopped), 1)
         self.assertIn("unexpected screen", stopped[0])
 
@@ -813,7 +851,7 @@ class ModesOnTheFeature(GoldTrigger):
         self.assertEqual(self.confirmed, [])
 
     def test_a_repair_done_confirms_the_mode(self):
-        self.looks(8, "on", stage=940, answer={"result": "done", "text": ""})
+        self.looks(8, "on", stage=940, answer={"result": "done", "text": "", "verified_setup": True})
         self.assertTrue(self.farmed)
         self.assertIn("mpw18", self.confirmed)
 
@@ -840,9 +878,7 @@ class ModesOnTheFeature(GoldTrigger):
         read, alerts, other = self.looks(14, "off", mode="mine", game=False)
         self.assertEqual((read, other, self.farmed), ([], [], []))
         self.assertEqual(len(alerts), 1)
-        self.assertIn("the game is no longer in front", alerts[0])
-        self.assertIn("destination: Closed Mine", alerts[0])
-        self.assertIn("purpose: relaunch the game", alerts[0])
+        self.assertEqual(alerts[0], "Game is no longer in front; restarting and returning to the mine.")
 
     def test_the_mine_relaunches_the_game_then_goes_back_in(self):
         self.looks(14, "off", mode="mine", game=False, launched=True)
@@ -1003,9 +1039,9 @@ class Parking(unittest.TestCase):
         screen = lambda look: "battle" if 3 <= look <= 4 else "parked"
         _, alerts, other = self.feature().looks(10, "on", park="real", screen=screen)
         self.assertEqual([name for _, name in self.harness.parks], ["mpw18"])
-        redirected = [a for a in alerts if "destination: Soul Weapon" in a]
+        redirected = [a for a in alerts if a == "Returning to Soul Weapon to track souls."]
         self.assertEqual(len(redirected), 1, "one notice for this return episode")
-        self.assertIn("monitor soul counters", redirected[0])
+        self.assertIn("track souls", redirected[0])
         self.assertIsNone(self.harness.intentions[0]["route"])
         self.assertFalse(self.harness.intentions[0]["route_known"])
         self.assertIsNone(self.harness.state["intention"], "completed operation clears active intention")
@@ -1020,15 +1056,15 @@ class Parking(unittest.TestCase):
     def test_redirect_retries_share_one_notice_until_a_confirmed_return(self):
         _, alerts, _ = self.feature().looks(80, "on", park="real", screen=lambda look: "battle")
         self.assertGreater(len(self.harness.parks), 1, "real retry policy is exercised")
-        self.assertEqual(len([a for a in alerts if "destination: Soul Weapon" in a]), 1)
+        self.assertEqual(len([a for a in alerts if a == "Returning to Soul Weapon to track souls."]), 1)
         _, alerts, _ = self.feature().looks(16, "on", park="real",
             screen=lambda look: "battle" if look in (3, 4, 11, 12) else "parked")
-        self.assertEqual(len([a for a in alerts if "destination: Soul Weapon" in a]), 2,
+        self.assertEqual(len([a for a in alerts if a == "Returning to Soul Weapon to track souls."]), 2,
                          "a new return after verified completion is not silenced for 30 minutes")
         _, alerts, _ = self.feature().looks(80, "on", park="real", screen=lambda look: "battle",
             user_input=lambda look: {"monotonic": 300, "wall": EPOCH + 300} if look >= 20 else None)
-        self.assertEqual(len([a for a in alerts if "destination: Soul Weapon" in a]), 2,
-                         "a new user intervention starts a new return episode")
+        self.assertEqual(len([a for a in alerts if a == "Returning to Soul Weapon to track souls."]), 1,
+                         "an input without a confirmed healthy return keeps the same episode")
 
     def test_resource_refresh_never_competes_with_parking(self):
         self.feature().looks(12, "on", park="real", screen=lambda look: "battle",
@@ -1058,7 +1094,9 @@ class RedirectDescriptions(unittest.TestCase):
         notice = said(rules.redirect_notice(intent, rules.t("stage {stage} au lieu de {target}", stage=960, target=970)), {})
         self.assertIn("970", notice)
         self.assertIn("III", notice)
-        self.assertIn("destination: Soul Weapon", notice)
+        self.assertEqual(notice, "Restoring Farming mpw18: stage 970, preset III.")
+        details = said(rules.redirect_details(intent), {})
+        self.assertIn("destination: Soul Weapon", details)
         self.assertNotIn("Repair", notice)
 
 

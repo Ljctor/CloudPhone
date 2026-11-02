@@ -120,7 +120,7 @@ READERS = {
     "battle_stage": {"on": [("battle", "*")], "fields": ("stage", "stage_numeral"), "every": 15},
     "progress": {"on": [("battle", "plain"), ("battle", "soul_weapon")], "fields": ("progress",), "every": 0},
     "gold": {"on": [("battle", "*"), ("saver", "*")], "fields": ("gold", "gold_reading", "gold_place"),
-             "every": 10},
+             "every": 2},
     "cubes": {"on": [("battle", "*")], "fields": ("cubes",), "every": 10},
     "currencies": {"on": [("battle", "*")], "fields": ("emerald", "diamond"), "every": 10},
     "saver_stage": {"on": [("saver", "*")], "fields": ("stage",), "every": 0},

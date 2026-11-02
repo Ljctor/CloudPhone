@@ -19,13 +19,14 @@ def t(template, **params):
     return {"template": template, "params": params}
 
 
-MODES = ("mpw18", "mpw4", "free", "agent", "mine")
+MODES = ("free", "mpw18", "mpw4", "soul", "mine", "agent")
+FARMED = ("mpw18", "mpw4", "soul")
 DEFAULT = "mpw18"
 # What the default mode may be (never the mine: it ends by itself).
-DEFAULTS = ("mpw18", "mpw4", "free", "agent")
+DEFAULTS = ("free", "mpw18", "mpw4", "soul", "agent")
 # "back to ..." once a timed mode ends, per default mode (its alert).
 BACK_TO = {"mpw18": "back to farming mpw18", "mpw4": "back to farming mpw4",
-           "free": "back to free play", "agent": "back to agent mode"}
+           "soul": "back to Soul Farming", "free": "back to free play", "agent": "back to agent mode"}
 # A timed mode chosen without an end time runs this long.
 TIMED_MINUTES = 30
 # Seconds between two checks of a timed mode.
@@ -107,7 +108,7 @@ def gold_due(last, now):
     return last is None or now - last >= GOLD_EVERY
 
 
-NUMBERS = ("stage18", "stage4", "highest", "floor", "area")
+NUMBERS = ("stage18", "stage4", "stageSoul", "highest", "floor", "area")
 
 
 def request(body, stored=None, default=DEFAULT):
@@ -134,6 +135,8 @@ def request(body, stored=None, default=DEFAULT):
     # A mode is chosen only once configured (the page greys it out until then).
     if mode == "mpw4" and not numbers["stage4"]:
         return None, t("Farming mpw4 : choisis d’abord son stage")
+    if mode == "soul" and not (numbers["stageSoul"] and 1 <= numbers["stageSoul"] <= 99999):
+        return None, t("Soul Farming : choisis d’abord son stage")
     if mode == "mine" and not (numbers["floor"] and 1 <= numbers["floor"] <= 9999
                                and numbers["area"] and 1 <= numbers["area"] <= 5):
         return None, t("Mine fermée : choisis d’abord l’étage (1 à 9999) et la zone (1 à 5)")
@@ -153,6 +156,8 @@ def default_request(body, numbers, current):
         return None, t("{field} : un de {choices}", field="default", choices=", ".join(DEFAULTS))
     if default == "mpw4" and not numbers.get("stage4"):
         return None, t("Farming mpw4 : choisis d’abord son stage")
+    if default == "soul" and not numbers.get("stageSoul"):
+        return None, t("Soul Farming : choisis d’abord son stage")
     return default, None
 
 
@@ -169,7 +174,7 @@ def timer_for(mode, until, given, current, current_until, now, default=DEFAULT):
     return now + TIMED_MINUTES * 60
 
 
-def entered(mode, stage18, stage4):
+def entered(mode, stage18, stage4, stageSoul=None):
     """What changing to mode does: ("stage", number, mpw) brings the game
     to farming that stage, ("choose", mpw) asks the user to choose one,
     ("free",) touches nothing until the timer ends, ("mine",) farms the
@@ -178,6 +183,8 @@ def entered(mode, stage18, stage4):
         return ("stage", stage18, 18) if stage18 else ("choose", 18)
     if mode == "mpw4":
         return ("stage", stage4, 4) if stage4 else ("choose", 4)
+    if mode == "soul":
+        return ("stage", stageSoul, "soul") if stageSoul else ("choose", "soul")
     return (mode,)
 
 
@@ -229,12 +236,17 @@ def ready_text(name, seconds, applied=False, alert=None, held=0.0):
     """The one notification once a farming mode is set up: the seconds
     since it was chosen (applied: since its loadout changed), the lease's
     wait included; held: the part of it on hold while the user played,
-    said apart; alert: the over-budget one, after it."""
+    said apart. Over-budget step diagnostics stay in the technical log."""
     text = (f"Loadout {name} applied in {round(seconds)} s" if applied
-            else f"Farming {name} ready in {round(seconds)} s")
+            else f"{'Soul Farming' if name == 'soul' else 'Farming ' + name} ready in {round(seconds)} s")
     if round(held):
         text += f" (including {round(held)} s waiting: you were playing)"
-    return f"{text}; {alert}" if alert else text
+    return text
+
+
+def blocked_text(name, number, reason):
+    """A human outcome/reason; detailed switch diagnostics are logged separately."""
+    return f"{'Soul Farming' if name == 'soul' else 'Farming ' + name} blocked at stage {number}: {reason}"
 
 
 # The lease's refusal while the user played in the last 5 s (ports.Lease):

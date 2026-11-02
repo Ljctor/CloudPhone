@@ -1,10 +1,12 @@
 // Navigation map and explicit, user-initiated annotations on the live image.
-// Only the recognised screen's allowed moves are drawn. The navigation
-// guard still makes the decision before any actual plugin gesture.
+// Draw the recognised screen's navigation, blocked actions and calibrated
+// draggable elements. Visual annotations never grant gesture permission.
 import visualTracker from './page_navigation_tracking.js';
 import { getScreen } from './page_screen_scan.js';
 import capturePreview, { archivedScreen } from './page_navigation_preview.js';
-const COLOURS = { tap: '#ffe100', vertical: '#168bff', horizontal: '#bb50ff' };
+export const COLOURS = { tap: '#ffe100', action: '#ff9a23', draggable: '#ff65bd',
+  vertical: '#168bff', horizontal: '#bb50ff' };
+const RECTANGLE_ANNOTATIONS = ['scannable', 'action', 'draggable'];
 
 function covers(move, x, y, tolerance) {
   if (move.area) {
@@ -23,10 +25,11 @@ function eligible(move, moves, tolerance) {
   return Boolean(point) && !moves.some((other) => other.forbidden && covers(other, ...point, tolerance));
 }
 
-export function zonesFor(screen, graph, registry, scan = null, tracked = null) {
+export function zonesFor(screen, graph, registry, scan = null, tracked = null, dynamic = null) {
   const moves = graph?.screens?.[screen]?.moves ?? [];
   const tolerance = graph?.tolerance ?? 0.03;
-  const safe = moves.filter((move) => eligible(move, moves, tolerance)
+  const safe = moves.filter((move) => !move.debug_dynamic && !['action', 'draggable'].includes(move.semantic_kind)
+    && eligible(move, moves, tolerance)
     && (!move.combat_return || (scan?.screen === 'battle' && scan.plain === false
       && recognisedScreen(scan) === screen)));
   const zones = safe.filter((move) => move.tap || move.hold || (move.area && move.kind !== 'swipe'))
@@ -51,6 +54,21 @@ export function zonesFor(screen, graph, registry, scan = null, tracked = null) {
       rect: known?.rect ?? [Math.min(x1, x2) - 0.025, Math.min(y1, y2) - 0.015,
         Math.max(x1, x2) + 0.025, Math.max(y1, y2) + 0.015] });
   }
+  for (const move of moves.filter((item) => ['action', 'draggable'].includes(item.semantic_kind))) {
+    if (move.id === 'better_weapon_toast' && !scan?.overlays?.includes('better_weapon_toast')) continue;
+    // Some guard envelopes intentionally cover a list or grid. They are
+    // not button bounds: only explicit debug rectangles may replace them.
+    const rects = move.debug_rects ?? (move.debug_dynamic ? [] : move.area ? [move.area]
+      : move.tap ? [[move.tap[0] - .025, move.tap[1] - .012, move.tap[0] + .025, move.tap[1] + .012]] : []);
+    for (const [index, rect] of rects.entries()) {
+      if (zones.some((zone) => zone.kind === move.semantic_kind && JSON.stringify(zone.rect) === JSON.stringify(rect))) continue;
+      zones.push({ id: `${move.id}-${index}`, move: move.id,
+        kind: move.semantic_kind, forbidden: move.semantic_kind === 'action' || Boolean(move.forbidden),
+        conditional: Boolean(move.precondition), rect });
+    }
+  }
+  if (dynamic?.screen === screen && Date.now() / 1000 - dynamic.at >= 0
+      && Date.now() / 1000 - dynamic.at <= 2) zones.push(...dynamic.zones);
   if (scan) {
     // The battle remains behind these measured bottom panels. Other
     // overlays can cover the controls, so do not draw through them.
@@ -74,7 +92,7 @@ export function zonesFor(screen, graph, registry, scan = null, tracked = null) {
     }
   }
   return zones.flatMap((zone) => {
-    if (zone.fixed || zone.kind !== 'tap' || !tracked?.has(zone.id)) return [zone];
+    if (zone.fixed || !['tap', 'action', 'draggable'].includes(zone.kind) || !tracked?.has(zone.id)) return [zone];
     const rect = tracked.get(zone.id);
     return rect ? [{ ...zone, rect }] : [];
   });
@@ -100,7 +118,23 @@ export const ANNOTATIONS = [
   { kind: 'scannable', label: 'Marquer un élément scannable' },
   { kind: 'vertical', label: 'Marquer un slider vertical' },
   { kind: 'horizontal', label: 'Marquer un slider horizontal' },
+  { kind: 'action', label: 'Marquer un bouton d’action (interdit)' },
+  { kind: 'draggable', label: 'Marquer un élément déplaçable' },
 ];
+
+export function screenChoices(graph, registry) {
+  const known = { ...graph?.screens };
+  for (const [id, node] of Object.entries(registry?.tree ?? {})) known[id] = { ...known[id], ...node };
+  const path = (id, seen = new Set()) => {
+    if (seen.has(id)) return [];
+    const node = known[id];
+    if (!node) return [];
+    seen.add(id);
+    return [...(node.parent ? path(node.parent, seen) : []), node.name ?? id];
+  };
+  return Object.keys(known).map((id) => [id, path(id).join(' › ')])
+    .sort((a, b) => a[1].localeCompare(b[1]));
+}
 
 export function annotationPoint(event, bounds) {
   return { x: Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width)),
@@ -211,6 +245,8 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
   let snapshotMessage = '';
   let expectedScreen = '';
   let correctionOpen = false;
+  let dynamic = null;
+  let dynamicAt = 0;
   const active = () => !disposed && enabled() && api.setting('navigationDebug') === 'on';
   const busy = () => ['arming', 'armed', 'saving', 'cancelling'].includes(captureState);
   const clear = () => { closePreview?.(); closePreview = null; layer.replaceChildren(); layer.remove(); rendered = ''; };
@@ -248,8 +284,9 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
     } else {
       box.style.cssText += `;border:2px ${zone.conditional ? 'dashed' : 'solid'} ${colour};background:${colour}33;border-radius:3px`;
     }
-    box.setAttribute('data-zone-kind', zone.detection ? 'detection' : 'navigation');
-    box.title = zone.detection ? `${api.tr('Repère de détection')} · ${zone.id}` : zone.conditional ? `${zone.id} · ${api.tr('condition à vérifier')}` : zone.id;
+    box.setAttribute('data-zone-kind', zone.detection ? 'detection' : ['action', 'draggable'].includes(zone.kind) ? zone.kind : 'navigation');
+    const label = zone.forbidden ? `${zone.id} · ${api.tr('Action interdite')}` : zone.id;
+    box.title = zone.detection ? `${api.tr('Repère de détection')} · ${zone.id}` : zone.conditional ? `${label} · ${api.tr('condition à vérifier')}` : label;
     parent.append(box);
     return box;
   }
@@ -258,11 +295,11 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
     if (!active() || !graph || !registry) return;
     // An unidentified bottom panel still leaves the fixed battle arrow
     // visible. With no identity zonesFor emits no panel or Battle moves.
-    const zones = zonesFor(screen, graph, registry, scan);
+    const zones = zonesFor(screen, graph, registry, scan, null, dynamic);
     const tracked = tracker.update(screen, zones, registry?.tree?.[screen]?.scroll ?? []);
     zoneLayer.replaceChildren();
     for (const zone of landmarksFor(screen, registry)) drawZone(zone, zoneLayer);
-    for (const zone of zonesFor(screen, graph, registry, scan, tracked)) drawZone(zone, zoneLayer);
+    for (const zone of zonesFor(screen, graph, registry, scan, tracked, dynamic)) drawZone(zone, zoneLayer);
   }
 
   function render() {
@@ -296,7 +333,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
       };
       surface.onpointermove = (event) => {
         stop(event);
-        if (!start || !['vertical', 'horizontal', 'scannable'].includes(captureKind)) return;
+        if (!start || !['vertical', 'horizontal', ...RECTANGLE_ANNOTATIONS].includes(captureKind)) return;
         const end = annotationPoint(event, surface.getBoundingClientRect());
         preview?.remove();
         preview = drawZone({ id: captureKind, kind: captureKind, rect: [
@@ -307,7 +344,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
         if (!start) return;
         const end = annotationPoint(event, surface.getBoundingClientRect());
         const slider = ['vertical', 'horizontal'].includes(captureKind);
-        const area = captureKind === 'scannable';
+        const area = RECTANGLE_ANNOTATIONS.includes(captureKind);
         if (area && (Math.abs(end.x - start.x) < 0.01 || Math.abs(end.y - start.y) < 0.01)) {
           start = null; preview?.remove(); return;
         }
@@ -379,7 +416,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
         snapshotPending = false; render();
       };
       snapshotButton('Enregistrer cet écran', 'capture', () => captureScreen());
-      snapshotButton('Mauvais écran détecté', 'correction', () => {
+      snapshotButton(screen ? 'Mauvais écran détecté' : 'Identifier cet écran', 'correction', () => {
         correctionOpen = !correctionOpen; render();
       });
       content.append(snapshots);
@@ -390,10 +427,8 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
         select.setAttribute('data-expected-screen', '');
         select.setAttribute('aria-label', api.tr('Écran réellement affiché'));
         select.style.cssText = 'min-width:0;flex:1;background:#292929;color:#fff;font:inherit';
-        const choices = { unknown: { name: api.tr('Écran non identifié') }, ...registry.tree, ...graph.screens };
         for (const [value, title] of [['', api.tr('Écran réellement affiché')],
-          ...Object.entries(choices).sort((a, b) => (a[1].name ?? a[0]).localeCompare(b[1].name ?? b[0]))
-            .map(([id, node]) => [id, node.name ?? id])]) {
+          ['unknown', api.tr('Écran non identifié')], ...screenChoices(graph, registry)]) {
           const option = document.createElement('option');
           option.value = value; option.textContent = title; select.append(option);
         }
@@ -420,7 +455,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
     const message = ['screen', 'screen_correction'].includes(captureKind) && captureState === 'saved'
       ? (captureKind === 'screen_correction' ? 'Erreur de détection enregistrée avec la capture' : 'Écran enregistré')
       : ({ idle: 'Choisis un élément à déclarer', arming: 'Capture avant…',
-      armed: captureKind === 'scannable' ? 'Capture avant enregistrée · Trace un rectangle autour de l’élément'
+      armed: RECTANGLE_ANNOTATIONS.includes(captureKind) ? 'Capture avant enregistrée · Trace un rectangle autour de l’élément'
         : slider ? 'Capture avant enregistrée · Trace le slider' : 'Capture avant enregistrée · Clique sur l’élément',
       saving: 'Capture avant enregistrée · Capture après…', saved: 'Captures avant et après enregistrées · Déclaration enregistrée',
       cancelling: 'Annulation…', cancelled: 'Capture annulée · Choisis une action',
@@ -453,7 +488,8 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
         correction.setAttribute('data-screen-correction', '');
         const detected = archivedScreen(record, 'before') ?? record.before_scan?.screen ?? record.before;
         correction.textContent = api.tr('Détecté : {detected} · Attendu : {expected}', {
-          detected: graph.screens?.[detected]?.name ?? detected ?? api.tr('Écran non identifié'),
+          detected: detected && detected !== 'unknown'
+            ? graph.screens?.[detected]?.name ?? detected : api.tr('Écran non identifié'),
           expected: graph.screens?.[record.expected_screen]?.name ?? record.expected_screen,
         });
         content.append(correction);
@@ -500,6 +536,11 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
       if (!active()) { clear(); return; }
       scan = state?.scan;
       screen = recognisedScreen(scan);
+      if (['character_enhance', 'soul_weapon', 'soul_weapon_engraving', 'soul_weapon_engraving_piece', 'soul_weapon_engraving_preview'].includes(screen)
+          && Date.now() - dynamicAt >= 1000) {
+        dynamicAt = Date.now();
+        dynamic = (await api.get('/navigation-debug?dynamic=1').catch(() => null))?.dynamic ?? null;
+      }
       const clicks = archive?.clicks ?? [];
       const found = captureId ? clicks.find((click) => click.id === captureId) : captureState === 'idle' ? clicks[0] : null;
       if (found && !['arming', 'cancelling'].includes(captureState)) {
@@ -538,7 +579,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
     debug: [{ type: 'choice', key: 'navigationDebug', label: 'Zones de navigation',
       choices: [{ value: 'off', label: 'Désactivé' }, { value: 'on', label: 'Activé' }] },
     { type: 'status', label: 'Légende navigation',
-      value: () => api.tr('Vert : repère de détection · jaune : clic · chevrons bleus : vertical · chevrons violets : horizontal · pointillés : condition à vérifier') }],
+      value: () => api.tr('Vert : repère de détection · jaune : navigation · orange : action interdite · rose : déplaçable · chevrons bleus : vertical · chevrons violets : horizontal · pointillés : condition à vérifier') }],
     onSetting: (key) => { if (key === 'navigationDebug') update(); },
     update,
     dispose: () => { disposed = true; closePreview?.(); window.removeEventListener?.('resize', floating.clamp); stopTap?.(); window.clearInterval(timer); window.cancelAnimationFrame?.(animation); tracker.reset(); clear(); },

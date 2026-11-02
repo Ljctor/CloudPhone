@@ -4,6 +4,7 @@
 import { withDeadline } from './page_request_deadline.js';
 const PRESETS = ['I', 'II', 'III', 'IV', 'V'];
 const FIELDS = ['Stage', 'Preset', 'Weapon', 'Variant'];
+const FARMING_MODES = ['mpw18', 'mpw4', 'soul'];
 // The sheet's piece colours as CSS colours; the gold variants' pieces
 // have none and take these in turn.
 const FILLS = { red: '#e0453a', blue: '#3b82f6', purple: '#9b5de5', green: '#3fb950', yellow: '#f2c230' };
@@ -61,9 +62,11 @@ const ENGLISH = {
 export default function loadoutFeature(api, { onApplied = () => {}, execution = () => null, onExecute = null } = {}) {
   api.addTranslations(ENGLISH);
   const data = { list: null, weapons: {}, asking: new Set(), failed: new Set(), saved: null, disposed: false, writes: 0, readAfterWrite: false, farming: null };
-  const edits = { mpw18: {}, mpw4: {} };
-  const state = { mpw18: { busy: false, error: null, uncertain: false, submitted: null }, mpw4: { busy: false, error: null, uncertain: false, submitted: null } };
-  const keyOf = (mode, field) => field === "Stage" ? (mode === "mpw18" ? "stage18" : "stage4") : `${mode}${field}`;
+  const edits = Object.fromEntries(FARMING_MODES.map((mode) => [mode, {}]));
+  const state = Object.fromEntries(FARMING_MODES.map((mode) => [mode,
+    { busy: false, error: null, uncertain: false, submitted: null }]));
+  const keyOf = (mode, field) => field === "Stage"
+    ? ({ mpw18: 'stage18', mpw4: 'stage4', soul: 'stageSoul' }[mode]) : `${mode}${field}`;
   const loadList = async () => {
     data.list = await withDeadline(api.get('/engravings')).catch(() => null);
     api.refresh();
@@ -75,7 +78,7 @@ export default function loadoutFeature(api, { onApplied = () => {}, execution = 
     if (data.disposed || writes !== data.writes) return;
     if (answer?.loadouts) {
       data.saved = answer.loadouts;
-      for (const mode of ['mpw18', 'mpw4']) if (state[mode].uncertain) {
+      for (const mode of FARMING_MODES) if (state[mode].uncertain) {
         state[mode].uncertain = false;
         state[mode].error = same(answer.loadouts[mode], state[mode].submitted)
           ? null : 'Cible différente sur le serveur · vérifier avant d’appliquer';
@@ -296,7 +299,7 @@ export default function loadoutFeature(api, { onApplied = () => {}, execution = 
     }
   };
   const changed = (key, next) => {
-    for (const mode of ['mpw18', 'mpw4']) {
+    for (const mode of FARMING_MODES) {
       const field = FIELDS.find((name) => key === keyOf(mode, name));
       if (!field) continue;
       edits[mode][field] = next ?? api.setting(key) ?? '';
@@ -338,7 +341,7 @@ export default function loadoutFeature(api, { onApplied = () => {}, execution = 
   return {
     // The options of a mode's dialog, in page_mode.js.
     options: (mode, stageChoices = () => []) => [
-      { type: 'choice', key: keyOf(mode, 'Stage'), label: mode === 'mpw18' ? 'Stage mpw18' : 'Stage mpw4',
+      { type: 'choice', key: keyOf(mode, 'Stage'), label: { mpw18: 'Stage mpw18', mpw4: 'Stage mpw4', soul: 'Stage Soul Farming' }[mode],
         value: () => String(value(mode, 'Stage')), choices: stageChoices, disabled: () => state[mode].busy },
       {
         type: 'choice', key: `${mode}Preset`, label: 'Préréglage de combat', value: () => value(mode, 'Preset'), disabled: () => state[mode].busy, choices: () => presetChoices(mode),

@@ -42,7 +42,7 @@ class SetupEvidence:
     def engraving_off(self, mode):
         """A configured engraving is requested while its execution switch is off."""
         switch = self.farming.get("engraving_switch")
-        if mode not in ("mpw18", "mpw4") or switch is None or switch() != "off":
+        if mode not in ("mpw18", "mpw4", "soul") or switch is None or switch() != "off":
             return False
         weapon = self.loadouts["loadout"](mode).get("soul_weapon") or {}
         variant = self.loadouts.get("variant")
@@ -50,7 +50,7 @@ class SetupEvidence:
 
     def blocker(self, mode, mine_enabled=False):
         """Current execution gate; no first-run history is inferred from an off switch."""
-        if mode not in ("mpw18", "mpw4") or mine_enabled:
+        if mode not in ("mpw18", "mpw4", "soul") or mine_enabled:
             return None
         chosen = self.loadouts["loadout"](mode).get("soul_weapon")
         if not chosen:
@@ -69,7 +69,7 @@ class SetupEvidence:
     def request(self, mode, *, configured, mine_enabled=False, busy=False):
         """An actionable accepted-target receipt, never equipment evidence."""
         revision = self.loadouts.get("revision")
-        if (not self.ports.enabled() or not configured or mode not in ("mpw18", "mpw4")
+        if (not self.ports.enabled() or not configured or mode not in ("mpw18", "mpw4", "soul")
                 or mine_enabled or not self.loadouts["stage"](mode)
                 or not revision or self.blocker(mode, mine_enabled) or busy):
             return None

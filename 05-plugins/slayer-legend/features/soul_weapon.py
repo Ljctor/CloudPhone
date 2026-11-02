@@ -27,7 +27,7 @@ its red X (leave, then the panel's tab: the stage change's to_battle).
 Nothing inside the panel is tapped to park or to stay parked.
 
 Fast: each wait polls for what the move should show (POLL, at most
-WAIT_MOST), no fixed long sleeps. Skipped altogether when the last check
+WAIT_MOST for list readings, SCREEN_WAIT_MOST for screen transitions), no fixed long sleeps. Skipped altogether when the last check
 read the target equipped and neither a relaunch nor a user input came
 since (the cache, in memory: a gateway restart reads again). Its duration
 is logged.
@@ -52,6 +52,8 @@ present (POST /farming {engraving}).
 
 import asyncio
 
+
+SCREEN_WAIT_MOST = 10.0
 
 EQUIPMENT_TAP = (0.41, 0.966)
 WEAPON_TAB_TAP = (0.12, 0.414)
@@ -135,25 +137,34 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
     def view_of(shot):
         return reader.view(shot, names)
 
-    async def settled(before):
+    async def settled(before, move):
         """The first view that differs from before and reads the same on
         the next look (the card's name follows the frame a moment later):
         (shot, view) or (shot, None)."""
-        end = ports.clock.monotonic() + rules.WAIT_MOST
+        since = ports.clock.monotonic()
+        most = rules.SCROLL_WAIT_MOST if move == "scroll" else rules.WAIT_MOST
+        end = since + most
         last = None
+        polls, changed_seen = 0, False
         while True:
             require_enabled()
             await ports.clock.sleep(rules.POLL)
             require_enabled()
             shot = await helpers.look()
             seen = await ports.analyse(view_of, shot)
-            if rules.progressed(before, seen):
+            polls += 1
+            if seen.get("selected") and rules.progressed(before, seen):
+                changed_seen = True
                 if last is not None and rules.signature(last) == rules.signature(seen):
                     return shot, seen
                 last = seen
             else:
                 last = None
             if ports.clock.monotonic() >= end:
+                if move == "scroll":
+                    elapsed = round(ports.clock.monotonic() - since, 2)
+                    ports.log("warning", f"Soul weapon: scroll settling failed: elapsed={elapsed}s "
+                              f"polls={polls} changed_seen={changed_seen}")
                 return shot, None
 
     async def recover_engraving_run(shot):
@@ -190,19 +201,19 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
             return await recover_engraving_run(shot)
         shot = await helpers.to_battle()
         await tap(shot, "battle", "menu_equipment", EQUIPMENT_TAP)
-        shot, tab = await wait_for(reader.tab)
+        shot, tab = await wait_for(reader.tab, most=SCREEN_WAIT_MOST)
         if tab == "accessories":
             await tap(shot, "equipment_accessories", "weapon", WEAPON_TAB_TAP)
-            shot, tab = await wait_for(lambda s: reader.tab(s) == "weapon" and "weapon")
+            shot, tab = await wait_for(lambda s: reader.tab(s) == "weapon" and "weapon", most=SCREEN_WAIT_MOST)
         if tab != "weapon":
             raise Stop("onglet Weapon de l’équipement pas actif (lu : {seen})", seen=tab or ports.t("rien"))
         await tap(shot, "equipment_weapon", "soul_weapon", SOUL_WEAPON_TAP)
-        shot, opened = await wait_for(lambda s: reader.title(s) or reader.weapon_detail(s))
+        shot, opened = await wait_for(lambda s: reader.title(s) or reader.weapon_detail(s), most=SCREEN_WAIT_MOST)
         if opened and not reader.title(shot):
             # The tap opened an ordinary weapon's card (the list scrolled
             # under the icon): closed, nothing else touched there.
             await tap(shot, "weapon_detail", "close", CLOSE_TAP)
-            await wait_for(lambda s: reader.tab(s) == "weapon")
+            await wait_for(lambda s: reader.tab(s) == "weapon", most=SCREEN_WAIT_MOST)
             raise Stop("la fiche d’une arme s’est ouverte au lieu de Soul Weapon (fermée)")
         if not opened:
             raise Stop("ouverture de l’écran Soul Weapon")
@@ -212,7 +223,7 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
         """From the Soul Weapon screen (shot): its red X; the Equipment
         panel's Weapon tab must show."""
         await tap(shot, "soul_weapon", "close", CLOSE_TAP)
-        shot, closed = await wait_for(lambda s: not reader.title(s) and reader.tab(s) == "weapon")
+        shot, closed = await wait_for(lambda s: not reader.title(s) and reader.tab(s) == "weapon", most=SCREEN_WAIT_MOST)
         if not closed:
             raise Stop("fermeture de l’écran Soul Weapon")
         return shot
@@ -279,6 +290,13 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
         target = entry["name"]
         if rules.shared(target, table):
             raise Stop("{weapon} : deux armes portent ce nom, le nom lu ne suffit pas à choisir", weapon=target)
+        if engraving and variant:
+            requested = engraving["variant"](target_id, variant)
+            missing = ({piece["shape"] for piece in requested["pieces"]}
+                       - set(engraving["rules"].ROTATION_PIVOTS)) if requested else set()
+            if missing:
+                # Refuse before Equip can replace a completed farming weapon.
+                raise Stop("gravure : pivot non calibré pour {shape}", shape=", ".join(sorted(missing)))
         cache = status["cache"]
         last_input = (ports.last_input() or {}).get("wall") if hasattr(ports, "last_input") else None
         if cache and cache["id"] == target_id and cache.get("variant") == variant \
@@ -305,7 +323,7 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
             await move(shot, view, step, target)
             if step[0] == "scroll":
                 memory = rules.scrolled(memory)
-            shot, after = await settled(view)
+            shot, after = await settled(view, step[0])
             if after is None:
                 raise Stop({"select": "choix dans la liste sans effet", "scroll": "défilement de la liste sans effet",
                             "equip": "Equip sans effet"}[step[0]])
@@ -328,11 +346,22 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
         # remained equipped. Prove the complete result again before leaving
         # or publishing success; an old view or a badge is insufficient.
         require_enabled()
-        shot = await helpers.look()
         def final_view(shot):
             return view_of(shot) if reader.title(shot) else {}
-        final = await ports.analyse(final_view, shot)
-        require_enabled()
+        end = ports.clock.monotonic() + SCREEN_WAIT_MOST
+        while True:
+            require_enabled()
+            shot = await helpers.look()
+            final = await ports.analyse(final_view, shot)
+            require_enabled()
+            selected = final.get("selected")
+            # A readable different name or tag is evidence of failure. Only
+            # incomplete transition readings may wait, without any action.
+            if selected and (selected != target or final.get("tag")):
+                break
+            if ports.clock.monotonic() >= end:
+                break
+            await ports.clock.sleep(rules.POLL)
         if not final.get("open") or final.get("selected") != target or final.get("tag") != "Unequip":
             raise Stop("vérification finale de l’équipement (lu : {name}, {tag})",
                        name=final.get("selected") or ports.t("nom illisible"),

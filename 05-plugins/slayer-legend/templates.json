@@ -1,4 +1,17 @@
 {
+  "Soul Farming : choisis d’abord son stage": "Soul Farming: choose its stage first",
+  "gravure interrompue : écran non reconnu, récupération suspendue": "Engraving interrupted: screen not recognised, recovery paused",
+  "Action désactivée à la demande de l’utilisateur": "Action disabled at your request",
+  "Relance du jeu pour reprendre {mode}": "Restarting the game to resume {mode}.",
+  "Jeu hors écran : relance et retour dans la mine": "Game is no longer in front; restarting and returning to the mine.",
+  "Retour au combat pour {mode}": "Returning to battle for {mode}.",
+  "Reprise de {mode} : stage {stage}, preset {preset}": "Restoring {mode}: stage {stage}, preset {preset}.",
+  "Rétablissement du preset {preset} pour {mode}": "Restoring preset {preset} for {mode}.",
+  "Vérification de l’arme et de la gravure pour {mode}": "Checking Soul Weapon and engraving for {mode}.",
+  "Retour à Soul Weapon pour suivre les âmes": "Returning to Soul Weapon to track souls.",
+  "{mode} bloqué : {why}": "{mode} blocked: {why}",
+  "Retour au combat interrompu : écran non confirmé": "Return to battle stopped: screen not confirmed",
+  "Déplacement interrompu : action non autorisée": "Move stopped: action not permitted",
   "Application de la configuration {mode}": "Applying configuration {mode}",
   "Configuration indisponible ou application déjà en cours": "Configuration unavailable or application already running",
   "Agent mode : agent autorisé à jouer": "Agent mode: agent allowed to play",
@@ -333,5 +346,7 @@
   "Actualisation des ressources : premier passage supervisé en attente": "Resource refresh: first supervised run pending",
   "Gravure automatique désactivée · premier passage soumis à supervision": "Automatic engraving disabled · first execution requires supervision",
   "Configuration demandée non vérifiée": "Requested configuration unverified",
-  "vérification finale de l’équipement (lu : {name}, {tag})": "final equipment verification (read: {name}, {tag})"
+  "vérification finale de l’équipement (lu : {name}, {tag})": "final equipment verification (read: {name}, {tag})",
+  "gravure : pivot non calibré pour {shape}": "Engraving: rotation pivot not calibrated for {shape}",
+  "gravure : récupération requise, grille incomplète ou illisible": "Engraving incomplete: recovery required"
 }

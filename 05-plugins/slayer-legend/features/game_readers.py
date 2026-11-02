@@ -226,7 +226,7 @@ class ReaderRegistry:
     def due(self, frame, last_runs, now, force=()):
         return [
             reader
-            for reader in self.readers
+            for reader in sorted(self.readers, key=lambda name: name != "gold")
             if reader in frame["shows"]
             and reader not in frame["ran"]
             and (frame["changed"] or self.rules.due(reader, last_runs.get(reader), now, force))

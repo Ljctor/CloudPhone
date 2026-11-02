@@ -50,7 +50,12 @@ GATES = [
     ("engraving_screen", "POPUP_LEARNED", ["eg_popup_locked", "eg_popup_unlocked", "eg_cards_relocked"],
      "test_engraving_screen"),
     ("engraving_screen", "PREVIEW_LEARNED", ["eg_preview_base", "eg_preview_turned", "eg_preview_valid",
-                                             "eg_grid_removed"], "test_engraving_screen"),
+        "eg_grid_removed", "eg_relax_preview_t-rotate-1-after", "eg_relax_preview_t-rotate-2-before",
+        "eg_relax_preview_t-move-naive-before", "eg_relax_preview_t-move-naive-after"], "test_engraving_screen"),
+    ("features/engraving_setup_rules", "ROTATION_PIVOTS", ["eg_relax_preview_t-rotate-1-after",
+        "eg_relax_preview_l-drop-pivot-after", "eg_relax_preview_l-rotate-1-before", "eg_relax_preview_l-rotate-1-after",
+        "eg_relax_preview_i-drop-after", "eg_relax_preview_i-rotate-1-after"], "test_engraving_geometry"),
+
 ]
 
 
@@ -65,7 +70,8 @@ class Gates(unittest.TestCase):
                     with open(os.path.join(HERE, f"{test}.py"), encoding="utf-8") as f:
                         source = f.read()
                     for name in fixtures:
-                        self.assertIn(f'"{name}"', source, f"{name} is read by no test of {test}")
+                        self.assertTrue(repr(name) in source or f'"{name}"' in source,
+                                        f"{name} is read by no test of {test}")
 
     def test_every_gate_is_listed(self):
         # A new *_LEARNED / *_TELLS / *_CALIBRATED flag must be listed above.

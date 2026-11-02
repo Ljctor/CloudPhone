@@ -102,7 +102,7 @@ export function combatCountersVisible(scan, now = Date.now() / 1000) {
   const age = now - Number(scan?.at);
   if (scan?.screen !== 'battle' || !Number.isFinite(age) || age < 0 || age > 2) return false;
   if (typeof scan.plain !== 'boolean' || !Array.isArray(scan.overlays)) return false;
-  const allowed = new Set(['panel', 'equipment_weapon', 'equipment_accessories', 'soul_weapon', 'better_weapon_toast']);
+  const allowed = new Set(['panel', 'equipment_weapon', 'equipment_accessories', 'character_enhance', 'soul_weapon', 'better_weapon_toast']);
   return scan.overlays.every((name) => allowed.has(name))
     && (!scan.overlays.includes('soul_weapon') || scan.plain === false);
 }
@@ -297,7 +297,7 @@ export default function goldFeature(api, { overlay, enabled = () => true, screen
     showGold();
     api.refresh();
     window.clearTimeout(gold.timer);
-    gold.timer = window.setTimeout(askGold, 10000);
+    gold.timer = window.setTimeout(askGold, 2000);
   };
   askGold();
   askScreen();

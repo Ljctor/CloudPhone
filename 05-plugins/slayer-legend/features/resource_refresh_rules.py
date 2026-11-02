@@ -2,7 +2,7 @@
 No game input or runtime guesses. Geometry stays in navigation.json.
 """
 HOLDER = "resource_refresh"
-MODES = ("mpw18", "mpw4")
+MODES = ("mpw18", "mpw4", "soul")
 EVERY = 300
 POLL = 2
 WAIT = 4
@@ -17,8 +17,8 @@ MOVES = {"battle": ("menu_equipment",),
          "equipment_accessories": ("weapon", "scroll"), "weapon_detail": ("close",), "soul_weapon": ("close",)}
 
 
-def eligible(mode, enabled, recovery=None):
-    return bool(enabled and mode.get("configured") is True and mode.get("mode") in MODES
+def eligible(mode, enabled, recovery=None, *, supervised=False):
+    return bool(enabled and mode.get("configured") is True and (mode.get("mode") in MODES or supervised and mode.get("mode") == "agent")
                 and not mode.get("setup") and not mode.get("hold")
                 and mode.get("state") not in ("moving", "waiting")
                 and not (recovery or {}).get("required"))

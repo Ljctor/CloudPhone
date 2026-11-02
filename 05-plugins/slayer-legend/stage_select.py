@@ -35,6 +35,14 @@ TITLE_CAP = (0.015, 0.022)
 TITLE_TEXT = "Select Region"
 BANNER = (0.25, 0.296, 0.75, 0.325)
 BANNER_CAP = (0.009, 0.014)
+# Small banner glyph phases cut from reviewed banner_land_of_prophecy.
+# Keep these local to the banner; identity thresholds/margins are unchanged.
+BANNER_FONT = dict(font.FONT, **{
+    "L~banner": ['9100', '9100', '9100', '9100', '9100', '9100', '9999', '2222', '0000'],
+    "f~banner": ['0399', '0742', '0830', '9999', '2842', '0830', '0830', '0210', '0000'],
+    "P~banner": ['99993', '94248', '92029', '95459', '98774', '92000', '92000', '20000', '00000'],
+    "y~banner": ['00000', '20002', '92029', '95259', '27484', '03741', '01910', '77500', '44200'],
+})
 LIST = (0.10, 0.405, 0.68, 0.815)
 # The stage names' cap height (14 px at 1040): smaller lines (drop rates,
 # "STAGE NNN") and the frame are not names.
@@ -133,7 +141,7 @@ def popup(shot):
 
 def banner(shot, names):
     """The region index the banner names, or None."""
-    for text, _, _ in font.read(shot, BANNER, caps=BANNER_CAP):
+    for text, _, _ in font.read(shot, BANNER, caps=BANNER_CAP, font=BANNER_FONT):
         region = which(text, names)
         if region is not None:
             return region

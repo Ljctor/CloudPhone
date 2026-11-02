@@ -8,7 +8,7 @@ GET /gold        {text, value, rate, rate_text, span, window, read, box,
                   window}}}
 GET /gold-font   the counter's pixel font, for the page to write the rate
 
-The first GET /gold starts reading the counters every 10 s while the game
+The first GET /gold starts reading the counters every 2 s while the game
 is in front; the readings stop 10 minutes after the last page asked (or
 the watchdog: api current(), which asks as a page does).
 Which readings count and the rate are in gold_rules.py: one window each,
@@ -19,22 +19,38 @@ window again. The readings are the game's scan of the capture
 it never touches the game.
 """
 
+import math
 
 
 def gold(ports, screens, stage, counter, rules, souls=None, table=None):
     """souls: soul_counters.py (None: no souls rates)."""
     colours = souls.COLOURS if souls else ()
+    interval = getattr(rules, "GOLD_SECONDS", rules.SECONDS)
     game = getattr(ports, "game", None)
-    status = {"window": rules.empty(), "read": None, "box": None, "shade": 1.0, "asked": 0.0, "task": None,
-              "souls": {colour: rules.empty() for colour in colours},
-              "resources": {field: rules.empty() for field in ("cubes", "weapon_l3", "accessory_l3")},
-              "resource_read": {}, "frame": None, "frame_at": None}
+    status = {
+        "window": rules.empty(),
+        "read": None,
+        "box": None,
+        "shade": 1.0,
+        "asked": 0.0,
+        "task": None,
+        "souls": {colour: rules.empty() for colour in colours},
+        "resources": {field: rules.empty() for field in ("cubes", "weapon_l3", "accessory_l3")},
+        "resource_read": {},
+        "frame": None,
+        "frame_at": None,
+        "balance": None,
+        "reset_at": None,
+        "reset_reason": None,
+    }
 
     def observe_resources(shot, readings, captured_at=None):
         """Count a visit's forced scan now; a short popup need not wait for
-        the background ten-second poll. Duplicate timestamps never count twice."""
+        the background poll. Duplicate timestamps never count twice."""
         if captured_at is None:
-            captured_at = ports.capture_time(shot) if hasattr(ports, "capture_time") else ports.clock.wall()
+            captured_at = (
+                ports.capture_time(shot) if hasattr(ports, "capture_time") else ports.clock.wall()
+            )
         if captured_at is None:
             return
         kind, here = readings.get("gold_place") or (None, None)
@@ -45,10 +61,15 @@ def gold(ports, screens, stage, counter, rules, souls=None, table=None):
                 continue
             window, counts = rules.where(window, kind, here)
             if counts:
-                exact = {"value": raw, "text": value.get("text", str(raw)) if isinstance(value, dict)
-                         else str(raw), "step": 1, "full": True}
-                window = rules.counted(window, exact, captured_at, rules.RESOURCE_WINDOW,
-                                       short=rules.RESOURCE_WINDOW)
+                exact = {
+                    "value": raw,
+                    "text": value.get("text", str(raw)) if isinstance(value, dict) else str(raw),
+                    "step": 1,
+                    "full": True,
+                }
+                window = rules.counted(
+                    window, exact, captured_at, rules.RESOURCE_WINDOW, short=rules.RESOURCE_WINDOW
+                )
                 status["resource_read"][field] = captured_at
             status["resources"][field] = window
 
@@ -61,16 +82,21 @@ def gold(ports, screens, stage, counter, rules, souls=None, table=None):
         reading = counter.read(shot, (1.0, screens.PARKED_SHADE) if name == "menu" else (1.0,))
         if name == "saver":
             return reading, ("saver", stage.read_saver(shot)[0]), None
-        return (reading, ("battle", stage._ink(stage._crop(shot, stage.BATTLE_NAME))),
-                souls.read(shot) if souls else None)
+        return (
+            reading,
+            ("battle", stage._ink(stage._crop(shot, stage.BATTLE_NAME))),
+            souls.read(shot) if souls else None,
+        )
 
     async def watch():
         while ports.clock.monotonic() - status["asked"] < rules.IDLE:
             try:
-                shot = await ports.capture(max_age=rules.SECONDS) if await ports.focused() else None
-                captured_at = (ports.capture_time(shot) if shot and hasattr(ports, "capture_time") else None)
-                if captured_at is None:
-                    captured_at = ports.clock.wall()  # record before OCR, never after it
+                shot = await ports.capture(max_age=interval) if await ports.focused() else None
+                captured_at = (
+                    ports.capture_time(shot) if shot and hasattr(ports, "capture_time") else None
+                )
+                if captured_at is None and not hasattr(ports, "capture_time"):
+                    captured_at = ports.clock.wall()  # legacy-only, before OCR
                 readings = {}
                 if not shot:
                     # Another app in front: the game stops.
@@ -84,28 +110,66 @@ def gold(ports, screens, stage, counter, rules, souls=None, table=None):
                     kind, here = readings.get("gold_place") or (None, None)
                 else:
                     reading, (kind, here), row = await ports.analyse(gold_facts, shot)
-                distinct = shot and not (status["frame"] is shot[2] and status["frame_at"] == captured_at)
+                distinct = (
+                    shot
+                    and captured_at is not None
+                    and (status["frame_at"] is None or captured_at > status["frame_at"])
+                )
                 if distinct:
                     status["frame"], status["frame_at"] = shot[2], captured_at
-                    if reading:
+                    after_reset = status["reset_at"] is None or captured_at > status["reset_at"]
+                    if reading and after_reset:
                         status["read"] = captured_at
+                        status["balance"] = {"text": reading["text"], "value": reading["value"]}
                         status["box"] = reading["box"]
                         status["shade"] = reading.get("shade", 1.0)
                     window, counts = rules.where(status["window"], kind, here)
-                    if counts and reading:
+                    if (
+                        counts
+                        and reading
+                        and after_reset
+                    ):
+                        previous = window["samples"]
                         window = rules.counted(window, reading, captured_at)
+                        if (
+                            previous
+                            and window["samples"]
+                            and window["samples"][-1][0] == captured_at
+                            and window["samples"][-1][1] < previous[-1][1]
+                        ):
+                            status["reset_at"] = captured_at
+                            status["reset_reason"] = "balance_decreased"
                     status["window"] = window
                     for colour in colours:
                         window, counts = rules.where(status["souls"][colour], kind, here)
                         count = (row or {}).get(colour)
                         if counts and count:
-                            window = rules.counted(window, count, captured_at, rules.SOULS_WINDOW, "skip")
+                            window = rules.counted(
+                                window, count, captured_at, rules.SOULS_WINDOW, "skip"
+                            )
                         status["souls"][colour] = window
                     observe_resources(shot, readings, captured_at)
             except Exception as e:
                 ports.log("warning", f"Gold reading failed: {e!r}")
-            await ports.clock.sleep(rules.SECONDS)
+            await ports.clock.sleep(interval)
         status["task"] = None
+
+    def observe_spend(reason="enhance", at=None):
+        """Reset Gold/hour after a verified paid gesture; keep the raw balance.
+
+        The caller must identify a paid control on the actual before frame.
+        A newer post-input capture establishes a new baseline, even when
+        simultaneous earnings hide the expenditure in the net balance.
+        """
+        at = ports.clock.wall() if at is None else at
+        if not isinstance(at, (int, float)) or isinstance(at, bool) or not math.isfinite(at):
+            return False
+        if status["reset_at"] is not None and at < status["reset_at"]:
+            return False
+        status["window"] = rules.restarted(status["window"], status["window"]["place"])
+        status["reset_at"] = at
+        status["reset_reason"] = reason
+        return True
 
     def measured(window, long=rules.WINDOW):
         """(window with its samples trimmed, rate, samples, seconds of
@@ -130,9 +194,16 @@ def gold(ports, screens, stage, counter, rules, souls=None, table=None):
         """{colour: {text, rate, span, window}}."""
         answer = {}
         for colour in colours:
-            status["souls"][colour], rate, samples, seconds = measured(status["souls"][colour], rules.SOULS_WINDOW)
-            answer[colour] = {"text": status["souls"][colour]["text"], "rate": rate, "span": span(samples),
-                              "window": seconds, "read": samples[-1][0] if samples else None}
+            status["souls"][colour], rate, samples, seconds = measured(
+                status["souls"][colour], rules.SOULS_WINDOW
+            )
+            answer[colour] = {
+                "text": status["souls"][colour]["text"],
+                "rate": rate,
+                "span": span(samples),
+                "window": seconds,
+                "read": samples[-1][0] if samples else None,
+            }
         return answer
 
     def current():
@@ -140,8 +211,12 @@ def gold(ports, screens, stage, counter, rules, souls=None, table=None):
         window (its length), last (Unix time of the last sample counted,
         on the battle screen), or None}."""
         rate, samples, seconds = asked()
-        return {"rate": rate, "span": span(samples), "window": seconds,
-                "last": samples[-1][0] if samples else None}
+        return {
+            "rate": rate,
+            "span": span(samples),
+            "window": seconds,
+            "last": samples[-1][0] if samples else None,
+        }
 
     def resources_now():
         answer = {}
@@ -149,12 +224,29 @@ def gold(ports, screens, stage, counter, rules, souls=None, table=None):
             read = status["resource_read"].get(field)
             # A hidden counter retains its dated last measurement. It does
             # not gain fresh timestamps, zero samples, or new confidence.
-            rate, samples = rules.rate(window["samples"], read if read is not None else ports.clock.wall(),
-                                       rules.RESOURCE_WINDOW)
-            state = ("unread" if read is None else "stale" if ports.clock.wall() - read > rules.RESOURCE_WINDOW
-                     else "measuring" if rate is None else "measured")
-            answer[field] = {"rate": rate, "read": read, "span": span(samples), "window": rules.RESOURCE_WINDOW,
-                             "text": window["text"], "value": samples[-1][1] if samples else None, "status": state}
+            rate, samples = rules.rate(
+                window["samples"],
+                read if read is not None else ports.clock.wall(),
+                rules.RESOURCE_WINDOW,
+            )
+            state = (
+                "unread"
+                if read is None
+                else (
+                    "stale"
+                    if ports.clock.wall() - read > rules.RESOURCE_WINDOW
+                    else "measuring" if rate is None else "measured"
+                )
+            )
+            answer[field] = {
+                "rate": rate,
+                "read": read,
+                "span": span(samples),
+                "window": rules.RESOURCE_WINDOW,
+                "text": window["text"],
+                "value": samples[-1][1] if samples else None,
+                "status": state,
+            }
         return answer
 
     def farming():
@@ -171,11 +263,19 @@ def gold(ports, screens, stage, counter, rules, souls=None, table=None):
         base = look.get("classified") if look["screen"] == "unknown" else look["screen"]
         age = ports.clock.wall() - fact["seen"]
         last_input = ports.last_input() if hasattr(ports, "last_input") else None
-        if (base not in ("battle", "saver") or not 0 <= age <= 30
-                or last_input and last_input["wall"] > fact["seen"]):
+        if (
+            base not in ("battle", "saver")
+            or not 0 <= age <= 30
+            or last_input
+            and last_input["wall"] > fact["seen"]
+        ):
             return empty
         number = fact["value"]
-        if not isinstance(number, int) or isinstance(number, bool) or not 1 <= number <= len(table["stages"]):
+        if (
+            not isinstance(number, int)
+            or isinstance(number, bool)
+            or not 1 <= number <= len(table["stages"])
+        ):
             return empty
         entry = dict(zip(table["fields"], table["stages"][number - 1]))
         drop = {"W": "weapon", "A": "accessory"}.get(entry.get("drop"))
@@ -183,24 +283,39 @@ def gold(ports, screens, stage, counter, rules, souls=None, table=None):
 
     async def handle_gold(request):
         rate, samples, seconds = asked()
-        return ports.respond({
-            "text": status["window"]["text"],
-            "value": samples[-1][1] if samples else None,
-            "rate": rate,
-            "rate_text": counter.rate_text(rate),
-            "span": span(samples),
-            "window": seconds,
-            "read": status["read"],
-            "box": status["box"],
-            "shade": status["shade"],
-            "souls": souls_now(),
-            "resources": resources_now(),
-            **farming(),
-        })
+        return ports.respond(
+            {
+                "text": (status["balance"] or {}).get("text", status["window"]["text"]),
+                "value": (status["balance"] or {}).get("value"),
+                "reset_at": status["reset_at"],
+                "reset_reason": status["reset_reason"],
+                "rate": rate,
+                "rate_text": counter.rate_text(rate),
+                "span": span(samples),
+                "window": seconds,
+                "read": status["read"],
+                "box": status["box"],
+                "shade": status["shade"],
+                "souls": souls_now(),
+                "resources": resources_now(),
+                **farming(),
+            }
+        )
 
     async def handle_font(request):
-        return ports.respond({"height": len(counter.DIGITS["0"]),
-                              "glyphs": {**counter.DIGITS, **counter.LETTERS, **counter.SIGNS}})
+        return ports.respond(
+            {
+                "height": len(counter.DIGITS["0"]),
+                "glyphs": {**counter.DIGITS, **counter.LETTERS, **counter.SIGNS},
+            }
+        )
 
-    return {"routes": [("GET", "/gold", handle_gold), ("GET", "/gold-font", handle_font)],
-            "api": {"current": current, "observe_resources": observe_resources, "resources": resources_now}}
+    return {
+        "routes": [("GET", "/gold", handle_gold), ("GET", "/gold-font", handle_font)],
+        "api": {
+            "current": current,
+            "observe_resources": observe_resources,
+            "resources": resources_now,
+            "observe_spend": observe_spend,
+        },
+    }

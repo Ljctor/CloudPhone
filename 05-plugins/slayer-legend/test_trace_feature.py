@@ -207,7 +207,7 @@ class Annotations(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(record["kind"], "screen")
         self.assertNotIn("expected_screen", record)
 
-    async def test_all_five_types_survive_restart_with_both_private_captures(self):
+    async def test_all_annotation_types_survive_restart_with_both_private_captures(self):
         for kind in feature.ANNOTATION_KINDS:
             self.release.clear()
             armed, status = await self.call("POST", "/trace/arm", {"kind": kind})
@@ -217,9 +217,9 @@ class Annotations(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(before.stat().st_mode & 0o777, 0o600)
             self.assertEqual((await self.call("GET", "/trace"))[0]["armed"]["kind"], kind)
             tap = {"x": .2, "y": .3, "kind": "tap"}
-            if kind in ("vertical", "horizontal", "scannable"):
+            if kind in ("vertical", "horizontal", "scannable", "action", "draggable"):
                 tap.update(kind="swipe", end={"x": .2 if kind == "vertical" else .7,
-                                              "y": .8 if kind in ("vertical", "scannable") else .3})
+                                              "y": .8 if kind in ("vertical", "scannable", "action", "draggable") else .3})
             self.assertEqual((await self.call("POST", "/trace", tap))[1], 202)
             await self.advance()
             metadata = root / (armed["id"] + ".json")
@@ -231,7 +231,7 @@ class Annotations(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(record["tap"], tap)
             self.assertEqual(record["before_scan"], {"screen": "battle", "overlays": [], "plain": True})
             self.assertEqual(record["after_scan"], record["before_scan"])
-            if kind == "scannable":
+            if kind in ("scannable", "action", "draggable"):
                 self.assertEqual(record["rect"], [.2, .3, .7, .8])
             self.assertEqual(record["capture_status"], "complete")
         self.assertEqual(sum(edge["count"] for edge in (await self.call("GET", "/trace/graph"))[0]["edges"]), 1)

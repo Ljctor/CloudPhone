@@ -3,7 +3,7 @@ screen before and after each, as a graph (trace.py). Nothing is ever
 replayed.
 
 POST /trace/capture {expected_screen?}; save the current screen, optionally report its correct identity
-POST /trace/arm     {kind: navigation|forbidden|scannable|vertical|horizontal}; captures the screen before the next user gesture
+POST /trace/arm     {kind: navigation|forbidden|scannable|vertical|horizontal|action|draggable}; captures before the next annotation
 POST /trace/cancel  {id}; cancels only that armed or pending annotation
 POST /trace         {x, y, kind[, end: {x, y}]}: a tap the user just made; 202 at once
 GET  /trace         {enabled, nodes, edges, taps, last}
@@ -28,7 +28,8 @@ AFTER_SECONDS = 0.15
 AFTER_INTERVAL = 0.15
 AFTER_LIMIT = 2.0
 ARM_SECONDS = 30.0
-ANNOTATION_KINDS = ("navigation", "forbidden", "scannable", "vertical", "horizontal")
+ANNOTATION_KINDS = ("navigation", "forbidden", "scannable", "vertical", "horizontal", "action", "draggable")
+RECTANGLE_KINDS = ("scannable", "action", "draggable")
 
 
 def before_frame(body):
@@ -55,13 +56,13 @@ def before_frame(body):
     return width, height, pixels
 
 
-def trace(ports, screens, graphs, images=None, scan_visible=None):
+def trace(ports, screens, graphs, images=None, scan_visible=None, on_spend=None):
     path = ports.data_path("trace.json")
     image_dir = Path(ports.data_path("manual-clicks")) if path and images else None
     # The graph, the tap waiting for its "after" screen {tap, before,
     # task}, and the lock that keeps taps in order.
     recorded = {"graph": graphs.load(path) if path else None, "pending": None,
-                "armed": None, "latest": None, "lock": None}
+                "armed": None, "latest": None, "latest_at": None, "spent": None, "lock": None}
 
     def signature(shot, detailed=False):
         scan = getattr(screens, "look", lambda shot: None)(shot)
@@ -225,7 +226,7 @@ def trace(ports, screens, graphs, images=None, scan_visible=None):
                 recorded["pending"] = pending
                 if pending["manual"]:
                     pending["manual"].update(tap=tap, capture_status="pending")
-                    if pending["manual"]["kind"] == "scannable" and "end" in tap:
+                    if pending["manual"]["kind"] in RECTANGLE_KINDS and "end" in tap:
                         pending["manual"]["rect"] = [min(tap["x"], tap["end"]["x"]),
                                                      min(tap["y"], tap["end"]["y"]),
                                                      max(tap["x"], tap["end"]["x"]),
@@ -261,6 +262,7 @@ def trace(ports, screens, graphs, images=None, scan_visible=None):
             if latest and latest[0] == gesture[0] and latest[1] >= gesture[1]:
                 return ports.respond({"accepted": False, "reason": "stale gesture"})
             recorded["latest"] = gesture
+            recorded["latest_at"] = ports.clock.wall()
             pending = recorded["pending"]
             if pending is not None:
                 pending["task"].cancel()
@@ -269,6 +271,7 @@ def trace(ports, screens, graphs, images=None, scan_visible=None):
     async def handle_tap(request):
         if recorded["graph"] is None:
             return ports.respond({"error_t": ports.t("Pas de dossier de données : rien n’est enregistré")}, status=503)
+        completed_at = ports.clock.wall()
         try:
             body = await request.json()
             tap = graphs.parse_tap(body)
@@ -285,17 +288,29 @@ def trace(ports, screens, graphs, images=None, scan_visible=None):
         if gesture is not None and gesture != recorded["latest"]:
             return ports.respond({"queued": False, "reason": "stale gesture"}, status=202)
         armed = recorded["armed"]
-        if armed and armed["kind"] == "scannable" and ports.clock.wall() <= armed["until"]:
+        if armed and armed["kind"] in RECTANGLE_KINDS and ports.clock.wall() <= armed["until"]:
             end = tap.get("end")
             if (tap["kind"] != "swipe" or end is None
                     or abs(end["x"] - tap["x"]) < .01 or abs(end["y"] - tap["y"]) < .01):
-                return ports.respond({"error": "scannable annotation requires a rectangle"}, status=400)
+                return ports.respond({"error": f"{armed['kind']} annotation requires a rectangle"}, status=400)
         if gesture is None and not (armed and ports.clock.wall() <= armed["until"]):
             return ports.respond({"queued": False, "before_verified": False,
                                   "reason": "gesture observation unavailable; navigation not recorded"}, status=202)
         if supplied_before is None and not (armed and ports.clock.wall() <= armed["until"]):
             return ports.respond({"queued": False, "before_verified": False,
                                   "reason": "before frame unavailable; navigation not recorded"}, status=202)
+        spend_reader = getattr(screens, "gold_spend_at", None)
+        if (on_spend is not None and callable(spend_reader) and gesture is not None
+                and supplied_before is not None and not armed and tap["kind"] in ("tap", "long")):
+            began = recorded["latest_at"]
+            paid = await ports.analyse(spend_reader, supplied_before, tap["x"], tap["y"])
+            # Another input may have arrived while this frame was analysed.
+            if paid and recorded["latest"] == gesture and recorded["spent"] != gesture and began is not None:
+                recorded["spent"] = gesture
+                # Receipt of the completed gesture is a conservative end
+                # cutoff too: captures taken during a held paid button must
+                # not become post-spend baselines after delayed analysis.
+                on_spend(max(began, completed_at))
         if recorded["lock"] is None:
             recorded["lock"] = asyncio.Lock()
         ports.spawn(tap_made(tap, supplied_before, gesture))

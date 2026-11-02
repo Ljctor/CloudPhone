@@ -340,6 +340,28 @@ def select_point(cell):
     return (SELECT_X, cell["top"] + SELECT_DEPTH * (cell["bottom"] - cell["top"]))
 
 
+@calibrated
+def list_icons(shot, cells=None):
+    """Quantised samples inside whole cells' upper icon area, in list order.
+
+    This only detects list motion; it never identifies a weapon or grants a
+    gesture. Exclude borders, lower Equip tags and all changing card/currency
+    values. The caller still requires two matching fresh observations.
+    """
+    width, height, _ = shot
+    fingerprints = []
+    for cell in rows(shot) if cells is None else cells:
+        top, bottom = cell["top"] * height, cell["bottom"] * height
+        samples = []
+        for row in range(12):
+            y = int(top + (.12 + (row + .5) / 12 * .36) * (bottom - top))
+            for col in range(12):
+                x = int((.045 + (col + .5) / 12 * .085) * width)
+                samples.extend(channel // 16 for channel in _pixel(shot, x, y))
+        fingerprints.append(bytes(samples).hex())
+    return tuple(fingerprints)
+
+
 def _orange(rgb):
     r, g, b = rgb
     return r > 190 and 90 <= g <= 190 and b < 90 and r - g > 40
@@ -412,6 +434,8 @@ TAG_NATIVE_TEMPLATES = {'Unequip': ('#...#.........................##......',
 # Actual 480 Ambition Unequip phase, sw_tag_unequip_480 (2026-10-28).
 # Nine text rows here; the older captures have ten. No distance relaxation.
 TAG_480_TEMPLATES = {"Unequip": ('#...#..........................#......', '#...#.................................', '#...#.####...###...####.#...#.##.####.', '#...#.#...#.#...#.#...#.#...#..#.#...#', '#...#.#...#.#####.#...#.#...#..#.#...#', '#...#.#...#.#.....#...#.#...#..#.#...#', '#...#.#...#.#......####.#...#..#.####.', '.###..#...#..####.....#..####..#.#....', '......................#..........#....')}
+# Native Equip text phase, reviewed sw_tag_equip_480.
+TAG_480_TEMPLATES["Equip"] = ('#####..............#......', '#.........................', '#......####.#...#.##.####.', '####..#...#.#...#..#.#...#', '#.....#...#.#...#..#.#...#', '#.....#...#.#...#..#.#...#', '#......####.#...#..#.####.', '#####.....#..####..#.#....', '..........#..........#....')
 # The Equip tap is real only once both tags read on real captures.
 TAG_LEARNED = {"Equip", "Unequip"} <= set(TAG_TEMPLATES)
 # At most this share of a template's pixels may differ.
@@ -521,6 +545,7 @@ def view(shot, names):
     """What the Soul Weapon screen shows, for soul_weapon_rules.plan:
     {open, selected, owned, tag, tag_box, tags, rows, badge}."""
     text, box = tag(shot)
+    cells = rows(shot)
     return {"open": title(shot), "selected": name(shot, names), "owned": owned(shot), "tag": text,
-            "tag_box": box, "tags": tags(shot), "rows": rows(shot),
+            "tag_box": box, "tags": tags(shot), "rows": cells, "list_icons": list_icons(shot, cells),
             "badge": equipped_badge(shot) if BADGE_TELLS else None}

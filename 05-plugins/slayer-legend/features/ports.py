@@ -309,12 +309,16 @@ NO_LEASE = "pas de bail"
 
 
 class Refused(RuntimeError):
-    """A move the navigation guard refused. t: a status text, the guard's
-    reason (English) as its data; its str, the English."""
+    """Technical detail stays in logs; t gives the user a finite reason."""
 
     def __init__(self, refusal):
-        self.t = texts.t("action refusée par le garde-fou : {refusal}", refusal=refusal)
-        super().__init__(texts.english(self.t))
+        if "action buttons are paused by the user" in refusal:
+            self.t = texts.t("Action désactivée à la demande de l’utilisateur")
+        elif "needs a fresh reduced battle" in refusal:
+            self.t = texts.t("Retour au combat interrompu : écran non confirmé")
+        else:
+            self.t = texts.t("Déplacement interrompu : action non autorisée")
+        super().__init__(refusal)
 
 
 class Busy(RuntimeError):
@@ -741,6 +745,7 @@ def build(context, nav):
 
     return SimpleNamespace(
         capture=capture, capture_time=capture_time, analyse=context.analyse,
+        action_allowed=getattr(nav, "action_allowed", lambda screen, move: False),
         detect=getattr(context, "detect", context.analyse), on_capture=capture_listeners.append,
         on_relaunch=relaunch_listeners.append, relaunched=relaunched,
         tap=tap, taps=taps, hold=hold, swipe=swipe, lease=lease, leased=leased, Busy=Busy, Refused=Refused,

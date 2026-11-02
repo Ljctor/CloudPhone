@@ -24,7 +24,7 @@ def resource_refresh(ports, screens, navigation, equipment, weapon, scrolling, m
               "last_attempt": saved.get("last_attempt"), "last_complete": saved.get("last_complete"),
               "next_at": 0, "read": dict(saved.get("read") or {}), "missing": []}
     running = {"task": None, "mode": None, "deadline": None, "reported": None, "supervised_task": None,
-               "cancelled": False}
+               "cancelled": False, "supervised": False}
     ports.store.register("resource_refresh", lambda: {key: status[key] for key in (
         "last_attempt", "last_complete", "read", "supervised_verified")})
 
@@ -45,7 +45,7 @@ def resource_refresh(ports, screens, navigation, equipment, weapon, scrolling, m
     def check():
         current = modes["state"]()
         if (running["cancelled"] or current.get("mode") != running["mode"]
-                or not rules.eligible(current, ports.enabled(), recovery())
+                or not rules.eligible(current, ports.enabled(), recovery(), supervised=running["supervised"])
                 or farming["soul_weapon_switch"]() != "real" or ports.pause_left() > 0):
             raise Interrupted("refresh no longer authorized")
         if ports.clock.monotonic() >= running["deadline"]:
@@ -237,7 +237,7 @@ def resource_refresh(ports, screens, navigation, equipment, weapon, scrolling, m
         if not supervised and ports.clock.wall() < status["next_at"]:
             return state()
         current = modes["state"]()
-        if not rules.eligible(current, ports.enabled(), recovery()) or ports.pause_left() > 0:
+        if not rules.eligible(current, ports.enabled(), recovery(), supervised=supervised) or ports.pause_left() > 0:
             return state()
         if farming["soul_weapon_switch"]() != "real":
             report("deferred", ports.t("Soul Weapon désactivée : configuration demandée non appliquée"))
@@ -249,7 +249,7 @@ def resource_refresh(ports, screens, navigation, equipment, weapon, scrolling, m
             return state()
         status["last_attempt"] = ports.clock.wall()
         running.update(task=asyncio.current_task(), mode=current["mode"], deadline=ports.clock.monotonic() + rules.DEADLINE,
-                       cancelled=False)
+                       cancelled=False, supervised=supervised)
         try:
             async with ports.leased(rules.HOLDER, "refresh resource balances", rules.DEADLINE + 10):
                 status["active"] = True

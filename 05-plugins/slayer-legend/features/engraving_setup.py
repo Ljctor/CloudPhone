@@ -23,12 +23,19 @@ a fresh capture of that screen (engraving_screen.py reads it).
     cells and the check reads valid (rules.preview_step, at most
     rules.MOST_PREVIEW moves); else its cancel. Afterwards the cells must
     form that piece, the card read E and its padlock closed (else locked).
-- before closing: a fresh capture must read all 8 padlocks closed; a card
+- before closing: a fresh capture must read the entire weapon grid filled
+  and all 8 padlocks closed; a card
   still open is locked; one that stays open, or whose padlock stays
   unreadable (never tapped), is an error alert and a problem, never left
   silently;
 - closed with the red X, back on Soul Weapon. Ready only when
   rules.check finds nothing left.
+
+The target recipe is saved before any mutation. Pending recipes for other
+weapons remain in independent pending_by_weapon records when a new weapon
+is requested; recovery resumes only the recognised weapon's matching record.
+Recovery verifies that recipe before leaving; a legacy recovery with no recipe only closes
+a completely filled, locked grid and does not certify a target variant.
 
 Nothing at all while the engraving switch (switch()) is not "real": no
 gesture, one error log, and the setup not ready (rules.NOT_SET_UP).
@@ -39,6 +46,8 @@ not read: each slot keeps the shape and level read while it was locked.
 
 
 import asyncio
+import copy
+import json
 
 
 ENGRAVING_TAP = (0.33, 0.636)
@@ -69,7 +78,15 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
     def require_enabled():
         if switch() != "real":
             raise Stop("gravure désactivée : opération arrêtée")
-    recovery = dict(ports.store.saved.get("engraving_recovery") or {})
+    def require_followups(*moves):
+        # A pink drag can create an unlocked card or a placement preview.
+        # Do not begin that mutation if its mandatory finishing action is
+        # paused. Missing policy capability also fails closed.
+        allowed = getattr(ports, "action_allowed", None)
+        if not callable(allowed) or any(not allowed(screen_id, move) for screen_id, move in moves):
+            raise Stop("Action désactivée à la demande de l’utilisateur")
+
+    recovery = copy.deepcopy(ports.store.saved.get("engraving_recovery") or {})
     ports.store.register("engraving_recovery", lambda: dict(recovery))
 
     def remember_state(**changes):
@@ -132,12 +149,26 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
 
         async def wait_for(reader, most=None, transition=None):
             def checked(shot):
-                if transition == "opening" and not screen.title(shot):
-                    if back_on(shot):
-                        identity(shot, source=True)
-                    return False
+                if transition == "opening":
+                    require_enabled()
+                    if not screen.title(shot):
+                        if back_on(shot):
+                            identity(shot, source=True)
+                        return False
+                    # The title can render before the weapon name. Wait
+                    # within the opening deadline without any gesture; a
+                    # readable different name still fails identity below.
+                    if screen.weapon(shot, names, card_font) is None:
+                        return False
                 if transition == "closing":
+                    require_enabled()
                     if back_on(shot):
+                        # The Soul Weapon title can precede its card name,
+                        # just as the engraving title can on opening. Read
+                        # again without touching anything until the bounded
+                        # closing deadline; a different name is never waited.
+                        if source_weapon and source_weapon(shot, names) is None:
+                            return False
                         identity(shot, source=True)
                         return reader(shot)
                     if screen.title(shot):
@@ -186,6 +217,8 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
             return out
 
         async def lock(index):
+            require_followups(("soul_weapon_engraving", "lock"),
+                              ("soul_weapon_engraving_piece", "padlock"))
             """The card index locked: True once it reads closed."""
             shot, reading = await steady(size, shapes)
             if reading["cards"][index]["locked"] is not False:
@@ -220,6 +253,8 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
             return False
 
         async def remove(cells, reading):
+            require_followups(("soul_weapon_engraving", "lock"),
+                              ("soul_weapon_engraving_piece", "padlock"))
             shot, before = await steady(size, shapes)
             if any(before["grid"] is None or before["grid"]["cells"].get(cell) != "piece" for cell in cells):
                 problems.append(ports.t("la pièce à retirer a bougé"))
@@ -244,32 +279,92 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
             return True
 
         async def place(index, cells, card):
+            require_followups(("soul_weapon_engraving_preview", "rotate"),
+                              ("soul_weapon_engraving_preview", "confirm"),
+                              ("soul_weapon_engraving_preview", "cancel"),
+                              ("soul_weapon_engraving", "lock"),
+                              ("soul_weapon_engraving_piece", "padlock"))
             shot, before = await steady(size, shapes)
             if before["cards"][index]["placed"] or any(before["grid"]["cells"].get(cell) != "empty" for cell in cells):
                 problems.append(ports.t("n°{number} : carte ou cases changées avant le glisser", number=index + 1))
                 return False
             under = set(await observe(screen.cubes, shot))
             base = rules.normalised([tuple(c) for c in shapes[card["shape"]]["cells"]])
-            target = screen.hold_point(cells)
+            initial = rules.initial_placement_cells(base, cells, rules.ROTATION_PIVOTS.get(card["shape"]))
+            if initial is None:
+                raise Stop("gravure : pivot non calibré pour {shape}", shape=card["shape"])
+            target = screen.hold_point(initial)
             await helpers.front()
             await swipe(shot, "soul_weapon_engraving", "drag_piece", screen.drag_point(index), target,
                               DRAG_MS, verified=True)
             turns = 0
-            for _ in range(rules.MOST_PREVIEW):
-                shot, found = await wait_for(screen.bar)
+            for preview_moves in range(1, rules.MOST_PREVIEW + 1):
+                last, latest = [None], [None]
+                preview_counts = {"observations": 0, "complete_observations": 0, "complete_signatures": []}
+
+                def settled_preview(s):
+                    preview_counts["observations"] += 1
+                    found = screen.bar(s)
+                    now = screen.cubes(s) if found else {}
+                    latest[0] = (found, now)
+                    if not found:
+                        last[0] = None
+                        return False
+                    if not rules.preview_locations(under, now, base, turns):
+                        # A transient partial drawing grants no action, but
+                        # does not invalidate the last complete observation.
+                        # A second matching complete capture is still needed
+                        # before input, within this same bounded preview phase.
+                        return False
+                    preview_counts["complete_observations"] += 1
+                    # Control centroids can jitter with antialiasing while
+                    # cubes and validity are unchanged. Use the latest fresh
+                    # bar coordinates for input, not for geometry stability.
+                    candidate = rules.preview_step(under, set(now), found["valid"], base, turns, cells)
+                    preview_counts["complete_signatures"].append({
+                        "cells": [list(cell) for cell in sorted(now)], "valid": found["valid"],
+                        "step": candidate[0],
+                    })
+                    del preview_counts["complete_signatures"][:-8]
+                    # A complete piece can translate or pulse while its
+                    # orientation is unchanged. Rotate/move use this capture's
+                    # geometry; confirmation alone needs two fresh exact,
+                    # valid target observations.
+                    signature = ((candidate[0], tuple(map(tuple, rules.turned(base, turns))))
+                                 if candidate[0] in ("rotate", "move") else
+                                 (candidate[0], tuple(sorted(now)), found["valid"]))
+                    stable = last[0] == signature
+                    last[0] = signature
+                    return stable
+
+                # Rotation/movement animations can briefly omit one cube or
+                # show the previous orientation while their bar remains lit.
+                # Observe a complete expected shape twice before any next
+                # control, without repeating the preceding gesture.
+                shot, stable = await wait_for(settled_preview, TRANSITION_WAIT)
+                found, now = latest[0]
                 if not found:
                     problems.append(ports.t("pas d’aperçu après avoir glissé n°{number}", number=index + 1))
                     return False
-                now = await observe(screen.cubes, shot)
-                step = rules.preview_step(under, set(now), found["valid"], base, turns, cells)
+                step = (rules.preview_step(under, set(now), found["valid"], base, turns, cells) if stable
+                        else ("cancel", ports.t("aperçu pas situé")))
                 if step[0] == "rotate":
                     await tap(shot, "soul_weapon_engraving_preview", "rotate", found["rotate"], verified=True)
                     turns += 1
                     await ports.clock.sleep(0.3)
                 elif step[0] == "move":
+                    current = rules.unique_preview_cells(under, now, base, turns)
+                    if current is None:
+                        step = ("cancel", ports.t("aperçu pas situé"))
+                        break
+                    # Dragging any cube reanchors the piece at release. A
+                    # finger delta is not a piece delta. Aim its lower-left
+                    # bounding anchor directly at the requested final cells.
+                    visible = set(current) - under
+                    pickup = min(visible, key=lambda cell: (-cell[0], cell[1]))
                     await helpers.front()
-                    await swipe(shot, "soul_weapon_engraving_preview", "move", screen.cell_centre(*step[1]),
-                                      screen.cell_centre(*step[2]), MOVE_MS, verified=True)
+                    await swipe(shot, "soul_weapon_engraving_preview", "move", screen.cell_centre(*pickup),
+                                      screen.hold_point(cells), MOVE_MS, verified=True)
                     await ports.clock.sleep(0.3)
                 elif step[0] == "confirm":
                     await tap(shot, "soul_weapon_engraving_preview", "confirm", found["confirm"],
@@ -288,6 +383,18 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
                     return True
                 else:
                     break
+            # One bounded diagnostic at cancellation, before the preview is
+            # dismissed. No screenshots or game input are added here; these
+            # geometry-only observations can be paired with a private capture.
+            ports.log("warning", "Engraving preview diagnostic: " + json.dumps({
+                "phase": "preview_cancel", "weapon_id": entry["id"], "card": index + 1,
+                "before": [list(cell) for cell in sorted(under)],
+                "now": [{"cell": list(cell), "kind": kind} for cell, kind in sorted(now.items())],
+                "base": [list(cell) for cell in base], "target": [list(cell) for cell in cells],
+                "rotation": turns, "valid": found["valid"], "preview_moves": preview_moves,
+                "last_step": step[0],
+                **preview_counts,
+            }, sort_keys=True, separators=(",", ":")))
             await tap(shot, "soul_weapon_engraving_preview", "cancel", found["cancel"], verified=True)
             await wait_for(lambda s: not screen.bar(s))
             problems.append(ports.t("pose de n°{number} annulée ({why})", number=index + 1,
@@ -296,6 +403,11 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
 
         if size != 5:
             raise Stop("grille {size}x{size} pas encore calibrée", size=size)
+        if variant:
+            uncalibrated = sorted({piece["shape"] for piece in variant["pieces"]}
+                                 - set(rules.ROTATION_PIVOTS))
+            if uncalibrated:
+                raise Stop("gravure : pivot non calibré pour {shape}", shape=", ".join(uncalibrated))
         if not all(getattr(screen, gate, False) for gate in
                    ("PADLOCK_LEARNED", "POPUP_LEARNED", "PREVIEW_LEARNED")):
             raise Stop("lectures de la gravure pas calibrées, rien n’a bougé")
@@ -326,7 +438,7 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
         if named != entry["name"]:
             raise Stop("l’écran montre {seen}, pas {name}", seen=named or ports.t("un nom illisible"),
                        name=entry["name"])
-        elif not recovery_only:
+        elif variant is not None:
             probed = []
             for _ in range(rules.MOST_STEPS):
                 shot, reading = await steady(size, shapes)
@@ -341,6 +453,8 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
                         problems.append(step[1])
                     break
                 if step[0] == "lock":
+                    require_followups(("soul_weapon_engraving", "lock"),
+                                      ("soul_weapon_engraving_piece", "padlock"))
                     if not await lock(step[1]):
                         problems.append(ports.t("n°{number} reste déverrouillée", number=step[1] + 1))
                         await error(f"#{step[1] + 1} stays unlocked")
@@ -368,18 +482,37 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
             raise Stop("gravure : récupération requise, les huit cadenas ne sont pas confirmés fermés")
         named = await ports.analyse(identity, shot)
         remember_state(locks_verified=True)
-        if not recovery_only and size == 5 and named == entry["name"]:
+        if variant is not None and size == 5 and named == entry["name"]:
             problems = problems + [p for p in rules.check(reading["grid"], reading["cards"], variant,
                                                           entry["cells"], entry["name"], variant_name, gold)
                                    if p not in problems]
-        # Leave only after a fresh stable observation proved every card locked.
+        # Locks alone do not recover a layout: an empty cell loses the
+        # weapon's completion bonus. Keep the durable target pending and the
+        # screen open until the entire expected pattern is filled.
+        expected = {tuple(cell) for cell in entry["cells"]}
+        occupied = {cell for cell, state in reading["grid"]["cells"].items() if state == "piece"}
+        partition = [tuple(cell) for piece in reading["grid"]["pieces"] for cell in piece]
+        complete = (occupied == expected and set(partition) == expected and len(partition) == len(expected)
+                    and {cell for cell, state in reading["grid"]["cells"].items() if state != "none"} == expected)
+        remember_state(completion_verified=complete)
+        if not complete:
+            if problems:
+                raise Stop(rules.alert(entry["name"], variant_name, problems))
+            raise Stop("gravure : récupération requise, grille incomplète ou illisible")
+        if recovery_only and problems:
+            raise Stop(rules.alert(entry["name"], variant_name, problems))
+        # Leave only after a fresh stable observation proved every card locked
+        # and all cells occupied. Legacy recovery can prove safe closure, but
+        # cannot certify a recipe it never received.
         await tap(shot, "soul_weapon_engraving", "close", ENGRAVING_CLOSE_TAP)
         shot, back = await wait_for(back_on, transition="closing")
         if not back:
             raise Stop("retour de la gravure à l’écran Soul Weapon")
         seconds = round(ports.clock.monotonic() - since, 1)
+        result_name = ("complete locked grid, recipe not verified" if variant is None else
+                       "ready" if not problems else "not ready")
         ports.log("normal", f"Engraving: {entry['name']} {variant_name} "
-                  f"{'ready' if not problems else 'not ready'} in {seconds} s, {len(done['locked'])} locked, "
+                  f"{result_name} in {seconds} s, {len(done['locked'])} locked, "
                   f"{len(done['removed'])} removed, {len(done['placed'])} placed")
         return shot, {"ok": not problems, "problems": problems, "locked": done["locked"],
                       "removed": done["removed"], "placed": done["placed"], "dragged": done["placed"],
@@ -388,9 +521,32 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
     async def setup(shot, entry, variant_name, variant, names, card_font, shapes, recovery_only=False):
         if switch() != "real":
             return await run(shot, entry, variant_name, variant, names, card_font, shapes, recovery_only)
+        # A newly requested weapon supersedes the current intent, but it
+        # must not erase an unfinished recipe belonging to another weapon.
+        # Archives contain independent records, never nested archive maps.
+        pending = copy.deepcopy(recovery.get("pending_by_weapon") or {})
+        previous_id = recovery.get("weapon_id")
+        different = previous_id not in (None, entry["id"])
+        archived = pending.get(str(entry["id"])) if different else None
+        if recovery_only and different and recovery.get("required") and archived is None:
+            raise Stop("gravure interrompue : la cible de récupération est une autre arme")
+        if different and recovery.get("required"):
+            pending[str(previous_id)] = {key: copy.deepcopy(value) for key, value in recovery.items()
+                                         if key != "pending_by_weapon"}
+        if recovery_only and archived is not None:
+            recovery.clear()
+            recovery.update(copy.deepcopy(archived))
+        if recovery_only:
+            recipe = recovery.get("recipe") or {}
+            if recipe.get("weapon_id") == entry["id"]:
+                variant_name, variant = recipe["name"], copy.deepcopy(recipe["variant"])
+        changes = {"pending_by_weapon": pending}
+        if variant is not None:
+            changes["recipe"] = {"weapon_id": entry["id"], "name": variant_name,
+                                 "variant": copy.deepcopy(variant)}
         remember_state(required=bool(recovery.get("required")), phase="recovering" if recovery_only else "applying",
                        weapon_id=entry["id"], variant=variant_name, locks_verified=False, verified=False,
-                       error=None)
+                       completion_verified=False, error=None, **changes)
         task = asyncio.current_task()
         active[0] = task
         try:
@@ -402,8 +558,14 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
         finally:
             if active[0] is task:
                 active[0] = None
-        remember_state(required=False, phase="recovered" if recovery_only else "verified" if result[1]["ok"] else "failed",
-                       verified=bool(result[1]["ok"] and not recovery_only), locks_verified=True)
+        if result[1]["ok"] and variant is not None:
+            pending = copy.deepcopy(recovery.get("pending_by_weapon") or {})
+            pending.pop(str(entry["id"]), None)
+            remember_state(pending_by_weapon=pending)
+        remember_state(required=(not result[1]["ok"] or
+                                 (recovery_only and variant is None and bool(recovery.get("required")))),
+                       phase=("recovered" if recovery_only else "verified") if result[1]["ok"] else "failed",
+                       verified=bool(result[1]["ok"] and variant is not None), locks_verified=True)
         return result
 
     def cancel():
@@ -412,5 +574,5 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
             task.cancel()
 
     setup.cancel = cancel
-    setup.state = lambda: dict(recovery)
+    setup.state = lambda: copy.deepcopy(recovery)
     return setup

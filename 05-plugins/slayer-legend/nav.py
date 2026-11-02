@@ -60,11 +60,16 @@ def _needs(screen, move, x, y, seen):
     if needs.get("reduced_battle"):
         look = seen.get("look") or {}
         overlays = set(look.get("overlays") or [])
+        # A specifically recognised matching panel is stronger evidence than
+        # the generic panel overlay. Other panel identities still conflict.
+        panel_names = {"panel", "equipment_weapon", screen}
         if (look.get("screen") != "battle" or look.get("plain") is not False
-                or not overlays.intersection(("panel", "equipment_weapon"))
-                or overlays.difference(("panel", "equipment_weapon", "better_weapon_toast"))
+                or not overlays.intersection(panel_names)
+                or overlays.difference(panel_names | {"better_weapon_toast"})
                 or seen.get("combat_visible") is not True):
             return f"{where} needs a fresh reduced battle with uncovered central combat"
+    if "active_tab" in needs and seen.get("active_tab") != needs["active_tab"]:
+        return f"{where} needs the freshly active bottom tab {needs['active_tab']!r}"
     if "tag" in needs and seen.get("tag") != needs["tag"]:
         return f"{where} needs the tag read {needs['tag']!r}, not {seen.get('tag')!r}"
     if needs.get("selected_is_target") and (not seen.get("selected") or seen.get("selected") != seen.get("target")):
@@ -76,7 +81,7 @@ def _needs(screen, move, x, y, seen):
     return None
 
 
-def guard(screen, move_id, x=None, y=None, kind="tap", verified=False, seen=None):
+def validate(screen, move_id, x=None, y=None, kind="tap", verified=False, seen=None):
     """None when the action may be done, else why not. x and y are where it
     lands (fractions); kind is tap, hold, swipe (x, y: its start) or key.
     verified says the caller checked the move's precondition, if it has one;
@@ -110,6 +115,45 @@ def guard(screen, move_id, x=None, y=None, kind="tap", verified=False, seen=None
     return _needs(screen, move, x, y, seen)
 
 
+ENGRAVING_ACTIONS = frozenset({
+    ("soul_weapon_engraving", "lock"),
+    ("soul_weapon_engraving_piece", "padlock"),
+    ("soul_weapon_engraving_preview", "rotate"),
+    ("soul_weapon_engraving_preview", "confirm"),
+})
+
+
+SOUL_WEAPON_ACTIONS = frozenset({("soul_weapon", "equip")})
+
+def action_allowed(screen, move_id):
+    """Policy preflight only; never substitutes for guard's fresh geometry."""
+    move = next((item for item in connections(screen) if item["id"] == move_id), None)
+    return bool(move and not move.get("forbidden")
+                and (move.get("semantic_kind") in ("navigation", "draggable")
+                     or (move.get("semantic_kind") == "action"
+                         and (screen, move_id) in ENGRAVING_ACTIONS | SOUL_WEAPON_ACTIONS)))
+
+
+def guard(screen, move_id, x=None, y=None, kind="tap", verified=False, seen=None):
+    """Validate calibrated navigation, then enforce the user's action pause.
+
+    Only the four engraving finishing actions and the configured Soul Weapon
+    Equip action are exempt from the action pause.
+    Their calibrated preconditions and geometry still pass through validate().
+    Pink draggables retain all existing shape, identity and forbidden checks;
+    debug annotations never grant permission to an unknown move.
+    """
+    refusal = validate(screen, move_id, x, y, kind, verified, seen)
+    if refusal:
+        return refusal
+    move = next(item for item in connections(screen) if item["id"] == move_id)
+    if move.get("semantic_kind") not in ("navigation", "action", "draggable"):
+        return f"{screen}/{move_id} is forbidden: move semantics are not classified"
+    if not action_allowed(screen, move_id):
+        return f"{screen}/{move_id} is forbidden: action buttons are paused by the user"
+    return None
+
+
 def check():
     """Problems in the graph: moves to unknown screens, forbidden moves
     without a reason, allowed moves whose place touches a forbidden one."""
@@ -127,10 +171,11 @@ def check():
             # A move that needs a reading is checked with one that meets it.
             needs = move.get("needs") or {}
             seen = {"tags": [], "tag": needs.get("tag"), "selected": "target", "target": "target",
+                    "active_tab": needs.get("active_tab"),
                     "tag_box": [point[0] - 0.01, point[1] - 0.01, point[0] + 0.01, point[1] + 0.01]} if point else None
             if point and needs.get("reduced_battle"):
                 seen.update(look={"screen": "battle", "plain": False, "overlays": ["panel"]}, combat_visible=True)
-            why = point and guard(name, move["id"], point[0], point[1], kind, verified=True, seen=seen)
+            why = point and validate(name, move["id"], point[0], point[1], kind, verified=True, seen=seen)
             if why:
                 problems.append(f"{name}/{move['id']}: {why}")
     return problems

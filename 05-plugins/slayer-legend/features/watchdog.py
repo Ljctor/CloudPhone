@@ -73,7 +73,7 @@ FARMING = {"stage_change": "stage_change", "select_preset": "preset"}
 # Seconds between two readings of the preset (each an unfold).
 CONTROLS_EVERY = 300
 # The farming modes (their own stage and preset).
-FARMED = ("mpw18", "mpw4")
+FARMED = ("mpw18", "mpw4", "soul")
 
 
 def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, loadout, farming=None, gold=None):
@@ -86,10 +86,10 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
     memory = rules.fresh(ports.store.saved.get("watchdog"))
     status = {"text": ports.t("Démarrage"), "symptom": None, "paused": None, "repairing": None,
               "mode": None, "ended_at": None, "resumed": False, "anr_waited": False, "controls": None,
-              "intention": None, "redirect_episode": None, "input_stamp": None, "gold": rules.gold_fresh(),
+              "intention": None, "redirect_episode": None, "failure_notices": {}, "gold": rules.gold_fresh(),
               "bar": rules.bar_fresh(), "relaunched_at": None}
     parking = bool(farming) and "park" in farming
-    available = AVAILABLE + (tuple(FARMING) if farming else ()) + (("park",) if parking else ())
+    available = AVAILABLE + (tuple(FARMING) + ("loadout",) if farming else ()) + (("park",) if parking else ())
     ports.store.register("watchdog", lambda: rules.persisted(memory))
 
     def forget_controls(why):
@@ -131,6 +131,8 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
     def naming(shot):
         """The screen the look names (its stage and progress bar are the
         scan's: features/game.py), and whether the battle shows plain."""
+        if farming and farming.get("engraving_open", lambda shot: False)(shot):
+            return "engraving", "Soul Weapon Engraving", False
         name = screens.classify(shot)
         known = screens.known_name(shot) if name == "other" else None
         if known:
@@ -155,6 +157,8 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                 readings.get("progress") if name == "parked" or plain else None, named)
 
     def facts(shot):
+        if farming and farming.get("engraving_open", lambda shot: False)(shot):
+            return "engraving", None, None, None, "Soul Weapon Engraving"
         name = screens.classify(shot)
         known = screens.known_name(shot) if name == "other" else None
         if known:
@@ -247,13 +251,16 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             memory, actions = rules.stopped(memory, kind, ports.clock.wall(), random.uniform(-1.0, 1.0), name)
             # Why it stopped, with the backoff's alert (if it is one).
             notify = any(action[4] for action in actions)
-            text = say("warning", "Action stopped: {repair}; {why}",
-                       {"repair": rules.REPAIR_NAMES[kind], "why": answer["text_t"]}, notify=notify)
+            failure_key = json.dumps({"target": part, "reason": answer["text_t"]}, sort_keys=True)
+            notify = notify or status["failure_notices"].get(kind) != failure_key
+            say("warning", "Action stopped: {repair}; {why}",
+                {"repair": rules.REPAIR_NAMES[kind], "why": answer["text_t"]})
             if notify:
-                await ports.notify(text)
+                await ports.notify(ports.english(rules.blocked_notice(name, answer["text_t"])))
+                status["failure_notices"][kind] = failure_key
             await notify_all([(*action[:4], False) for action in actions])
-        elif answer["result"] == "done":
-            modes["confirm"](name)
+        elif answer["result"] == "done" and answer.get("verified_setup"):
+            modes["confirm"](name, verified_setup=True)
         elif answer["result"] == "plan":
             memory = rules.not_run(memory, kind)
             say("normal", "Plan only: {repair}: {plan}", {"repair": rules.REPAIR_NAMES[kind], "plan": answer["text_t"]})
@@ -328,12 +335,9 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         name = mode_now()
         now, wall = ports.clock.monotonic(), ports.clock.wall()
         last = await ports.user_input()  # only an input with the game in front
-        stamp = last.get("monotonic") if last else None
-        if stamp is not None and stamp != status["input_stamp"]:
-            status["input_stamp"] = stamp
-            status["redirect_episode"] = None
         if name != status["mode"]:
             status["redirect_episode"] = None
+            status["failure_notices"] = {}
             if status["mode"] is not None:
                 # Another mode: its own symptoms, from scratch (the backoff
                 # kept). Look at once, no menu grace; after free play,
@@ -367,6 +371,12 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             show(ports.t("Lancement du jeu en cours"))
             return False
         seen = await look()
+        # A healthy battle/parking frame says nothing about an interrupted
+        # engraving. Keep its durable repair intent visible after a restart.
+        soul = farming.get("soul_weapon_state", lambda: None)() if farming else None
+        recovery = (soul or {}).get("recovery") or {}
+        if name in FARMED and (mode_state.get("state") == "failed" or recovery.get("required")):
+            seen["loadout"] = ports.t("configuration demandée non vérifiée")
         if seen["anr"]:
             await wait_anr()
         else:
@@ -383,19 +393,25 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             after_mode)
         status["resumed"] = False
         status["symptom"] = symptom
-        if symptom is None:
-            # The next observed healthy screen completes this redirect
-            # episode. Retries before that observation share one notice.
-            status["redirect_episode"] = None
         held = ports.lease.state()
         context = {"input_wall": last["wall"] if last else None,
                    "lease": held["holder"] if held and held["holder"] != "watchdog" else None,
                    "act": {kind: farming["switches"]()[switch] == "real" for kind, switch in FARMING.items()}
                    if farming else {}, "available": available, "jitter": random.uniform(-1.0, 1.0),
                    "mode": name}
+        if farming:
+            context["act"]["loadout"] = (farming.get("soul_weapon_switch", lambda: "off")() == "real"
+                                             and farming.get("engraving_switch", lambda: "off")() == "real"
+                                             and all(farming["switches"]().get(switch) == "real"
+                                                     for switch in FARMING.values()))
         if symptom in (None, "unparked") and name in FARMED:
             modes["confirm"](name)
         memory, actions = rules.decide(memory, symptom, text, params, context, wall)
+        if symptom is None and memory["good"] >= rules.RECOVERED_AFTER:
+            # One transient healthy frame or another input is not a new
+            # redirect episode; a confirmed healthy return is.
+            status["redirect_episode"] = None
+            status["failure_notices"] = {}
         ports.store.save()
         minutes = rules.waiting(memory, symptom, wall)
         if minutes is not None:
@@ -413,8 +429,8 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             nonlocal redirect_notified
             if new_redirect and not redirect_notified:
                 notice = rules.redirect_notice(intention, observed)
-                said = say("normal", notice, notify=True)
-                await ports.notify(said)
+                say("normal", rules.redirect_details(intention, observed))
+                await ports.notify(ports.english(notice))
                 status["redirect_episode"] = redirect_key
                 memory["notified"] = {**memory["notified"], redirect: wall}
                 redirect_notified = True
@@ -424,10 +440,13 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             if action[0] == "record":
                 _, level, text, values, notify = action
                 if notify and new_redirect and not redirect_notified:
-                    text = rules.redirect_notice(rules.redirect_intention(redirect, profile()), ports.t(text, **values) if not ports.is_t(text) else text)
-                    values = None
+                    say("normal", rules.redirect_details(intention, observed))
+                    await ports.notify(ports.english(rules.redirect_notice(intention, observed)))
+                    notify = False
                     redirect_notified = True
                     status["redirect_episode"] = redirect_key
+                elif notify and redirect and not new_redirect:
+                    notify = False
                 said = say(level, text, values, notify)
                 if notify:
                     await ports.notify(said)
@@ -436,10 +455,11 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                 ports.store.save()
                 await relaunch(action[1])
                 repaired = True
-            elif action[0] == "repair" and (action[1] in FARMING or action[1] == "park"):
+            elif action[0] == "repair" and (action[1] in FARMING or action[1] in ("park", "loadout")):
                 await announce_redirect()
                 ports.store.save()
                 await farm_repair(action[1])
+                ports.store.save()
                 repaired = True
             elif action[0] == "plan":
                 say("normal", "Plan only (switch on plan): {repair}", {"repair": rules.REPAIR_NAMES[action[1]]})

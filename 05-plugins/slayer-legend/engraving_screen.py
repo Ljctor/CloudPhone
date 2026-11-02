@@ -586,10 +586,26 @@ def bar(shot):
     width, height, _ = shot
     sx, sy = width / WIDTH, height / HEIGHT
     left, top, right, bottom = BAR_AREA
-    red = [(x, y) for x in range(int(left * sx), int(right * sx)) for y in range(int(top * sy), int(bottom * sy))
-           if _red(_pixel(shot, x, y))]
-    if len(red) < 150:
+    red = {(x, y) for x in range(int(left * sx), int(right * sx)) for y in range(int(top * sy), int(bottom * sy))
+           if _red(_pixel(shot, x, y))}
+    # An invalid crystal pulses pure red too. Its separate component must
+    # not shift the cancel centroid or enlarge the cancel's bounding box.
+    candidates = []
+    while red:
+        seed = red.pop()
+        component, pending = [seed], [seed]
+        while pending:
+            x, y = pending.pop()
+            for neighbour in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+                if neighbour in red:
+                    red.remove(neighbour)
+                    pending.append(neighbour)
+                    component.append(neighbour)
+        if len(component) >= 150 and max(x for x, _ in component) - min(x for x, _ in component) <= 40 * sx:
+            candidates.append(component)
+    if len(candidates) != 1:
         return None
+    red = candidates[0]
     cx, cy = sum(x for x, _ in red) / len(red), sum(y for _, y in red) / len(red)
     if max(x for x, _ in red) - min(x for x, _ in red) > 40 * sx:
         return None
@@ -600,6 +616,33 @@ def bar(shot):
     valid = True if lit >= 100 else False if dim >= 100 and lit < 20 else None
     return {"cancel": (cx / width, cy / height), "rotate": ((cx + step) / width, cy / height),
             "confirm": ((cx + 2 * step) / width, cy / height), "valid": valid}
+
+
+# Red-channel crystal signature on the native 9x9 sampling lattice. The
+# invalid off-grid crystal keeps this structure throughout its blue, dim
+# and red pulse (reviewed eg_relax_preview_* crops). Other channels pulse
+# too far for the ordinary blue/pink test; do not relax that test globally.
+_PULSING_CRYSTAL_RED = ((
+    0, 67, 21, 21, 21, 21, 51, 120, 10, 9, 193, 162, 21, 16, 11, 43, 18, 22,
+    108, 204, 188, 148, 12, 13, 17, 20, 23, 207, 255, 221, 192, 23, 168, 13, 13, 14,
+    255, 255, 244, 237, 204, 161, 99, 99, 64, 17, 17, 9, 6, 200, 61, 0, 22, 31,
+    34, 5, 8, 29, 85, 37, 10, 33, 59, 5, 3, 3, 122, 56, 43, 67, 51, 36, 0,
+    43, 37, 76, 73, 85, 77, 109, 8), (
+    0, 69, 16, 20, 20, 26, 56, 97, 5, 15, 195, 161, 21, 18, 11, 45, 22, 21,
+    117, 204, 184, 132, 12, 13, 16, 20, 23, 209, 255, 217, 194, 13, 165, 13, 13, 14,
+    255, 255, 246, 238, 198, 141, 87, 87, 56, 17, 17, 10, 6, 207, 45, 0, 18, 30,
+    29, 5, 8, 30, 80, 45, 8, 32, 61, 10, 3, 3, 115, 54, 44, 72, 48, 37, 0,
+    41, 35, 75, 72, 84, 76, 111, 5), (
+    21, 66, 19, 20, 20, 24, 56, 106, 10, 18, 191, 161, 22, 18, 11, 39, 19, 9,
+    105, 204, 188, 149, 12, 13, 18, 19, 9, 207, 254, 219, 193, 22, 163, 13, 13, 5,
+    255, 255, 246, 238, 196, 144, 87, 87, 21, 17, 17, 9, 6, 200, 61, 0, 19, 11,
+    33, 5, 8, 27, 87, 42, 6, 32, 22, 11, 4, 3, 116, 56, 43, 69, 49, 14, 17,
+    37, 31, 76, 72, 84, 77, 114, 6))
+
+
+def _pulsing_crystal(samples):
+    return (tuple(pixel[0] for pixel in samples) in _PULSING_CRYSTAL_RED
+            and sum(r > 150 and r > g + 30 for r, g, b in samples) >= 8)
 
 
 @calibrated
@@ -618,7 +661,7 @@ def cubes(shot):
                        if 0 <= x0 + dx < width and 0 <= y0 + dy < height]
             blue = sum(1 for r, g, b in samples if b > 150 and b > r + 60)
             pink = sum(1 for r, g, b in samples if r > 150 and b > 120 and r > g + 30)
-            if pink >= 8 and blue >= 8:
+            if (pink >= 8 and blue >= 8) or _pulsing_crystal(samples):
                 out[(row, col)] = "red"
             elif blue >= 25:
                 out[(row, col)] = "cube"
@@ -626,12 +669,15 @@ def cubes(shot):
 
 
 def hold_point(cells):
-    """Where to drop a card so that its preview lands on cells (in the
-    card's orientation): their middle, HOLD_ROWS lower."""
+    """Release point for the piece's lower-left bounding anchor.
+
+    Actual T/L/I drags anchor the bounding rectangle, not the touched cube
+    or its centre. The rotation pivot is calibrated separately.
+    """
     rows = [r for r, _ in cells]
     cols = [c for _, c in cells]
-    x, _ = cell_centre(0, (min(cols) + max(cols)) / 2)
-    _, y = cell_centre((min(rows) + max(rows)) / 2 + HOLD_ROWS, 0)
+    x, _ = cell_centre(0, min(cols))
+    _, y = cell_centre(max(rows) + HOLD_ROWS, 0)
     return x, y
 
 
