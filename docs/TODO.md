@@ -54,8 +54,14 @@ separate milestones. Historical checked items below do not close a new regressio
   a fresh equipment check and invalidation on user input or game relaunch.
 - [x] Recover legacy records without a full recipe from an explicitly matching
   requested target; preserve existing durable recipes and refuse conflicts.
-- [ ] Verify service interruption during actual incomplete engraving, durable
+- [x] Verify service interruption during actual incomplete engraving, durable
   recipe survival, resumed placement and all eight locks after restart.
+  Exercise both the Agent entry point and the farming repair worker; include
+  an interrupted preview and a piece requiring relocking.
+- [x] Keep preview navigation bounds aligned with the calibrated button reader,
+  including a bar below the grid, while preserving strict action verification.
+- [ ] Treat known policy/configuration refusals as actionable blockers instead
+  of retrying them like transient capture or animation failures.
 - [x] Explain an observed preset mismatch before forbidden preset changes;
   check before stage navigation when the preset is already readable.
 - [x] Reject incomplete Gold-maxed recipes before Equip and explain the

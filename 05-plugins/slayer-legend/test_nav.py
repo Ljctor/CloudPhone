@@ -17,6 +17,8 @@ def load(name):
 
 nav = load("nav")
 mine = load("mine")
+engraving = load("engraving_screen")
+fixtures = load("test_fixtures")
 # What a fresh capture of the Soul Weapon screen showed: no tag, or the
 # tag where it was seen (0.09, 0.847).
 CLEAR = {"selected": None, "target": "Ambition", "tag": None, "tag_box": None, "tags": []}
@@ -24,6 +26,20 @@ TAG = [0.03, 0.835, 0.15, 0.86]
 
 
 class Graph(unittest.TestCase):
+    def test_low_preview_bar_stays_within_its_calibrated_reader_area(self):
+        found = engraving.bar(fixtures.screen('eg_preview_bar_below_grid'))
+        self.assertIsNotNone(found)
+        self.assertAlmostEqual(found['cancel'][1], 0.56327534, places=6)
+        self.assertGreater(found['cancel'][1], .56)
+        for move in ('cancel', 'rotate', 'confirm'):
+            with self.subTest(move=move):
+                self.assertIsNone(nav.guard('soul_weapon_engraving_preview', move, *found[move], verified=True))
+                self.assertIn('check first', nav.guard('soul_weapon_engraving_preview', move, *found[move]))
+                self.assertIsNotNone(nav.guard('soul_weapon_engraving_preview', move, .5,
+                                              601 / 1040, verified=True))
+        self.assertIsNotNone(nav.guard('soul_weapon_engraving_preview', 'move', .5,
+                                      found['cancel'][1], kind='swipe', verified=True))
+
     def test_consistent(self):
         self.assertEqual(nav.check(), [])
 
@@ -105,9 +121,10 @@ class Graph(unittest.TestCase):
         self.assertIn(("soul_weapon", "equip", equip), nav.preconditions())
 
     def test_ad_summons(self):
-        # Summons by ad are allowed, the paid ones beside them are not.
+        # The ad button geometry is known, but action buttons are paused.
         for name, y in [("weapon", 0.54), ("accessories", 0.68), ("skill", 0.82)]:
-            self.assertIsNone(nav.guard("shop_summon", f"ad_summon_{name}", 0.88, y))
+            self.assertIsNone(nav.validate("shop_summon", f"ad_summon_{name}", 0.88, y))
+            self.assertIn("paused by the user", nav.guard("shop_summon", f"ad_summon_{name}", 0.88, y))
         self.assertIsNotNone(nav.guard("shop_summon", "ad_summon_weapon", 0.80, 0.54))
 
     def test_precondition(self):
@@ -166,7 +183,8 @@ class Graph(unittest.TestCase):
         self.assertIsNone(nav.guard("battle", "preset_badge", 0.965, 0.405))
         self.assertIn("forbidden", nav.guard("battle", "auto", 0.93, 0.447))
         self.assertIn("forbidden", nav.guard("battle", "auto", 0.93, 0.447, verified=True))
-        self.assertIsNone(nav.guard("battle_settings", "preset", 0.66, 0.305))
+        self.assertIsNone(nav.validate("battle_settings", "preset", 0.66, 0.305))
+        self.assertIn("paused by the user", nav.guard("battle_settings", "preset", 0.66, 0.305))
         self.assertIsNone(nav.guard("battle_settings", "close", 0.09, 0.965))
 
     def test_select_region(self):
@@ -190,13 +208,16 @@ class Graph(unittest.TestCase):
         self.assertIsNone(nav.guard("title", "start", 0.50, 0.836))
         self.assertIsNone(nav.guard("save_notice", "confirm", 0.314, 0.745))
         self.assertIsNone(nav.guard("battle", "quest", 0.94, 0.09))
-        self.assertIsNone(nav.guard("quest_panel", "claim", 0.79, 0.29, verified=True))
+        self.assertIsNone(nav.validate("quest_panel", "claim", 0.79, 0.29, verified=True))
+        self.assertIn("paused by the user", nav.guard("quest_panel", "claim", 0.79, 0.29, verified=True))
         self.assertIsNone(nav.guard("saver", "leave", 0.50, 0.88, "hold"))
         for point in mine.AREA_TAPS:
             self.assertIsNone(nav.guard("mine_area", "area", *point))
         for point in mine.FEATHER_TAPS:
-            self.assertIsNone(nav.guard("mine_feathers", "feathers", *point))
-        self.assertIsNone(nav.guard("mine_fight", "repeat", *mine.REPEAT_TAP))
+            self.assertIsNone(nav.validate("mine_feathers", "feathers", *point))
+            self.assertIn("paused by the user", nav.guard("mine_feathers", "feathers", *point))
+        self.assertIsNone(nav.validate("mine_fight", "repeat", *mine.REPEAT_TAP))
+        self.assertIn("paused by the user", nav.guard("mine_fight", "repeat", *mine.REPEAT_TAP))
         self.assertIsNone(nav.guard("mine_list", "scroll", 0.5, 0.40, "swipe"))
         self.assertIsNone(nav.guard("mine_list", "scroll", 0.5, 0.65, "swipe"))
 

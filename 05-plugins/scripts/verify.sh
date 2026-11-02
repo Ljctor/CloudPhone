@@ -15,6 +15,7 @@ python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engra
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_recovery.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_reuse.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_coverage.py -q
+python3 "$(dirname "$0")/../slayer-legend/test_nav.py" Graph.test_low_preview_bar_stays_within_its_calibrated_reader_area Graph.test_consistent
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_agent_soul_weapon.py -q
 python3 "$(dirname "$0")/../slayer-legend/test_stage_change.py" \
   Sequence.test_recognized_settings_closes_without_changing_preset \

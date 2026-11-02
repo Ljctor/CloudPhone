@@ -1686,7 +1686,7 @@
       0.1,
       0.2,
       0.9,
-      0.56
+      0.5769230769230769
      ],
      "label": "the bar's rotate button: a quarter turn clockwise",
      "precondition": "the fresh capture reads the bar there"
@@ -1713,7 +1713,7 @@
       0.1,
       0.2,
       0.9,
-      0.56
+      0.5769230769230769
      ],
      "label": "the bar's check: places the piece",
      "precondition": "the fresh capture reads the preview on the target cells and the check valid"
@@ -1726,7 +1726,7 @@
       0.1,
       0.2,
       0.9,
-      0.56
+      0.5769230769230769
      ],
      "label": "the bar's red X: drops the preview",
      "precondition": "the fresh capture reads the bar there"
