@@ -7,6 +7,12 @@ Default task: after part 04 converged, install the plugins with
 
 Rules:
 
+- Free play reserves control for the user, including when the game is not
+  in the foreground. An agent must not launch the game, switch to Agent mode,
+  or run gameplay tests merely because the phone appears idle. A general
+  authorization to develop/test/deploy does not override this mode. Use a
+  user-selected Agent mode or an explicit request for the particular takeover;
+  do not interrupt an active user session with a gateway restart for testing.
 - Everything specific to one game or app lives in its plugin directory
   here, never in parts 03–04.
 - A plugin never launches or restarts an app by itself: only on a user's
