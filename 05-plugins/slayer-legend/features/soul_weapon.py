@@ -344,8 +344,9 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
                     raise Stop("Gravure {variant} de {name} invalide : couverture hors motif ou superposée, bonus de complétion indisponible",
                                variant=variant, name=target)
         cache = status["cache"]
+        pending = bool(setup and setup.state().get("required"))
         last_input = (ports.last_input() or {}).get("wall") if hasattr(ports, "last_input") else None
-        if cache and cache["id"] == target_id and cache.get("variant") == variant \
+        if cache and not pending and cache["id"] == target_id and cache.get("variant") == variant \
                 and rules.fresh_cache(cache, ports.clock.wall(), last_input, status["relaunched"]):
             ports.log("normal", f"Soul weapon: {target} equipped (last read), skipped in 0.0 s")
             status["last"] = {"result": "cached", "weapon": target, "seconds": 0.0}
@@ -367,6 +368,13 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
             if moves >= rules.MOST_MOVES:
                 raise Stop("{weapon} pas atteinte en {moves} gestes", weapon=target, moves=rules.MOST_MOVES)
             moves += 1
+            if step[0] == "equip" and entry.get("grid"):
+                if not setup or not callable(getattr(setup, "prepare_equip", None)):
+                    raise Stop("capacité de configuration Soul Weapon indisponible")
+                # Equip removes every engraving piece. Make its exact recipe
+                # durable before Android can receive the destructive transition.
+                # The next game gesture must open engraving under this lease.
+                setup.prepare_equip(entry, variant, engraving["variant"](target_id, variant))
             await move(shot, view, step, target)
             if step[0] == "scroll":
                 memory = rules.scrolled(memory)
@@ -403,6 +411,10 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
         engraved = done["seconds"] if reuse else round(ports.clock.monotonic() - began, 1)
         if done:
             ports.log("normal", f"Soul weapon: engraving step took {engraved} s ({done['gestures']} gestures)")
+        if mismatch:
+            status["last"] = {"result": "failed", "weapon": target,
+                              "seconds": round(ports.clock.monotonic() - since, 1), "engraving_t": mismatch}
+            raise Stop(mismatch)
         # Engraving verifies its selected weapon, not whether that weapon
         # remained equipped. Prove the complete result again before leaving
         # or publishing success; an old view or a badge is insufficient.
@@ -438,8 +450,6 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
                   + (f", engraving {'not ready' if mismatch else 'ready'} in {done['seconds']} s" if done else "")
                   + (f" (over the {BUDGET} s budget)" if over else ""))
         status["last"] = {"result": result, "weapon": target, "seconds": seconds, "engraving_t": mismatch}
-        if mismatch:
-            raise Stop(mismatch)
         status["cache"] = {"id": target_id, "variant": variant, "at": ports.clock.wall()}
         game = getattr(ports, "game", None)
         if game is not None:

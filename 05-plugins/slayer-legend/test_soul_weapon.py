@@ -568,7 +568,7 @@ class Game:
             tasks.append(coroutine)
             return coroutine
 
-        store = SimpleNamespace(saved={}, sections={}, save=lambda: None)
+        store = SimpleNamespace(saved={}, sections={}, save=lambda *, required=False: None)
         store.register = lambda name, snapshot: store.sections.__setitem__(name, snapshot)
         return SimpleNamespace(capture=capture, analyse=analyse, tap=tap, taps=None, swipe=swipe, focused=focused,
                                action_allowed=nav.action_allowed,
@@ -623,11 +623,24 @@ def fake_screens():
                                               "plain": plain(shot), "overlays": [] if plain(shot) else ["panel"]})
 
 
-def build(game, loadout=None, engraving=None, stage_reader=None):
+def equipment_only_table():
+    """Isolate list/navigation tests from engraving-bearing equipment.
+
+    Production catalogue entries retain their grids. Tests using those real
+    entries must supply engraving or assert the executor refuses Equip.
+    """
+    table = copy.deepcopy(TABLE)
+    for entry in table["weapons"]:
+        entry["grid"] = None
+    return table
+
+
+def build(game, loadout=None, engraving=None, stage_reader=None, weapon_table=None):
     ports = game.ports()
     loadouts = loadout or {"mpw18": {"stage": 920, "preset": None, "soul_weapon": {"id": AMBITION, "variant": "Atk"}},
                            "mpw4": {"stage": 915, "preset": None, "soul_weapon": {"id": GRAND - 1, "variant": "Atk"}}}
-    soul = {"feature": feature.soul_weapon, "reader": fake_reader(game), "rules": rules, "table": TABLE,
+    table = weapon_table if weapon_table is not None else TABLE if engraving else equipment_only_table()
+    soul = {"feature": feature.soul_weapon, "reader": fake_reader(game), "rules": rules, "table": table,
             "loadout": lambda mode: loadouts[mode], "engraving": engraving,
             # Equipment-only tests deliberately omit engraving; production
             # injects the complete recipe capability from the loadout feature.
@@ -665,7 +678,7 @@ class RunningSoulSwitch(unittest.IsolatedAsyncioTestCase):
 
         helpers = SimpleNamespace(look=ports.capture, tap=tap, front=ports.focused,
                                   to_battle=ports.capture, Stop=stage_change.Stop)
-        soul = feature.soul_weapon(ports, fake_screens(), fake_reader(game), rules, TABLE, helpers)
+        soul = feature.soul_weapon(ports, fake_screens(), fake_reader(game), rules, equipment_only_table(), helpers)
         running = asyncio.create_task(soul["ensure"](GRAND - 1, park=True))
         await asyncio.wait_for(selected.wait(), 1)
         soul["set_switch"]("off")
@@ -707,6 +720,17 @@ class RunningSoulSwitch(unittest.IsolatedAsyncioTestCase):
 
 
 class Sequence(unittest.TestCase):
+    def test_real_gridded_weapon_without_setup_cannot_be_equipped(self):
+        game = Game(selected=GRAND - 1)
+        self.assertTrue(next(entry for entry in TABLE["weapons"] if entry["id"] == GRAND - 1)["grid"])
+        _, api = build(game, weapon_table=TABLE)
+        answer = asyncio.run(api["soul_weapon"]("mpw4"))
+        self.assertEqual(answer["result"], "failed")
+        self.assertIn("capacité de configuration Soul Weapon indisponible", french(answer["text_t"]))
+        self.assertNotIn(("soul_weapon", "equip"), game.moves)
+        self.assertEqual(game.state["equipped"], AMBITION)
+        self.assertIsNone(api["soul_weapon_state"]()["cached"])
+
     def test_already_equipped_and_cached(self):
         game = Game(selected=GRAND)
         answer, api = equip(game)

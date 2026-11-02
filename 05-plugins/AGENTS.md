@@ -96,6 +96,11 @@ Rules:
       sequence that needs the battle, and when free play or the mine
       starts. Never in free play, the mine, during a switch or its hold,
       nor with the switch `soul_weapon` off.
+  - Before Equip clears the engraving, persist its exact target recipe with
+    a required durable write. A write/fsync failure or a disabled mandatory
+    engraving action refuses Equip. After Equip is confirmed, opening the
+    engraving is the next game gesture under the same lease; interruptions
+    leave recovery pending before stage/preset work.
   - Soul weapon engraving (right after the equip, the card's big icon;
     the step is done, the weapon « prête », only once the grid is the
     loadout's variant with the highest-level cards and all 8 cards read

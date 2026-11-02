@@ -260,18 +260,37 @@ class State:
     def register(self, section, snapshot):
         self.sections[section] = snapshot
 
-    def save(self):
+    def save(self, *, required=False):
+        """Critical game transitions require a durable write or an exception.
+
+        Ordinary observations retain the existing best-effort behavior. A
+        required write also flushes the file and renamed directory entry;
+        callers must not send the dependent game input if either fails.
+        """
         if not self.path:
+            if required:
+                raise OSError("Required state storage is unavailable")
             return
         text = json.dumps({section: snapshot() for section, snapshot in self.sections.items()}, sort_keys=True)
-        if text == self.text:
+        if text == self.text and not required:
             return
         try:
             with open(f"{self.path}.tmp", "w", encoding="utf-8") as f:
                 f.write(text)
+                if required:
+                    f.flush()
+                    os.fsync(f.fileno())
             os.replace(f"{self.path}.tmp", self.path)
+            if required:
+                descriptor = os.open(self.data_dir, os.O_RDONLY | os.O_DIRECTORY)
+                try:
+                    os.fsync(descriptor)
+                finally:
+                    os.close(descriptor)
             self.text = text
         except OSError as e:
+            if required:
+                raise
             self.log("warning", f"State not kept: {e}")
 
     def flush(self):

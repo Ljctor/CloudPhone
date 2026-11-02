@@ -28,6 +28,7 @@ class RecoveryReuse(unittest.IsolatedAsyncioTestCase):
                     after_recovery()
                 return result
             setup.state, setup.cancel = actual.state, actual.cancel
+            setup.prepare_equip = actual.prepare_equip
             return setup
         part = {"setup": factory, "screen": sw.fake_engraving_screen(game), "rules": sw.setup_rules,
                 "variant": lambda weapon, name: sw.engraving_rules.variants(

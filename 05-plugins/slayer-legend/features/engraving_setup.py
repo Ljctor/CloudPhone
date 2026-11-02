@@ -89,9 +89,49 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
     recovery = copy.deepcopy(ports.store.saved.get("engraving_recovery") or {})
     ports.store.register("engraving_recovery", lambda: dict(recovery))
 
-    def remember_state(**changes):
+    def remember_state(durable=False, **changes):
         recovery.update(changes, at=ports.clock.wall())
-        ports.store.save()
+        if durable:
+            try:
+                ports.store.save(required=True)
+            except OSError as exc:
+                raise Stop("Erreur : {error}", error=f"Engraving recovery not persisted: {exc}") from exc
+        else:
+            ports.store.save()
+
+    def prepare_equip(entry, variant_name, variant):
+        """Equip clears the grid. Persist its mandatory repair BEFORE that tap.
+
+        No await belongs between this write and the caller's guarded Equip.
+        A failed/ambiguous tap deliberately leaves the intent pending: a fresh
+        read must decide whether the weapon changed, never a historical receipt.
+        """
+        require_enabled()
+        if not variant_name or not variant:
+            raise Stop("Gravure de {name} : variante {variant} inconnue",
+                       name=entry["name"], variant=variant_name or "")
+        if entry.get("grid") != 5:
+            raise Stop("grille {size}x{size} pas encore calibrée", size=entry.get("grid"))
+        if not all(getattr(screen, gate, False) for gate in
+                   ("PADLOCK_LEARNED", "POPUP_LEARNED", "PREVIEW_LEARNED")):
+            raise Stop("lectures de la gravure pas calibrées, rien n’a bougé")
+        require_followups(("soul_weapon", "engraving"),
+                          ("soul_weapon_engraving", "drag_piece"),
+                          ("soul_weapon_engraving", "lock"),
+                          ("soul_weapon_engraving_piece", "padlock"),
+                          ("soul_weapon_engraving_preview", "rotate"),
+                          ("soul_weapon_engraving_preview", "confirm"),
+                          ("soul_weapon_engraving_preview", "cancel"))
+        pending = copy.deepcopy(recovery.get("pending_by_weapon") or {})
+        previous_id = recovery.get("weapon_id")
+        if previous_id not in (None, entry["id"]) and recovery.get("required"):
+            pending[str(previous_id)] = {key: copy.deepcopy(value) for key, value in recovery.items()
+                                         if key != "pending_by_weapon"}
+        remember_state(durable=True, required=True, phase="equip_pending", weapon_id=entry["id"],
+                       variant=variant_name, verified=False, locks_verified=False,
+                       completion_verified=False, error=None, pending_by_weapon=pending,
+                       recipe={"weapon_id": entry["id"], "name": variant_name,
+                               "variant": copy.deepcopy(variant)})
 
     def read(shot, size, shapes):
         return {"grid": screen.grid(shot, size), "cards": screen.cards(shot, shapes)}
@@ -607,4 +647,5 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
 
     setup.cancel = cancel
     setup.state = lambda: copy.deepcopy(recovery)
+    setup.prepare_equip = prepare_equip
     return setup

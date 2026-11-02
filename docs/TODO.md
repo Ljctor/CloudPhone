@@ -35,6 +35,12 @@ separate milestones. Historical checked items below do not close a new regressio
 
 ### Engraving completion and motion acceptance
 
+- [x] Persist the exact engraving recipe durably before Equip clears its pieces;
+  refuse Equip if persistence or mandatory engraving actions are unavailable.
+  Keep recovery pending across cancellation inside Equip and resume it before
+  stage/preset work. The next game gesture after confirmed Equip opens engraving.
+- [ ] Verify the new pre-Equip durability path on an actual weapon switch,
+  followed immediately by full placement and eight verified locks.
 - [x] Separate the lower-left release anchor from the rotation pivot. Reviewed
   native captures calibrate T and L pivots at (1, 0), I at (2, 0), in each
   normalized base shape. Compute the initial drop before rotating; verify the
