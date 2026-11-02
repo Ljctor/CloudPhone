@@ -206,7 +206,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
             return "engraving"
         return screens.open_tab(shot)
 
-    async def to_battle(may_tap=True):
+    async def to_battle(may_tap=True, recovery_target=None):
         """A fresh look at the battle screen with nothing over it, waiting
         up to SETTLE for it (a screen passing by, a toast sliding in): a
         bottom panel open is closed with its own tab, only when that tab
@@ -233,7 +233,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
             # A timed-out opening may finish after the previous attempt.
             # Recover the identified engraving, including all eight locks,
             # before any stage/preset navigation in this existing lease.
-            await souls["recover_engraving"](shot)
+            await souls["recover_engraving"](shot, target=recovery_target)
             shot, seen = await settle(battle_or_panel)
         if seen == "parked":
             if not may_tap:
@@ -266,7 +266,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
             raise Stop("fermeture du panneau du menu du bas")
         return shot
 
-    async def change_stage(target):
+    async def change_stage(target, recovery_target=None):
         if not rules.supported(target, names):
             raise Stop("stage {stage} hors des régions connues", stage=target)
         shot = await look()
@@ -277,7 +277,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         # panel or tap the battle map through this overlay.
         view = await ports.analyse(select.view, shot, names)
         if not view["popup"]:
-            shot = await to_battle(real("stage_change"))
+            shot = await to_battle(real("stage_change"), recovery_target=recovery_target)
             seen = await ports.analyse(select.battle_stage, shot, names)
             if seen == target:
                 return
@@ -360,17 +360,44 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
     async def badge_of(first, second):
         return (await ports.analyse(controls.badge, first)) or (await ports.analyse(controls.badge, second))
 
+    def preset_policy(name, seen):
+        """Only a read mismatch requires permission to change a preset."""
+        allowed = getattr(ports, "action_allowed", lambda screen, move: False)
+        if seen is not None and seen != name and not allowed("battle_settings", "preset"):
+            raise Stop("Préréglage {wanted} demandé, {seen} lu : changement bloqué, actions en pause",
+                       wanted=name, seen=seen)
+
+    async def preflight_preset(name):
+        """Read an already accessible preset before stage navigation.
+        An unread badge is unknown, never evidence that a change is needed.
+        The regular preset step will read it after unfolding under the lease.
+        """
+        if not name or not real("preset"):
+            return
+        shot = await look()
+        if await ports.analyse(controls.settings_open, shot):
+            seen = await ports.analyse(controls.selected, shot)
+        elif await ports.analyse(screens.plain_battle, shot) or parked(shot):
+            seen = await ports.analyse(controls.badge, shot)
+        else:
+            return
+        preset_policy(name, seen)
+
     async def set_preset(name):
         if not real("preset"):
             raise Plan("préréglage de combat {preset} : badge, Battle settings, {preset}, fermer", preset=name)
         first, second = await controls_look()
-        if await badge_of(first, second) == name:
+        seen = await badge_of(first, second)
+        if seen == name:
             return
+        preset_policy(name, seen)
         await unfold(await folded_battle(), ("preset_badge", controls.BADGE_TAP))
         shot, opened = await settle(controls.settings_open)
         if not opened:
             raise Stop("ouverture de Battle settings")
-        if await ports.analyse(controls.selected, shot) != name:
+        seen = await ports.analyse(controls.selected, shot)
+        if seen != name:
+            preset_policy(name, seen)
             await tap(shot, "battle_settings", "preset", controls.preset_tap(name))
             shot, chosen = await settle(controls.selected, accept=lambda v: v == name)
             if chosen != name:
@@ -527,7 +554,9 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         # can stop the full transaction. This stays inside the same lease.
         steps = ([("engraving_recovery", lambda: equip_soul_weapon(mode, target))]
                  if recovery.get("required") else [])
-        steps.append(("stage", lambda: change_stage(stage)))
+        if preset:
+            steps.append(("preset_preflight", lambda: preflight_preset(preset)))
+        steps.append(("stage", lambda: change_stage(stage, (target or {}).get("soul_weapon"))))
         if preset:
             steps.append(("preset", lambda: set_preset(preset)))
         steps += soul_steps(mode)
@@ -603,11 +632,15 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         input_mark = copy.deepcopy(ports.last_input()) if callable(getattr(ports, "last_input", None)) else None
 
         def guard():
-            if (not ports.enabled() or not agent_context[0]() or not revision
-                    or revision(name) != body["if_revision"] or soul["loadout"](name) != target
-                    or not (target or {}).get("soul_weapon")
-                    or (callable(getattr(ports, "last_input", None)) and ports.last_input() != input_mark)):
-                raise Stop("Test Soul Weapon interrompu : mode Agent ou configuration modifiés")
+            if not ports.enabled():
+                raise Stop("Test Soul Weapon arrêté : plugin désactivé")
+            if callable(getattr(ports, "last_input", None)) and ports.last_input() != input_mark:
+                raise Stop("Test Soul Weapon arrêté : vous avez repris la main")
+            if not agent_context[0]():
+                raise Stop("Test Soul Weapon arrêté : mode Agent indisponible")
+            if (not revision or revision(name) != body["if_revision"]
+                    or soul["loadout"](name) != target or not (target or {}).get("soul_weapon")):
+                raise Stop("Test Soul Weapon arrêté : configuration modifiée")
 
         try:
             guard()

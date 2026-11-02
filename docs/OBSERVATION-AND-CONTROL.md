@@ -71,6 +71,20 @@ son résultat sur une nouvelle capture. Pour la gravure, cela comprend l'identit
 de l'arme, les cellules occupées et les cadenas. Un échec conserve le besoin de
 récupération et ne devient pas silencieusement un état « prêt ».
 
+La reprise utilise d'abord la recette durable liée à l'arme reconnue. Un ancien
+enregistrement sans recette ne suffit pas à inventer un placement : seule une
+cible explicitement fournie, avec la même arme et la même variante, peut le
+compléter. Une recette durable existante reste prioritaire. Une réparation
+réussie de la gravure ne prouve pas que le stage et le preset de combat sont
+corrects ; ces résultats doivent rester distincts dans les options.
+
+Le support géométrique d'une variante et l'autorisation d'exécuter une action
+sont également distincts. Un preset déjà correct ne nécessite aucun changement.
+Un écart fraîchement lu face à une action suspendue produit un refus explicite
+avant d'ouvrir Battle Settings ; si l'écart est déjà lisible au départ, il est
+signalé avant le changement de stage. La réparation d'une gravure incomplète
+reste prioritaire pour rétablir son bonus de complétion.
+
 La cadence nominale de capture est de 0,5 seconde après activité humaine et de
 1,5 seconde quand le jeu au premier plan est stable. La durée réelle de capture
 s'ajoute à cet intervalle. Hors jeu, les sondes ralentissent. Les lecteurs gardent

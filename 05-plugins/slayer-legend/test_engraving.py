@@ -528,9 +528,10 @@ class Loadout(unittest.TestCase):
                  "mpw4": {"stage": "x", "preset": "II", "soul_weapon": {"id": 32, "variant": "Nope"}}}
         self.assertEqual(rules.kept_loadouts(saved, TABLE),
                          {"mpw18": {"stage": 920, "preset": "III", "soul_weapon": {"id": 32, "variant": "Crit"}},
-                          "mpw4": {"stage": None, "preset": "II", "soul_weapon": None}})
+                          "mpw4": {"stage": None, "preset": "II", "soul_weapon": None},
+                          "soul": rules.empty_loadout()})
         empty = rules.empty_loadout()
-        self.assertEqual(rules.kept_loadouts(None, TABLE), {"mpw18": empty, "mpw4": empty})
+        self.assertEqual(rules.kept_loadouts(None, TABLE), {"mpw18": empty, "mpw4": empty, "soul": empty})
 
 
 class Request:
@@ -593,7 +594,8 @@ class Routes(unittest.TestCase):
             empty = {"stage": None, "preset": None, "soul_weapon": None, "weapon": None, "placeable": None,
                      "revision": load("features/engraving").revision({"stage": None, "preset": None, "soul_weapon": None}),
                      "automation": rules.automation(None, TABLE)}
-            self.assertEqual(call("GET", "/loadout", Request()).body, {"loadouts": {"mpw18": empty, "mpw4": empty}})
+            self.assertEqual(call("GET", "/loadout", Request()).body,
+                             {"loadouts": {"mpw18": empty, "mpw4": empty, "soul": empty}})
             body = {"mode": "mpw18", "preset": "III", "soul_weapon": {"id": 32, "variant": "Gold-maxed"}}
             self.assertEqual(call("POST", "/loadout", Request(body)).status, 200)
             refused = call("POST", "/loadout", Request({"mode": "mpw4", "soul_weapon": {"id": 32, "variant": "Atk"}}))
@@ -616,7 +618,7 @@ class Routes(unittest.TestCase):
                              {"mpw18": {"stage": 940, "preset": "III", "soul_weapon": {"id": 32, "variant": "Gold-maxed"},
                                         "revision": load("features/engraving").revision({"stage": 940, "preset": "III", "soul_weapon": {"id": 32, "variant": "Gold-maxed"}}),
                                         "weapon": "Ambition", "placeable": True,
-                                        "automation": rules.automation(32, TABLE, True, "Gold-maxed")}, "mpw4": empty})
+                                        "automation": rules.automation(32, TABLE, True, "Gold-maxed")}, "mpw4": empty, "soul": empty})
             self.assertEqual(again("GET", "/mode", Request()).body["stage18"], 940)
 
     def test_stale_browser_cannot_overwrite_another_target_or_stage_change(self):

@@ -14,8 +14,13 @@ python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engra
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_geometry.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_recovery.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_reuse.py -q
+python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_coverage.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_agent_soul_weapon.py -q
-python3 "$(dirname "$0")/../slayer-legend/test_stage_change.py" Sequence.test_recognized_settings_closes_without_changing_preset
+python3 "$(dirname "$0")/../slayer-legend/test_stage_change.py" \
+  Sequence.test_recognized_settings_closes_without_changing_preset \
+  Sequence.test_accessible_preset_mismatch_stops_before_stage_navigation \
+  Sequence.test_correct_visible_preset_does_not_block_stage_change \
+  Sequence.test_unread_preset_is_not_treated_as_a_known_mismatch_before_stage
 python3 "$(dirname "$0")/../slayer-legend/test_watchdog.py" \
   GoldTrigger.test_persisted_incomplete_grid_is_repaired_with_backoff_even_when_parked \
   GoldTrigger.test_failed_setup_only_clears_after_full_verified_transaction \

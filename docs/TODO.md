@@ -52,6 +52,14 @@ separate milestones. Historical checked items below do not close a new regressio
   window, without permitting gestures on unknown or mismatched identities.
 - [x] Reuse matching engraving recovery within the same setup call, retaining
   a fresh equipment check and invalidation on user input or game relaunch.
+- [x] Recover legacy records without a full recipe from an explicitly matching
+  requested target; preserve existing durable recipes and refuse conflicts.
+- [ ] Verify service interruption during actual incomplete engraving, durable
+  recipe survival, resumed placement and all eight locks after restart.
+- [x] Explain an observed preset mismatch before forbidden preset changes;
+  check before stage navigation when the preset is already readable.
+- [x] Reject incomplete Gold-maxed recipes before Equip and explain the
+  missing completion bonus; preserve selection and never substitute a variant.
 - [ ] Calibrate O, mirrored L and both zigzag shapes when available. Their
   absence must not be replaced by an assumed pivot or an unverified gesture.
 - [ ] Add a verified previous-loadout fallback if repeated target repair fails.

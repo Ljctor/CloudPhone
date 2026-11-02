@@ -349,6 +349,13 @@
   "vérification finale de l’équipement (lu : {name}, {tag})": "final equipment verification (read: {name}, {tag})",
   "gravure : pivot non calibré pour {shape}": "Engraving: rotation pivot not calibrated for {shape}",
   "gravure : récupération requise, grille incomplète ou illisible": "Engraving incomplete: recovery required",
-  "Test Soul Weapon interrompu : mode Agent ou configuration modifiés": "Soul Weapon test stopped: Agent mode or configuration changed",
+  "Test Soul Weapon arrêté : plugin désactivé": "Soul Weapon test stopped: plugin disabled",
+  "Test Soul Weapon arrêté : vous avez repris la main": "Soul Weapon test stopped: you took control",
+  "Test Soul Weapon arrêté : mode Agent indisponible": "Soul Weapon test stopped: Agent mode unavailable",
+  "Test Soul Weapon arrêté : configuration modifiée": "Soul Weapon test stopped: configuration changed",
+  "Préréglage {wanted} demandé, {seen} lu : changement bloqué, actions en pause": "Preset {wanted} requested, {seen} observed: change blocked while actions are paused",
+  "gravure interrompue : ancienne cible différente de la configuration demandée": "Engraving interrupted: saved target differs from requested configuration",
+  "Gravure {variant} de {name} incomplète : {count} case(s) manquante(s), bonus de complétion indisponible": "Engraving {variant} of {name} is incomplete: {count} missing cell(s); completion bonus unavailable",
+  "Gravure {variant} de {name} invalide : couverture hors motif ou superposée, bonus de complétion indisponible": "Engraving {variant} of {name} is invalid: outside or overlapping cells; completion bonus unavailable",
   "fermer Battle settings": "close Battle settings"
 }

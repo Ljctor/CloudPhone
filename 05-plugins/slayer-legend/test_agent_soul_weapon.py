@@ -75,10 +75,11 @@ class AgentSoulWeapon(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.game.leases, [])
 
     async def test_agent_exit_target_revision_or_input_change_interrupts(self):
-        for interrupt in (lambda: setattr(self, "agent", False),
-                          lambda: self.target["soul_weapon"].update(id=45),
-                          lambda: setattr(self, "revision", "changed"),
-                          lambda: setattr(self, "input", {"wall": 123, "monotonic": 10})):
+        for interrupt, reason in (
+                (lambda: setattr(self, "agent", False), "mode Agent indisponible"),
+                (lambda: self.target["soul_weapon"].update(id=45), "configuration modifiée"),
+                (lambda: setattr(self, "revision", "changed"), "configuration modifiée"),
+                (lambda: setattr(self, "input", {"wall": 123, "monotonic": 10}), "vous avez repris la main")):
             self.build()
             self.interrupt = interrupt
             status, answer = await self.request()
@@ -86,6 +87,7 @@ class AgentSoulWeapon(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(answer["result"], "failed")
             self.assertFalse(answer["verified_weapon"])
             self.assertNotIn("verified_setup", answer)
+            self.assertIn(reason, answer["text_t"]["template"])
 
     async def test_shared_lease_is_respected(self):
         self.build()
@@ -143,7 +145,8 @@ class FarmRecoveryBeforePreset(unittest.IsolatedAsyncioTestCase):
         answer = await part["api"]["farm"](920, "IV", "mpw18")
         self.assertEqual(answer["result"], "failed")
         self.assertFalse(answer["verified_setup"])
-        self.assertIn("paused by the user", sw.french(answer["text_t"]))
+        self.assertEqual(sw.french(answer["text_t"]),
+                         "Préréglage IV demandé, II lu : changement bloqué, actions en pause")
         expected = sorted(sorted(map(tuple, piece["cells"]))
                           for piece in sw.VISION_VARIANTS["Gold-balanced"]["pieces"])
         self.assertEqual(sorted(game.state["engraving"]["pieces"].values()), expected)
@@ -152,8 +155,9 @@ class FarmRecoveryBeforePreset(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(recovery["verified"])
         self.assertFalse(recovery["required"])
         self.assertNotIn(("battle_settings", "preset"), game.moves)
-        self.assertLess(game.moves.index(("soul_weapon_engraving", "close")),
-                        game.moves.index(("battle", "preset_badge")))
+        self.assertIn(("soul_weapon_engraving", "close"), game.moves)
+        self.assertNotIn(("battle", "preset_badge"), game.moves)
+        self.assertNotIn("stage", answer["timings"], "fresh mismatch blocks before stage navigation")
         self.assertEqual(game.leases, [("stage_change", "farm mpw18")])
 
 

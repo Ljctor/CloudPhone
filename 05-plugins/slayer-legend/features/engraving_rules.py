@@ -517,6 +517,15 @@ def automation(weapon_id, table, rotate=False, variant=None):
                                             name=entry["name"], variant=variant))
     if variant is not None and not choices[variant]["placeable"]:
         return result("unsupported_variant", t("à poser : {piece} (rotation pas apprise)", piece=variant))
+    if variant is not None:
+        coverage = check(entry["cells"], [piece["cells"] for piece in choices[variant]["pieces"]])
+        if not coverage["complete"]:
+            reason = (t("Gravure {variant} de {name} incomplète : {count} case(s) manquante(s), bonus de complétion indisponible",
+                        variant=variant, name=entry["name"], count=len(coverage["missing"]))
+                      if coverage["missing"] else
+                      t("Gravure {variant} de {name} invalide : couverture hors motif ou superposée, bonus de complétion indisponible",
+                        variant=variant, name=entry["name"]))
+            return result("incomplete_variant", reason)
     return result("supported")
 
 

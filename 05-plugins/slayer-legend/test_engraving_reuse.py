@@ -30,7 +30,8 @@ class RecoveryReuse(unittest.IsolatedAsyncioTestCase):
             setup.state, setup.cancel = actual.state, actual.cancel
             return setup
         part = {"setup": factory, "screen": sw.fake_engraving_screen(game), "rules": sw.setup_rules,
-                "variant": lambda weapon, name: sw.VISION_VARIANTS.get(name)}
+                "variant": lambda weapon, name: sw.engraving_rules.variants(
+                    sw.engraving_rules.weapon_by_id(weapon, sw.TABLE), True).get(name)}
         target = {"mpw18": {"stage": 920, "preset": None,
                             "soul_weapon": {"id": weapon or sw.VISION_ID, "variant": variant}}}
         _, api = sw.build(game, target, part)

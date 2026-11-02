@@ -358,25 +358,50 @@ class Sequence(unittest.TestCase):
         self.assertNotIn("auto", game.timings)
         self.assertNotIn("ensure_auto", feature.stage_change(game.ports(), *readers(game), rules, TABLE)["api"])
 
-    def test_unfold_and_badge_from_folded_in_one_call(self):
+    def test_folded_controls_are_read_before_refusing_a_paused_preset_change(self):
         game = Game(stage=920, preset="III")
         answer = run(game, lambda api: api["set_preset"]("IV"))
-        self.assertIn(["preset_arrow", "preset_badge"], game.calls)
+        self.assertEqual(game.calls, [["preset_arrow"]])
         self.assertEqual(answer["result"], "failed")
-        self.assertIn("paused by the user", answer["text"])
+        self.assertIn("Préréglage IV demandé, III lu", answer["text"])
+        self.assertIn("actions en pause", answer["text"])
+        self.assertNotIn(("battle", "preset_badge"), game.moves)
         self.assertNotIn(("battle_settings", "preset"), game.moves)
         self.assertEqual(game.state["preset"], "III")
 
-    def test_unfolded_controls_get_the_badge_tap_alone(self):
-        # Read unfolded, the arrow would fold them: the badge alone.
+    def test_visible_wrong_preset_is_refused_without_opening_settings(self):
         game = Game(stage=920, preset="III", unfolded_forever=True)
         answer = run(game, lambda api: api["set_preset"]("IV"))
         self.assertEqual(answer["result"], "failed")
-        self.assertIn("paused by the user", answer["text"])
-        self.assertEqual(game.calls[0], ["preset_badge"])
-        self.assertEqual(game.moves, [("battle", "preset_badge")])
+        self.assertIn("actions en pause", answer["text"])
+        self.assertEqual(game.calls, [])
+        self.assertEqual(game.moves, [])
         self.assertEqual(game.state["preset"], "III")
         self.assertTrue(game.state["auto"])
+
+    def test_accessible_preset_mismatch_stops_before_stage_navigation(self):
+        game = Game(stage=915, preset="II", unfolded_forever=True)
+        answer = run(game, lambda api: api["farm"](920, "IV", "mpw18"))
+        self.assertEqual(answer["result"], "failed")
+        self.assertEqual(answer["text"], "Préréglage IV demandé, II lu : changement bloqué, actions en pause")
+        self.assertEqual(game.moves, [])
+        self.assertEqual(game.state["stage"], 915)
+        self.assertFalse(game.verified_setup)
+
+    def test_correct_visible_preset_does_not_block_stage_change(self):
+        game = Game(stage=915, preset="III", unfolded_forever=True)
+        answer = run(game, lambda api: api["farm"](920, "III", "mpw18"))
+        self.assertEqual(answer, done())
+        self.assertEqual(game.state["stage"], 920)
+        self.assertNotIn(("battle", "preset_badge"), game.moves)
+
+    def test_unread_preset_is_not_treated_as_a_known_mismatch_before_stage(self):
+        game = Game(stage=915, preset="II")
+        answer = run(game, lambda api: api["farm"](920, "IV", "mpw18"))
+        self.assertEqual(answer["result"], "failed")
+        self.assertEqual(game.state["stage"], 920, "unknown preset did not block stage navigation")
+        self.assertIn("Préréglage IV demandé, II lu", answer["text"])
+        self.assertNotIn(("battle", "preset_badge"), game.moves)
 
     def test_unknown_controls_tap_nothing(self):
         game = Game(stage=920, preset="III", controls_unknown=True)

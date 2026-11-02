@@ -287,6 +287,140 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(game.moves, [])
         self.assertTrue(setup.state()['required'])
 
+    def coordinator(self, game, saved, variant='Gold-balanced', view=None):
+        original = game.ports
+        def restored_ports():
+            ports = original()
+            ports.store.saved['engraving_recovery'] = copy.deepcopy(saved)
+            return ports
+        game.ports = restored_ports
+        part = {'setup': sw.engraving_setup.engraving_setup, 'screen': view or sw.fake_engraving_screen(game),
+                'rules': sw.setup_rules, 'variant': lambda weapon_id, name: sw.VISION_VARIANTS.get(name)}
+        loadouts = {'mpw18': {'stage': 920, 'preset': None,
+                              'soul_weapon': {'id': sw.VISION_ID, 'variant': variant}}}
+        stage_reader = SimpleNamespace(regions=lambda table: ['known'] * 50,
+                                       battle_stage=lambda shot, names, *args: 920)
+        return sw.build(game, loadouts, part, stage_reader)
+
+    async def test_restart_legacy_empty_grid_completes_through_full_farm_coordinator(self):
+        game = sw.vision_game(screen='engraving', pieces={}, farming={'switches': {'stage_change': 'real'}})
+        for card in game.state['engraving']['cards']:
+            card['locked'] = False
+        saved = {'required': True, 'weapon_id': sw.VISION_ID, 'variant': 'Gold-balanced', 'phase': 'failed'}
+        ports, api = self.coordinator(game, saved)
+        answer = await api['farm'](920, None, 'mpw18')
+        self.assertEqual(answer['result'], 'done', answer)
+        self.assertTrue(answer['verified_setup'])
+        self.assert_complete(game)
+        state = ports.store.sections['engraving_recovery']()
+        self.assertFalse(state['required'])
+        self.assertTrue(state['verified'])
+        self.assertEqual(state['recipe']['variant'], sw.VISION_VARIANTS['Gold-balanced'])
+
+    async def test_no_history_uses_explicit_matching_target_for_empty_or_complete_grid(self):
+        for empty in (True, False):
+            with self.subTest(empty=empty):
+                game = sw.vision_game(screen='engraving', pieces={} if empty else None,
+                                      farming={'switches': {'stage_change': 'real'}})
+                _, api = self.coordinator(game, {})
+                answer = await api['farm'](920, None, 'mpw18')
+                self.assertEqual(answer['result'], 'done', answer)
+                self.assertTrue(answer['verified_setup'])
+                self.assert_complete(game)
+
+    async def test_no_history_other_visible_weapon_only_allows_safe_full_grid_closure(self):
+        for empty in (True, False):
+            with self.subTest(empty=empty):
+                game = sw.vision_game(screen='engraving', pieces={} if empty else None)
+                ports = game.ports()
+                async def front():
+                    pass
+                helpers = SimpleNamespace(look=ports.capture, tap=ports.tap, front=front,
+                                          Stop=sw.stage_change.Stop, to_battle=None)
+                part = {'setup': sw.engraving_setup.engraving_setup, 'screen': sw.fake_engraving_screen(game),
+                        'rules': sw.setup_rules, 'variant': lambda weapon_id, name: sw.VISION_VARIANTS.get(name)}
+                api = sw.feature.soul_weapon(ports, sw.fake_screens(), sw.fake_reader(game), sw.rules,
+                                            sw.TABLE, helpers, part)
+                target = {'id': sw.AMBITION, 'variant': 'Gold-maxed'}
+                if empty:
+                    with self.assertRaises(sw.stage_change.Stop):
+                        await api['recover_engraving'](game.snapshot(), target=target)
+                    self.assertEqual(game.moves, [])
+                else:
+                    await api['recover_engraving'](game.snapshot(), target=target)
+                    self.assertEqual(sw.engraving_moves(game), ['close'])
+                self.assertNotIn(('soul_weapon', 'equip'), game.moves)
+
+    async def test_permanently_unread_recovery_entry_is_bounded_and_has_no_input(self):
+        game = sw.vision_game(screen='engraving', pieces={}, farming={'switches': {'stage_change': 'real'}})
+        view = sw.fake_engraving_screen(game)
+        view.weapon = lambda *args: None
+        saved = {'required': True, 'weapon_id': sw.VISION_ID, 'variant': 'Gold-balanced'}
+        _, api = self.coordinator(game, saved, view=view)
+        answer = await api['farm'](920, None, 'mpw18')
+        self.assertEqual(answer['result'], 'failed')
+        self.assertFalse(answer['verified_setup'])
+        self.assertEqual(game.moves, [])
+        self.assertGreaterEqual(game.now, sw.feature.SCREEN_WAIT_MOST)
+        self.assertLessEqual(game.now, sw.feature.SCREEN_WAIT_MOST + .5)
+
+    async def test_durable_recipe_precedes_explicit_current_variant_during_recovery(self):
+        game = sw.vision_game(screen='engraving', pieces={}, farming={'switches': {'stage_change': 'real'}})
+        saved = {'required': True, 'weapon_id': sw.VISION_ID, 'variant': 'Atk',
+                 'recipe': {'weapon_id': sw.VISION_ID, 'name': 'Atk', 'variant': sw.VISION_VARIANTS['Atk']}}
+        completed = []
+        original = game.apply
+        def apply(screen, move, point, end=None):
+            if (screen, move) == ('soul_weapon_engraving', 'close'):
+                completed.append(copy.deepcopy(game.state['engraving']['pieces']))
+            original(screen, move, point, end)
+        game.apply = apply
+        _, api = self.coordinator(game, saved)
+        answer = await api['farm'](920, None, 'mpw18')
+        self.assertEqual(answer['result'], 'done', answer)
+        self.assertTrue(answer['verified_setup'])
+        expected = sorted(sorted(map(tuple, p['cells'])) for p in sw.VISION_VARIANTS['Atk']['pieces'])
+        self.assertEqual(sorted(completed[0].values()), expected, 'finish durable intent before applying the new variant')
+        self.assert_complete(game)
+
+    async def test_legacy_fallback_refuses_different_weapon_or_variant_without_input(self):
+        for changed in ('weapon', 'variant'):
+            with self.subTest(changed=changed):
+                game = sw.vision_game(screen='engraving', pieces={}, farming={'switches': {'stage_change': 'real'}})
+                saved = {'required': True, 'weapon_id': sw.VISION_ID, 'variant': 'Gold-balanced'}
+                if changed == 'weapon':
+                    saved['weapon_id'] = sw.AMBITION
+                else:
+                    saved['variant'] = 'Atk'
+                ports, api = self.coordinator(game, saved)
+                before = copy.deepcopy(game.state)
+                answer = await api['farm'](920, None, 'mpw18')
+                self.assertEqual(answer['result'], 'failed')
+                self.assertFalse(answer['verified_setup'])
+                self.assertEqual(game.moves, [])
+                self.assertEqual(game.state, before)
+                state = ports.store.sections['engraving_recovery']()
+                self.assertTrue(state['required'])
+                self.assertNotIn('recipe', state)
+
+    async def test_recovery_entry_retries_transient_unread_name_without_input(self):
+        game = sw.vision_game(screen='engraving', pieces={}, farming={'switches': {'stage_change': 'real'}})
+        view = sw.fake_engraving_screen(game)
+        view.weapon = lambda shot, *args: None if shot[2]['now'] < .75 else 'Vision'
+        saved = {'required': True, 'weapon_id': sw.VISION_ID, 'variant': 'Gold-balanced'}
+        _, api = self.coordinator(game, saved, view=view)
+        first_input = []
+        original = game.apply
+        def apply(*args, **kwargs):
+            if not first_input:
+                first_input.append(game.now)
+            return original(*args, **kwargs)
+        game.apply = apply
+        answer = await api['farm'](920, None, 'mpw18')
+        self.assertEqual(answer['result'], 'done', answer)
+        self.assertGreaterEqual(first_input[0], .75)
+        self.assert_complete(game)
+
     async def test_forbidden_relock_stops_before_removal(self):
         game = sw.vision_game(screen='engraving')
         setup, ports = self.setup_for(game)

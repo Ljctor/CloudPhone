@@ -171,21 +171,49 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
     def input_mark():
         return copy.deepcopy(ports.last_input()) if callable(getattr(ports, "last_input", None)) else None
 
-    async def recover_engraving_run(shot, receipt=None):
+    async def recover_engraving_run(shot, receipt=None, target=None):
         """Recover a recognised interrupted engraving under the caller's lease.
 
-        Identification and eight verified locks are required before its own
-        close button is allowed. This never opens an engraving or applies a
-        different recipe; it returns the recovered Soul Weapon screen.
+        Durable recipes take precedence. A legacy record without its full
+        recipe can use only the caller's explicit matching weapon/variant.
+        With no record, the caller may authorize that exact visible target;
+        no target is inferred from the visible grid or another mode. Without
+        that capability, legacy recovery can only safely close a full grid.
         """
         require_enabled()
         original_input, original_launch = input_mark(), status["relaunched"]
         if setup and await ports.analyse(engraving["screen"].title, shot):
-            name = await ports.analyse(engraving["screen"].weapon, shot, names, reader.CARD_FONT)
+            def recovery_name(shot):
+                return engraving["screen"].weapon(shot, names, reader.CARD_FONT) \
+                    if engraving["screen"].title(shot) else None
+            name = await ports.analyse(recovery_name, shot)
+            if name is None:
+                # A restarted/opening engraving can render its title before
+                # its name. Wait read-only within the transition deadline.
+                shot, name = await wait_for(recovery_name, most=SCREEN_WAIT_MOST)
             matches = [entry for entry in by_id.values() if entry["name"] == name]
             if len(matches) != 1:
                 raise Stop("gravure interrompue : arme non identifiée, récupération suspendue")
-            shot, recovered = await setup(shot, matches[0], None, None, names, reader.CARD_FONT,
+            entry = matches[0]
+            state = setup.state()
+            record = state if state.get("weapon_id") == entry["id"] else \
+                (state.get("pending_by_weapon") or {}).get(str(entry["id"]), {})
+            durable = record.get("recipe") or {}
+            fallback_name, fallback_recipe = None, None
+            if durable.get("weapon_id") != entry["id"] and target is not None:
+                same_target = target.get("id") == entry["id"] and bool(target.get("variant"))
+                if record and (not same_target or record.get("variant") != target.get("variant")):
+                    raise Stop("gravure interrompue : ancienne cible différente de la configuration demandée")
+                # No history is not a conflicting intent. The caller may
+                # authorize its exact currently recognised target; another
+                # weapon still gets only the existing safe full-grid closure.
+                if same_target:
+                    fallback_name = target["variant"]
+                    fallback_recipe = engraving["variant"](entry["id"], fallback_name)
+                    if fallback_recipe is None:
+                        raise Stop("Gravure de {name} : variante {variant} inconnue",
+                                   name=entry["name"], variant=fallback_name)
+            shot, recovered = await setup(shot, entry, fallback_name, fallback_recipe, names, reader.CARD_FONT,
                                           table["shapes"], recovery_only=True)
             if not recovered["ok"]:
                 raise Stop("gravure interrompue : récupération non vérifiée")
@@ -195,10 +223,10 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
             return shot
         raise Stop("gravure interrompue : écran non reconnu, récupération suspendue")
 
-    async def recover_engraving(shot):
-        return await tracked(recover_engraving_run, shot)
+    async def recover_engraving(shot, target=None):
+        return await tracked(recover_engraving_run, shot, target=target)
 
-    async def open_screen(recovery_receipt=None):
+    async def open_screen(recovery_receipt=None, recovery_target=None):
         """The Soul Weapon screen, open already (parked) or opened from the
         battle."""
         require_enabled()
@@ -206,7 +234,7 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
         if await ports.analyse(reader.title, shot):
             return shot
         if setup and await ports.analyse(engraving["screen"].title, shot):
-            return await recover_engraving_run(shot, recovery_receipt)
+            return await recover_engraving_run(shot, recovery_receipt, recovery_target)
         shot = await helpers.to_battle()
         await tap(shot, "battle", "menu_equipment", EQUIPMENT_TAP)
         shot, tab = await wait_for(reader.tab, most=SCREEN_WAIT_MOST)
@@ -305,6 +333,16 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
             if missing:
                 # Refuse before Equip can replace a completed farming weapon.
                 raise Stop("gravure : pivot non calibré pour {shape}", shape=", ".join(sorted(missing)))
+            if requested:
+                expected = set(map(tuple, entry["cells"]))
+                cells = [tuple(cell) for piece in requested["pieces"] for cell in piece["cells"]]
+                occupied = set(cells)
+                if expected - occupied:
+                    raise Stop("Gravure {variant} de {name} incomplète : {count} case(s) manquante(s), bonus de complétion indisponible",
+                               variant=variant, name=target, count=len(expected - occupied))
+                if occupied != expected or len(cells) != len(occupied):
+                    raise Stop("Gravure {variant} de {name} invalide : couverture hors motif ou superposée, bonus de complétion indisponible",
+                               variant=variant, name=target)
         cache = status["cache"]
         last_input = (ports.last_input() or {}).get("wall") if hasattr(ports, "last_input") else None
         if cache and cache["id"] == target_id and cache.get("variant") == variant \
@@ -314,7 +352,7 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
             return "cached"
         status["cache"] = None
         recovered = {}
-        shot = await open_screen(recovered)
+        shot = await open_screen(recovered, {"id": target_id, "variant": variant})
         memory = rules.fresh_memory(status["direction"])
         view = await ports.analyse(view_of, shot)
         result, moves = "equipped", 0
