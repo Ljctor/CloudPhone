@@ -112,6 +112,14 @@ class Stop(Said):
     """The sequence stops: t, the step that failed."""
 
 
+class Blocked(Stop):
+    """A policy refusal that waiting and repeating cannot resolve."""
+
+    def __init__(self, text, /, *, failure_code, **params):
+        super().__init__(text, **params)
+        self.failure_code = failure_code
+
+
 class Plan(Said):
     """A plan-only step: t, what it would do."""
 
@@ -364,8 +372,8 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         """Only a read mismatch requires permission to change a preset."""
         allowed = getattr(ports, "action_allowed", lambda screen, move: False)
         if seen is not None and seen != name and not allowed("battle_settings", "preset"):
-            raise Stop("Préréglage {wanted} demandé, {seen} lu : changement bloqué, actions en pause",
-                       wanted=name, seen=seen)
+            raise Blocked("Préréglage {wanted} demandé, {seen} lu : changement bloqué, actions en pause",
+                          failure_code="preset_action_paused", wanted=name, seen=seen)
 
     async def preflight_preset(name):
         """Read an already accessible preset before stage navigation.
@@ -434,6 +442,9 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
                         timings[name] = round(ports.clock.monotonic() - began, 1)
             except Plan as e:
                 answer = {"result": "plan", "text_t": e.t}
+            except Blocked as e:
+                answer = {"result": "failed", "text_t": e.t, "retryable": False,
+                          "failure_code": e.failure_code}
             except Stop as e:
                 answer = {"result": "failed", "text_t": e.t}
             except ports.Busy:

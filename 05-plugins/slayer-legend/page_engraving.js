@@ -27,7 +27,7 @@ const ENGLISH = {
   "Dernier contrôle : autre arme ou gravure · cible acceptée à vérifier": "Last observation: another target \u00b7 accepted target unverified",
   "Gravure automatique désactivée · premier passage soumis à supervision": "Automatic engraving disabled · first execution requires supervision",
   "Gravure et verrouillage des huit cartes vérifiés le {time} · contrôle actuel à refaire": "Grid and locks verified at {time} \u00b7 historical evidence, current equipment unconfirmed",
-  "Remise en sécurité nécessaire : les huit cartes ne sont pas confirmées verrouillées": "Lock recovery required \u00b7 target unverified",
+  "Gravure à reprendre : configuration demandée non vérifiée": "Engraving recovery required \u00b7 requested setup unverified",
   "Changement automatique de Soul Weapon désactivé": "Automatic Soul Weapon changes disabled",
   "Tentative enregistrée le {time} · arme et gravure à vérifier": "Attempt recorded at {time} \u00b7 target unverified",
   "Huit cartes revérifiées verrouillées le {time} · gravure demandée non vérifiée": "Locks rechecked at {time} \u00b7 complete grid unverified",
@@ -217,11 +217,12 @@ export default function loadoutFeature(api, { onApplied = () => {}, execution = 
       : soul.engraving === 'off' ? api.tr('Gravure automatique désactivée · premier passage soumis à supervision') : '';
     const recovery = soul.recovery;
     let proof;
-    if (recovery?.required) proof = api.tr('Remise en sécurité nécessaire : les huit cartes ne sont pas confirmées verrouillées');
+    if (recovery?.required) proof = api.tr('Gravure à reprendre : configuration demandée non vérifiée');
     else if (recovery && recovery.weapon_id === target.id && recovery.variant === target.variant
         && Number.isFinite(recovery.at) && recovery.at > 0) {
       const time = new Date(recovery.at * 1000).toLocaleString();
-      if (recovery.verified && recovery.locks_verified && recovery.phase === 'verified') {
+      if (recovery.verified && recovery.completion_verified && recovery.locks_verified
+          && ['verified', 'recovered'].includes(recovery.phase)) {
         proof = api.tr('Gravure et verrouillage des huit cartes vérifiés le {time} · contrôle actuel à refaire', { time });
       } else if (recovery.locks_verified) {
         proof = api.tr('Huit cartes revérifiées verrouillées le {time} · gravure demandée non vérifiée', { time });

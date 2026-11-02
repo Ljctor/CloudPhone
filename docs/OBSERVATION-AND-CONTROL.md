@@ -85,6 +85,15 @@ avant d'ouvrir Battle Settings ; si l'écart est déjà lisible au départ, il e
 signalé avant le changement de stage. La réparation d'une gravure incomplète
 reste prioritaire pour rétablir son bonus de complétion.
 
+Un refus de politique connu est un résultat typé non réessayable, distinct d'un
+échec temporaire de lecture. Le mode termine cette tentative immédiatement. La
+surveillance conserve la raison pour la cible, l'activité utilisateur et la
+politique concernées, sans produire un compte à rebours de réparation. Un
+changement de contexte ou une nouvelle lecture du preset attendu autorise une
+réévaluation ; une gravure en attente reste toujours réparable. Le bouton
+d'application explicite permet également un nouveau contrôle sans modifier la
+cible ni les permissions.
+
 La cadence nominale de capture est de 0,5 seconde après activité humaine et de
 1,5 seconde quand le jeu au premier plan est stable. La durée réelle de capture
 s'ajoute à cet intervalle. Hors jeu, les sondes ralentissent. Les lecteurs gardent

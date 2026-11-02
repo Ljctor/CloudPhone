@@ -120,7 +120,8 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
         answer = {key: status[key] for key in ("mode", "default", "until", "configured", "state")}
         answer["highest"] = highest()
         answer["message_t"] = status["message"]
-        answer["setup_blocker_t"] = setup.blocker(status["mode"], mines["state"]().get("enabled"))
+        answer["setup_blocker_t"] = (setup.blocker(status["mode"], mines["state"]().get("enabled"))
+                                     or execution_blocker())
         answer["setup_result"] = setup.current_result(status["mode"], mines["state"]().get("enabled"))
         answer["setup_request"] = setup_request()
         if status["state"] == "failed" and setup.has_result and answer["setup_result"] is None:
@@ -139,6 +140,19 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
             if look and look.get("mode") == answer["mode"]:
                 answer["message_t"] = look.get("message_t")
         return answer
+
+    def execution_blocker():
+        """A cached watchdog refusal belongs only to this accepted target.
+        Its look is a snapshot and must never call the mode's state back.
+        """
+        name = status["mode"]
+        if name not in ("mpw18", "mpw4", "soul") or mines["state"]().get("enabled") or not status["watched"]:
+            return None
+        look = status["watched"]() or {}
+        if (look.get("execution_blocker_mode") == name
+                and look.get("execution_blocker_target") == loadouts["loadout"](name)):
+            return look.get("execution_blocker_t")
+        return None
 
     def setup_request():
         change, replacing = status["change"], replacements["task"]
@@ -309,7 +323,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
                     continue
                 if status["hold"] and status["hold"]["owner"] is me:
                     end_hold("timeout")
-                if answer["result"] != "failed":
+                if answer["result"] != "failed" or answer.get("retryable") is False:
                     break
                 failures += 1
                 delay = rules.retry_after(failures, ports.clock.monotonic() - since - waited)
@@ -638,7 +652,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
                                  expected="{mode, if_revision}")}, status=400)
         expected = setup_request()
         if expected is None:
-            reason = (setup.blocker(status["mode"], mines["state"]().get("enabled"))
+            reason = (setup.blocker(status["mode"], mines["state"]().get("enabled")) or execution_blocker()
                       or t("Configuration indisponible ou application déjà en cours"))
             return ports.respond(dict(state(), error_t=reason), status=409)
         if any(body[key] != value for key, value in expected.items()):

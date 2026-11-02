@@ -64,6 +64,7 @@ looks; the repairs' hourly counts are kept in state.json ("watchdog").
 """
 
 import asyncio
+import copy
 import random
 import json
 
@@ -84,17 +85,31 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
     the relaunch only); gold: the gold feature's api (current: gold/s), whose
     rate at 0 raises an alert once confirmed (rules.gold_zero)."""
     memory = rules.fresh(ports.store.saved.get("watchdog"))
+    saved_block = ports.store.saved.get("watchdog_policy_block")
+    context = saved_block.get("context") if isinstance(saved_block, dict) else None
+    if not (isinstance(context, dict) and context.get("mode") in FARMED
+            and isinstance(context.get("target"), dict)
+            and "input" in context and (context["input"] is None or isinstance(context["input"], dict))
+            and isinstance(context.get("preset_allowed"), bool)
+            and saved_block.get("kind") in (*FARMING, "loadout")
+            and saved_block.get("failure_code") == "preset_action_paused"
+            and ports.is_t(saved_block.get("text_t"))):
+        saved_block = None
     status = {"text": ports.t("Démarrage"), "symptom": None, "paused": None, "repairing": None,
               "mode": None, "ended_at": None, "resumed": False, "anr_waited": False, "controls": None,
               "intention": None, "redirect_episode": None, "failure_notices": {}, "gold": rules.gold_fresh(),
-              "bar": rules.bar_fresh(), "relaunched_at": None}
+              "bar": rules.bar_fresh(), "relaunched_at": None,
+              "policy_block": copy.deepcopy(saved_block), "last_input": None}
     parking = bool(farming) and "park" in farming
     available = AVAILABLE + (tuple(FARMING) + ("loadout",) if farming else ()) + (("park",) if parking else ())
     ports.store.register("watchdog", lambda: rules.persisted(memory))
+    ports.store.register("watchdog_policy_block", lambda: copy.deepcopy(status["policy_block"]))
 
     def forget_controls(why):
         """The game relaunched: the preset is read again."""
         status["controls"] = None
+        status["policy_block"] = None
+        ports.store.save()
 
     if hasattr(ports, "on_relaunch"):
         ports.on_relaunch(forget_controls)
@@ -125,6 +140,32 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         park = parking and rules.park_wanted(name, farming["soul_weapon_switch"](), state.get("state"),
                                              state.get("hold"))
         return rules.profile(part, part.get("stage"), name, park)
+
+    def policy_context(name):
+        # Pure accepted-target and input getters: no modes.state/profile call
+        # here, because modes.state itself consumes the watchdog's last look.
+        allowed = getattr(ports, "action_allowed", None)
+        input_reader = getattr(ports, "last_input", None)
+        return {"mode": name, "target": copy.deepcopy(loadout(name) or {}),
+                "input": copy.deepcopy(input_reader() if callable(input_reader) else status["last_input"]),
+                "preset_allowed": bool(callable(allowed) and allowed("battle_settings", "preset"))}
+
+    def pending_engraving():
+        soul = farming.get("soul_weapon_state", lambda: None)() if farming else None
+        return bool(((soul or {}).get("recovery") or {}).get("required"))
+
+    def active_policy_block():
+        block = status["policy_block"]
+        name = status["mode"]
+        return (block if block and name in FARMED and block["context"] == policy_context(name)
+                and not pending_engraving() else None)
+
+    def release_policy_block():
+        nonlocal memory
+        block = status["policy_block"]
+        if block:
+            memory = rules.retry(memory, block["kind"])
+            status["policy_block"] = None
 
     game = getattr(ports, "game", None)
 
@@ -215,6 +256,12 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             kept = status["controls"] = (reading, now) if reading else None
             if reading and game is not None:
                 game["note"]({"preset": reading["preset"]})
+            block = active_policy_block()
+            if (reading and block and reading.get("preset") is not None
+                    and reading["preset"] == block["context"]["target"].get("preset")):
+                # Only this newly captured reading may clear the policy
+                # obstacle. A cached badge can predate a manual correction.
+                release_policy_block()
         if kept:
             seen["battle_settings"] = kept[0]["preset"]
 
@@ -233,6 +280,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         status["controls"] = None
         part = profile()
         name = part["mode"]
+        attempt_context = policy_context(name)
         status["repairing"] = kind
         status["intention"] = rules.redirect_intention(kind, profile())
         show(ports.t("Vers {destination} : {purpose}", destination=status["intention"]["destination_t"],
@@ -247,6 +295,31 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         finally:
             status["repairing"] = None
             status["intention"] = None
+        policy_refusal = (answer["result"] == "failed" and answer.get("retryable") is False
+                          and answer.get("failure_code") == "preset_action_paused")
+        if policy_refusal and (mode_now() != name or policy_context(name) != attempt_context):
+            # This refusal belongs to the old attempt. It must neither block
+            # the new request nor add a failure/backoff to its repair.
+            memory = rules.not_run(memory, kind)
+            ports.store.save()
+            return
+        if policy_refusal and not pending_engraving():
+            # A policy refusal cannot heal through timed retries. Keep its
+            # precise reason until target, input, policy or launch changes.
+            memory = rules.not_run(memory, kind)
+            for repair in (*FARMING, "loadout"):
+                memory = rules.retry(memory, repair)
+            block = {"context": attempt_context, "kind": kind,
+                     "failure_code": answer["failure_code"], "text_t": copy.deepcopy(answer["text_t"])}
+            previous = status["policy_block"]
+            status["policy_block"] = block
+            show(block["text_t"])
+            if previous != block:
+                say("warning", "Action stopped: {repair}; {why}",
+                    {"repair": rules.REPAIR_NAMES[kind], "why": answer["text_t"]})
+                await ports.notify(ports.english(rules.blocked_notice(name, answer["text_t"])))
+            ports.store.save()
+            return
         if answer["result"] == "failed":
             memory, actions = rules.stopped(memory, kind, ports.clock.wall(), random.uniform(-1.0, 1.0), name)
             # Why it stopped, with the backoff's alert (if it is one).
@@ -260,6 +333,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                 status["failure_notices"][kind] = failure_key
             await notify_all([(*action[:4], False) for action in actions])
         elif answer["result"] == "done" and answer.get("verified_setup"):
+            release_policy_block()
             modes["confirm"](name, verified_setup=True)
         elif answer["result"] == "plan":
             memory = rules.not_run(memory, kind)
@@ -335,6 +409,11 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         name = mode_now()
         now, wall = ports.clock.monotonic(), ports.clock.wall()
         last = await ports.user_input()  # only an input with the game in front
+        if last != status["last_input"]:
+            # A manual preset correction must be freshly observed as soon as
+            # the normal input pause ends, not from the five-minute cache.
+            status["controls"] = None
+            status["last_input"] = copy.deepcopy(last)
         if name != status["mode"]:
             status["redirect_episode"] = None
             status["failure_notices"] = {}
@@ -404,6 +483,16 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                                              and farming.get("engraving_switch", lambda: "off")() == "real"
                                              and all(farming["switches"]().get(switch) == "real"
                                                      for switch in FARMING.values()))
+        block = status["policy_block"]
+        if block and (name not in FARMED or block["context"] != policy_context(name)):
+            release_policy_block()
+        block = active_policy_block()
+        if block and rules.REPAIRS.get(symptom) in (*FARMING, "loadout"):
+            # Do not generate another repair, countdown, redirect notice or
+            # failure counter for the exact same immutable policy obstacle.
+            show(block["text_t"])
+            ports.store.save()
+            return False
         if symptom in (None, "unparked") and name in FARMED:
             modes["confirm"](name)
         memory, actions = rules.decide(memory, symptom, text, params, context, wall)
@@ -511,6 +600,9 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         """The watchdog's part of the mode's État row: "OK", the pause, the
         repair under way, "{repair} dans {minutes} min" while the symptom's
         repair backs off, else the symptom (as the status)."""
+        block = active_policy_block()
+        if block:
+            return block["text_t"]
         if status["paused"] or status["repairing"] or status["symptom"] in ("unknown", "pending"):
             return status["text"]
         if status["symptom"] is None:
@@ -529,7 +621,9 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                 "symptom": status["symptom"], "paused_t": status["text"] if status["paused"] else None,
                 "repairing": status["repairing"], "intention": status["intention"],
                 "counters": rules.counters(memory, wall), "lease": held,
-                "profile": profile()}
+                "profile": profile(),
+                "execution_blocker_t": copy.deepcopy((active_policy_block() or {}).get("text_t")),
+                "execution_blocker_kind": (active_policy_block() or {}).get("kind")}
 
     async def handle_state(request):
         return ports.respond(state())
@@ -545,6 +639,8 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             return ports.respond({"error_t": ports.t("{field} : un de {choices}", field="kind",
                                                      choices=", ".join(rules.REPAIR_NAMES))}, status=400)
         memory = rules.retry(memory, kind)
+        if kind in (*FARMING, "loadout"):
+            release_policy_block()
         ports.store.save()
         say("normal", "Retry now: {repair}", {"repair": rules.REPAIR_NAMES[kind]})
         return ports.respond(state())
@@ -552,10 +648,15 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
     def last_look():
         """Its last look, for the mode's overlay tone: {mode, level}."""
         symptom = status["symptom"]
-        return {"mode": status["mode"], "level": rules.level(symptom),
-                "message_t": status["text"],
+        block = active_policy_block()
+        return {"mode": status["mode"], "level": "error" if block else rules.level(symptom),
+                "message_t": copy.deepcopy(block["text_t"]) if block else status["text"],
                 "repairing": status["repairing"], "intention": status["intention"],
-                "blocked": bool(memory["alerted"] and symptom in rules.ERRORS
+                "execution_blocker_t": copy.deepcopy(block["text_t"]) if block else None,
+                "execution_blocker_mode": block["context"]["mode"] if block else None,
+                "execution_blocker_target": copy.deepcopy(block["context"]["target"]) if block else None,
+                "execution_blocker_kind": block["kind"] if block else None,
+                "blocked": bool(block or memory["alerted"] and symptom in rules.ERRORS
                                 and not status["repairing"])}
 
     return {"routes": [("GET", "/watchdog", handle_state), ("POST", "/watchdog/retry", handle_retry)],

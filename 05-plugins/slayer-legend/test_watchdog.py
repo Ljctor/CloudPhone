@@ -5,6 +5,7 @@ ANR dialog, on fake ports. Run: python3 -m unittest test_watchdog
 """
 
 import asyncio
+import copy
 import contextlib
 import importlib.util
 import logging
@@ -608,7 +609,8 @@ class GoldTrigger(unittest.TestCase):
     def looks(self, count, auto, viewers=lambda look: 0, stage=920, answer=None, mode="mpw18", entering=False,
               game=True, launched=False, bar=lambda look: look * 0.27 % 1, screen=lambda look: "battle",
               park=None, hold=None, intention=None, user_input=lambda look: None,
-              failed_setup=False, recovery=None, setup_real=True):
+              failed_setup=False, recovery=None, setup_real=True, policy_allowed=lambda look: False,
+              target=None, saved=None, relaunch_at=None, preset=lambda look: 1):
         """count looks, AUTO read as auto, viewers(look) connected, the
         stage progress bar read as bar(look) (None: unreadable; by default
         it moves) on screen(look); park: the soul weapon's switch when the
@@ -620,14 +622,22 @@ class GoldTrigger(unittest.TestCase):
         feature = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(feature)
         self.every = feature.CONTROLS_EVERY
+        if isinstance(answer, dict) and answer.get('failure_code') == 'preset_action_paused' and target is None:
+            target = {'stage': 920, 'preset': 'IV'}
         coroutines, looked, read, alerts, other = [], [0], [], [], []
+        registered, relaunch_callbacks = {}, []
+        stored = copy.deepcopy(saved or {})
+        def save():
+            stored.update({name: copy.deepcopy(snapshot()) for name, snapshot in registered.items()})
 
         @text_ports
         class Ports:
             Busy = ports_module.Busy
 
-            store = types.SimpleNamespace(saved={}, register=lambda *a: None, save=lambda: None)
+            store = types.SimpleNamespace(saved=stored, register=lambda name, snapshot: registered.update({name: snapshot}), save=save)
             lease = types.SimpleNamespace(state=lambda: None)
+            on_relaunch = staticmethod(relaunch_callbacks.append)
+            action_allowed = staticmethod(lambda screen, move: policy_allowed(looked[0]))
             enabled = staticmethod(lambda: True)
             log = staticmethod(LOG)
             exception = staticmethod(EXCEPTION)
@@ -644,12 +654,15 @@ class GoldTrigger(unittest.TestCase):
                         raise asyncio.CancelledError
                     looked[0] += 1
                     Ports.clock.now += seconds
+                    if looked[0] == relaunch_at:
+                        for callback in relaunch_callbacks:
+                            callback('test relaunch')
 
             @staticmethod
             def spawn(coroutine):
                 coroutines.append(coroutine)
 
-            last_input = staticmethod(lambda: None)
+            last_input = staticmethod(lambda: user_input(looked[0]))
 
             @staticmethod
             async def user_input():
@@ -684,10 +697,11 @@ class GoldTrigger(unittest.TestCase):
 
         async def read_controls():
             read.append(looked[0])
-            return {"preset": 1, "auto": auto}
+            return {"preset": preset(looked[0]), "auto": auto}
 
         self.intentions = intentions = []
         self.farmed = farmed = []
+        self.farm_looks = farm_looks = []
         self.confirmed = confirmed = []
         self.verified = verified = []
         self.launches = launches_made = []
@@ -706,12 +720,16 @@ class GoldTrigger(unittest.TestCase):
         async def farm(*args):
             intentions.append(built["api"]["look"]()["intention"])
             farmed.append(args)
-            return answer or {"result": "plan", "text": "plan"}
+            farm_looks.append(looked[0])
+            result = answer(looked[0]) if callable(answer) else answer
+            if asyncio.iscoroutine(result):
+                result = await result
+            return result or {"result": "plan", "text": "plan"}
 
         farming = {"read_controls": read_controls, "battle_stage": lambda shot, shade=1.0: stage,
                    "farm": farm, "switches": lambda: {"stage_change": "real", "preset": "plan"}}
         if recovery is not None or failed_setup:
-            farming.update(soul_weapon_state=lambda: {"recovery": recovery},
+            farming.update(soul_weapon_state=lambda: {"recovery": recovery(looked[0]) if callable(recovery) else recovery},
                            soul_weapon_switch=lambda: "real", engraving_switch=lambda: "real" if setup_real else "off",
                            switches=lambda: {"stage_change": "real", "preset": "real"})
         self.parks = parks = []
@@ -730,12 +748,13 @@ class GoldTrigger(unittest.TestCase):
 
         built = feature.watchdog(
             Ports, None, None, rules, NUMERALS.get,
-            {"state": lambda: {"mode": mode, "highest": 925, "state": "moving" if entering else "failed" if failed_setup else "farming",
+            {"state": lambda: {"mode": mode(looked[0]) if callable(mode) else mode, "highest": 925, "state": "moving" if entering else "failed" if (failed_setup(looked[0]) if callable(failed_setup) else failed_setup) else "farming",
                                "hold": hold, "intention": intention},
              "confirm": confirm},
             {"state": lambda: {"enabled": mode == "mine"}, "reenter": reenter},
             {"running": lambda: False, "start": start, "state": lambda: {"state": "done", "message": ""}},
-            lambda name: {"mpw18": {"stage": 920, "preset": 1}, "mpw4": {"stage": 915, "preset": "II"}}[name],
+            lambda name: target(looked[0]) if callable(target) else target or
+                         {"mpw18": {"stage": 920, "preset": 1}, "mpw4": {"stage": 915, "preset": "II"}}[name],
             farming, gold)
 
         async def run():
@@ -747,6 +766,8 @@ class GoldTrigger(unittest.TestCase):
             logging.getLogger("cloudphone.slayer-legend").info("GoldTrigger: %d looks", count)
             asyncio.run(run())
         self.state = asyncio.run(built["routes"][0][2](None))
+        self.last_look = built["api"]["look"]
+        self.saved = copy.deepcopy(stored)
         self.retry = lambda body: asyncio.run(built["routes"][1][2](types.SimpleNamespace(json=lambda: body())))
         return read, alerts, other
 
@@ -896,6 +917,115 @@ class ModesOnTheFeature(GoldTrigger):
         read, alerts, other = self.looks(6, "off", stage=940, mode="free", game=False)
         self.assertEqual((read, alerts, other, self.farmed), ([], [], [], []))
         self.assertEqual(self.state["line"]["template"], "Jeu libre : rien n’est surveillé")
+
+
+class PresetPolicyBlocks(unittest.TestCase):
+    """Typed refusals wait for changed evidence while engraving still repairs."""
+    looks = GoldTrigger.looks
+
+    def policy_block(self):
+        return {'result': 'failed', 'retryable': False, 'failure_code': 'preset_action_paused',
+                'text_t': TEXTS['t']('Préréglage {wanted} demandé, {seen} lu : changement bloqué, actions en pause',
+                                    wanted='IV', seen='I')}
+
+    def test_typed_preset_policy_failure_stays_blocked_without_timed_retry_or_spam(self):
+        answer = self.policy_block()
+        _, alerts, _ = self.looks(100, 'on', failed_setup=True, answer=answer)
+        self.assertEqual(len(self.farmed), 1)
+        self.assertEqual(self.state['line'], answer['text_t'])
+        self.assertEqual(self.state['execution_blocker_t'], answer['text_t'])
+        self.assertEqual(self.state['waiting'], [])
+        self.assertNotIn('loadout', self.state['counters']['next_attempt'])
+        self.assertEqual(sum(TEXTS['english'](answer['text_t']) in alert for alert in alerts), 1)
+        observed = self.last_look()
+        self.assertTrue(observed['blocked'])
+        self.assertEqual(observed['level'], 'error')
+        self.assertEqual(observed['execution_blocker_t'], answer['text_t'])
+        self.assertEqual(observed['execution_blocker_target'], {'stage': 920, 'preset': 'IV'})
+        async def body():
+            return {'kind': observed['execution_blocker_kind']}
+        self.assertIsNone(self.retry(body)['execution_blocker_t'], 'explicit Retry authorizes one new policy check')
+
+    def test_typed_policy_latch_survives_restart_without_repeating_phone_notice(self):
+        self.looks(20, 'on', failed_setup=True, answer=self.policy_block())
+        saved = self.saved
+        self.assertTrue(saved['watchdog_policy_block'])
+        _, alerts, _ = self.looks(20, 'on', failed_setup=True, answer=self.policy_block(), saved=saved)
+        self.assertEqual(self.farmed, [])
+        self.assertFalse(any(TEXTS['english'](self.policy_block()['text_t']) in alert for alert in alerts))
+        self.assertTrue(self.last_look()['blocked'])
+
+    def test_changed_target_input_policy_or_relaunch_releases_one_policy_check(self):
+        for changed in ('target', 'input', 'policy', 'relaunch', 'mode'):
+            with self.subTest(changed=changed):
+                options = {}
+                if changed == 'target':
+                    options['target'] = lambda look: {'stage': 920, 'preset': 'IV' if look < 20 else 'III'}
+                elif changed == 'input':
+                    options['user_input'] = lambda look: None if look < 20 else {'wall': EPOCH + 300, 'monotonic': 300}
+                elif changed == 'policy':
+                    options['policy_allowed'] = lambda look: look >= 20
+                elif changed == 'relaunch':
+                    options['relaunch_at'] = 20
+                else:
+                    options['mode'] = lambda look: 'mpw18' if look < 20 else 'mpw4'
+                self.looks(45, 'on', failed_setup=True, answer=self.policy_block(), **options)
+                self.assertEqual(len(self.farmed), 2, 'one initial attempt and one after the actual context changes')
+                self.assertLess(self.farm_looks[0], 20)
+                self.assertGreaterEqual(self.farm_looks[1], 20)
+
+    def test_old_policy_refusal_after_await_cannot_block_changed_target_or_input(self):
+        for changed in ('target', 'input'):
+            with self.subTest(changed=changed):
+                accepted = {'stage': 920, 'preset': 'IV'}
+                last_input = [None]
+                async def answer(look):
+                    await asyncio.sleep(0)
+                    if changed == 'target':
+                        accepted['preset'] = 'III'
+                    else:
+                        last_input[0] = {'wall': EPOCH + look * E, 'monotonic': look * E}
+                    return self.policy_block()
+                _, alerts, _ = self.looks(3, 'on', failed_setup=True, answer=answer,
+                                         target=lambda look: accepted, user_input=lambda look: last_input[0],
+                                         preset=lambda look: 'I')
+                self.assertEqual(len(self.farmed), 1)
+                self.assertIsNone(self.state['execution_blocker_t'])
+                self.assertIsNone(self.saved.get('watchdog_policy_block'))
+                self.assertEqual(self.state['waiting'], [])
+                self.assertEqual(self.state['counters']['next_attempt'], {})
+                self.assertFalse(any(TEXTS['english'](self.policy_block()['text_t']) in alert for alert in alerts))
+
+    def test_manual_input_invalidates_cached_preset_before_five_minute_refresh(self):
+        read, _, _ = self.looks(12, 'on', failed_setup=True, answer=self.policy_block(),
+                               user_input=lambda look: None if look < 5 else
+                               {'wall': EPOCH + 75, 'monotonic': 75})
+        self.assertIn(6, read, 'first resumed look must read the preset again')
+        self.assertEqual(len(self.farmed), 2)
+
+    def test_fresh_matching_preset_releases_latch_without_recorded_input(self):
+        def answer(look):
+            return self.policy_block() if look < 21 else {'result': 'done', 'verified_setup': True}
+        self.looks(28, 'on', failed_setup=lambda look: look < 27, answer=answer,
+                   target={'stage': 920, 'preset': 'IV'}, preset=lambda look: 'I' if look < 21 else 'IV')
+        self.assertEqual(len(self.farmed), 2)
+        self.assertIsNone(self.last_look()['execution_blocker_t'])
+        self.assertTrue(self.verified)
+
+    def test_malformed_persisted_policy_latches_are_ignored(self):
+        for invalid in (True, {}, {'context': {}}, {'kind': 'loadout', 'context': {'mode': 'mpw18'}}):
+            with self.subTest(invalid=invalid):
+                self.looks(5, 'on', failed_setup=True, answer=self.policy_block(),
+                           saved={'watchdog_policy_block': invalid})
+                self.assertEqual(len(self.farmed), 1)
+                self.assertTrue(self.last_look()['blocked'])
+
+    def test_pending_engraving_overrides_policy_latch_and_remains_repairable(self):
+        self.looks(35, 'on', failed_setup=True, answer=self.policy_block(),
+                   recovery=lambda look: {'required': look >= 20})
+        self.assertEqual(sum(look < 20 for look in self.farm_looks), 1)
+        self.assertTrue(any(look >= 20 for look in self.farm_looks), 'pending grid repairs cannot be suppressed')
+        self.assertIsNone(self.last_look()['execution_blocker_t'])
 
 
 class StageProgressBar(GoldTrigger):

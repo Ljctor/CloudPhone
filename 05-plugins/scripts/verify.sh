@@ -26,7 +26,9 @@ python3 "$(dirname "$0")/../slayer-legend/test_watchdog.py" \
   GoldTrigger.test_persisted_incomplete_grid_is_repaired_with_backoff_even_when_parked \
   GoldTrigger.test_failed_setup_only_clears_after_full_verified_transaction \
   GoldTrigger.test_an_open_interrupted_engraving_can_be_repaired_but_unknown_popup_cannot \
-  GoldTrigger.test_pending_engraving_respects_switch_and_free_play
+  GoldTrigger.test_pending_engraving_respects_switch_and_free_play \
+  PresetPolicyBlocks
+node "$(dirname "$0")/../slayer-legend/test_page_engraving.mjs"
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_mode_setup_status.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_mode_rules.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_transaction_ownership.py -q

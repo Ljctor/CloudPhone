@@ -1,5 +1,6 @@
 """Readiness is a current gate; completed attempts require matching evidence."""
 import asyncio
+import copy
 import importlib.util
 from pathlib import Path
 from types import SimpleNamespace as NS
@@ -220,8 +221,81 @@ class SetupStatus(unittest.IsolatedAsyncioTestCase):
                        if method == 'POST' and route == '/mode/setup')
         return await handler(NS(json=json_body))
 
+    async def test_current_watchdog_execution_blocker_is_visible_and_keeps_explicit_retry(self):
+        self.engraving = 'real'
+        receipt = self.part['api']['state']()['setup_request']
+        reason = rules.t('Préréglage IV demandé, II lu : changement bloqué, actions en pause')
+        target = copy.deepcopy(self.parts['mpw18'])
+        look = {'mode': 'mpw18', 'execution_blocker_mode': 'mpw18',
+                'execution_blocker_target': target, 'execution_blocker_t': reason, 'blocked': True}
+        self.part['api']['watched_by'](lambda: look)
+        state = self.part['api']['state']()
+        self.assertEqual(state['setup_blocker_t'], reason)
+        self.assertEqual(state['setup_request'], receipt, 'an explicit request can recheck a corrected preset')
+        self.assertEqual(self.farm_calls, [])
+        self.assertEqual(self.parts['mpw18'], target)
+
+    async def test_execution_blocker_is_scoped_to_exact_current_mode_and_target(self):
+        self.engraving = 'real'
+        look = {'mode': 'mpw18', 'execution_blocker_mode': 'mpw4',
+                'execution_blocker_target': copy.deepcopy(self.parts['mpw18']),
+                'execution_blocker_t': rules.t('blocked')}
+        self.part['api']['watched_by'](lambda: look)
+        self.assertIsNone(self.part['api']['state']()['setup_blocker_t'])
+        self.assertIsNotNone(self.part['api']['state']()['setup_request'])
+        look['execution_blocker_mode'] = 'mpw18'
+        self.parts['mpw18']['soul_weapon']['variant'] = 'different'
+        self.assertIsNone(self.part['api']['state']()['setup_blocker_t'])
+        self.assertIsNotNone(self.part['api']['state']()['setup_request'])
+
+    async def test_pending_engraving_recovery_keeps_explicit_setup_available(self):
+        self.engraving = 'real'
+        reason = rules.t('blocked')
+        self.part['api']['watched_by'](lambda: {
+            'mode': 'mpw18', 'execution_blocker_mode': 'mpw18',
+            'execution_blocker_target': copy.deepcopy(self.parts['mpw18']), 'execution_blocker_t': reason})
+        self.farming['soul_weapon_state'] = lambda: {'recovery': {'required': True}}
+        state = self.part['api']['state']()
+        self.assertEqual(state['setup_blocker_t'], reason)
+        self.assertIsNotNone(state['setup_request'], 'policy refusal must not strand an incomplete engraving')
+
     async def settle(self):
         for _ in range(100): await asyncio.sleep(0)
+
+    async def test_typed_policy_refusal_runs_once_but_transient_failure_still_retries(self):
+        self.engraving = 'real'
+        reason = rules.t('Préréglage {wanted} demandé, {seen} lu : changement bloqué, actions en pause',
+                         wanted='III', seen='II')
+        done = {'result': 'done', 'text_t': None, 'timings': {}}
+        answers = [{'result': 'failed', 'text_t': reason, 'timings': {},
+                    'retryable': False, 'failure_code': 'preset_action_paused'}, done]
+        calls = []
+        async def farm(*args, **kwargs):
+            calls.append((args, kwargs))
+            return answers.pop(0)
+        self.farming['farm'] = farm
+
+        _, code = await self.call_setup(self.part['api']['state']()['setup_request'])
+        self.assertEqual(code, 202)
+        await self.settle()
+        blocked = self.part['api']['state']()
+        self.assertEqual(len(calls), 1, 'a permanent policy refusal must not consume the queued success')
+        self.assertEqual(len(answers), 1)
+        self.assertEqual(blocked['state'], 'failed')
+        self.assertEqual(blocked['message_t']['params']['why'], reason)
+        self.assertEqual(blocked['setup_result']['result'], 'failed')
+
+        # An explicit later attempt encounters a transient failure with the
+        # same wording. Its missing typed refusal must retain ordinary retry.
+        answers[:] = [{'result': 'failed', 'text_t': reason, 'timings': {}}, done]
+        calls.clear()
+        _, code = await self.call_setup(blocked['setup_request'])
+        self.assertEqual(code, 202)
+        await self.settle()
+        recovered = self.part['api']['state']()
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(recovered['state'], 'farming')
+        self.assertEqual(recovered['setup_result']['result'], 'done')
 
     async def test_explicit_setup_retries_unchanged_target_and_only_reports_actual_result(self):
         self.engraving = 'real'

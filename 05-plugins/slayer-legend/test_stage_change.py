@@ -387,6 +387,8 @@ class Sequence(unittest.TestCase):
         self.assertEqual(game.moves, [])
         self.assertEqual(game.state["stage"], 915)
         self.assertFalse(game.verified_setup)
+        self.assertFalse(answer["retryable"])
+        self.assertEqual(answer["failure_code"], "preset_action_paused")
 
     def test_correct_visible_preset_does_not_block_stage_change(self):
         game = Game(stage=915, preset="III", unfolded_forever=True)
@@ -527,7 +529,8 @@ class Mode(unittest.TestCase):
             game.state["pause_left"] = 5 if answer == "l’utilisateur joue" else 0
             if isinstance(answer, str):
                 raise busy(answer)
-            return {"result": answer["result"], "text_t": answer["text"] and {"template": answer["text"], "params": {}}}
+            return {**{key: answer[key] for key in ("retryable", "failure_code") if key in answer},
+                    "result": answer["result"], "text_t": answer["text"] and {"template": answer["text"], "params": {}}}
 
         ports = game.ports()
 
@@ -594,6 +597,25 @@ class Mode(unittest.TestCase):
         self.assertEqual(len(calls), 2)
         self.assertEqual(state["state"], "farming", french(state["message_t"]))
         self.assertEqual(alerts, ["Farming mpw4 ready in 2 s"], "no failure alert, the retry's time in")
+
+    def test_typed_preset_policy_refusal_stops_after_one_attempt(self):
+        reason = "Préréglage IV demandé, II lu : changement bloqué, actions en pause"
+        blocked = {"result": "failed", "text": reason, "retryable": False,
+                   "failure_code": "preset_action_paused"}
+        calls, state, alerts = self.enter([blocked, done()])
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(state["state"], "failed")
+        self.assertIn(reason, french(state["message_t"]))
+        self.assertEqual(len(alerts), 1)
+        self.assertIn(reason, alerts[0])
+
+    def test_identical_text_without_typed_refusal_still_uses_transient_retry(self):
+        transient = {"result": "failed",
+                     "text": "Préréglage IV demandé, II lu : changement bloqué, actions en pause"}
+        calls, state, alerts = self.enter([transient, done()])
+        self.assertEqual(len(calls), 2, "retry policy never infers permanent failure from translated text")
+        self.assertEqual(state["state"], "farming")
+        self.assertEqual(alerts, ["Farming mpw4 ready in 2 s"])
 
     def test_retry_backoff(self):
         self.assertEqual([mode_rules.retry_after(n, 0) for n in (1, 2, 3, 4, 5)], [2, 4, 8, 16, 16])

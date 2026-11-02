@@ -62,6 +62,8 @@ separate milestones. Historical checked items below do not close a new regressio
   including a bar below the grid, while preserving strict action verification.
 - [ ] Treat known policy/configuration refusals as actionable blockers instead
   of retrying them like transient capture or animation failures.
+  Typed preset refusals and target-bound observation are implemented; verify
+  installed idle behaviour, explicit retry, and the rendered blocker in options.
 - [x] Explain an observed preset mismatch before forbidden preset changes;
   check before stage navigation when the preset is already readable.
 - [x] Reject incomplete Gold-maxed recipes before Equip and explain the
