@@ -134,8 +134,16 @@ separate milestones. Historical checked items below do not close a new regressio
   frames; Soul decoding matches distinct B/C/E and two new live balances,
   including a font-size change. L3 uses the complete independently validated
   raster family, with no lost reading across 510 real frames and a separate
-  reviewed 74/5 held-out card. The latest font readers still need production
-  acceptance together, including changed Soul balances and prompt Gold rates.
+  reviewed 74/5 held-out card. The installed font readers passed 45 browser
+  polls with measured Gold, Cube and all three Soul rates, no browser errors
+  or game inputs, including a viewer reconnect with the previous peer closed
+  and new video frames decoding. Independent native captures confirm actual
+  green, blue and red gains. The automatic resource circuit completed with
+  no missing counter. Production also exposed a separate calculation defect:
+  full-digit Souls inherited Gold's 60-second window and lost sparse gains.
+  Counting and measurement now both retain 30 minutes for Souls; Gold stays
+  at 60 seconds. The sparse-gain regression passes; that final window change
+  still requires deployment and a live span beyond one minute.
   Resource-spending resets are checked without spending game resources;
   paid/action controls remain forbidden. The complete item stays open until
   the installed readings, calculations and browser output agree.

@@ -12,9 +12,10 @@ place is the battle screen's stage name line (its ink) where they were
 read, number the stage number Power Saving Mode showed meanwhile, odd the
 checks in a row somewhere else.
 
-The window's length follows the resolution read (window_for): WINDOW
-while the counter is abbreviated (its last digit moves by coarse steps),
-SHORT once it reads full digits.
+Gold's window length follows the resolution read (window_for): WINDOW
+while abbreviated, SHORT for full digits. Soul and exact resource callers
+pass their 1800-second window as both long and short: rare gains must remain
+in the model even when full-digit balances stay unchanged for over a minute.
 """
 
 # Readings every SECONDS; the slope over WINDOW (SHORT in full digits);
@@ -25,8 +26,8 @@ GOLD_SECONDS = 2
 WINDOW = 300
 SHORT = 60
 IDLE = 600
-# The souls' counters move by one step of « 94.6C » every few minutes:
-# their abbreviated window is longer.
+# Soul gains can be minutes apart even with exact full-digit readings.
+# Both full and abbreviated Soul observations retain this whole window.
 SOULS_WINDOW = 1800
 # Cube/L3 balances are visible only on particular screens; retain a dated
 # measurement across visits without inventing samples while they are hidden.

@@ -58,7 +58,7 @@ class RateCompletions(unittest.IsolatedAsyncioTestCase):
         self.tasks.add(task)
         return task
 
-    def build(self, with_souls=True):
+    def build(self, with_souls=True, soul_values=None):
         async def capture(max_age=0):
             await self.capture_gate.wait()
             return None
@@ -97,7 +97,7 @@ class RateCompletions(unittest.IsolatedAsyncioTestCase):
             return {'gold': None if reading is None else {'text': reading['text'], 'value': value},
                     'gold_reading': reading}
         def souls(shot, *args):
-            value = int(shot[2]) * 2
+            value = int(shot[2]) * 2 if soul_values is None else soul_values[int(shot[2])]
             count = {'text': str(value), 'value': value, 'full': True, 'step': 1}
             return {'souls': {'green': count}, 'souls_reading': {'green': count}}
         readers = {'gold': gold, **({'souls': souls} if with_souls else {})}
@@ -150,6 +150,30 @@ class RateCompletions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.max_soul_running, 1)
         self.assertTrue(all(count == 1 for count in self.calls.values()), 'each frame/reader shares one OCR job')
         self.assertEqual((await self.handler(None))['read'], 108, 'late Soul completion cannot rewind Gold')
+
+    async def test_sparse_full_digit_soul_gain_survives_more_than_sixty_seconds_of_unchanged_balances(self):
+        observed = {100: 1000, 110: 1000, 130: 1060, 150: 1060, 170: 1060,
+                    190: 1060, 210: 1060, 230: 1060, 250: 1060, 270: 1000, 280: 1010}
+        self.build(soul_values=observed)
+        await self.handler(None)
+        for at in tuple(observed)[:9]:
+            await self.feed(at)
+            state = await self.handler(None)  # Measuring must not trim history to 60s either.
+        soul = state['souls']['green']
+        self.assertEqual((soul['window'], soul['span'], soul['read'], soul['text']),
+                         (1800, 150, 250, '1060'))
+        self.assertGreater(soul['rate'] * 3600, 0, 'a real earlier gain cannot disappear between rare drops')
+        self.assertEqual(self.api['facts']()['soul_green']['value']['value'], 1060)
+        self.assertEqual(state['window'], 60, 'full-digit Gold keeps its existing short window')
+        self.assertTrue(all(resource['window'] == 1800 for resource in state['resources'].values()))
+        for at in (270, 280):
+            await self.feed(at)
+        state = await self.handler(None)
+        soul = state['souls']['green']
+        self.assertEqual((soul['window'], soul['span'], soul['read'], soul['text']),
+                         (1800, 180, 280, '1010'))
+        self.assertGreater(soul['rate'], 0, 'spending retains the earlier earned amount through the existing offset')
+        self.assertEqual(self.api['facts']()['soul_green']['value']['value'], 1010, 'offsets cannot invent a raw balance')
 
     async def test_soul_completion_uses_same_frame_context_before_gold_ocr_finishes(self):
         self.build()

@@ -12,8 +12,9 @@ The first GET /gold starts reading the counters every 2 s while the game
 is in front; the readings stop 10 minutes after the last page asked (or
 the watchdog: api current(), which asks as a page does).
 Which readings count and the rate are in gold_rules.py: one window each,
-the same rules, its length following the resolution read (full digits:
-a short window); spending souls is left out, spending gold starts its
+the same rules, Gold's length following the resolution read (full digits:
+a short window), Souls keeping 30 minutes at either resolution; spending
+souls is left out, spending gold starts its
 window again. The game observer publishes each completed reader with its
 original capture timestamp and that frame's cheap stage context; slow Soul
 OCR never holds Gold sampling behind a full scan. Older game APIs retain the
@@ -288,7 +289,7 @@ def gold(ports, screens, stage, counter, rules, souls=None, table=None):
                 window, counts = rules.where(status["souls"][colour], kind, here)
                 count = (row or {}).get(colour)
                 if counts and count:
-                    window = rules.counted(window, count, captured_at, rules.SOULS_WINDOW, "skip")
+                    window = rules.counted(window, count, captured_at, rules.SOULS_WINDOW, "skip", short=rules.SOULS_WINDOW)
                 status["souls"][colour] = window
         if reader in ("gold", "cubes", "equipment_l3"):
             observe_resources(shot, readings, captured_at)
@@ -357,10 +358,10 @@ def gold(ports, screens, stage, counter, rules, souls=None, table=None):
         status["reset_reason"] = reason
         return True
 
-    def measured(window, long=rules.WINDOW):
+    def measured(window, long=rules.WINDOW, short=rules.SHORT):
         """(window with its samples trimmed, rate, samples, seconds of
         its window)."""
-        seconds = rules.window_for(window["step"], long)
+        seconds = rules.window_for(window["step"], long, short)
         rate, samples = rules.rate(window["samples"], ports.clock.wall(), seconds)
         return {**window, "samples": samples}, rate, samples, seconds
 
@@ -382,7 +383,7 @@ def gold(ports, screens, stage, counter, rules, souls=None, table=None):
         answer = {}
         for colour in colours:
             status["souls"][colour], rate, samples, seconds = measured(
-                status["souls"][colour], rules.SOULS_WINDOW
+                status["souls"][colour], rules.SOULS_WINDOW, short=rules.SOULS_WINDOW
             )
             answer[colour] = {
                 "text": status["souls"][colour]["text"],
