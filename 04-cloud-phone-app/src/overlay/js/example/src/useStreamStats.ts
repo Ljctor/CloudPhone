@@ -28,11 +28,14 @@ export function useStreamStats(deviceRef, gatewayUrl) {
     let frameCallback = null;
 
     const watchFrames = (video) => {
-      if (!video || video === watchedVideo || typeof video.requestVideoFrameCallback !== 'function') return;
+      if (video === watchedVideo) return;
       if (watchedVideo && frameCallback !== null) watchedVideo.cancelVideoFrameCallback(frameCallback);
       watchedVideo = video;
       presented = 0;
+      frameCallback = null;
+      if (!video || typeof video.requestVideoFrameCallback !== 'function') return;
       const onFrame = () => {
+        if (stopped || watchedVideo !== video) return;
         presented += 1;
         if (!stopped && watchedVideo === video) frameCallback = video.requestVideoFrameCallback(onFrame);
       };
@@ -47,7 +50,7 @@ export function useStreamStats(deviceRef, gatewayUrl) {
         const video = deviceRef.current?.querySelector('video');
         watchFrames(video);
         let shown = null;
-        if (watchedVideo) {
+        if (watchedVideo && frameCallback !== null) {
           shown = presented;
         } else {
           const quality = video?.getVideoPlaybackQuality?.();
@@ -70,19 +73,20 @@ export function useStreamStats(deviceRef, gatewayUrl) {
             console.warn('Stream statistics:', error);
           }
         }
-        if (stopped) return;
+        if (stopped || connection !== activePeerConnection() || video !== deviceRef.current?.querySelector('video')) return;
         let pingSource = sampleData.ping === null ? null : 'ICE';
         if (sampleData.ping === null) {
           const start = performance.now();
           try {
-            await fetch(`${gatewayUrl}/api/v1/ping`, { cache: 'no-store' });
+            const response = await fetch(`${gatewayUrl}/api/v1/ping`, { cache: 'no-store', signal: AbortSignal.timeout(5000) });
+            if (!response.ok) throw new Error('Ping refused');
             sampleData.ping = performance.now() - start;
             pingSource = 'HTTP';
           } catch {
             sampleData.ping = null;
           }
         }
-        if (stopped) return;
+        if (stopped || connection !== activePeerConnection() || video !== deviceRef.current?.querySelector('video')) return;
         // An unchanged Android screen can legitimately send no frames. Only
         // suspect presentation when decoding advances while presentation stops.
         const decoded = sampleData.details.framesDecoded;
@@ -100,7 +104,7 @@ export function useStreamStats(deviceRef, gatewayUrl) {
           });
         }
         decodedBefore = decoded;
-        if (connection && now - sampledAt >= 10000) {
+        if (connection && (sampledAt === 0 || now - sampledAt >= 5000)) {
           sampledAt = now;
           streamDiagnostic('stats', {
             connection: connection.connectionState, ice: connection.iceConnectionState,
@@ -111,7 +115,7 @@ export function useStreamStats(deviceRef, gatewayUrl) {
             freezeCount: sampleData.details.freezeCount ?? null,
             totalFreezesDuration: sampleData.details.totalFreezesDuration ?? null,
             paused: video?.paused ?? true, readyState: video?.readyState ?? 0,
-            width: video?.videoWidth ?? 0, hidden: document.hidden,
+            width: video?.videoWidth ?? 0, height: video?.videoHeight ?? 0, hidden: document.hidden,
           });
         }
         const current = { time: now, received: sampleData.received, shown, bytes: sampleData.bytes };

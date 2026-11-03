@@ -38,6 +38,7 @@ from . import logs
 from .logs import log
 from .http import activity
 from .http import viewers
+from .http.viewer_sessions import ViewerSessions
 from .http import display
 from .http import settings
 from .http import events
@@ -723,6 +724,7 @@ def init_app(videobridge_token, plugins_dir="", plugin_data=""):
 
     # Register routes
     app.router.add_get("/api/v1/ping", handle_ping)
+    app.router.add_get("/api/v1/session/token", session.page_token)
     app.router.add_get("/api/v1/display", display.get_display(
         lambda: {"width": DISPLAY_WIDTH, "height": DISPLAY_HEIGHT}, lambda: read_avd_config(AVD_DIR)))
     app.router.add_get("/api/v1/state", handle_state)
@@ -748,7 +750,12 @@ def init_app(videobridge_token, plugins_dir="", plugin_data=""):
     app.router.add_post("/api/v1/emulator/key", handle_key)
     app.router.add_post("/api/v1/emulator/touch", handle_touch)
     app.router.add_post("/api/v1/input", activity.handle_input)
-    app.router.add_get("/api/v1/emulator/ws-jsep", session.signalling(lambda: VIDEOBRIDGE_CHANNEL))
+    signalling_sessions = ViewerSessions()
+    app.on_shutdown.append(signalling_sessions.shutdown)
+    app.router.add_post("/api/v1/viewers/reset", signalling_sessions.reset_handler(forget_state))
+    app.router.add_post("/api/v1/stream/reset", signalling_sessions.reset_handler(forget_state))
+    app.router.add_get("/api/v1/emulator/ws-jsep", session.signalling(
+        lambda: VIDEOBRIDGE_CHANNEL, signalling_sessions))
     if WEB_ROOT:
         index = session.index(WEB_ROOT)
         app.router.add_get("/", index)

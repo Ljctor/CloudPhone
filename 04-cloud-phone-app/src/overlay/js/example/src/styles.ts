@@ -35,7 +35,7 @@ export const styles = {
   },
   device: { position: 'relative', flex: '0 0 auto', background: '#000' },
   loading: {
-    position: 'absolute', inset: 0, zIndex: 3, display: 'flex', flexDirection: 'column',
+    position: 'absolute', inset: 0, zIndex: 6, display: 'flex', flexDirection: 'column',
     alignItems: 'center', justifyContent: 'center', gap: '12px', background: '#20242b',
   },
   spinner: {
@@ -50,7 +50,7 @@ export const styles = {
   pluginLayer: { position: 'absolute', inset: 0, zIndex: 3, pointerEvents: 'none' },
   // A plugin's dialog, over the options panel.
   pluginDialog: {
-    position: 'absolute', left: '20px', right: '20px', top: '48px', zIndex: 5,
+    position: 'absolute', left: '20px', right: '20px', top: '48px', zIndex: 9,
     maxHeight: 'calc(100% - 64px)', overflowY: 'auto', touchAction: 'pan-y', boxSizing: 'border-box',
     padding: '10px 12px', borderRadius: '10px', background: '#212833',
     border: '1px solid #536174',
@@ -181,7 +181,7 @@ export const styles = {
     fontFamily: 'system-ui, sans-serif', lineHeight: 1.35,
   },
   banner: {
-    position: 'absolute', left: '50%', top: '8px', transform: 'translateX(-50%)', zIndex: 3,
+    position: 'absolute', left: '50%', top: '8px', transform: 'translateX(-50%)', zIndex: 6,
     padding: '10px 14px', borderRadius: '10px', background: 'rgba(20, 22, 27, 0.92)',
     border: '1px solid #3b3f47', color: '#e8ebf0', fontFamily: 'system-ui, sans-serif',
     fontSize: '13px', textAlign: 'center', maxWidth: '80%', boxSizing: 'border-box',
@@ -195,7 +195,9 @@ export const styles = {
     background: 'transparent', color: '#8a919c', fontSize: '14px', lineHeight: 1,
   },
   info: {
-    position: 'absolute', left: '8px', right: '8px', top: '8px', zIndex: 4,
+    // Options and diagnostics remain interactive above a missing-stream cover
+    // and every plugin overlay. Their lifetime is independent of the video.
+    position: 'absolute', left: '8px', right: '8px', top: '8px', zIndex: 8,
     maxHeight: 'calc(100% - 16px)', overflowY: 'auto', touchAction: 'pan-y', boxSizing: 'border-box',
     padding: '10px 12px', borderRadius: '10px', background: '#171c24',
     border: '1px solid #465365', boxShadow: '0 12px 36px rgba(0, 0, 0, 0.45)', fontFamily: 'system-ui, sans-serif', fontSize: '13px',

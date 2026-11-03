@@ -19,9 +19,8 @@ import time
 from aiohttp import web
 
 from ..adapters import host_files
-from ..adapters.videobridge import Bridge
 from ..core import actions, session
-from ..core.stream_diagnostics import STREAMS
+from ..core.stream_diagnostics import STREAMS, valid_identity
 from . import viewers
 
 TOKEN = secrets.token_urlsafe(32)
@@ -47,6 +46,17 @@ async def guard(request, handler):
     return await handler(request)
 
 
+async def page_token(request):
+    """Recover after a gateway restart without replacing this page's bundle.
+
+    Like the index, this is same-origin readable and never cached. Fetch
+    metadata also refuses cross-site navigations that omit an Origin.
+    """
+    if request.headers.get("Sec-Fetch-Site") in ("cross-site", "same-site"):
+        return web.json_response({"error": "Same-origin token refresh required"}, status=403)
+    return web.json_response({"token": TOKEN}, headers={"Cache-Control": "no-store", "Vary": "Origin, Sec-Fetch-Site"})
+
+
 def index(web_root):
     """The handler of GET /: the page, with this start's token. Never
     cached, so a reload always gets the current token and the current
@@ -62,15 +72,18 @@ def index(web_root):
     return handle
 
 
-def signalling(channel):
+def signalling(channel, sessions, bridge_factory=None):
     """The handler of GET /api/v1/emulator/ws-jsep (WebSocket Upgrade):
     WebRTC signalling between the browser and the Video Bridge over rtc2.
     channel() is the Video Bridge's gRPC channel, None when there is none."""
     async def handle(request):
-        ws = web.WebSocketResponse()
+        ws = web.WebSocketResponse(timeout=1)
         await ws.prepare(request)
-        sid = STREAMS.begin()
         viewer = viewers.viewer_of(request)
+        attempt = request.query.get("attempt")
+        if not valid_identity(viewer) or not valid_identity(attempt, 12):
+            attempt = None
+        sid = STREAMS.begin(viewer, attempt)
         if await viewers.refuse_if_kicked(ws, viewer):
             STREAMS.event(sid, "viewer_refused")
             STREAMS.close(sid)
@@ -84,16 +97,32 @@ def signalling(channel):
             STREAMS.close(sid)
             return ws
 
-        bridge = Bridge(channel(), session.bearer(request.app["videobridge_token"]))
+        connection = sessions.join(ws, viewer)
+        if connection is None:
+            STREAMS.event(sid, "viewer_refused")
+            await ws.close(code=4002, message=b"Viewer reconnect in progress")
+            STREAMS.close(sid)
+            return ws
+        bridge = None
         guid = None
+        opening = None
         stream_task = None
         bye_forwarded = False
         viewers.joined(ws, viewer)
 
         try:
+            if bridge_factory is None:
+                from ..adapters.videobridge import Bridge
+                factory = Bridge
+            else:
+                factory = bridge_factory
+            bridge = factory(channel(), session.bearer(request.app["videobridge_token"]))
             STREAMS.event(sid, "bridge_open_requested")
-            guid = await bridge.open(session.STUN)
+            opening = asyncio.create_task(bridge.open(session.STUN))
+            guid = await asyncio.shield(opening)
             STREAMS.event(sid, "bridge_opened")
+            if ws.closed or connection.closing:
+                return ws
 
             async def stream_to_client():
                 STREAMS.event(sid, "bridge_subscribed")
@@ -131,21 +160,60 @@ def signalling(channel):
         except Exception as error:
             STREAMS.event(sid, "handler_error", error_type=type(error).__name__)
         finally:
-            viewers.left(ws, viewer)
-            # A vanished tab cannot send bye: release its emulator participant.
-            if guid and not bye_forwarded:
+            async def teardown():
+                nonlocal guid
                 try:
-                    await bridge.send(guid, session.BYE)
-                    STREAMS.event(sid, "teardown_sent")
-                except Exception as error:
-                    STREAMS.event(sid, "teardown_error", error_type=type(error).__name__)
-            if stream_task:
-                stream_task.cancel()
-                try:
-                    await stream_task
-                except asyncio.CancelledError:
-                    pass
-            await ws.close()
-            STREAMS.close(sid)
+                    # Cancellation during RequestRtcStream must not orphan a
+                    # participant whose GUID arrives after its browser left.
+                    # The adapter bounds this request to ten seconds.
+                    if guid is None and opening is not None:
+                        try:
+                            guid = await opening
+                        except (Exception, asyncio.CancelledError):
+                            # No GUID was obtained, so there is no known
+                            # participant on which a bye can be retried.
+                            pass
+                    # Stop inbound gRPC before closing the websocket, including
+                    # a stale browser whose reader cannot receive any more.
+                    if stream_task:
+                        stream_task.cancel()
+                        try:
+                            await stream_task
+                        except asyncio.CancelledError:
+                            pass
+                        except Exception:
+                            connection.failed = True
+                    # A vanished tab cannot send bye: release its participant.
+                    # Retain known failed GUIDs so another reset can retry the
+                    # adapter's bounded send rather than falsely returning 0.
+                    async def send_bye():
+                        try:
+                            await bridge.send(guid, session.BYE)
+                            connection.failed = False
+                            STREAMS.event(sid, "teardown_sent")
+                        except Exception as error:
+                            connection.failed = True
+                            STREAMS.event(sid, "teardown_error", error_type=type(error).__name__)
+                    if guid and not bye_forwarded:
+                        connection.retry = send_bye
+                        await send_bye()
+                    await ws.close()
+                finally:
+                    STREAMS.close(sid)
+                    viewers.left(ws, viewer)
+                    sessions.left(connection)
+
+            # An HTTP/WebSocket owner may itself be cancelled. Its upstream
+            # participant still needs a terminal teardown before reset finishes.
+            cleanup = asyncio.create_task(teardown())
+            try:
+                await asyncio.shield(cleanup)
+            except asyncio.CancelledError:
+                while not cleanup.done():
+                    try:
+                        await asyncio.shield(cleanup)
+                    except asyncio.CancelledError:
+                        continue
+                raise
         return ws
     return handle

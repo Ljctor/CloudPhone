@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 import logger from "./logger";
-import { beginStreamDiagnostic, streamDiagnostic } from "./stream_diagnostics";
+import { beginStreamDiagnostic, diagnosticAttempt, streamDiagnostic } from "./stream_diagnostics";
 import Proto from "../../../proto/emulator_controller_pb";
 
 // The peer connection of the stream currently on screen, for statistics
@@ -37,6 +37,9 @@ export const CLOSED_BY_OTHER_VIEWER = 4001;
 export function activePeerConnection(): RTCPeerConnection | null {
   return currentPeerConnection;
 }
+
+/** Tear down this page's stream before a server reset or React unmount. */
+export function disconnectActiveStream() { currentDriver?.disconnect(); }
 
 /**
  * Sends an input event (label "touch", "mouse" or "keyboard") over the active
@@ -90,6 +93,8 @@ export interface JsepSignal {
  */
 export default class WsJsepProtocol {
   diagnosticSession = 0;
+  lifecycle = 0;
+  trackListeners = new AbortController();
 
   diagnostic = (event: string, data = {}) => streamDiagnostic(event, data, this.diagnosticSession);
 
@@ -169,8 +174,8 @@ export default class WsJsepProtocol {
     this.cleanup();
     this.reconnectAttempts = 0;
 
-    this.onConnected = callbacks.onConnected || this.onConnected;
-    this.onDisconnected = callbacks.onDisconnected || this.onDisconnected;
+    this.onConnected = callbacks.onConnected ?? null;
+    this.onDisconnected = callbacks.onDisconnected ?? null;
 
     this.connected = true;
     this._connect();
@@ -187,16 +192,23 @@ export default class WsJsepProtocol {
       this.reconnectTimeoutId = null;
     }
 
-    const url = viewerId
-      ? `${this.wsUrl}${this.wsUrl.includes("?") ? "&" : "?"}viewer=${encodeURIComponent(viewerId)}`
-      : this.wsUrl;
+    currentDriver = this;
     this.diagnosticSession = beginStreamDiagnostic();
+    const url = new URL(this.wsUrl, window.location.href);
+    if (viewerId) url.searchParams.set("viewer", viewerId);
+    url.searchParams.set("attempt", diagnosticAttempt(this.diagnosticSession) ?? "");
     this.diagnostic("websocket-connecting", { attempt: this.reconnectAttempts });
-    this.ws = new WebSocket(url);
-    this.ws.onopen = () => this.diagnostic("websocket-open");
-    this.ws.onmessage = this._handleWsMessage;
-    this.ws.onclose = this._handleWsClose;
-    this.ws.onerror = this._handleWsError;
+    try {
+      const socket = new WebSocket(url.toString());
+      this.ws = socket;
+      socket.onopen = () => { if (this.ws === socket) this.diagnostic("websocket-open"); };
+      socket.onmessage = (event) => { if (this.ws === socket) this._handleWsMessage(event); };
+      socket.onclose = (event) => { if (this.ws === socket) this._handleWsClose(event); };
+      socket.onerror = (event) => { if (this.ws === socket) this._handleWsError(event); };
+    } catch {
+      this.diagnostic("websocket-constructor-error");
+      this._queueReconnect();
+    }
   };
 
   /**
@@ -258,12 +270,13 @@ export default class WsJsepProtocol {
     if (this.isProcessingSignal) return;
     this.isProcessingSignal = true;
 
-    while (this.signalQueue.length > 0) {
+    const lifecycle = this.lifecycle;
+    while (this.signalQueue.length > 0 && lifecycle === this.lifecycle) {
       const signal = this.signalQueue.shift();
       await this._handleSignal(signal);
     }
 
-    this.isProcessingSignal = false;
+    if (lifecycle === this.lifecycle) this.isProcessingSignal = false;
   };
 
   /**
@@ -313,6 +326,7 @@ export default class WsJsepProtocol {
    * @param signal The JSEP signaling message.
    */
   _handleSignal = async (signal: JsepSignal) => {
+    const lifecycle = this.lifecycle;
     this.diagnostic("signal-received", { kind: signal.start ? "start" : signal.type ?? (signal.sdp ? "sdp" : signal.candidate ? "candidate" : signal.bye ? "bye" : "unknown") });
     
     try {
@@ -323,12 +337,14 @@ export default class WsJsepProtocol {
         await this._handleStart(signal.start);
       }
       
+      if (lifecycle !== this.lifecycle) return;
       if (signal.type === "offer" || signal.type === "answer") {
         await this._handleSDP(signal as RTCSessionDescriptionInit); // Pass the whole signal object
       } else if (signal.sdp && typeof signal.sdp === "object" && signal.sdp.type) {
         await this._handleSDP(signal.sdp); // Pass the nested object
       }
       
+      if (lifecycle !== this.lifecycle) return;
       if (signal.candidate) {
         this._handleCandidate(signal.candidate);
       }
@@ -352,6 +368,7 @@ export default class WsJsepProtocol {
       iceServers: []
     };
 
+    if (this.peerConnection) throw new Error("Duplicate stream start");
     this.peerConnection = new RTCPeerConnection(localOnlyConfig);
     this.diagnostic("peer-created");
     currentPeerConnection = this.peerConnection;
@@ -386,12 +403,13 @@ export default class WsJsepProtocol {
    * @param e The track event.
    */
   _handlePeerConnectionTrack = (e: RTCTrackEvent) => {
+    if (e.currentTarget !== this.peerConnection) return;
     // Interactive use: play frames as soon as they arrive instead of letting
     // the jitter buffer hold them (Chrome: jitterBufferTarget, older:
     // playoutDelayHint; ignored where unsupported).
     this.diagnostic("track", { kind: e.track.kind, muted: e.track.muted, state: e.track.readyState });
     for (const name of ["mute", "unmute", "ended"]) {
-      e.track.addEventListener(name, () => this.diagnostic(`track-${name}`, { kind: e.track.kind, muted: e.track.muted, state: e.track.readyState }));
+      e.track.addEventListener(name, () => this.diagnostic(`track-${name}`, { kind: e.track.kind, muted: e.track.muted, state: e.track.readyState }), { signal: this.trackListeners.signal });
     }
     const receiver = e.receiver as any;
     try {
@@ -412,6 +430,7 @@ export default class WsJsepProtocol {
    * @param e The ICE candidate event.
    */
   _handlePeerIceCandidate = (e: RTCPeerConnectionIceEvent) => {
+    if (e.currentTarget !== this.peerConnection) return;
     if (e.candidate === null) return;
     this._sendJsep({ candidate: e.candidate });
   };
@@ -423,7 +442,7 @@ export default class WsJsepProtocol {
    * @param e The state change event.
    */
   _handlePeerConnectionStateChange = (e: Event) => {
-    if (!this.peerConnection) return;
+    if (!this.peerConnection || e.currentTarget !== this.peerConnection) return;
     this.diagnostic("peer-state", { state: this.peerConnection.connectionState });
     switch (this.peerConnection.connectionState) {
       case "disconnected":
@@ -442,7 +461,7 @@ export default class WsJsepProtocol {
   _setupDataChannel = (channel: RTCDataChannel) => {
     this.event_forwarders[channel.label] = channel;
     for (const name of ["open", "close", "error"]) {
-      channel.addEventListener(name, () => this.diagnostic(`data-channel-${name}`, { state: channel.readyState }));
+      channel.addEventListener(name, () => this.diagnostic(`data-channel-${name}`, { state: channel.readyState }), { signal: this.trackListeners.signal });
     }
   };
 
@@ -453,6 +472,7 @@ export default class WsJsepProtocol {
    * @param e The data channel event.
    */
   _handleDataChannel = (e: RTCDataChannelEvent) => {
+    if (e.currentTarget !== this.peerConnection) { e.channel.close(); return; }
     this._setupDataChannel(e.channel);
   };
 
@@ -463,11 +483,13 @@ export default class WsJsepProtocol {
    * @param sdp The session description.
    */
   _handleSDP = async (sdp: RTCSessionDescriptionInit) => {
-    if (!this.peerConnection) return;
+    const peer = this.peerConnection;
+    const lifecycle = this.lifecycle;
+    if (!peer) return;
 
     try {
-      await this.peerConnection.setRemoteDescription(new RTCSessionDescription(sdp));
-      if (!this.peerConnection) return;
+      await peer.setRemoteDescription(new RTCSessionDescription(sdp));
+      if (lifecycle !== this.lifecycle || peer !== this.peerConnection) return;
 
       this.diagnostic("remote-description-set", { type: sdp.type });
       this.remoteDescriptionSet = true;
@@ -479,15 +501,16 @@ export default class WsJsepProtocol {
       }
 
       if (sdp.type === "offer") {
-        const answer = await this.peerConnection.createAnswer();
-        if (!this.peerConnection) return;
+        const answer = await peer.createAnswer();
+        if (lifecycle !== this.lifecycle || peer !== this.peerConnection) return;
 
-        await this.peerConnection.setLocalDescription(answer);
-        if (!this.peerConnection) return; 
+        await peer.setLocalDescription(answer);
+        if (lifecycle !== this.lifecycle || peer !== this.peerConnection) return;
 
         this._sendJsep({ sdp: answer });
       }
     } catch (e) {
+      if (lifecycle !== this.lifecycle) return;
       this.diagnostic("remote-description-error", { name: e instanceof Error ? e.name : "Error" });
       logger.error("Failed to process remote SDP:", e);
     }
@@ -500,11 +523,13 @@ export default class WsJsepProtocol {
    * @param candidate The ICE candidate object or string.
    */
   _addIceCandidate = (candidate: RTCIceCandidateInit | string) => {
+    const lifecycle = this.lifecycle;
     try {
       const candidateInit = typeof candidate === 'string'
         ? { candidate: candidate, sdpMid: "0", sdpMLineIndex: 0 }
         : candidate;
       this.peerConnection?.addIceCandidate(new RTCIceCandidate(candidateInit)).catch((error) => {
+        if (lifecycle !== this.lifecycle) return;
         this.diagnostic("remote-candidate-error", { name: error?.name ?? "Error" });
         logger.warn("Failed to add ICE candidate:", error);
       });
@@ -612,6 +637,11 @@ export default class WsJsepProtocol {
    * @private
    */
   _disconnectState = () => {
+    this.lifecycle += 1;
+    this.trackListeners.abort();
+    this.trackListeners = new AbortController();
+    if (currentDriver === this) currentDriver = null;
+    for (const channel of Object.values(this.event_forwarders)) channel.close();
     this.signalQueue = [];
     this.isProcessingSignal = false;
 
@@ -632,6 +662,7 @@ export default class WsJsepProtocol {
       this.peerConnection.onicegatheringstatechange = null;
       this.peerConnection.onsignalingstatechange = null;
       this.peerConnection.onicecandidateerror = null;
+      for (const receiver of this.peerConnection.getReceivers()) receiver.track?.stop();
       this.peerConnection.close();
       if (currentPeerConnection === this.peerConnection) {
         currentPeerConnection = null;
@@ -665,9 +696,10 @@ export default class WsJsepProtocol {
     // black/stalled stream.
     this._sendJsep({ bye: true });
 
+    const wasActive = !!this.ws || !!this.peerConnection;
     this._disconnectState();
 
-    if (this.onDisconnected) {
+    if (wasActive && this.onDisconnected) {
       this.onDisconnected(this);
     }
   };
@@ -677,6 +709,8 @@ export default class WsJsepProtocol {
    */
   cleanup = () => {
     this.disconnect();
+    this.onConnected = null;
+    this.onDisconnected = null;
     this.event_forwarders = {};
   };
 }

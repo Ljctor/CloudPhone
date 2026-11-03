@@ -106,6 +106,38 @@ class StreamDiagnostics(unittest.TestCase):
         self.assertIn("12", records.output[0])
         self.assertIn("22", records.output[1])
 
+
+    def test_attempt_before_websocket_and_late_final_events_keep_identity(self):
+        diagnostics = Diagnostics(limit=2)
+        identity = {"viewer": "viewer-one", "attemptId": "attempt-0123456789"}
+        event = {"kind": "client", "state": "started", "storageAvailable": False, "localStorageKeys": 0}
+        key, events = check_browser_events({**identity, "events": [event]})
+        diagnostics.browser_events(key, events)
+        self.assertEqual(diagnostics.snapshot()["active"], [])
+        self.assertEqual(diagnostics.snapshot()["attempts"][0]["browser_events"][0]["state"], "started")
+        sid = diagnostics.begin(identity["viewer"], identity["attemptId"])
+        diagnostics.close(sid)
+        diagnostics.browser_events({**identity, "sessionId": sid}, [{"kind": "websocket", "state": "closed", "code": 1000}])
+        snapshot = diagnostics.snapshot()
+        self.assertEqual(len(snapshot["recent"][0]["browser_events"]), 2)
+        self.assertNotIn(identity["viewer"], json.dumps(snapshot))
+        with self.assertRaises(KeyError):
+            diagnostics.browser_events({**identity, "viewer": "other-viewer", "sessionId": sid}, [event])
+        restarted = Diagnostics()
+        restarted.browser_events({**identity, "sessionId": sid}, [{"kind": "token", "state": "refreshed"}])
+        self.assertEqual(restarted.snapshot()["attempts"][0]["browser_events"][0]["state"], "refreshed")
+        for number in range(5):
+            diagnostics.browser_events({**identity, "attemptId": "attempt-number-" + str(number)}, [event])
+        self.assertEqual(len(diagnostics.snapshot()["attempts"]), 2)
+
+    def test_attempt_fields_and_context_flags_are_strict(self):
+        identity = {"viewer": "viewer-one", "attemptId": "attempt-0123456789"}
+        for addition in ({"viewer": "https://private.example"}, {"attemptId": "short"}, {"token": "secret"}):
+            with self.assertRaises(ValueError):
+                check_browser_events({**identity, **addition, "events": [{"kind": "client", "state": "started"}]})
+        with self.assertRaises(ValueError):
+            check_browser_events({**identity, "events": [{"kind": "client", "storageAvailable": 1}]})
+
     def test_elapsed_time_and_final_duration_are_stable(self):
         now = [10.0]
         diagnostics = Diagnostics(clock=lambda: now[0])

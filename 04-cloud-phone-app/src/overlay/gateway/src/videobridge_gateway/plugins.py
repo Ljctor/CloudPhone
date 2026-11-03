@@ -202,6 +202,10 @@ class Screenshots:
                 self._refresh_input()
                 if usable and flight[1] == self._generation:
                     return value
+                # A completed task can return without yielding. Let its queued
+                # done callback clear the stale flight before retrying, otherwise
+                # this loop can starve every HTTP/WebSocket request indefinitely.
+                await asyncio.sleep(0)
                 continue
             started = time.time()
             entry = (now, self._generation, loop.create_task(self._capture()))

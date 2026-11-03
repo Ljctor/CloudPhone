@@ -4,6 +4,8 @@ type Fields = Record<string, string | number | boolean | null>;
 const records: { time: number; session: number; event: string; data: Fields }[] = [];
 const listeners = new Set<(record: typeof records[number]) => void>();
 let session = 0;
+const attempts = new Map<number, string>();
+export function diagnosticAttempt(id = session): string | undefined { return attempts.get(id); }
 
 export function streamDiagnostic(event: string, data: Fields = {}, id = session) {
   const record = { time: Date.now() / 1000, session: id, event, data };
@@ -14,7 +16,15 @@ export function streamDiagnostic(event: string, data: Fields = {}, id = session)
 
 export function beginStreamDiagnostic() {
   session += 1;
-  streamDiagnostic('session-start', { visibility: document.visibilityState });
+  const attemptId = window.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  attempts.set(session, attemptId);
+  if (attempts.size > 32) attempts.delete(attempts.keys().next().value);
+  let localStorageKeys = 0, sessionStorageKeys = 0, storageAvailable = true;
+  try { localStorageKeys = Math.min(localStorage.length, 1000); sessionStorageKeys = Math.min(sessionStorage.length, 1000); }
+  catch { storageAvailable = false; }
+  streamDiagnostic('session-start', { visibility: document.visibilityState, localStorageKeys,
+    sessionStorageKeys, storageAvailable, tokenPresent: !!document.querySelector('meta[name="cloudphone-token"]')?.getAttribute('content'),
+    secureContext: window.isSecureContext, online: navigator.onLine });
   return session;
 }
 

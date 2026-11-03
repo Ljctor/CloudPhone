@@ -2,9 +2,9 @@
 // stream's state. No React, no DOM.
 
 // Give up showing the reconnect feedback if no frame arrives in this time.
-export const RECONNECT_FEEDBACK_MS = 15000;
-// Leave enough time for the WebSocket bye to reach the gateway and for the
-// emulator-side participant to be destroyed before requesting a new one.
+export const RECONNECT_FEEDBACK_MS = 45000;
+// After the gateway acknowledges teardown, briefly let the video element
+// unmount before requesting the next stream.
 export const REMOUNT_DELAY_MS = 1000;
 // A stream still connecting after this many seconds counts as lost.
 export const STUCK_AFTER_S = 20;

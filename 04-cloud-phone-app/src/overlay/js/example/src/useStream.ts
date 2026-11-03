@@ -3,6 +3,8 @@
 // feedback while a manual reconnect waits for its first frame, and how long
 // it has been connecting. When to reconnect is in streamRules.ts.
 import { useEffect, useRef, useState } from 'react';
+import { disconnectActiveStream } from '../../src/components/emulator/net/ws_jsep_protocol_driver';
+import { postFetch, postHeaders, VIEWER_ID } from './api';
 import { english } from './i18n';
 import { pageLog } from './logs';
 import { streamDiagnostic } from '../../src/components/emulator/net/stream_diagnostics';
@@ -15,6 +17,10 @@ import {
 // touch in progress). Returns { state, mounted, generation (the stream's
 // key), reconnecting, connectingFor (s), manualReconnect, handleState }.
 export function useStream({ server, input }) {
+  const alive = useRef(true);
+  const acceptingState = useRef(true);
+  const currentGeneration = useRef(0);
+  const resetAbort = useRef(null);
   const feedbackTimer = useRef(null);
   const reconnectTimer = useRef(null);
   const [reconnecting, setReconnecting] = useState(false);
@@ -46,20 +52,52 @@ export function useStream({ server, input }) {
     reconnectStream();
   };
 
-  const reconnectStream = () => {
-    if (reconnectTimer.current !== null) return;
+  const reconnectStream = async () => {
+    if (!acceptingState.current) return;
+    acceptingState.current = false;
     input.pointerDown.current = false;
+    disconnectActiveStream();
     setState('connecting');
+    setConnectingFor(0);
     setMounted(false);
+    streamDiagnostic('reset-requested');
+    const controller = new AbortController();
+    resetAbort.current = controller;
+    const timeout = window.setTimeout(() => controller.abort(), 30000);
+    let resetComplete = false;
+    try {
+      const response = await postFetch('/api/v1/stream/reset', {
+        method: 'POST', headers: postHeaders(), body: JSON.stringify({ viewer: VIEWER_ID }), signal: controller.signal,
+      });
+      resetComplete = response.ok;
+      streamDiagnostic(response.ok ? 'reset-completed' : 'reset-failed');
+    } catch {
+      if (alive.current) streamDiagnostic('reset-failed');
+    } finally {
+      window.clearTimeout(timeout);
+      resetAbort.current = null;
+    }
+    if (!alive.current) return;
+    if (!resetComplete) {
+      currentGeneration.current += 1;
+      setGeneration(currentGeneration.current);
+      acceptingState.current = true;
+      setState('disconnected');
+      stopFeedback();
+      return;
+    }
     reconnectTimer.current = window.setTimeout(() => {
-      setGeneration((current) => current + 1);
+      currentGeneration.current += 1;
+      setGeneration(currentGeneration.current);
+      acceptingState.current = true;
       setMounted(true);
       reconnectTimer.current = null;
     }, REMOUNT_DELAY_MS);
   };
 
   const loggedState = useRef(null);
-  const handleState = (nextState) => {
+  const handleState = (nextState, fromGeneration = currentGeneration.current) => {
+    if (!alive.current || !acceptingState.current || fromGeneration !== currentGeneration.current) return;
     // The stream reports its state often; only changes are logged.
     if (nextState !== loggedState.current) {
       loggedState.current = nextState;
@@ -68,6 +106,12 @@ export function useStream({ server, input }) {
     }
     setState(nextState);
     if (nextState === 'connected' && reconnectTimer.current === null) stopFeedback();
+  };
+
+  const handleError = (_error, fromGeneration = currentGeneration.current) => {
+    if (!alive.current || !acceptingState.current || fromGeneration !== currentGeneration.current) return;
+    streamDiagnostic('signaling-error');
+    pageLog('warning', 'Stream signaling or playback error; see stream diagnostics.');
   };
 
   useEffect(() => {
@@ -80,7 +124,7 @@ export function useStream({ server, input }) {
     return () => window.clearInterval(timer);
   }, [state, generation]);
 
-  const healthy = serverHealthy(server);
+  const healthy = serverHealthy(server) && !server.value?.kicked;
   useEffect(() => {
     if (!autoReconnectDue({ healthy, stream: state, connectingFor })) return undefined;
     const timer = window.setTimeout(reconnectStream, AUTO_RECONNECT_DELAY_MS);
@@ -88,6 +132,7 @@ export function useStream({ server, input }) {
   }, [healthy, state, connectingFor >= STUCK_AFTER_S]);
 
   useEffect(() => {
+    alive.current = true;
     let wasHidden = document.visibilityState === 'hidden';
 
     const visibilityChanged = () => {
@@ -119,6 +164,8 @@ export function useStream({ server, input }) {
     document.addEventListener('visibilitychange', visibilityChanged);
     window.addEventListener('pageshow', pageShown);
     return () => {
+      alive.current = false;
+      resetAbort.current?.abort();
       window.removeEventListener('keydown', hardwareKey, true);
       window.removeEventListener('focus', focusChanged);
       window.removeEventListener('blur', focusChanged);
@@ -135,5 +182,5 @@ export function useStream({ server, input }) {
     };
   }, []);
 
-  return { state, mounted, generation, reconnecting, connectingFor, manualReconnect, handleState };
+  return { state, mounted, generation, reconnecting, connectingFor, manualReconnect, handleState, handleError };
 }

@@ -51,6 +51,9 @@ const EmulatorWebrtcView: React.FC<EmulatorWebrtcViewProps> = ({
   width,
   height,
 }) => {
+  const disposed = useRef(false);
+  const playbackEpoch = useRef(0);
+  const gestureCleanup = useRef<(() => void) | null>(null);
   const startedAt = useRef<number>(performance.now());
   const [audio, setAudio] = useState<boolean>(false);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -75,6 +78,18 @@ const EmulatorWebrtcView: React.FC<EmulatorWebrtcViewProps> = ({
   const frameCallback = useRef<number | null>(null);
 
   const onDisconnect = () => {
+    if (disposed.current) return;
+    playbackEpoch.current += 1;
+    gestureCleanup.current?.();
+    gestureCleanup.current = null;
+    const video = videoRef.current;
+    if (frameCallback.current !== null) (video as any)?.cancelVideoFrameCallback?.(frameCallback.current);
+    frameCallback.current = null;
+    if (video) {
+      video.pause();
+      (video.srcObject as MediaStream | null)?.getTracks().forEach((track) => track.stop());
+      video.srcObject = null;
+    }
     hasRenderedFrame.current = false;
     blocked.current = false;
     setConnect("disconnected");
@@ -83,25 +98,31 @@ const EmulatorWebrtcView: React.FC<EmulatorWebrtcViewProps> = ({
 
   // Start playing on the page's next gesture, once.
   const playOnGesture = () => {
+    gestureCleanup.current?.();
     const events = ["pointerdown", "keydown", "touchend"];
     const onGesture = () => {
       events.forEach((name) => document.removeEventListener(name, onGesture, true));
-      safePlay();
+      gestureCleanup.current = null;
+      if (!disposed.current) safePlay();
     };
+    gestureCleanup.current = () => events.forEach((name) => document.removeEventListener(name, onGesture, true));
     events.forEach((name) => document.addEventListener(name, onGesture, true));
   };
 
   const safePlay = async () => {
     const video = videoRef.current;
-    if (!video) {
+    const epoch = playbackEpoch.current;
+    if (!video || disposed.current) {
       // Component was unmounted.
       return;
     }
     try {
       await video.play();
+      if (disposed.current || epoch !== playbackEpoch.current) return;
       jsep.diagnostic("play-resolved", { paused: video.paused, muted: video.muted, readyState: video.readyState });
       logger.debug("Automatic playback started!");
     } catch (error: any) {
+      if (disposed.current || epoch !== playbackEpoch.current) return;
       jsep.diagnostic("play-rejected", { name: error?.name ?? "Error", muted: video.muted, readyState: video.readyState });
       if (error?.name !== "NotAllowedError" || !videoRef.current) {
         // AbortError: a new load interrupted this play(); canplay retries.
@@ -116,6 +137,7 @@ const EmulatorWebrtcView: React.FC<EmulatorWebrtcViewProps> = ({
           await video.play();
           return;
         } catch (again: any) {
+          if (disposed.current || epoch !== playbackEpoch.current) return;
           error = again;
         }
       }
@@ -139,6 +161,7 @@ const EmulatorWebrtcView: React.FC<EmulatorWebrtcViewProps> = ({
   };
 
   const onConnect = (track: MediaStreamTrack) => {
+    if (disposed.current) { track.stop(); return; }
     const video = videoRef.current;
     if (!video) {
       // Component was unmounted.
@@ -175,7 +198,7 @@ const EmulatorWebrtcView: React.FC<EmulatorWebrtcViewProps> = ({
     // Android screen temporarily reports `waiting`. A paused video (play
     // refused) is not connected: it waits for a gesture.
     const video = videoRef.current;
-    if (!video || (blocked.current && video.paused)) return;
+    if (disposed.current || !video || !video.srcObject || video.readyState < 2 || !video.videoWidth || (blocked.current && video.paused)) return;
     if (!hasRenderedFrame.current) jsep.diagnostic("first-frame", {
       elapsedMs: Math.round(performance.now() - startedAt.current),
       width: video.videoWidth, height: video.videoHeight, readyState: video.readyState,
@@ -187,6 +210,7 @@ const EmulatorWebrtcView: React.FC<EmulatorWebrtcViewProps> = ({
   };
 
   const onWaiting = () => {
+    if (disposed.current) return;
     jsep.diagnostic("video-waiting", { hadFrame: hasRenderedFrame.current });
     if (!hasRenderedFrame.current && !blocked.current) {
       setConnect("connecting");
@@ -198,6 +222,7 @@ const EmulatorWebrtcView: React.FC<EmulatorWebrtcViewProps> = ({
   };
 
   useEffect(() => {
+    disposed.current = false;
     startedAt.current = performance.now();
     jsep.startStream({
       onConnected: onConnect,
@@ -221,10 +246,22 @@ const EmulatorWebrtcView: React.FC<EmulatorWebrtcViewProps> = ({
     }, 5000);
 
     return () => {
+      disposed.current = true;
+      playbackEpoch.current += 1;
+      gestureCleanup.current?.();
+      gestureCleanup.current = null;
       window.clearTimeout(firstFrameTimer);
       events.forEach((name) => video?.removeEventListener(name, onVideoEvent));
       if (frameCallback.current !== null) (video as any)?.cancelVideoFrameCallback?.(frameCallback.current);
-      jsep.disconnect();
+      frameCallback.current = null;
+      jsep.cleanup();
+      if (video) {
+        video.pause();
+        const stream = video.srcObject as MediaStream | null;
+        stream?.getTracks().forEach((track) => track.stop());
+        video.srcObject = null;
+        video.load();
+      }
     };
   }, []);
 

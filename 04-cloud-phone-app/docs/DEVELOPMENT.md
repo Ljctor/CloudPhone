@@ -80,6 +80,20 @@ the browser and the gateway; `App.tsx` only assembles them.
 
 ## Build
 
+Reconnect retires the browser's peer, tracks, signalling socket and stale
+callbacks, then waits for that viewer's upstream session teardown through
+`POST /api/v1/stream/reset`. The legacy `/api/v1/viewers/reset` remains available.
+It preserves page/plugin settings, other viewers and the running Android apps.
+An old page refreshes its gateway token through the same-origin, uncached
+`GET /api/v1/session/token` before retrying a refused POST once.
+
+Client diagnostics are correlated by page viewer and connection attempt,
+including failures before WebSocket establishment. Bounded allowlisted events
+and media counters are exposed by `/api/v1/stream-diagnostics` and written to
+the existing logs. Storage content, SDP and tokens are excluded. Options and
+plugin dialogs stay above the stream status cover and remain usable without
+a decoded frame; the cover also offers direct Options and Reconnect buttons.
+
 On Linux x86-64 with git, curl, make, Node.js 18+ and Python 3.10+:
 
 ```sh

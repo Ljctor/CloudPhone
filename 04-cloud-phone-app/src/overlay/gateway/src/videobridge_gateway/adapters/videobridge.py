@@ -23,8 +23,13 @@ class Bridge:
     async def messages(self, guid):
         """The stream's JSEP messages from the emulator, as texts."""
         request = rtc.ReceiveJsepMessageRequest(id=rtc.Id(guid=guid))
-        async for response in self.stub.ReceiveJsepMessageStream(request, metadata=self.metadata):
-            yield response.jsep_msg.message
+        call = self.stub.ReceiveJsepMessageStream(request, metadata=self.metadata)
+        try:
+            async for response in call:
+                yield response.jsep_msg.message
+        finally:
+            # Closing the Python generator must also release the gRPC reader.
+            call.cancel()
 
     async def send(self, guid, text):
         """One JSEP message to the emulator."""

@@ -20,10 +20,10 @@ export function useDismissed(problem) {
 }
 
 // stream: the video's state; reconnecting: the user asked for a new one.
-export function StatusCover({ problem, stream, reconnecting }) {
+export function StatusCover({ problem, stream, reconnecting, onOptions, onReconnect }) {
   if (stream === 'connected' && !problem?.blocking) return null;
   return (
-    <div style={styles.loading} role="status" aria-live="polite">
+    <div style={styles.loading} data-cloudphone-notice="cover" role="status" aria-live="polite">
       {problem?.blocking && problem.level === 'error'
         ? <span style={{ ...styles.problemMark, color: LEVEL_COLORS.error }} aria-hidden="true">!</span>
         : <span style={styles.spinner} aria-hidden="true" />}
@@ -31,6 +31,11 @@ export function StatusCover({ problem, stream, reconnecting }) {
         {problem?.blocking ? tr(problem.text, problem.params) : reconnecting ? tr('Reconnexion…') : tr('Connexion au flux…')}
       </span>
       {problem?.blocking && problem.detail && <span style={styles.loadingDetail}>{tr(problem.detail)}</span>}
+      <div style={styles.buttonGroup}>
+        <button type="button" style={styles.panelButton} onClick={onOptions}>{tr('Options')}</button>
+        <button type="button" style={styles.panelButton} onClick={onReconnect}
+          disabled={reconnecting}>{tr('Reconnecter la vidéo')}</button>
+      </div>
     </div>
   );
 }
@@ -39,7 +44,7 @@ export function Banner({ problem, dismissed, dismiss }) {
   if (!bannerShown(problem, dismissed)) return null;
   return (
     <div style={{ ...styles.banner, ...styles.bannerWithClose, borderColor: LEVEL_COLORS[problem.level] }}
-      role="status">
+      data-cloudphone-notice="banner" role="status">
       <span>{tr(problem.text, problem.params)}{problem.detail && <><br /><small>{tr(problem.detail)}</small></>}</span>
       <button style={styles.bannerClose} onClick={() => dismiss(problemKey(problem))}
         aria-label={tr('Fermer')}>✕</button>

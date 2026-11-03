@@ -34,6 +34,25 @@ stream_diagnostics() {
   curl -fsS --max-time 5 "http://$host:$WEB_PORT/api/v1/stream-diagnostics" |
     python3 -c 'import json,sys; x=json.load(sys.stdin); assert x["schema_version"] == 1; assert {"emulator","android","channels","signalling","media"} <= x.keys(); assert {"active","recent","hardware_inputs"} <= x["signalling"].keys(); assert x["media"]["frames_observed"] is None'
 }
+reconnect_contract() {
+  python3 - "http://$host:$WEB_PORT" <<'PYCODE'
+import json, sys, urllib.request, urllib.error
+base = sys.argv[1]
+with urllib.request.urlopen(base + "/api/v1/session/token", timeout=5) as response:
+    assert "no-store" in response.headers.get("Cache-Control", "")
+    assert isinstance(json.load(response).get("token"), str)
+with urllib.request.urlopen(base + "/api/v1/stream-diagnostics", timeout=5) as response:
+    assert "attempts" in json.load(response)["signalling"]
+# No reset is performed: an unauthenticated call must be refused.
+request = urllib.request.Request(base + "/api/v1/stream/reset", data=b'{}',
+                                 headers={"Content-Type": "application/json"})
+try:
+    urllib.request.urlopen(request, timeout=5)
+    raise AssertionError("Unauthenticated stream reset accepted")
+except urllib.error.HTTPError as error:
+    assert error.code == 403
+PYCODE
+}
 interactive_plugin_layer() {
   python3 - "http://$host:$WEB_PORT" <<'PYCODE'
 import re, sys, urllib.request
@@ -125,6 +144,7 @@ check "installed gateway drains cancelled commands and exposes capture timestamp
 check "gateway answers on $host:$WEB_PORT" answers "http://$host:$WEB_PORT/api/v1/emulator/status"
 check "gateway reports live CPU and memory" live_metrics
 check "gateway reports bounded stream diagnostics" stream_diagnostics
+check "reconnect exposes fresh tokens and attempt diagnostics with guarded reset" reconnect_contract
 check "gateway serves its log records" bash -c \
   "curl -fsS --max-time 5 http://$host:$WEB_PORT/api/v1/logs | grep -q '\"records\"'"
 check "gateway keeps its log records in $STATE/logs" bash -c \

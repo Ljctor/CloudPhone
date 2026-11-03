@@ -93,11 +93,12 @@ function App() {
               width={screen.width}
               height={screen.height}
               muted
-              onStateChange={stream.handleState}
-              onError={(error) => console.error('Android stream:', error)}
+              onStateChange={(next) => stream.handleState(next, stream.generation)}
+              onError={(error) => stream.handleError(error, stream.generation)}
             />
           )}
-          <StatusCover problem={problem} stream={state} reconnecting={reconnecting} />
+          <StatusCover problem={problem} stream={state} reconnecting={reconnecting}
+            onOptions={() => setPanel('options')} onReconnect={stream.manualReconnect} />
           <Banner problem={problem} dismissed={dismissed} dismiss={setDismissed} />
           <div ref={pluginLayer} style={styles.pluginLayer} data-plugin-layer="true" />
           {panel && (
