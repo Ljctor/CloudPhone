@@ -20,6 +20,8 @@ from playwright.async_api import async_playwright
 URL = os.environ.get("CLOUDPHONE_URL", "").rstrip("/")
 OUT = Path(os.environ.get("CLOUDPHONE_EVIDENCE_DIR", "/tmp/cloudphone-reconnect-browser"))
 ALLOWED_POST = {"/api/v1/stream/reset", "/api/v1/viewers/reset", "/api/v1/stream-diagnostics/events"}
+OPTIONS_BUTTON = re.compile(r'^Options et plugins$|^Options and plugins$')
+RECONNECT_BUTTON = re.compile(r'^Reconnecter la vidéo$|^Reconnect the video$')
 INIT = r"""(() => {
   window.__testPeers = []; window.__testTracks = []; window.__testDataSends = 0; window.__testBlockedAttempts = [];
   const NativePeer = window.RTCPeerConnection;
@@ -75,14 +77,18 @@ async def run_browser(kind, playwright):
            {'firefox_user_prefs':{'media.autoplay.default':0, 'media.autoplay.blocking_policy':0}}))
     result = {'browser':kind, 'cases':{}, 'blockedMutations':[], 'telemetryResponses':[], 'errors':[]}
     contexts = []
-    async def make_page(block=False):
+    async def make_page(block=False, health=None):
         context = await browser.new_context(locale='fr-FR', viewport={'width':420,'height':900})
         contexts.append(context)
         await context.add_init_script(INIT + ('\nwindow.__testBlockSignaling = true;' if block else ''))
         async def guard(route):
             request = route.request
             path = urlsplit(request.url).path
-            if request.method not in ('GET','HEAD','OPTIONS') and not (request.method == 'POST' and path in ALLOWED_POST):
+            if health in ('offline', 'unknown') and path in ('/api/v1/state', '/api/v1/ping'):
+                if health == 'unknown':
+                    await asyncio.sleep(6)
+                await route.abort('connectionfailed')
+            elif request.method not in ('GET','HEAD','OPTIONS') and not (request.method == 'POST' and path in ALLOWED_POST):
                 result['blockedMutations'].append({'method':request.method,'path':path})
                 await route.abort('blockedbyclient')
             else:
@@ -155,7 +161,8 @@ async def run_browser(kind, playwright):
     async def blocked_options():
         page = await make_page(block=True)
         await page.wait_for_function("window.cloudphoneDiagnostics?.snapshot().records.some(r=>r.event==='websocket-constructor-error')",timeout=20000)
-        await page.get_by_role('button',name='Options',exact=True).first.click()
+        await assert_toolbar_controls(page)
+        await page.get_by_role('button',name=OPTIONS_BUTTON).click()
         dialog = page.get_by_role('dialog',name='Options',exact=True)
         await dialog.wait_for(state='visible')
         select = dialog.locator('select').first
@@ -181,10 +188,76 @@ async def run_browser(kind, playwright):
         current['serverAttempts'] = attempts
         await page.context.close()
         return current
+    async def assert_toolbar_controls(page):
+        assert await page.get_by_role('button', name=OPTIONS_BUTTON).count() == 1, 'Duplicate or missing toolbar Options'
+        assert await page.get_by_role('button', name=RECONNECT_BUTTON).count() == 1, 'Duplicate or missing reconnect control'
+        assert await page.locator('[data-cloudphone-notice=cover] button').count() == 0, 'Cover contains added controls'
+
+    async def stable_notice(health):
+        page = await make_page(block=True, health=health)
+        cover = page.locator('[data-cloudphone-notice=cover]')
+        expected = (r'Serveur injoignable|Server unreachable' if health == 'offline'
+                    else r'Serveur connecté.*vidéo indisponible|Server connected.*video unavailable')
+        await page.wait_for_function('(pattern) => new RegExp(pattern, "i").test(document.querySelector("[data-cloudphone-notice=cover]")?.textContent || "")',
+                                     arg=expected, timeout=25000)
+        await assert_toolbar_controls(page)
+        await page.get_by_role('button', name=OPTIONS_BUTTON).click()
+        dialog = page.get_by_role('dialog', name='Options', exact=True)
+        await dialog.wait_for(state='visible')
+        selector = dialog.locator('select').first
+        assert await selector.is_enabled(), 'Options unavailable during failure'
+        await selector.click()
+        await selector.press('Escape')
+        # Observe the actual DOM through a full automatic-retry window.
+        # Checking only the final text would miss a brief blank or spinner.
+        await page.evaluate("""() => {
+            window.__noticeChanges = [];
+            window.__testOptionsPanel = document.querySelector('[role=dialog]');
+            let previous;
+            const record = () => {
+                const cover = document.querySelector('[data-cloudphone-notice=cover]');
+                const text = cover?.textContent ?? null;
+                const panelPresent = window.__testOptionsPanel?.isConnected ?? false;
+                const key = JSON.stringify([text, panelPresent]);
+                if (key !== previous) { previous = key; window.__noticeChanges.push({at:Date.now(), text, panelPresent}); }
+            };
+            window.__noticeObserver = new MutationObserver(record);
+            window.__noticeObserver.observe(document.body, {subtree:true, childList:true, characterData:true});
+            record();
+        }""")
+        await page.wait_for_timeout(27000)
+        changes = await page.evaluate('window.__noticeChanges')
+        assert len(changes) == 1, 'Failure notice flickered or changed during retries: '+repr(changes)
+        assert re.search(expected, changes[0]['text'], re.I), 'Wrong failure classification'
+        assert changes[0]['panelPresent'], 'Options panel disappeared during retry'
+        await assert_toolbar_controls(page)
+        assert await dialog.is_visible(), 'Options panel is no longer visible'
+        assert await selector.is_enabled(), 'Options became disabled during retry'
+        await selector.click()
+        await selector.press('Escape')
+        assert await selector.evaluate('e=>{const r=e.getBoundingClientRect();return document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)===e}'), 'Notice blocks existing Options panel'
+        current = await sample(page)
+        assert not current['peers'], 'Signaling fault unexpectedly created peer'
+        OUT.mkdir(parents=True, exist_ok=True)
+        await page.screenshot(path=str(OUT/(kind+'-options-'+(health or 'no-video')+'.png')))
+        return {'changes':changes, 'media':current}
+
+    async def initial_health_unknown():
+        page = await make_page(block=True, health='unknown')
+        cover = page.locator('[data-cloudphone-notice=cover]')
+        await cover.wait_for(state='visible')
+        await page.wait_for_timeout(750)
+        text = await cover.inner_text()
+        assert not re.search(r'Serveur (?:injoignable|connecté)|Server (?:unreachable|connected)', text, re.I), 'Unknown initial health presented as established server state'
+        await assert_toolbar_controls(page)
+        return {'notice':text, 'media':await sample(page)}
     try:
         await case('reconnect_twice_second_viewer', reconnects)
         await case('stale_token_refresh', stale_token)
         await case('blocked_signaling_options_and_attempt_telemetry', blocked_options)
+        await case('server_reachable_without_video_stable_27s', lambda: stable_notice(None))
+        await case('server_unreachable_stable_27s', lambda: stable_notice('offline'))
+        await case('initial_server_health_unknown', initial_health_unknown)
         assert not result['blockedMutations'], 'Unexpected mutation attempted: '+repr(result['blockedMutations'])
     except Exception as e:
         result['safetyFailure'] = str(e)

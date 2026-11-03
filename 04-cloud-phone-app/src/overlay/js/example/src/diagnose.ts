@@ -7,13 +7,19 @@ import { english } from './i18n';
 // The single most important thing to tell the user, or null.
 // level: 'error' (needs action or will not fix itself), 'wait' (being
 // fixed), 'info' (works, but worse than usual). blocking: covers the screen.
-export function diagnose({ server, stream, connectingFor, touchFailures }) {
-  const value = server.value;
-  if (server.failures >= 2) {
+export function diagnose({ server, stream, touchFailures }) {
+  // Keep cached metrics available in Options, but never announce a stale
+  // Android failure or restart as the phone's current state.
+  const value = server.stateError ? null : server.value;
+  if (server.connection === 'unreachable' || (!server.connection && server.failures >= 2)) {
     return {
-      level: 'error', blocking: true, text: 'Serveur injoignable',
-      detail: 'Vérifiez que le VPN (WireGuard) est connecté sur cet appareil.',
+      level: 'error', blocking: stream !== 'connected', text: 'Serveur injoignable',
+      detail: 'Vérifiez la connexion et WireGuard. Les options restent accessibles.',
     };
+  }
+  if (!value && server.connection !== 'reachable' && stream !== 'connected') {
+    return { level: 'wait', blocking: true, text: 'Connexion au serveur…',
+      detail: 'Les options restent accessibles pendant la connexion.' };
   }
   if (value?.kicked) {
     return {
@@ -56,17 +62,17 @@ export function diagnose({ server, stream, connectingFor, touchFailures }) {
   }
   if (stream === 'blocked') {
     return {
-      level: 'info', blocking: true, text: 'Touchez l’écran pour lancer la vidéo',
-      detail: 'Le navigateur bloque la lecture automatique.',
+      level: 'info', blocking: true, text: 'Serveur connecté · lecture vidéo bloquée',
+      detail: 'Le navigateur bloque la lecture automatique. Touchez l’écran pour lancer la vidéo.',
     };
   }
-  if (stream === 'disconnected') {
-    return { level: 'wait', blocking: true, text: 'Vidéo interrompue', detail: 'Reconnexion…' };
-  }
-  if (stream !== 'connected' && connectingFor >= 15) {
+  if (stream !== 'connected') {
+    // A retry changes transport phases, not what the person can use. Keep
+    // this notice stable until a real frame arrives or reachability changes.
     return {
-      level: 'error', blocking: true, text: 'La vidéo ne se connecte pas',
-      detail: 'Le réseau bloque peut-être le flux vidéo (UDP). Touchez ↻ pour réessayer.',
+      level: 'wait', blocking: true, text: 'Serveur connecté · vidéo indisponible',
+      detail: server.stateError ? 'Les options restent accessibles.'
+        : 'Reconnexion automatique de la vidéo. Les options restent accessibles.',
     };
   }
   if (touchFailures >= 3) {

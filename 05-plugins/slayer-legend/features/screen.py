@@ -94,7 +94,9 @@ def screen(ports, screens, stage, rules, values, table):
         async with quick_cache["lock"]:
             if quick_cache["value"] is not None and ports.clock.monotonic() - quick_cache["time"] < SECONDS:
                 return quick_cache["value"]
+            started = ports.clock.wall()
             shot, focused = await asyncio.gather(ports.capture(max_age=SECONDS), ports.focused())
+            captured = ports.capture_time(shot) if shot and hasattr(ports, "capture_time") else started
             if shot and focused:
                 seen = await ports.analyse(screens.look, shot)
                 name, overlays = seen["screen"], seen["overlays"]
@@ -104,7 +106,7 @@ def screen(ports, screens, stage, rules, values, table):
                 plain = False
             answer = {"screen": name, "panel": None,
                       "scan": {"screen": name, "overlays": overlays, "plain": plain,
-                               "at": ports.clock.wall()}}
+                               "at": captured}}
             if shot and focused and "quest_tab" in seen:
                 answer["scan"]["quest_tab"] = seen["quest_tab"]
             quick_cache.update(time=ports.clock.monotonic(), value=answer)
@@ -112,7 +114,12 @@ def screen(ports, screens, stage, rules, values, table):
 
     async def handle_screen(request):
         if request.query.get("quick") == "1":
-            return ports.respond(await quick_screen())
+            answer = await quick_screen()
+            scan = answer["scan"]
+            # Recompute age even for a cached classification. The browser
+            # cannot subtract its own wall clock from this server's time.
+            age = ports.clock.wall() - scan["at"] if scan["at"] is not None else None
+            return ports.respond({**answer, "scan": {**scan, "age": age}})
         remembered = rules.remembered(table, request.query.get("known", ""))
         if cache["lock"] is None:
             cache["lock"] = asyncio.Lock()

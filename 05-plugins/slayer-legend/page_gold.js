@@ -4,8 +4,8 @@
 // white while its measurement window fills.
 import { drawText } from './gold_text.js';
 import { GOLD_COUNTER_FONT } from './page_gold_counter_font.js';
-import { freshnessColour } from './page_freshness.js';
-import { getScreen } from './page_screen_scan.js';
+import { freshnessColour, observeResponse, responseTime } from './page_freshness.js';
+import { getScreen, screenObservationAge } from './page_screen_scan.js';
 import { GOLD, SOULS } from './page_icons.js';
 import { RESOURCE_ICONS } from './page_resources.js';
 import { EQUIPMENT_L3_ICONS } from './page_equipment_icons.js';
@@ -51,7 +51,7 @@ export function measureResourceRate(previous, row) {
 // /gold owns the measurement windows, including across page reloads. Older
 // gateways may omit resource rates; only then use the two-snapshot fallback.
 // A present null/stale rate is unknown, never an invented zero or old estimate.
-export function hourlyRate(answer, field, fallback = null, now = Date.now() / 1000) {
+export function hourlyRate(answer, field, fallback = null, now = responseTime(answer)) {
   let source;
   if (field === 'gold') source = answer;
   else if (field.startsWith('soul_')) source = answer?.souls?.[field.slice(5)];
@@ -66,7 +66,7 @@ export function hourlyRate(answer, field, fallback = null, now = Date.now() / 10
 // The total may keep estimating from a dated measured rate while its
 // hourly row says unknown/stale. Stop extending after that model's window;
 // retain the capped estimate until the next real counter reading syncs it.
-export function estimatedCubes(cube, answer, fallback = null, now = Date.now() / 1000) {
+export function estimatedCubes(cube, answer, fallback = null, now = responseTime(answer)) {
   const base = resourceNumber(cube?.value);
   if (base === null) return null;
   const server = Object.hasOwn(answer?.resources ?? {}, 'cubes');
@@ -99,7 +99,7 @@ export function rateColour(answer, elapsed = 0) {
 // battle and its bottom panels leave the combat counters visible. A missing
 // or expired classification hides them, regardless of old resource readings.
 export function combatCountersVisible(scan, now = Date.now() / 1000) {
-  const age = now - Number(scan?.at);
+  const age = screenObservationAge(scan) ?? now - Number(scan?.at);
   if (scan?.screen !== 'battle' || !Number.isFinite(age) || age < 0 || age > 2) return false;
   if (typeof scan.plain !== 'boolean' || !Array.isArray(scan.overlays)) return false;
   const allowed = new Set(['panel', 'equipment_weapon', 'equipment_accessories', 'character_enhance', 'soul_weapon', 'better_weapon_toast']);
@@ -109,7 +109,7 @@ export function combatCountersVisible(scan, now = Date.now() / 1000) {
 
 // Equipment gains follow the stage actually read, including free play.
 // A selected farming mode or an old stage cannot identify the current drop.
-export function equipmentRateVisible(answer, field, now = Date.now() / 1000) {
+export function equipmentRateVisible(answer, field, now = responseTime(answer)) {
   if (!['weapon_l3', 'accessory_l3'].includes(field)) return true;
   const age = now - answer?.farming_read;
   return Number.isFinite(answer?.farming_read) && age >= 0 && age <= 30
@@ -155,7 +155,7 @@ export default function goldFeature(api, { overlay, enabled = () => true, screen
       cubeDrawn = '';
       return;
     }
-    const age = Math.max(0, Date.now() / 1000 - cube.seen);
+    const age = Math.max(0, responseTime(gold.answer) - cube.seen);
     const estimated = estimatedCubes(cube, gold.answer, gold.rates.cubes);
     const value = estimated !== null ? estimated.toLocaleString('en-US') :
       String(cube.value?.text ?? cube.value);
@@ -283,10 +283,12 @@ export default function goldFeature(api, { overlay, enabled = () => true, screen
     } finally { screenPending = false; }
   };
   const askGold = async () => {
+    const started = performance.now() / 1000;
     const [answer, state] = await Promise.all([
       api.get('/gold').catch(() => null), api.get('/game').catch(() => null),
     ]);
     if (disposed) return;
+    observeResponse(answer, started);
     gold.answer = answer;
     for (const row of state?.resources ?? []) {
       if (RATE_FIELDS.some(([field]) => field === row.field))

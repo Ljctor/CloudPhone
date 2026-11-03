@@ -39,7 +39,7 @@ export function serverSections({ server, configured, display, stats }) {
   const android = metrics?.android;
   return [
     ['État', [
-      ['Serveur', server.failures >= 2 ? tr('injoignable') : server.value ? tr('joignable') : '…'],
+      ['Serveur', server.connection === 'unreachable' ? tr('injoignable') : server.connection === 'reachable' ? tr('joignable') : '…'],
       ['Service Android', describeUnit(server.value?.emulator)],
       ['Android démarré', server.value?.android?.booted === true ? tr('oui')
         : server.value?.android?.booted === false ? tr('en cours') : tr('sans réponse')],

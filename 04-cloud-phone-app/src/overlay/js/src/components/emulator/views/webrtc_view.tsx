@@ -60,17 +60,14 @@ const EmulatorWebrtcView: React.FC<EmulatorWebrtcViewProps> = ({
   const hasRenderedFrame = useRef<boolean>(false);
   const [connect, setConnect] = useState<string>("connecting");
 
-  useEffect(() => {
-    if (onStateChange) {
-      onStateChange(connect);
-    }
-  }, [connect, onStateChange]);
-
-  useEffect(() => {
-    if (onAudioStateChange) {
-      onAudioStateChange(audio);
-    }
-  }, [audio, onAudioStateChange]);
+  // Parent renders change inline callback identities; they are not stream
+  // transitions and must not replay state notifications.
+  const stateCallback = useRef(onStateChange);
+  const audioCallback = useRef(onAudioStateChange);
+  stateCallback.current = onStateChange;
+  audioCallback.current = onAudioStateChange;
+  useEffect(() => { stateCallback.current?.(connect); }, [connect]);
+  useEffect(() => { audioCallback.current?.(audio); }, [audio]);
 
   // The browser refused to start the video even muted (autoplay blocked
   // for all media): it waits for a gesture on the page.
@@ -112,10 +109,11 @@ const EmulatorWebrtcView: React.FC<EmulatorWebrtcViewProps> = ({
   const safePlay = async () => {
     const video = videoRef.current;
     const epoch = playbackEpoch.current;
-    if (!video || disposed.current) {
+    if (!video || disposed.current || !video.srcObject) {
       // Component was unmounted.
       return;
     }
+    if (!video.paused && video.readyState >= 2) return;
     try {
       await video.play();
       if (disposed.current || epoch !== playbackEpoch.current) return;
@@ -237,6 +235,10 @@ const EmulatorWebrtcView: React.FC<EmulatorWebrtcViewProps> = ({
     });
     const events = ["loadedmetadata", "stalled", "suspend", "pause", "volumechange", "error"];
     events.forEach((name) => video?.addEventListener(name, onVideoEvent));
+    const resumePlayback = () => {
+      if (!document.hidden && video?.srcObject) safePlay();
+    };
+    document.addEventListener('visibilitychange', resumePlayback);
     const firstFrameTimer = window.setTimeout(() => {
       if (!hasRenderedFrame.current) jsep.diagnostic("first-frame-timeout", {
         elapsedMs: Math.round(performance.now() - startedAt.current),
@@ -252,6 +254,7 @@ const EmulatorWebrtcView: React.FC<EmulatorWebrtcViewProps> = ({
       gestureCleanup.current = null;
       window.clearTimeout(firstFrameTimer);
       events.forEach((name) => video?.removeEventListener(name, onVideoEvent));
+      document.removeEventListener('visibilitychange', resumePlayback);
       if (frameCallback.current !== null) (video as any)?.cancelVideoFrameCallback?.(frameCallback.current);
       frameCallback.current = null;
       jsep.cleanup();

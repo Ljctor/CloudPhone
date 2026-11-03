@@ -25,6 +25,9 @@ export function useStream({ server, input }) {
   const reconnectTimer = useRef(null);
   const [reconnecting, setReconnecting] = useState(false);
   const [state, setState] = useState('connecting');
+  const latestState = useRef(state);
+  latestState.current = state;
+  const [visible, setVisible] = useState(document.visibilityState !== 'hidden');
   const [mounted, setMounted] = useState(true);
   const [generation, setGeneration] = useState(0);
   const [connectingFor, setConnectingFor] = useState(0);
@@ -57,6 +60,7 @@ export function useStream({ server, input }) {
     acceptingState.current = false;
     input.pointerDown.current = false;
     disconnectActiveStream();
+    latestState.current = 'connecting';
     setState('connecting');
     setConnectingFor(0);
     setMounted(false);
@@ -82,6 +86,7 @@ export function useStream({ server, input }) {
       currentGeneration.current += 1;
       setGeneration(currentGeneration.current);
       acceptingState.current = true;
+      latestState.current = 'disconnected';
       setState('disconnected');
       stopFeedback();
       return;
@@ -104,6 +109,7 @@ export function useStream({ server, input }) {
       const [text, values] = streamStateLine(nextState);
       pageLog('normal', english(text, values));
     }
+    latestState.current = nextState;
     setState(nextState);
     if (nextState === 'connected' && reconnectTimer.current === null) stopFeedback();
   };
@@ -124,12 +130,14 @@ export function useStream({ server, input }) {
     return () => window.clearInterval(timer);
   }, [state, generation]);
 
-  const healthy = serverHealthy(server) && !server.value?.kicked;
+  const healthy = server.connection === 'reachable' && !server.stateError && serverHealthy(server) && !server.value?.kicked;
+  const latestHealthy = useRef(healthy);
+  latestHealthy.current = healthy;
   useEffect(() => {
-    if (!autoReconnectDue({ healthy, stream: state, connectingFor })) return undefined;
+    if (!visible || !autoReconnectDue({ healthy, stream: state, connectingFor })) return undefined;
     const timer = window.setTimeout(reconnectStream, AUTO_RECONNECT_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [healthy, state, connectingFor >= STUCK_AFTER_S]);
+  }, [healthy, visible, state, connectingFor >= STUCK_AFTER_S]);
 
   useEffect(() => {
     alive.current = true;
@@ -137,17 +145,19 @@ export function useStream({ server, input }) {
 
     const visibilityChanged = () => {
       streamDiagnostic('page-visibility', { state: document.visibilityState });
+      setVisible(document.visibilityState !== 'hidden');
       if (document.visibilityState === 'hidden') {
         wasHidden = true;
       } else if (wasHidden) {
         wasHidden = false;
-        reconnectStream();
+        // Returning to the page does not invalidate a decoded live stream.
+        if (latestHealthy.current && !['connected', 'blocked'].includes(latestState.current)) reconnectStream();
       }
     };
 
     const pageShown = (event) => {
       streamDiagnostic('page-shown', { persisted: event.persisted });
-      if (event.persisted) reconnectStream();
+      if (event.persisted && latestHealthy.current && !['connected', 'blocked'].includes(latestState.current)) reconnectStream();
     };
 
     const focusChanged = (event) => streamDiagnostic(`page-${event.type}`);

@@ -1,6 +1,6 @@
 //! The page when the browser blocks autoplay (Firefox's
-//! `media.autoplay.default`): the picture never waits behind « Connexion
-//! au flux… » for a gesture.
+//! `media.autoplay.default`): the page distinguishes a browser playback
+//! restriction from a reachable server whose video is unavailable.
 use cloudphone_e2e::browser::{browser_test, led, Options};
 use cloudphone_e2e::*;
 use std::time::Duration;
@@ -15,7 +15,7 @@ fn the_picture_plays_without_a_gesture_when_audible_autoplay_is_blocked() {
     let cp = CloudPhone::start();
     browser_test(&cp, Options { autoplay: 1, ..Options::without_video() }, |page| async move {
         page.wait_for_video(SOON).await;
-        page.wait_no_status("Connexion au flux…", Duration::from_secs(5)).await;
+        page.wait_no_status("Serveur connecté · vidéo indisponible", Duration::from_secs(5)).await;
         page.wait_led(led::GREEN, Duration::from_secs(5)).await;
         let video = page.video().await;
         assert_eq!(video["paused"], false, "{video}");
@@ -29,7 +29,7 @@ fn the_picture_plays_without_a_gesture_when_audible_autoplay_is_blocked() {
 #[test]
 fn a_browser_blocking_all_autoplay_gets_a_tap_hint_then_the_picture() {
     // 5: all media blocked until a gesture. The page neither spins on
-    // « Connexion au flux… » nor says connected over a frozen frame: it asks
+    // « Serveur connecté · vidéo indisponible » nor says connected over a frozen frame: it asks
     // for a tap, and a tap anywhere starts the video.
     let cp = CloudPhone::start();
     browser_test(&cp, Options { autoplay: 5, ..Options::without_video() }, |page| async move {
@@ -41,7 +41,7 @@ fn a_browser_blocking_all_autoplay_gets_a_tap_hint_then_the_picture() {
         page.click_at(video["x"].as_f64().unwrap() + 50.0, video["y"].as_f64().unwrap() + 50.0).await;
         page.wait_for_video(SOON).await;
         page.wait_no_status(TAP_HINT, Duration::from_secs(5)).await;
-        page.wait_no_status("Connexion au flux…", Duration::from_secs(1)).await;
+        page.wait_no_status("Serveur connecté · vidéo indisponible", Duration::from_secs(1)).await;
         page.wait_led(led::GREEN, Duration::from_secs(5)).await;
     });
 }

@@ -200,6 +200,14 @@ const EN = {
   'Cela prend une à deux minutes. Les applications ouvertes se ferment ; les données sont conservées.':
     'This takes one to two minutes. Open apps close; data is kept.',
   // Status messages
+  'Connexion au serveur…': 'Connecting to the server…',
+  'Les options restent accessibles pendant la connexion.': 'Options remain accessible while connecting.',
+  'Vérifiez la connexion et WireGuard. Les options restent accessibles.': 'Check the connection and WireGuard. Options remain accessible.',
+  'Serveur connecté · vidéo indisponible': 'Server connected · video unavailable',
+  'Les options restent accessibles.': 'Options remain accessible.',
+  'Reconnexion automatique de la vidéo. Les options restent accessibles.': 'Video reconnects automatically. Options remain accessible.',
+  'Serveur connecté · lecture vidéo bloquée': 'Server connected · video playback blocked',
+  'Le navigateur bloque la lecture automatique. Touchez l’écran pour lancer la vidéo.': 'The browser blocks automatic playback. Tap the screen to start the video.',
   'Serveur injoignable': 'Server unreachable',
   'Vérifiez que le VPN (WireGuard) est connecté sur cet appareil.':
     'Check that the VPN (WireGuard) is connected on this device.',

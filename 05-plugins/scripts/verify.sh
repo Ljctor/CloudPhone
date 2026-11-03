@@ -164,6 +164,7 @@ state = json.load(sys.stdin)
 assert {"text", "value", "rate", "rate_text", "span", "window", "read", "box", "shade", "souls"} <= state.keys()
 assert state["farming_drop"] in (None, "weapon", "accessory")
 assert state["farming_read"] is None or isinstance(state["farming_read"], (int, float))
+assert isinstance(state["observed_at"], (int, float)) and state["observed_at"] > 0
 assert 0.2 <= state["shade"] <= 1.0
 assert {"green", "blue", "red", "white"} <= state["souls"].keys()
 assert {"cubes", "weapon_l3", "accessory_l3"} <= state["resources"].keys()
@@ -192,8 +193,11 @@ script = sys.stdin.read()
 assert "drawText(cubeValue, GOLD_COUNTER_FONT" in script
 assert "api.layer.offsetHeight / 1560" in script
 assert "freshnessColour(age)" in script
+assert "observeResponse(answer, started)" in script
+assert "now = responseTime(answer)" in script
 assert "outline: 2" in script
 assert "combatCountersVisible" in script
+assert "screenObservationAge(scan)" in script
 assert "cubeRow.style.opacity" in script and "row.style.opacity" in script
 assert "left:36.1%;top:18.25%;transform:translateY(-50%)" in script
 assert "estimatedCubes(cube, gold.answer" in script
@@ -220,7 +224,10 @@ print("Gold-matched Cube font asset: OK")
 '
 curl -fsS "${base%/}/plugins/slayer-legend/page_freshness.js" | python3 -c '
 import sys
-assert "export function freshnessColour" in sys.stdin.read()
+script = sys.stdin.read()
+assert "export function freshnessColour" in script
+assert "export function observeResponse" in script
+assert "export function responseTime" in script
 print("Shared value freshness colour: OK")
 '
 curl -fsS "${base%/}/plugins/slayer-legend/page_game.js" | python3 -c '
@@ -313,7 +320,12 @@ print("Annotated capture preview: OK")
 
 curl -fsS "${base%/}/plugins/slayer-legend/page_screen_scan.js" | python3 -c '
 import sys
-assert "/screen?quick=1" in sys.stdin.read()
+script = sys.stdin.read()
+assert "/screen?quick=1" in script
+assert "export function screenObservationAge" in script
+assert "performance.now() / 1000" in script
+assert "state.observations.has(value.scan.at)" in script
+assert "value.scan.age" in script and "observed.set(value.scan" in script
 print("Shared live screen scan: OK")
 '
 curl -fsS "${base%/}/api/v1/plugins/slayer-legend/farming" | python3 -c '

@@ -39,7 +39,12 @@ class QuickScreen(unittest.IsolatedAsyncioTestCase):
         results = await asyncio.gather(*(route(request) for _ in range(4)))
         self.assertEqual(len(captures), 1)
         self.assertEqual(results[0]["scan"]["screen"], "battle")
+        self.assertEqual(results[0]["scan"]["age"], 0)
         self.assertEqual(captures[0], .25)
+        now[0] += .1
+        cached = await route(request)
+        self.assertAlmostEqual(cached["scan"]["age"], .1)
+        self.assertEqual(len(captures), 1, "cached responses retain the original capture's age")
         image[0] = "equipment_weapon"
         now[0] += .26
         result = await route(request)
@@ -49,3 +54,11 @@ class QuickScreen(unittest.IsolatedAsyncioTestCase):
         now[0] += .26
         result = await route(request)
         self.assertEqual(result["scan"]["quest_tab"], "repeat")
+        ports.capture_time = lambda shot: now[0] - 3
+        now[0] += .26
+        old_capture = await route(request)
+        self.assertEqual(old_capture["scan"]["at"], now[0] - 3)
+        self.assertEqual(old_capture["scan"]["age"], 3,
+                         "an old capture cannot acquire a fresh classification timestamp")
+        now[0] += .1
+        self.assertAlmostEqual((await route(request))["scan"]["age"], 3.1)

@@ -62,6 +62,9 @@ class HourlyResources(unittest.TestCase):
                    spawn=lambda coro: queued.append(coro), respond=lambda value: value,
                    log=lambda *args: None)
         sampled_rules = NS(**{key: getattr(rules, key) for key in dir(rules) if not key.startswith("_")})
+        # These fixtures describe counts ten seconds apart, independently
+        # of the production sampling interval.
+        sampled_rules.GOLD_SECONDS = sampled_rules.SECONDS = 10
         sampled_rules.IDLE = len(values) * (sampled_rules.SECONDS + ocr_delay)
         counter = NS(rate_text=lambda rate: str(rate), DIGITS={"0": []}, LETTERS={}, SIGNS={})
         part = feature.gold(ports, None, None, counter, sampled_rules)
@@ -78,6 +81,7 @@ class HourlyResources(unittest.TestCase):
             for coro in queued:
                 coro.close()
         self.assertTrue(all(set(force) == {"gold", "souls", "cubes", "equipment_l3"} for force in forces))
+        self.assertEqual(answer["observed_at"], clock[0])
         return answer["resources"]
 
     def test_true_successive_counts_and_zero_rates(self):

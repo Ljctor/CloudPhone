@@ -63,13 +63,12 @@ function App() {
   });
   const displayState = useDisplayState(gatewayUrl, changeInProgress(emulatorSettings));
   const input = useInput({ gatewayUrl, display, showMarker: settings.touchMarker });
-  // Seconds the stream has been trying to connect, and consecutive failed
-  // touch requests: both feed the message shown to the user.
+  // Connection status and failed input delivery are separate observations.
   const { touchFailures } = input;
   const stream = useStream({ server, input });
-  const { state, reconnecting, connectingFor } = stream;
+  const { state, reconnecting } = stream;
   useReloadOnResize(displayState);
-  const problem = diagnose({ server, stream: state, connectingFor, touchFailures });
+  const problem = diagnose({ server, stream: state, touchFailures });
   const [dismissed, setDismissed] = useDismissed(problem);
   const serverRows = serverSections({
     server, configured: displayState?.configured, display, stats,
@@ -97,8 +96,7 @@ function App() {
               onError={(error) => stream.handleError(error, stream.generation)}
             />
           )}
-          <StatusCover problem={problem} stream={state} reconnecting={reconnecting}
-            onOptions={() => setPanel('options')} onReconnect={stream.manualReconnect} />
+          <StatusCover problem={problem} stream={state} />
           <Banner problem={problem} dismissed={dismissed} dismiss={setDismissed} />
           <div ref={pluginLayer} style={styles.pluginLayer} data-plugin-layer="true" />
           {panel && (

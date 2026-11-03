@@ -18,14 +18,14 @@ the browser and the gateway; `App.tsx` only assembles them.
 | `js/example/src/usePanels.ts` | which panel is open (information, options) and the information tab; information opens on the client tab; the flags the panel-only polls follow (server tab, information, options) |
 | `js/example/src/infoPanel.tsx` | the open panel's frame: its title, close button and, for information, the client and server tabs |
 | `js/example/src/streamRules.ts` | when to reconnect the stream (Android usable again, the video cut or stuck 20 s), its delays, the log line for a new stream state (pure) |
-| `js/example/src/useStream.ts` | the stream's state, remounting it to reconnect (button, Android back, page shown again), the manual reconnect's feedback, seconds spent connecting |
+| `js/example/src/useStream.ts` | the stream's state, viewer-scoped reconnect (button or interrupted stream), preserving a live stream when the page returns, the manual reconnect's feedback, seconds spent connecting |
 | `js/example/src/streamStats.ts` | the stream's figures (ping, fps, losses, jitter, buffer, path) from the WebRTC report and two samples (pure) |
 | `js/example/src/useStreamStats.ts` | samples the stream once a second: ICE or HTTP ping, frames, the network details |
 | `js/example/src/touchInput.ts` | the pointer to Android's pixels, the HTTP touches' queue, what plugins are told of a tap (pure) |
 | `js/example/src/useInput.ts` | touches and keys to Android over the data channels or the gateway, the touch marker, failed touches |
 | `js/example/src/diagnose.ts` | the status shown to the user from the server's state, the stream, the time spent connecting and failed touches; its log line; whether the banner shows (pure) |
 | `js/example/src/banner.tsx` | that status as a cover over the screen or a closable banner, which banner was closed, each new status in the page's log |
-| `js/example/src/serverState.ts` | the poll of `GET /api/v1/state` |
+| `js/example/src/serverState.ts` | serialized `GET /api/v1/state` polls, bounded HTTP reachability probes on failure, and freshness separate from the last known Android state |
 | `js/example/src/serverInfo.ts` | the Server tab's rows from the state, the metrics and the stream's figures (pure) |
 | `js/example/src/serverPanel.tsx` | the Server tab: its rows, disconnecting the other viewers, the Android settings form, the server's log |
 | `js/example/src/clientInfo.ts` | the Client tab's rows: network, display, input, this device's screen and window (pure) |
@@ -92,7 +92,8 @@ including failures before WebSocket establishment. Bounded allowlisted events
 and media counters are exposed by `/api/v1/stream-diagnostics` and written to
 the existing logs. Storage content, SDP and tokens are excluded. Options and
 plugin dialogs stay above the stream status cover and remain usable without
-a decoded frame; the cover also offers direct Options and Reconnect buttons.
+a decoded frame. The original toolbar’s Options and Reconnect controls stay
+accessible above the notice; the notice contains only connection information.
 
 On Linux x86-64 with git, curl, make, Node.js 18+ and Python 3.10+:
 
@@ -155,7 +156,7 @@ Android keeps running. Reload the page (the index is never cached).
 |---|---|
 | `GET /`, `/index.html`, `/assets/*` | the page |
 | `GET /api/v1/ping` | 204 at once, for the round-trip time |
-| `GET /api/v1/state?viewer=ID[&details=1]` | emulator unit state (`systemctl show`), Android booted, viewers, load, `display` and `settings` change status, `kicked` for this viewer; cached 2 s. `details=1` adds `metrics` (host, emulator, Android) and `plugins` (`{id: {screenshots}}`: the screenshots each plugin's gateway code took since the gateway started), and turns on adb sampling of Android for 30 s. The page polls every 3 s, every 2 s with details while the Server tab is open |
+| `GET /api/v1/state?viewer=ID[&details=1]` | emulator unit state (`systemctl show`), Android booted, viewers, load, `display` and `settings` change status, `kicked` for this viewer; cached 2 s. `details=1` adds `metrics` (host, emulator, Android) and `plugins` (`{id: {screenshots}}`: the screenshots each plugin's gateway code took since the gateway started), and turns on adb sampling of Android for 30 s. The page polls every 3 s, every 2 s with details while the Server tab is open; one request at a time, with a 4 s deadline. A failed state request triggers a separate 1 s HTTP ping before reachability is classified |
 | `GET /api/v1/events` | what happened to Android and the server, newest first (`core/events.py`, `http/events.py`): app crashes, ANRs and apps Android stopped while noticeable (out-of-memory score ≤ 200, e.g. stopped for a Google Play Services update), low memory, from `logcat -b events,crash` (back to Android's last boot at most); Android's boot (`/proc/uptime`), the emulator unit's start, automatic restarts and last result (`systemctl show`), the gateway's start. Each event is `{time, kind, app, reason}`; cached 10 s. Kept for API clients: the page shows the server's log instead, where the gateway turns these events into records (below) |
 | `GET /api/v1/logs?since=CURSOR` | the gateway's log records after `CURSOR`, oldest first: `{cursor, records}` (see "Logs" below). Without a cursor, or with one from an earlier gateway process, every record kept (the last 500). Same origin check as the other GETs; `no-store`. The page reads it every 4 s |
 | `GET /api/v1/logs?since=TIME&until=TIME&level=L&source=S&contains=T&limit=N` | the same records filtered, any of them optional: `since` and `until` Unix times in seconds, inclusive (a `since` that is a number is a time, anything else a cursor); `level` a minimum (`warning` gives warnings and errors); `source` exact; `contains` part of the text, any case; `limit` the newest N, 500 by default, 5000 at most. `{cursor, records[, more]}`, oldest first, `more: true` when the limit left some out. When memory does not reach back far enough, the gateway reads its log files too (see "Logs"). `cursor=CURSOR` with filters gives only the records after it, from memory. An invalid value is a 400 `{error}` |
@@ -374,22 +375,37 @@ filter set to Erreurs keeps only those.
 
 ## Stream behaviour
 
-- `diagnose()` picks the one message to show, from `GET /api/v1/state`
-  (polled every 3 s, every 2 s while the Server tab is open) and the stream
-  state: server unreachable (check WireGuard), another device took over,
-  screen size or Android settings change (pending or applying), Android
-  crashed/stopped/starting, server reconnecting to Android, video
-  interrupted, video not connecting after 15 s (UDP). These cover the
-  screen. Touches failing, other viewers watching and heavy load show as a
-  banner with a close cross; a closed banner comes back only after its
-  message changed.
-- The LED in the corner of `↻` is green when all is well, orange while
-  something is being fixed, red when it needs action.
-- `↻` sends `bye`, closes the WebSocket and peer connection, waits 1 s for
-  the emulator to drop the participant, then opens one new session; repeated
-  clicks are ignored while it runs. Returning from background or from the
-  back-forward cache does the same, and so does Android coming back after a
-  crash or a restart.
+- `diagnose()` distinguishes checking the server connection, an unreachable
+  server, and a reachable server without video. Transport retries keep the
+  same video-unavailable notice until a decoded frame arrives; a browser
+  playback block has its own message. A failed HTTP observation does not
+  cover video that is still connected. Confirmed Android failures, display/settings
+  changes and another viewer taking over keep their specific statuses.
+  Touches failing, other viewers watching and heavy load appear as closable
+  banners; a closed banner returns only after its message changes.
+- State requests never overlap. The nominal interval is 3 s, or 2 s while
+  the Server tab is open; a slow request consumes that interval and times
+  out after 4 s. On failure, a separate HTTP ping has a 1 s deadline.
+  The hook reports `connection` as `checking`, `reachable` or `unreachable`,
+  and `stateError` independently from its retained last-known `value`.
+  Successful ping with failed state retrieval confirms gateway reachability,
+  without treating old Android state as a fresh health observation. Cleanup
+  aborts the active request and cancels the next poll.
+- The original toolbar remains usable over every connection notice. Options
+  and plugin dialogs open above the notice. The notice adds no duplicate
+  Options or Reconnect controls. The LED on `↻` is green when all is well,
+  orange while something is being fixed, red when it needs action.
+- `↻` retires the browser’s stream and asks `POST /api/v1/stream/reset` to
+  close only that viewer’s upstream sessions. After the gateway acknowledges
+  cleanup, the page waits 1 s and opens one replacement stream. Repeated
+  clicks share the pending reset; a failed reset leaves video disconnected
+  rather than opening a new session before cleanup is confirmed.
+- Returning from background or the back-forward cache preserves a connected
+  stream and resumes browser playback in place. An interrupted stream can
+  reconnect when the page is visible and a fresh state response confirms
+  Android is usable. Hidden pages and stale Android health do not trigger
+  automatic stream resets. A static screen’s lack of new frames is not
+  treated as a disconnection.
 - Frame rates fall to ~0 on a still Android screen: the emulator sends
   frames only on change.
 
@@ -521,6 +537,10 @@ docker run --rm --network host \
     npx playwright test android-web-smoke.spec.js --reporter=line --workers=1'
 ```
 
-It opens `CLOUDPHONE_URL` (default `http://127.0.0.1:8000/`; set it to the
+`tests/e2e/tests/ui_state_polling.rs` uses the fake emulator to cover slow
+non-overlapping state requests, failed state retrieval with successful HTTP
+ping, and returning to a connected page without replacing its stream.
+
+The browser smoke test opens `CLOUDPHONE_URL` (default `http://127.0.0.1:8000/`; set it to the
 gateway's `LISTEN_ADDRESS` and `WEB_PORT`) and checks decoded video, spinner/status transitions, clean
 refresh, a rapid double refresh and console errors.

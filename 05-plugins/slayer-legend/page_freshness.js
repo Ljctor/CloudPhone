@@ -4,3 +4,17 @@ export function freshnessColour(age = 0) {
   const share = Math.max(0, Math.min(1, Number(age) / 600 || 0));
   return `rgb(${Math.round(255 - 80 * share)}, ${Math.round(255 - 34 * share)}, 255)`;
 }
+
+// Reading timestamps belong to the gateway's wall clock. Keep that origin
+// while elapsed time advances on this browser's monotonic clock. Including
+// the request duration conservatively ages a slow response.
+const observations = new WeakMap();
+export function observeResponse(answer, started = performance.now() / 1000) {
+  if (answer && Number.isFinite(answer.observed_at) && answer.observed_at > 0) {
+    observations.set(answer, { wall: answer.observed_at, started });
+  }
+}
+export function responseTime(answer, now = performance.now() / 1000) {
+  const observation = answer && observations.get(answer);
+  return observation ? observation.wall + now - observation.started : Date.now() / 1000;
+}

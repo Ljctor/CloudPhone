@@ -285,6 +285,7 @@ def gold(ports, screens, stage, counter, rules, souls=None, table=None):
         rate, samples, seconds = asked()
         return ports.respond(
             {
+                "observed_at": ports.clock.wall(),
                 "text": (status["balance"] or {}).get("text", status["window"]["text"]),
                 "value": (status["balance"] or {}).get("value"),
                 "reset_at": status["reset_at"],

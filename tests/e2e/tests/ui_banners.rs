@@ -6,8 +6,9 @@
 //!
 //! One test per branch of the page's diagnose() (example/src/diagnose.ts),
 //! in its order, and for the edges just below its thresholds:
-//! - server unreachable (2 missed polls): `server_unreachable_…`; one missed
-//!   poll says nothing: `one_missed_state_poll_shows_nothing`
+//! - server unreachable (state and ping both fail): `server_unreachable_…`;
+//!   a missed state poll with a successful ping says nothing:
+//!   `one_missed_state_poll_shows_nothing`
 //! - kicked: `a_page_kicked_by_another_device_…`
 //! - screen size change pending / applying: `a_screen_size_change_on_its_way_…`,
 //!   `a_screen_size_change_being_applied_…`
@@ -22,8 +23,8 @@
 //!   `an_emulator_that_does_not_answer_says_…`,
 //!   `an_emulator_that_does_not_answer_before_the_video_…`
 //! - video dropped: `a_dropped_stream_…`
-//! - video not connected after 15 s (nothing but "connecting" until 14 s):
-//!   `a_video_that_never_connects_says_so_after_15_seconds`
+//! - server reachable without video: one stable orange notice across retries,
+//!   `a_video_that_never_connects_keeps_the_server_reachable_notice_stable`
 //! - touches failing (3 failed requests, not 2): `touches_that_fail_…`,
 //!   `two_failed_touch_requests_show_nothing_yet`
 //! - other viewers (1, then 2), not while the video connects:
@@ -87,7 +88,7 @@ fn server_unreachable_covers_the_screen_and_clears_when_it_answers_again() {
     let phone = cp.clone();
     browser_test(&cp, Options::default(), |page| async move {
         phone.fake().action("stop_gateway");
-        expect_status(&page, "Serveur injoignable", Some("Vérifiez que le VPN (WireGuard) est connecté sur cet appareil."), true, led::RED).await;
+        expect_status(&page, "Serveur injoignable", Some("Vérifiez la connexion et WireGuard. Les options restent accessibles."), true, led::RED).await;
         phone.fake().action("start_gateway");
         page.wait_no_status("Serveur injoignable", SOON).await;
         // The video comes back by itself.
@@ -223,14 +224,15 @@ fn an_emulator_that_does_not_answer_says_the_server_reconnects() {
 }
 
 #[test]
-fn a_dropped_stream_says_video_interrupted_then_reconnects_by_itself() {
+fn a_dropped_stream_keeps_the_server_reachable_then_reconnects_by_itself() {
     let cp = CloudPhone::start();
     let phone = cp.clone();
     browser_test(&cp, Options::default(), |page| async move {
         let sessions = phone.fake().record()["sessions"].as_array().unwrap().len();
         phone.fake().control(json!({"action": "drop_streams", "bye": true}));
-        expect_status(&page, "Vidéo interrompue", Some("Reconnexion…"), true, led::ORANGE).await;
-        page.wait_no_status("Vidéo interrompue", Duration::from_secs(30)).await;
+        expect_status(&page, "Serveur connecté · vidéo indisponible",
+            Some("Reconnexion automatique de la vidéo. Les options restent accessibles."), true, led::ORANGE).await;
+        page.wait_no_status("Serveur connecté · vidéo indisponible", Duration::from_secs(30)).await;
         page.wait_led(led::GREEN, Duration::from_secs(30)).await;
         let after = phone.fake().record()["sessions"].as_array().unwrap().len();
         assert_eq!(after, sessions + 1, "one new session, opened by the page itself");
@@ -251,20 +253,21 @@ fn a_stream_lost_without_notice_is_noticed_and_reconnected() {
 }
 
 #[test]
-fn a_video_that_never_connects_says_so_after_15_seconds() {
+fn a_video_that_never_connects_keeps_the_server_reachable_notice_stable() {
     let cp = CloudPhone::start_with(json!({"options": {"offer": false}}));
     browser_test(&cp, Options::without_video(), |page| async move {
-        page.wait_status("Connexion au flux…", SOON).await;
-        // Connecting, nothing wrong yet: only that message up to 14 s
-        // (counted from the page's start, a little before the stream's).
-        let started = page.js("return performance.now()", vec![]).await.as_f64().unwrap();
-        never_status(&page, "La vidéo ne se connecte pas",
-            Duration::from_millis((14_000.0 - started).max(0.0) as u64)).await;
-        assert_eq!(page.banners().await, vec!["Connexion au flux…".to_string()]);
-        let shown = page.wait_status("La vidéo ne se connecte pas", Duration::from_secs(30)).await;
-        assert!(shown.contains("Le réseau bloque peut-être le flux vidéo (UDP). Touchez ↻ pour réessayer."), "{shown:?}");
-        assert!(!page.status_is_closable("La vidéo ne se connecte pas").await);
-        page.wait_led(led::RED, Duration::from_secs(5)).await;
+        expect_status(&page, "Serveur connecté · vidéo indisponible",
+            Some("Reconnexion automatique de la vidéo. Les options restent accessibles."), true, led::ORANGE).await;
+        let expected = page.banners().await;
+        assert_eq!(expected.len(), 1, "one connection notice: {expected:?}");
+        // Cross the old fifteen-second threshold and transport retries. A
+        // working server never becomes an error because video is absent.
+        let started = std::time::Instant::now();
+        while started.elapsed() < Duration::from_secs(20) {
+            assert_eq!(page.banners().await, expected, "the connection notice must not flicker during retries");
+            page.wait_led(led::ORANGE, Duration::from_secs(1)).await;
+            page.sleep(Duration::from_millis(250)).await;
+        }
     });
 }
 
@@ -449,10 +452,10 @@ fn a_healthy_phone_shows_no_status() {
 
 #[test]
 fn one_missed_state_poll_shows_nothing() {
-    // The page polls the state every 3 s and gives up on a poll after 4 s.
-    // Stalling the gateway from just after a poll (at a) until a + 7.5 s
-    // makes the poll at a + 3 time out at a + 7 and the one at a + 6
-    // answer at a + 7.5: one missed poll, never two in a row.
+    // After a state request times out (4 s), a one-second ping establishes
+    // reachability. Stall just after a completed poll until a + 7.5 s:
+    // the next state request times out at a + 7, but its ping succeeds
+    // before a + 8. Serialized polling resumes after that probe finishes.
     let cp = CloudPhone::start();
     let phone = cp.clone();
     browser_test(&cp, Options::default(), |page| async move {
@@ -492,12 +495,14 @@ fn another_viewer_is_not_reported_while_the_video_connects() {
     let other = Viewer::open(&cp, &viewer_id("connecting"));
     let phone = cp.clone();
     browser_test(&cp, Options::without_video(), |page| async move {
-        page.wait_status("Connexion au flux…", SOON).await;
+        page.wait_status("Serveur connecté · vidéo indisponible", SOON).await;
         let p = phone.clone();
         blocking(move || p.wait_viewers("the page and the other viewer", Duration::from_secs(10), |n| n == 2));
-        // A state poll later, still well before the 15 s message.
+        // More state polls do not replace the video notice with viewer noise.
         never_status(&page, "regarde", Duration::from_millis(3500)).await;
-        assert_eq!(page.banners().await, vec!["Connexion au flux…".to_string()]);
+        let shown = page.banners().await;
+        assert_eq!(shown.len(), 1, "{shown:?}");
+        assert!(shown[0].contains("Serveur connecté · vidéo indisponible"), "{shown:?}");
     });
     other.close();
 }

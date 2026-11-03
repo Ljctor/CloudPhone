@@ -8,22 +8,55 @@ import { VIEWER_ID } from './api';
 // rate), which cost the server an adb call: only while the server panel is
 // open.
 export function useServerState(gatewayUrl, details = false) {
-  const [server, setServer] = useState({ value: null, failures: 0 });
+  const [server, setServer] = useState({ value: null, failures: 0, connection: 'checking', stateError: false });
   useEffect(() => {
     let cancelled = false;
-    const load = () => {
+    let timer = null;
+    let active = null;
+    const interval = details ? 2000 : 3000;
+    const load = async () => {
+      if (cancelled) return;
+      const started = Date.now();
       const controller = new AbortController();
+      active = controller;
       const timeout = window.setTimeout(() => controller.abort(), 4000);
-      fetch(`${gatewayUrl}/api/v1/state?viewer=${encodeURIComponent(VIEWER_ID)}${details ? '&details=1' : ''}`,
-        { cache: 'no-store', signal: controller.signal })
-        .then((response) => (response.ok ? response.json() : Promise.reject(new Error(String(response.status)))))
-        .then((value) => { if (!cancelled) setServer({ value, failures: 0 }); })
-        .catch(() => { if (!cancelled) setServer((current) => ({ ...current, failures: current.failures + 1 })); })
-        .finally(() => window.clearTimeout(timeout));
+      try {
+        const response = await fetch(`${gatewayUrl}/api/v1/state?viewer=${encodeURIComponent(VIEWER_ID)}${details ? '&details=1' : ''}`,
+          { cache: 'no-store', signal: controller.signal });
+        if (!response.ok) throw new Error(String(response.status));
+        const value = await response.json();
+        if (controller.signal.aborted) throw new Error('State request timed out');
+        if (!cancelled) setServer({ value, failures: 0, connection: 'reachable', stateError: false });
+      } catch {
+        window.clearTimeout(timeout);
+        if (cancelled) return;
+        // A slow/broken state provider is not proof that the gateway itself
+        // is offline. Check its cheap HTTP endpoint before classifying it.
+        const probe = new AbortController();
+        active = probe;
+        const probeTimeout = window.setTimeout(() => probe.abort(), 1000);
+        let reachable = false;
+        try {
+          const response = await fetch(`${gatewayUrl}/api/v1/ping`, { cache: 'no-store', signal: probe.signal });
+          reachable = response.ok && !probe.signal.aborted;
+        } catch { /* A failed probe is a failed connection observation. */ }
+        finally { window.clearTimeout(probeTimeout); }
+        if (!cancelled) setServer((current) => ({ ...current, failures: current.failures + 1,
+          connection: reachable ? 'reachable' : 'unreachable', stateError: true }));
+      } finally {
+        window.clearTimeout(timeout);
+        active = null;
+        // Never let an older request race a newer result. Slow requests
+        // consume the interval instead of piling up overlapping polls.
+        if (!cancelled) timer = window.setTimeout(load, Math.max(0, interval - (Date.now() - started)));
+      }
     };
     load();
-    const timer = window.setInterval(load, details ? 2000 : 3000);
-    return () => { cancelled = true; window.clearInterval(timer); };
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+      active?.abort();
+    };
   }, [gatewayUrl, details]);
   return server;
 }

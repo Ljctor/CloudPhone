@@ -63,6 +63,27 @@ assert any("data-plugin-layer" in urllib.request.urlopen(base + path, timeout=5)
            for path in scripts if path.startswith("/"))
 PYCODE
 }
+connection_notice_contract() {
+  python3 - "http://$host:$WEB_PORT" <<'PYCODE'
+import re, sys, urllib.request
+base = sys.argv[1]
+page = urllib.request.urlopen(base + "/", timeout=5).read().decode()
+scripts = re.findall(r'<script[^>]+src="([^"]+)"', page)
+bundle = "\n".join(urllib.request.urlopen(base + path, timeout=5).read().decode()
+                   for path in scripts if path.startswith("/"))
+# Bundlers may escape accents; compare user-facing wording after decoding
+# only JavaScript's fixed-width Unicode/hex character escapes.
+bundle = re.sub(r"\\u([0-9a-fA-F]{4})|\\x([0-9a-fA-F]{2})",
+                lambda match: chr(int(match.group(1) or match.group(2), 16)), bundle)
+for wording in ("Connexion au serveur", "Serveur connecté", "vidéo indisponible",
+                "lecture vidéo bloquée", "Options et plugins", "Reconnecter la vidéo"):
+    assert wording in bundle, "Missing connection/toolbar wording: " + wording
+assert "data-cloudphone-notice" in bundle and "stateError" in bundle
+with urllib.request.urlopen(base + "/api/v1/ping", timeout=2) as response:
+    assert response.status == 204
+    assert "no-store" in response.headers.get("Cache-Control", "")
+PYCODE
+}
 gateway_command_lifecycle() {
   "$PREFIX/current/venv/bin/python" - <<'PYCODE'
 import asyncio
@@ -140,6 +161,7 @@ check "cloudphone-gateway is active" systemctl is-active --quiet cloudphone-gate
 check "no separate cloudphone-web service is left" test ! -e /etc/systemd/system/cloudphone-web.service
 check "web page answers on $host:$WEB_PORT" answers "http://$host:$WEB_PORT/"
 check "page serves interactive plugin overlay" interactive_plugin_layer
+check "page distinguishes server reachability from missing video and keeps toolbar controls" connection_notice_contract
 check "installed gateway drains cancelled commands and exposes capture timestamps" gateway_command_lifecycle
 check "gateway answers on $host:$WEB_PORT" answers "http://$host:$WEB_PORT/api/v1/emulator/status"
 check "gateway reports live CPU and memory" live_metrics

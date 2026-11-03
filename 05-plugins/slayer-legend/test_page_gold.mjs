@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import goldFeature, { combatCountersVisible, equipmentRateVisible, hourlyRate, measureResourceRate, estimatedCubes } from './page_gold.js';
 import { GOLD_COUNTER_FONT as font, GOLD_COUNTER_SOURCES as sources } from './page_gold_counter_font.js';
-import { freshnessColour } from './page_freshness.js';
+import { freshnessColour, observeResponse, responseTime } from './page_freshness.js';
 import { drawText } from './gold_text.js';
-import { getScreen } from './page_screen_scan.js';
+import { getScreen, screenObservationAge } from './page_screen_scan.js';
 
 // Every stroke, including the comma's descender, comes from the real Gold
 // counter rather than a resized abbreviated-font template.
@@ -259,6 +259,63 @@ assert.equal(calls, 1, 'classification is reused within 250ms');
 now += 251;
 await getScreen(screenApi);
 assert.equal(calls, 2, 'classification refreshes after 250ms');
+
+// Gateway and browser wall clocks need not agree. A fresh classification
+// stays painted through the next tick, while real age and screen changes
+// continue to hide counters immediately.
+const originalPerformance = globalThis.performance;
+let monotonic = 10000;
+Object.defineProperty(globalThis, 'performance', { configurable: true, value: { now: () => monotonic } });
+try {
+  for (const skew of [-3600, .317, 3600]) {
+    const remote = { screen: 'battle', overlays: [], plain: true, at: now / 1000 + skew, age: .1 };
+    const source = { async get() { return { scan: { ...remote } }; } };
+    const fresh = (await getScreen(source)).scan;
+    assert.equal(combatCountersVisible(fresh), true, 'fresh server classification ignores wall-clock skew');
+    monotonic += 1000;
+    assert.equal(combatCountersVisible(fresh), true, 'the following paint tick stays visible');
+    monotonic += 1000;
+    assert.equal(combatCountersVisible(fresh), false, 'actual classification age still expires after two seconds');
+    remote.age = 3; now += 251;
+    assert.equal(combatCountersVisible((await getScreen(source)).scan), false, 'repeated stale responses cannot renew visibility');
+    remote.age = 0; remote.screen = 'unknown'; now += 251;
+    assert.equal(combatCountersVisible((await getScreen(source)).scan), false, 'an actual screen change hides immediately');
+    remote.screen = 'battle'; remote.overlays = ['stage_select']; now += 251;
+    assert.equal(combatCountersVisible((await getScreen(source)).scan), false, 'a modal hides immediately');
+  }
+  const repeated = { async get() { return { scan: { screen: 'battle', overlays: [], plain: true, at: 1234 } }; } };
+  await getScreen(repeated);
+  monotonic += 2100; now += 251;
+  const stale = (await getScreen(repeated)).scan;
+  assert.ok(screenObservationAge(stale) > 2, 'legacy repeated source timestamps keep their original age');
+  assert.equal(combatCountersVisible(stale), false);
+  const slow = { async get() { monotonic += 2100; return { scan: { screen: 'battle', overlays: [], plain: true, at: 100, age: 0 } }; } };
+  assert.equal(combatCountersVisible((await getScreen(slow)).scan), false, 'slow request duration counts toward expiry');
+  for (const age of [-.1, '0', null]) {
+    const invalid = { async get() { return { scan: { screen: 'battle', overlays: [], plain: true, at: 100, age } }; } };
+    assert.equal(combatCountersVisible((await getScreen(invalid)).scan), false, 'malformed or future source age cannot authorise counters');
+  }
+
+  const timed = { observed_at: now / 1000 + 3600, farming_read: now / 1000 + 3599, farming_drop: 'weapon',
+    resources: { cubes: { rate: 2, read: now / 1000 + 3599, window: 300 } } };
+  observeResponse(timed);
+  assert.equal(hourlyRate(timed, 'cubes'), 7200, 'rate freshness uses its server origin');
+  assert.equal(equipmentRateVisible(timed, 'weapon_l3'), true, 'L3 visibility uses its server origin');
+  const serverTime = responseTime(timed);
+  now -= 7200000;
+  monotonic += 1000;
+  assert.equal(responseTime(timed), serverTime + 1, 'local wall clock jumps do not change response age');
+  assert.equal(hourlyRate(timed, 'cubes'), 7200);
+  timed.resources.cubes.read = timed.observed_at + 1;
+  assert.equal(hourlyRate(timed, 'cubes'), 7200, 'a sample becomes current only when server-origin elapsed time reaches it');
+  timed.resources.cubes.read = timed.observed_at + 10;
+  assert.equal(hourlyRate(timed, 'cubes'), null, 'truly future data remains rejected');
+  monotonic += 400000;
+  assert.equal(hourlyRate(timed, 'cubes'), null, 'truly stale data remains rejected');
+  assert.equal(equipmentRateVisible(timed, 'weapon_l3'), false);
+} finally {
+  Object.defineProperty(globalThis, 'performance', { configurable: true, value: originalPerformance });
+}
 Date.now = originalNow;
 
 // Check the final raster, after the fill has covered the outline pass.

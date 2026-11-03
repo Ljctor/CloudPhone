@@ -119,12 +119,12 @@ fn the_led_turns_green_once_the_stream_is_connected() {
 
 #[test]
 fn while_connecting_the_screen_says_so_and_the_led_is_orange() {
-    // No offer: the stream never connects (the first 15 s).
+    // No offer: state answers, so the server is connected while video is unavailable.
     let cp = CloudPhone::start_with(json!({"options": {"offer": false}}));
     browser_test(&cp, Options::without_video(), |page| async move {
-        page.wait_status("Connexion au flux…", Duration::from_secs(10)).await;
+        page.wait_status("Serveur connecté · vidéo indisponible", Duration::from_secs(10)).await;
         page.wait_led(led::ORANGE, Duration::from_secs(5)).await;
-        assert!(!page.status_is_closable("Connexion au flux…").await, "it covers the screen");
+        assert!(!page.status_is_closable("Serveur connecté · vidéo indisponible").await, "it covers the screen");
     });
 }
 
@@ -289,11 +289,11 @@ fn the_page_says_connected_only_once_a_frame_arrives() {
         });
         page.sleep(Duration::from_secs(2)).await;
         assert_ne!(page.led().await["label"], "Connexion connected", "no frame, not connected");
-        assert!(page.banners().await.iter().any(|b| b.contains("Connexion au flux…")), "{:?}", page.banners().await);
+        assert!(page.banners().await.iter().any(|b| b.contains("Serveur connecté · vidéo indisponible")), "{:?}", page.banners().await);
         phone.fake().control(json!({"frames": true}));
         page.wait_led(led::GREEN, Duration::from_secs(20)).await;
         assert_eq!(page.led().await["label"], "Connexion connected");
-        page.wait_no_status("Connexion au flux…", Duration::from_secs(5)).await;
+        page.wait_no_status("Serveur connecté · vidéo indisponible", Duration::from_secs(5)).await;
     });
 }
 
@@ -304,7 +304,7 @@ fn a_page_still_connecting_reopens_its_signalling_when_the_gateway_restarts() {
     let cp = CloudPhone::start_with(json!({"options": {"offer": false}}));
     let phone = cp.clone();
     browser_test(&cp, Options::without_video(), |page| async move {
-        page.wait_status("Connexion au flux…", SOON).await;
+        page.wait_status("Serveur connecté · vidéo indisponible", SOON).await;
         let p = phone.clone();
         blocking(move || {
             p.wait_viewers("the page's signalling session", Duration::from_secs(10), |n| n == 1);

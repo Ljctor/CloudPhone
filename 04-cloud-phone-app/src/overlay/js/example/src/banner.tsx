@@ -19,8 +19,8 @@ export function useDismissed(problem) {
   return [dismissed, setDismissed];
 }
 
-// stream: the video's state; reconnecting: the user asked for a new one.
-export function StatusCover({ problem, stream, reconnecting, onOptions, onReconnect }) {
+// Recovery and Options remain in the existing toolbar, above this cover.
+export function StatusCover({ problem, stream }) {
   if (stream === 'connected' && !problem?.blocking) return null;
   return (
     <div style={styles.loading} data-cloudphone-notice="cover" role="status" aria-live="polite">
@@ -28,14 +28,9 @@ export function StatusCover({ problem, stream, reconnecting, onOptions, onReconn
         ? <span style={{ ...styles.problemMark, color: LEVEL_COLORS.error }} aria-hidden="true">!</span>
         : <span style={styles.spinner} aria-hidden="true" />}
       <span style={styles.loadingText}>
-        {problem?.blocking ? tr(problem.text, problem.params) : reconnecting ? tr('Reconnexion…') : tr('Connexion au flux…')}
+        {problem?.blocking ? tr(problem.text, problem.params) : tr('Connexion au serveur…')}
       </span>
       {problem?.blocking && problem.detail && <span style={styles.loadingDetail}>{tr(problem.detail)}</span>}
-      <div style={styles.buttonGroup}>
-        <button type="button" style={styles.panelButton} onClick={onOptions}>{tr('Options')}</button>
-        <button type="button" style={styles.panelButton} onClick={onReconnect}
-          disabled={reconnecting}>{tr('Reconnecter la vidéo')}</button>
-      </div>
     </div>
   );
 }
