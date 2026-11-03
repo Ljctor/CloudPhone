@@ -11,7 +11,8 @@ alone. Its notation is the gold counter's (gold.parse): abbreviated, or
 in full digits once the game's option says so; the full digits are read
 only once calibrated on a real capture. At 720x1560, grouped full
 digits use their own captured glyph templates and comma positions;
-the lower-resolution reading is still gated.
+the native 480px full counters use independent source-font rasters and
+strict bilinear fit checks (soul_native.py).
 
 Measured on real 480x1040 captures (2026-10-22, the Soul Weapon screen
 open on Vision): fixtures/souls_row, souls_row_b; and on a real
@@ -32,6 +33,7 @@ def _sibling(name):
 
 font = _sibling("pixel_font")
 gold = _sibling("gold")
+native = _sibling("soul_native")
 
 COLOURS = ("green", "blue", "red", "white")
 # Each box's icon and its text, (left, top, right, bottom) in pixels at
@@ -198,13 +200,13 @@ def _share(shot, area, test):
 
 def shown(shot):
     """The row is on screen: every box's icon in its colour, the boxes'
-    dark background left of the counts."""
+    dark background above the counts (full digits may fill their left edge)."""
     dark = lambda r, g, b: all(abs(v - c) <= 8 for v, c in zip((r, g, b), BACKGROUND))
     for colour in COLOURS:
         if _share(shot, _area(shot, ICONS[colour]), lambda r, g, b: _icon(colour, r, g, b)) < 0.2:
             return False
         left, top, right, bottom = TEXTS[colour]
-        if _share(shot, _area(shot, (left, top, left + 8, bottom)), dark) < 0.8:
+        if _share(shot, _area(shot, (left, top, right, top + 5)), dark) < 0.8:
             return False
     return True
 
@@ -231,6 +233,10 @@ def read(shot):
         return None
     counts = {}
     for colour in COLOURS:
+        full = native.read(shot, colour)
+        if full:
+            counts[colour] = full
+            continue
         if 700 <= shot[0] < 900 and HIGH_RES_FULL_DIGITS_CALIBRATED:
             full = _full_720(shot, colour)
             if full:

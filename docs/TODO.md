@@ -118,34 +118,27 @@ separate milestones. Historical checked items below do not close a new regressio
   L3 weapons and L3 accessories. Read real changes, calculate per hour, show
   correct values and icons; no stone or white-soul rates. Verify farming,
   menu transitions, user inputs, spends/resets and stream reconnection.
-  Native 480px Gold now has reviewed counter-only calibration crops for all
-  ten digits, bright and parked text, plus independent unseen amounts and an
-  ambiguous frame that must remain unread. A separate untrained capture batch
-  yielded seven accepted frames out of ten (five distinct amounts); the first
-  accepted captures were 2.084 s apart. The installed Gold path was checked
-  over a minute: 28 successful browser polls, 13 distinct dated readings,
-  no browser errors or game inputs, and an hourly overlay matching the API
-  while the combat was shaded. Native Cube crops now cover all ten digits
-  and independently held-out balances; acquisition and interpolation still
-  need installed verification. L3 reads distinguish the card's visibility
-  from unread numbers so failed OCR cannot scroll past the target. Its
-  intensity ensemble retains strict glyph errors and requires agreement.
-  Native full-digit souls remain under investigation; no experimental or
-  ambiguous soul classifier is approved. This does not close the whole item.
-  Installed Cube acquisition and calculation now produce a measured slope;
-  a guarded browser run retained Cube/hour on all 28 API polls and showed
-  29 distinct extrapolated totals, without browser errors or game inputs.
-  Its seven Analysis rows have aligned icons and grey right-hand timestamps.
-  Automatic Cube visits still miss some amounts: native text changes size
-  with its digits, and quick retries can observe the same ambiguous raster.
-  The refresh now allows eight seconds for a changed amount, preserving its
-  return reserve; additional native size coverage remains open. L3 inventory
-  has a reviewed real 69/5 accessory fixture and independently validated
-  source-font 7–9 patterns, with no lost reading across 510 real frames.
-  Independent reader completions now keep slow Soul OCR out of Gold updates;
-  bounded jobs, exact-frame barriers and dated context have focused checks.
-  These latest changes still require deployed acceptance. Native soul decoding
-  remains incomplete, so the whole hourly-counter item stays open.
+  Installed acquisition now records dated Cube and L3 balances, retains
+  their measured history across gateway restarts, and suppresses old-stage
+  rates until fresh stage evidence agrees. Cube/hour and its extrapolated
+  total were checked in a guarded browser: 28 valid rate polls, 29 distinct
+  displayed totals, no browser errors or game inputs. Accessories increased
+  from 72 to 74 and produced a measured hourly rate on the observed accessory
+  stage; all 27 subsequent browser polls retained it. Analysis rows have
+  aligned icons and right-hand grey timestamps. Independent reader completions
+  preserve frame context and keep slow Soul OCR out of Gold updates.
+  Longer runs exposed the actual failure: legacy game text changes its font
+  size with the amount, and glyph ink overlaps its nominal advance. A shared
+  independently extracted font geometry now handles those variations without
+  guessing balances. Native Cube decoding passes all 75 independent real
+  frames; Soul decoding matches distinct B/C/E and two new live balances,
+  including a font-size change. L3 uses the complete independently validated
+  raster family, with no lost reading across 510 real frames and a separate
+  reviewed 74/5 held-out card. The latest font readers still need production
+  acceptance together, including changed Soul balances and prompt Gold rates.
+  Resource-spending resets are checked without spending game resources;
+  paid/action controls remain forbidden. The complete item stays open until
+  the installed readings, calculations and browser output agree.
 - [ ] Finish automatic Soul Weapon selection and engraving for each farming
   target. Verify the actual weapon and pattern before acting; no successful
   status until the requested setup is observed in the game.

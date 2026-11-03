@@ -38,26 +38,17 @@ class NativeCubes(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertEqual(cubes.read(fixture(name)), {'text': text, 'value': int(text.replace(',', ''))})
 
-    def test_missing_digits_are_actual_independent_native_footprints(self):
-        shot = fixture('cube_balance_480_zero_one')
-        mask = native._mask(shot)
-        for char, left, right in (('0', 401, 408), ('1', 440, 444)):
-            glyph = tuple(tuple(row[left - 357:right - 357]) for row in mask)
-            self.assertIn(glyph, native.PATTERNS[char])
-        mask = native._mask(fixture('cube_balance_480_five'))
-        self.assertIn(tuple(tuple(row[426 - 357:433 - 357]) for row in mask), native.PATTERNS['5'])
-        mask = native._mask(fixture('cube_balance_480_changed'))
-        three = tuple(tuple(row[419 - 357:426 - 357]) for row in mask)
-        self.assertIn(three, native.PATTERNS['3'])
-        self.assertNotIn(three, native.PATTERNS['8'], 'the observed open left side cannot train an eight alias')
-        self.assertEqual(set(native.PATTERNS), set('0123456789,'))
-        self.assertTrue(all(len(owners) == 1 for owners in native.OWNERS.values()))
-        for char, variants in native.PATTERNS.items():
-            for glyph in variants:
-                if char == ',':
-                    self.assertFalse(any(value for row in glyph[:8] for value in row))
-                else:
-                    self.assertFalse(any(value for row in glyph[10:] for value in row), 'comma fragments do not train a digit')
+    def test_independent_source_family(self):
+        self.assertEqual(set(native.BANK), set(range(13, 41)))
+        for glyphs in native.BANK.values():
+            self.assertEqual(set(glyphs), set('0123456789,'))
+        for name, expected_size in (('cube_balance_480_six_phase', 30),
+                                    ('cube_balance_480_eleven', 32),
+                                    ('cube_balance_480_eleven_three', 31)):
+            with self.subTest(name=name):
+                alternatives = native.paths(native._mask(fixture(name)))
+                self.assertEqual(alternatives[0][0], 0, 'whole line must match one independent font pose')
+                self.assertEqual(alternatives[0][2], expected_size)
 
     def test_independent_untrained_amounts(self):
         for name, text in (
@@ -67,6 +58,22 @@ class NativeCubes(unittest.TestCase):
         ):
             with self.subTest(name=name):
                 self.assertEqual(cubes.read(fixture(name)), {'text': text, 'value': int(text.replace(',', ''))})
+
+    def test_measured_auto_size_and_semantic_ambiguity(self):
+        for name, text in (
+            ('cube_balance_480_six_phase', '9,845,856,422'),
+            ('cube_balance_480_eleven', '9,845,910,182'),
+            ('cube_balance_480_boundary', '9,845,917,862'),
+            ('cube_balance_480_zero_one', '9,840,342,182'),
+            ('cube_balance_480_ambiguous', '9,845,871,782'),
+            ('cube_balance_480_automatic', '9,847,018,662'),
+            ('cube_balance_480_eleven_three', '9,840,319,142'),
+            ('cube_balance_480_changed', '9,839,236,262'),
+        ):
+            with self.subTest(name=name):
+                self.assertEqual(cubes.read(fixture(name)), {'text': text, 'value': int(text.replace(',', ''))})
+        # These earlier heuristic ambiguities resolve with zero whole-line
+        # error using independent source advances and a shared raster phase.
 
     def test_real_counts_feed_rate_arithmetic_at_observation_times(self):
         window = rules.empty()
@@ -80,22 +87,25 @@ class NativeCubes(unittest.TestCase):
         self.assertEqual(rate * 3600, 35942400)
 
     def test_integer_grammar_also_accepts_zero_and_small_counts(self):
-        # Grammar-only composition from measured cells. This is deliberately
-        # not claimed as a real screenshot or new font calibration evidence.
-        def cells(text):
-            rows = [[] for _ in range(14)]
-            for char in text:
-                glyph = native.PATTERNS[char][0]
-                for y in range(14):
-                    rows[y].extend(glyph[y])
-                    rows[y].append(False)
-            return rows
-        for text in ('0', '1', '12', '125', '1,250'):
-            with self.subTest(text=text):
-                self.assertEqual(native.decode(cells(text)), {'text': text, 'value': int(text.replace(',', ''))})
+        # Grammar checks are not screenshot calibration evidence.
+        for text in ('0', '1', '12', '125', '1,250', '123,456,789,012,345'):
+            self.assertTrue(native.valid(text))
         for text in ('00', '01', '012', '1234', '1,25', '1,250,'):
-            with self.subTest(text=text):
-                self.assertIsNone(native.decode(cells(text)))
+            self.assertFalse(native.valid(text))
+
+    def test_small_counts_use_the_same_source_geometry(self):
+        # Source-model grammar exercise, not new screenshot calibration.
+        for text in ('0', '125', '1,250'):
+            glyphs = native.BANK[40]
+            pen = 0
+            origin = 100 - sum(glyphs[c][4] for c in text) * .5
+            alpha = bytes(106 * 22)
+            for char in text:
+                alpha = native.font.screen(alpha, native.font.raster(
+                    glyphs[char], origin, 14.25, pen, 0, 106, 22))
+                pen += glyphs[char][4]
+            rows = [[int(v >= 100) for v in alpha[y * 106:(y + 1) * 106]] for y in range(22)]
+            self.assertEqual(native.decode(rows), {'text': text, 'value': int(text.replace(',', ''))})
 
     def test_missing_icon_truncation_and_foreign_text_fail_closed(self):
         width, height, pixels = fixture('cube_balance_480_pair_a')
@@ -119,11 +129,30 @@ class NativeCubes(unittest.TestCase):
             shifted[a:a + 141 * 3] = pixels[b:b + 141 * 3]
         self.assertIsNone(cubes.read((width, height, shifted)))
 
-    def test_noisy_segmentation_does_not_gain_confidence_from_another_exact_digit(self):
-        # This complete real balance has an unresolved alternative despite
-        # independently exact other digits. Refusing it is preferable to
-        # substituting an eight/three alias or loosening the error ceiling.
-        self.assertIsNone(cubes.read(fixture('cube_balance_480_zero_one')))
+    def test_damaged_and_close_alternatives_still_reject(self):
+        rows = native._mask(fixture('cube_balance_480_six_phase'))
+        _, text, size, origin, baseline = native.paths(rows)[0]
+        alternative = text.replace('845', '345', 1)
+        rendered = bytes(len(rows) * len(rows[0]))
+        pen = 0
+        for char in alternative:
+            rendered = native.font.screen(rendered, native.font.raster(
+                native.BANK[size][char], origin, baseline, pen, 0, len(rows[0]), len(rows)))
+            pen += native.BANK[size][char][4]
+        different = [(y, x) for y, row in enumerate(rows) for x, value in enumerate(row)
+                     if value != (rendered[y * len(row) + x] >= 100)]
+        self.assertEqual(len(different), 7)
+        damaged = [row[:] for row in rows]
+        for y, x in different[:2]:
+            damaged[y][x] = not damaged[y][x]
+        candidates = native.paths(damaged)
+        self.assertLessEqual(candidates[0][0], native.MAX_PIXEL_ERROR)
+        self.assertLess(candidates[1][0] - candidates[0][0], native.MIN_MARGIN)
+        self.assertIsNone(native.decode(damaged), 'a close runner-up must reject even within the error ceiling')
+        corrupted = [row[:] for row in rows]
+        for y, x in ((0, 0), (1, 0), (2, 0)):
+            corrupted[y][x] = True
+        self.assertIsNone(native.decode(corrupted))
 
 
 if __name__ == '__main__':

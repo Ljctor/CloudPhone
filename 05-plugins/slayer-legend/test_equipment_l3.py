@@ -137,6 +137,7 @@ class EquipmentL3(unittest.TestCase):
             ("accessories", "equipment_l3_accessories_sixty_480", 60),
             ("accessories", "equipment_l3_accessories_sixtytwo_480", 62),
             ("accessories", "equipment_l3_accessories_sixtynine_480", 69),
+            ("accessories", "equipment_l3_accessories_seventyfour_480", 74),
         ):
             with self.subTest(tab=tab):
                 capture = model_fixtures.screen("battle_emerald", f"equipment_l3_{tab}_tabs", fixture)
@@ -149,7 +150,7 @@ class EquipmentL3(unittest.TestCase):
                     start = (row * width + x) * 3
                     damaged[start:start + w * 3] = bytes(w * 3)
                 self.assertIsNone(equipment.read((width, height, bytes(damaged))))
-        self.assertEqual(set(equipment.FONT_DERIVED_PHASES), set("789"))
+        self.assertEqual(set(equipment.FONT_DERIVED_PHASES), set("0123456789/"))
 
     def test_source_font_derived_seven_eight_nine_read_with_real_card_geometry(self):
         # This is an explicitly generated font replay, not a claim that an

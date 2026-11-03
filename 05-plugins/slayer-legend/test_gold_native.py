@@ -29,6 +29,14 @@ UNSEEN = {
     'gold_native_480_unseen_a': '122,447,158,576,279,681,026',
     'gold_native_480_unseen_b': '123,037,243,057,562,106,335',
 }
+# Captured after the old mask calibration. A shared source-font renderer
+# independently verifies complete amounts, including the smaller Font17
+# selected when the same fixed text rectangle contains wider digits.
+SOURCE_PHASES = {
+    'gold_native_480_font17': '346,954,589,095,103,022,285',
+    'gold_native_480_font17_leading': '347,040,047,272,059,610,981',
+    'gold_native_480_font18': '347,395,587,133,021,577,022',
+}
 
 
 def fixture(name):
@@ -64,21 +72,33 @@ class NativeGold(unittest.TestCase):
             with self.subTest(name=name):
                 self.assert_read(name, text)
 
+    def test_source_font_sizes_and_weak_leading_background(self):
+        for name, text in SOURCE_PHASES.items():
+            with self.subTest(name=name):
+                self.assert_read(name, text)
+    def test_source_crop_cache_is_bounded_and_reuses_unchanged_signal(self):
+        source = native._source_decoder()
+        source._decode.cache_clear()
+        capture = fixture('gold_native_480_font17')
+        first = native.read(capture, SHADES)
+        self.assertIsNotNone(first)
+        before = source._decode.cache_info()
+        self.assertEqual(native.read(capture, SHADES), first)
+        after = source._decode.cache_info()
+        self.assertGreater(after.hits, before.hits)
+        self.assertEqual(after.maxsize, 96)
+        self.assertLessEqual(after.currsize, 96)
+        self.assertEqual(native.MAX_GLYPH_ERROR, .065)
+        self.assertEqual(native.MAX_LINE_ERROR, .025)
+        self.assertEqual(native.MIN_MARGIN, 10)
+
     def test_ambiguous_actual_frame_is_unknown(self):
         self.assertIsNone(native.read(fixture('gold_native_480_ambiguous'), SHADES))
 
-    def test_no_duplicate_or_neighbor_fragment_templates(self):
-        owners = {}
-        self.assertEqual(set(native._PATTERNS), set('0123456789,'))
-        for char, variants in native._PATTERNS.items():
-            for rows in variants:
-                self.assertEqual(len(rows), 8)
-                if char == ',':
-                    self.assertTrue(all(set(row) <= {'0'} for row in rows[:5]))
-                else:
-                    self.assertEqual(set(rows[7]), {'0'}, 'comma descenders do not train a digit')
-                key = tuple(rows)
-                self.assertIn(owners.setdefault(key, char), (char,))
+    def test_source_font_has_every_digit_and_comma(self):
+        source = native._source_decoder()
+        for size in (17, 18, 19):
+            self.assertEqual(set(source._BANK[size]), set('0123456789,'))
 
     def test_counter_needs_its_coin_and_complete_number(self):
         width, height, data = fixture('gold_native_480_unseen_a')

@@ -51,6 +51,7 @@ GATES = [
     ("gold", "HIGH_RES_FULL_DIGITS_CALIBRATED", ["gold_full_mid", "gold_full_mid_joined", "gold_full_mid_fused",
                                                   "gold_full_mid_parked", "gold_full_mid_parked_b", "gold_full_hi"],
      "test_souls"),
+    ("soul_native", "NATIVE_DIGITS_CALIBRATED", ["souls_native_480_b", "souls_native_480_c", "souls_native_480_e", "souls_native_480_unseen", "souls_native_480_changed"], "test_soul_native"),
     ("soul_counters", "FULL_DIGITS_CALIBRATED", ["souls_full"], "test_souls"),
     ("soul_counters", "HIGH_RES_FULL_DIGITS_CALIBRATED", ["souls_full_mid"], "test_souls"),
     ("engraving_screen", "PADLOCK_LEARNED", ["eg_cards_unlocked", "eg_cards_relocked"], "test_engraving_screen"),
