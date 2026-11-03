@@ -148,6 +148,7 @@ function App() {
           <div ref={input.touchMarker} style={styles.touchMarker} aria-hidden="true" />
           <div
             style={styles.touchLayer}
+            data-android-input="true"
             aria-label={tr('Surface tactile Android')}
             onPointerDown={input.startTouch}
             onPointerMove={input.moveTouch}

@@ -75,19 +75,10 @@ async def run_browser(kind, playwright):
            {'firefox_user_prefs':{'media.autoplay.default':0, 'media.autoplay.blocking_policy':0}}))
     result = {'browser':kind, 'cases':{}, 'blockedMutations':[], 'telemetryResponses':[], 'errors':[]}
     contexts = []
-    async def make_page(block=False, stale=False):
+    async def make_page(block=False):
         context = await browser.new_context(locale='fr-FR', viewport={'width':420,'height':900})
         contexts.append(context)
         await context.add_init_script(INIT + ('\nwindow.__testBlockSignaling = true;' if block else ''))
-        if stale:
-            # Change only the HTML token received by this temporary browser.
-            async def stale_html(route):
-                response = await route.fetch()
-                body = await response.text()
-                body, count = re.subn(r'(<meta[^>]*name=["\']cloudphone-token["\'][^>]*content=["\'])[^"\']*', r'\g<1>deliberately-stale-browser-test-token', body)
-                assert count == 1, 'Token meta element not found'
-                await route.fulfill(response=response, body=body)
-            await context.route(re.compile(r'.*/(?:\?.*)?$'), stale_html)
         async def guard(route):
             request = route.request
             path = urlsplit(request.url).path
@@ -110,7 +101,13 @@ async def run_browser(kind, playwright):
         try:
             result['cases'][name] = {'ok':True, 'evidence':await callback()}
         except Exception as e:
-            result['cases'][name] = {'ok':False,'error':str(e)}
+            result['cases'][name] = {'ok':False,'error':str(e),'failureSamples':[]}
+            for context in contexts[previous_contexts:]:
+                for page in context.pages:
+                    try:
+                        result['cases'][name]['failureSamples'].append(await sample(page))
+                    except Exception as sample_error:
+                        result['cases'][name]['failureSamples'].append({'error':str(sample_error)})
         finally:
             for context in contexts[previous_contexts:]:
                 for page in context.pages:
@@ -128,12 +125,13 @@ async def run_browser(kind, playwright):
         evidence = {'initial':first,'reconnects':[]}
         for index in range(2):
             previous_count = await page.evaluate('window.__testPeers.length')
+            previous_tracks = await page.evaluate('window.__testTracks.length')
             other_count = await other.evaluate('window.__testPeers.length')
             await page.get_by_role('button',name=re.compile('Reconnecter la vidéo|Reconnect the video')).last.click()
             await page.wait_for_function('(n)=>window.__testPeers.length===n+1',arg=previous_count,timeout=45000)
             current = await advancing(page)
             assert all(p['state']=='closed' and p['signaling']=='closed' for p in current['peers'][:-1]), 'Old peer still open'
-            assert all(t['state']=='ended' for t in current['tracks'][:-1]), 'Old track still live'
+            assert all(t['state']=='ended' for t in current['tracks'][:previous_tracks]), 'Old track still live'
             unaffected = await advancing(other)
             assert len(unaffected['peers']) == other_count, 'Second viewer replaced its peer'
             assert unaffected['peers'][-1]['state']=='connected', 'Second viewer disconnected'
@@ -141,10 +139,9 @@ async def run_browser(kind, playwright):
         await page.context.close(); await other.context.close()
         return evidence
     async def stale_token():
-        page = await make_page(stale=True)
+        page = await make_page()
         await advancing(page)
-        # Ensure the reset itself receives a stale token even if telemetry has
-        # already refreshed the stale HTML token while the first frame arrived.
+        # Simulate a previously loaded page retaining a gateway-start token.
         await page.evaluate("document.querySelector('meta[name=cloudphone-token]').content='deliberately-stale-browser-test-token'")
         count = await page.evaluate('window.__testPeers.length')
         await page.get_by_role('button',name=re.compile('Reconnecter la vidéo|Reconnect the video')).last.click()
@@ -168,13 +165,18 @@ async def run_browser(kind, playwright):
         assert await dialog.locator('input[type=checkbox]').first.is_enabled()
         # Check actual hit testing so an invisible input layer cannot cover it.
         assert await select.evaluate("e=>{const r=e.getBoundingClientRect();const hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return hit===e||e.contains(hit)}"), 'Options covered by another layer'
-        await page.wait_for_timeout(1800)
+        await page.wait_for_timeout(2600)
         current = await sample(page)
         assert not current['peers'], 'Blocked attempt unexpectedly created peer'
         assert not any(r['event']=='websocket-open' for r in current['trace']['records'])
-        snapshot = await (await page.request.get(URL+'/api/v1/stream-diagnostics')).json()
         blocked_ids = await page.evaluate('window.__testBlockedAttempts')
-        attempts = [a for a in snapshot.get('attempts',[]) if a.get('attempt_id') in blocked_ids and not a.get('session_ids') and any(e.get('kind')=='websocket' and e.get('state')=='constructor-error' for e in a.get('browser_events',[]))]
+        attempts = []
+        for _ in range(12):
+            snapshot = await (await page.request.get(URL+'/api/v1/stream-diagnostics')).json()
+            attempts = [a for a in snapshot.get('signalling',{}).get('attempts',[]) if a.get('attempt_id') in blocked_ids and not a.get('session_ids') and any(e.get('kind')=='websocket' and e.get('state')=='constructor-error' for e in a.get('browser_events',[]))]
+            if attempts:
+                break
+            await page.wait_for_timeout(500)
         assert attempts, 'Pre-session failed attempt missing from gateway telemetry'
         current['serverAttempts'] = attempts
         await page.context.close()

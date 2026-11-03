@@ -35,6 +35,14 @@ separate milestones. Historical checked items below do not close a new regressio
 
 ### Engraving completion and motion acceptance
 
+- [x] Require fresh engraving proof after startup, input and relaunch, with
+  a bounded five-minute recheck even when no interruption marker exists.
+  Repair before preset policy blockers and return farming to Soul Weapon.
+- [x] Read native Lv.50 cards without weakening digit ambiguity thresholds.
+- [x] Save valid mode configuration edits automatically and let the active
+  mode follow the latest accepted revision; inactive edits do not switch modes.
+- [ ] Verify the newly detected empty grid is repaired automatically in farming,
+  with the highest-level eligible pieces and eight locks, then left on Soul Weapon.
 - [x] Persist the exact engraving recipe durably before Equip clears its pieces;
   refuse Equip if persistence or mandatory engraving actions are unavailable.
   Keep recovery pending across cancellation inside Equip and resume it before

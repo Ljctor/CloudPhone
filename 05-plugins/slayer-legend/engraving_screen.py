@@ -120,6 +120,11 @@ DIGIT_VARIANTS[1].append(tuple(tuple(ch == "#" for ch in row) for row in
 DIGIT_VARIANTS[7].append(tuple(tuple(ch == "#" for ch in row) for row in
     ["#####", "....#", "....#", "..##.", "..##.", "##...", "##...", "##..."]))
 
+# Native six-column zero in the reviewed Lv.50 crop (card #2), resampled
+# with the same reader as every other digit. Keep the ambiguity gate intact.
+DIGIT_VARIANTS[0].append(tuple(tuple(ch == "#" for ch in row) for row in
+    [".####", "##..#", "##..#", "##..#", "##..#", "##..#", "##..#", ".####"]))
+
 # The padlock, locked, as each card's place renders it (white pixels, x 52
 # to 67 and y 1 to 13 from the card's top left; the places differ by a
 # pixel's phase: one leg can look short). Open padlocks have their own

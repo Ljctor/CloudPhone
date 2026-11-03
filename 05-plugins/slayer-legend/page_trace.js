@@ -51,7 +51,11 @@ export default function trace(api) {
     if (!failed) api.warn?.(`Navigation not recorded: ${reason}`);
     failed = true;
   };
-  const starting = () => {
+  const starting = (event) => {
+    // Device overlays also contain options and debug controls. Only the
+    // Android input layer starts a game-gesture observation.
+    const input = event.target?.closest?.('[data-android-input]');
+    if (!input || !device?.contains(input)) return;
     sequence++;
     before = null;
     if (!tracing()) return;

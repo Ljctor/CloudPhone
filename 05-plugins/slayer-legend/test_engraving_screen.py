@@ -59,6 +59,15 @@ def resized(shot, width, height):
 
 
 class NativeSizes(unittest.TestCase):
+    def test_real_level_fifty_with_wide_zero(self):
+        original = fixtures.screen("eg_level_50")
+        ink = es._digits_ink(original, 1)
+        zero = es._digit_grid(ink, es._digit_runs(ink)[-1])
+        self.assertEqual(es._scaled(zero), es.DIGIT_VARIANTS[0][-1])
+        for width, height in [(480, 1040), (720, 1560)]:
+            self.assertEqual(es.level(resized(original, width, height), 1), 50)
+        self.assertIsNone(es.level(resized(original, 360, 780), 1))
+
     def test_real_narrow_one_is_not_silently_dropped(self):
         original = fixtures.screen("eg_level_41")
         ink = es._digits_ink(original, 1)

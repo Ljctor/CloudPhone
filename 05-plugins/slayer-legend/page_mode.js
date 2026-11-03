@@ -54,7 +54,6 @@ const takeOld = (name) => {
 // under État (page_screen.js).
 export default function modeFeature(api, { known, watchdog, stage }) {
   api.addTranslations?.({
-    'Appliquer la configuration': 'Apply configuration',
     'Application demandée…': 'Application requested…',
     'Application non confirmée · vérification en cours': 'Application unconfirmed · checking status',
   });
@@ -294,7 +293,7 @@ export default function modeFeature(api, { known, watchdog, stage }) {
               { label: 'Reprendre', run: () => answerHold('resume') }];
           }
           const request = farm.answer?.setup_request;
-          if (request) return { label: 'Appliquer la configuration',
+          if (request) return { label: 'Réessayer',
             disabled: () => Boolean(farm.applying), run: () => applySetup(request) };
           return farm.answer ? watchdog?.retry(farm.answer.mode) ?? null : null;
         },

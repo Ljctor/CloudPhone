@@ -32,127 +32,119 @@ const options = ui.options('mpw18', () => [{ value: '940', label: '940' }, { val
 const byLabel = (label) => options.find((option) => option.label === label);
 const status = () => byLabel('État').value();
 const summary = () => byLabel('Cible').value();
-const apply = byLabel('Appliquer la configuration');
+assert.ok(!options.some((option) => option.type === 'action' && /Appliquer/.test(option.label)), 'configuration has no Apply button');
 const edit = (key, value) => { settings[key] = value; ui.onSetting(key, value); };
-await flush(); status(); await flush();
+const settle = async () => { await flush(); await flush(); };
+const confirm = async (index, extra = {}) => {
+  const { mode, if_revision, ...part } = posts[index].body;
+  accepted[mode] = { ...part, revision: `revision-${index + 1}`, ...extra };
+  posts[index].resolve({ ok: true, body: { loadouts: structuredClone(accepted) } });
+  await settle();
+};
+await settle(); status(); await settle();
+assert.equal(posts.length, 0, 'opening the dialog does not write or apply a stored target');
 assert.equal(ui.stage('mpw18'), 940);
 assert.equal(byLabel('Soul Weapon').value(), '32');
 assert.match(status(), /Cible acceptée/);
-assert.ok(!options.some((option) => ['Compatibilité', 'Cible acceptée', 'Preuve pour la cible acceptée', 'Configuration'].includes(option.label)));
-assert.deepEqual(options.filter((option) => option.type === 'status' && (option.visible?.() ?? true)).map((option) => option.label), ['Cible', 'État']);
-assert.equal(apply.disabled(), true);
-edit('stage18', '941'); edit('mpw18Preset', 'IV');
-assert.equal(posts.length, 0, 'editing never mutates the gateway or the running mode');
-assert.match(status(), /Modifications non appliquées/);
-assert.match(summary(), /940.*III.*Ambition/);
-edit('mpw18Weapon', '36'); status(); await flush();
-assert.equal(byLabel('Gravure').value(), '', 'a new weapon requires a deliberate variant choice');
+// Changes made in one event turn produce one complete target, never an
+// intermediate weapon paired with its previous variant.
+edit('stage18', '941'); edit('mpw18Preset', 'IV'); edit('mpw18Weapon', '36');
+status(); await settle();
+assert.equal(byLabel('Gravure').value(), '');
 assert.match(status(), /Choisir une gravure valide/);
-assert.equal(apply.disabled(), true);
-await apply.run();
-assert.equal(posts.length, 0, 'an incomplete weapon cannot silently retain the old accepted target');
-assert.match(summary(), /Ambition/);
-edit('mpw18Variant', 'Balanced');
-assert.equal(apply.disabled(), false);
-const firstApply = apply.run();
+assert.equal(posts.length, 0, 'incomplete choices cannot overwrite the accepted target');
+assert.match(summary(), /940.*III.*Ambition/);
+edit('mpw18Variant', 'Balanced'); await settle();
+assert.equal(posts.length, 1, 'a complete choice saves without an Apply click');
 assert.match(status(), /Enregistrement/);
-assert.equal(apply.disabled(), true);
 assert.deepEqual(posts[0].body, { mode: 'mpw18', stage: 941, preset: 'IV', soul_weapon: { id: 36, variant: 'Balanced' } });
-posts[0].resolve({ ok: false, status: 400, body: { error_t: { template: 'Cible invalide' } } });
-await firstApply;
+posts[0].resolve({ ok: false, status: 400, body: { error_t: { template: 'Cible invalide' } } }); await settle();
 assert.match(status(), /Application non confirmée.*Cible invalide/);
 assert.match(summary(), /940.*Ambition/);
-assert.equal(byLabel('Soul Weapon').value(), '36', 'a rejected draft stays editable');
-const secondApply = apply.run();
-accepted.mpw18 = { ...posts[1].body, weapon: 'Vision' }; delete accepted.mpw18.mode;
-posts[1].resolve({ ok: true, body: { loadouts: structuredClone(accepted) } }); await secondApply;
-assert.match(status(), /Cible acceptée · équipement en jeu à vérifier/);
+assert.equal(posts.length, 1, 'a rejection cannot cause an automatic write loop');
+assert.equal(byLabel('État').button().label, 'Réessayer l’enregistrement');
+byLabel('État').button().run(); await settle();
+await confirm(1, { weapon: 'Vision' });
 assert.match(summary(), /941.*IV.*Vision/);
 assert.equal(ui.stage('mpw18'), 941);
 assert.equal(applied, 1);
-// A response for an older submitted draft cannot erase a subsequent edit.
-edit('mpw18Preset', 'V');
-const thirdApply = apply.run();
-edit('mpw18Preset', 'II');
-accepted.mpw18.preset = 'V';
-posts[2].resolve({ ok: true, body: { loadouts: structuredClone(accepted) } }); await thirdApply;
-assert.equal(byLabel('Préréglage de combat').value(), 'II');
-assert.match(summary(), /V/);
-assert.match(status(), /Modifications non appliquées/);
-assert.equal(apply.disabled(), false);
-// Clearing a target is explicit and part of the complete revision.
-edit('mpw18Weapon', '');
-const clearApply = apply.run();
-assert.equal(posts[3].body.soul_weapon, null);
-accepted.mpw18 = { ...posts[3].body, weapon: null }; delete accepted.mpw18.mode;
-posts[3].resolve({ ok: true, body: { loadouts: structuredClone(accepted) } }); await clearApply;
+// Edits arriving during a write survive its response and are saved in
+// order using the newly accepted revision; intermediate edits coalesce.
+edit('mpw18Preset', 'V'); await settle();
+assert.equal(posts[2].body.if_revision, 'revision-2');
+edit('mpw18Preset', 'II'); edit('mpw18Preset', 'I'); await settle();
+assert.equal(posts.length, 3);
+await confirm(2, { weapon: 'Vision' });
+assert.equal(byLabel('Préréglage de combat').value(), 'I');
+assert.equal(posts.length, 4);
+assert.equal(posts[3].body.preset, 'I');
+assert.equal(posts[3].body.if_revision, 'revision-3');
+await confirm(3, { weapon: 'Vision' });
+edit('mpw18Preset', 'I'); await settle();
+assert.equal(posts.length, 4, 'unchanged complete choices do not reapply a mode');
+// Clearing a requested weapon is also a complete automatically saved target.
+edit('mpw18Weapon', ''); await settle();
+assert.equal(posts[4].body.soul_weapon, null);
+await confirm(4, { weapon: null });
 assert.match(summary(), /Sans Soul Weapon demandée/);
-// The gateway can accept a write even when its POST response is lost.
-edit('mpw18Preset', 'III');
-const lostResponse = apply.run();
-accepted.mpw18 = { ...posts[4].body, weapon: null }; delete accepted.mpw18.mode;
-posts[4].resolve(null); await lostResponse;
-assert.match(status(), /Sans Soul Weapon demandée/);
-assert.equal(byLabel('Préréglage de combat').value(), 'III');
+// A lost response is reconciled through GET, never by repeating the mutation.
+edit('mpw18Preset', 'III'); await settle();
+accepted.mpw18 = { ...accepted.mpw18, preset: 'III', revision: 'revision-6' };
+posts[5].resolve(null); await settle();
 assert.match(summary(), /III/);
-// Structural support is separate from runtime readiness. Unsupported
-// recipes may be saved deliberately, but never presented as runnable.
+assert.equal(posts.length, 6);
+// Unsupported recipes are saved as preferences while staying visibly blocked.
 staticSupport.supported = false;
 staticSupport.reason_t = { template: 'Grille 4×4 non prise en charge' };
-edit('mpw18Weapon', '36'); status(); await flush(); edit('mpw18Variant', 'Balanced');
-assert.match(status(), /Modifications non appliquées.*4×4/);
-assert.equal(apply.disabled(), false, 'a known unsupported target can still be saved explicitly');
-const unsupported = apply.run();
-accepted.mpw18 = { ...posts[5].body, weapon: 'Vision', automation: structuredClone(staticSupport) }; delete accepted.mpw18.mode;
-posts[5].resolve({ ok: true, body: { loadouts: structuredClone(accepted) } }); await unsupported;
+edit('mpw18Weapon', '36'); status(); await settle(); edit('mpw18Variant', 'Balanced'); await settle();
+await confirm(6, { weapon: 'Vision', automation: structuredClone(staticSupport) });
 assert.match(status(), /Cible acceptée · exécution bloquée.*4×4/);
-// Bound both a stalled mutation and its readback, then reconcile a late
-// mutation through a new read instead of accepting its late response.
+// Both a stalled mutation and readback have deadlines. Their late answers
+// cannot overwrite a newer snapshot, and no automatic write is repeated.
 const deadlines = new Map(); let nextTimer = 1; let farmingPoll;
 globalThis.window = { setTimeout(fn) { const id = nextTimer++; deadlines.set(id, fn); return id; },
   clearTimeout(id) { deadlines.delete(id); }, setInterval(fn) { farmingPoll = fn; return 1; }, clearInterval() {} };
-const expire = async () => { const [id, fn] = deadlines.entries().next().value; deadlines.delete(id); fn(); await flush(); };
-edit('mpw18Preset', 'II'); holdReads = true;
-const timedApply = apply.run();
-await expire(); await expire(); await timedApply;
+const expire = async () => { const [id, fn] = deadlines.entries().next().value; deadlines.delete(id); fn(); await settle(); };
+holdReads = true;
+edit('mpw18Preset', 'II'); await settle();
+await expire(); await expire();
 assert.match(status(), /Délai dépassé.*non confirmé/);
-assert.equal(apply.disabled(), false, 'a deadline releases Apply without automatically retrying the write');
-assert.equal(posts.length, 7);
-accepted.mpw18 = { ...posts[6].body, weapon: 'Vision', revision: 'revision-2', automation: structuredClone(staticSupport) }; delete accepted.mpw18.mode;
-posts[6].resolve({ ok: true, body: { loadouts: structuredClone(accepted) } }); await flush();
-assert.match(status(), /Délai dépassé/, 'late mutation ACK alone is ignored');
-heldReads[0].resolve({ loadouts: { ...accepted, mpw18: { ...accepted.mpw18, preset: 'III' } } }); await flush();
-assert.match(status(), /Délai dépassé/, 'late expired read is ignored too');
-heldReads[1].resolve({ loadouts: structuredClone(accepted) }); await flush();
+assert.equal(posts.length, 8);
+accepted.mpw18 = { ...accepted.mpw18, preset: 'II', revision: 'revision-8' };
+posts[7].resolve({ ok: true, body: { loadouts: structuredClone(accepted) } }); await settle();
+assert.match(status(), /Délai dépassé/);
+heldReads[0].resolve({ loadouts: { ...accepted, mpw18: { ...accepted.mpw18, preset: 'III' } } }); await settle();
+assert.match(status(), /Délai dépassé/);
+heldReads[1].resolve({ loadouts: structuredClone(accepted) }); await settle();
 assert.doesNotMatch(status(), /Délai dépassé/);
-assert.match(summary(), /II/);
 assert.equal(deadlines.size, 0);
-// Compare-and-set conflicts refresh accepted state without discarding edits
-// or retrying the rejected write. Only another explicit Apply uses the new revision.
-edit('mpw18Preset', 'IV');
-const conflict = apply.run();
-assert.equal(posts[7].body.if_revision, 'revision-2');
-posts[7].resolve({ ok: false, status: 409, body: { error_t: { template: 'Configuration modifiée ailleurs : recharge la cible avant d’appliquer' } } });
-await flush();
-accepted.mpw18.preset = 'V'; accepted.mpw18.revision = 'revision-3';
-heldReads[2].resolve({ loadouts: structuredClone(accepted) }); await conflict;
+// A conflicting revision is refreshed before retry; the saved target and
+// user's latest choices remain separate throughout reconciliation.
+edit('mpw18Preset', 'IV'); await settle();
+assert.equal(posts[8].body.if_revision, 'revision-8');
+posts[8].resolve({ ok: false, status: 409, body: { error_t: { template: 'Configuration modifiée ailleurs : recharge la cible avant d’appliquer' } } }); await settle();
+accepted.mpw18.preset = 'V'; accepted.mpw18.revision = 'revision-9';
+heldReads[2].resolve({ loadouts: structuredClone(accepted) }); await settle();
 assert.equal(byLabel('Préréglage de combat').value(), 'IV');
 assert.match(summary(), /V/);
 assert.match(status(), /Configuration modifiée ailleurs/);
-assert.equal(posts.length, 8);
+assert.equal(posts.length, 9);
 const reloadTarget = byLabel('État').button();
-assert.equal(reloadTarget.label, 'Recharger la cible');
+assert.equal(reloadTarget.label, 'Recharger et réessayer');
 const reloading = reloadTarget.run();
-heldReads[3].resolve({ loadouts: structuredClone(accepted) }); await reloading;
-assert.match(status(), /Modifications non appliquées/);
-assert.equal(byLabel('Préréglage de combat').value(), 'IV', 'reload preserves the draft for review');
-assert.equal(posts.length, 8, 'reload performs no write or game action');
-const applyAfterConflict = apply.run();
-assert.equal(posts[8].body.if_revision, 'revision-3');
-accepted.mpw18.preset = 'IV'; accepted.mpw18.revision = 'revision-4';
-posts[8].resolve({ ok: true, body: { loadouts: structuredClone(accepted) } }); await applyAfterConflict;
+heldReads[3].resolve({ loadouts: structuredClone(accepted) }); await reloading; await settle();
+assert.equal(posts[9].body.if_revision, 'revision-9');
+await confirm(9, { weapon: 'Vision', automation: structuredClone(staticSupport) });
 holdReads = false;
-ui.dispose();
+// An inactive mode's preferences are saved to that mode alone. The page
+// never sends a mode selection or an explicit setup request for an edit.
+edit('stage4', '500'); edit('mpw4Preset', 'II'); await settle();
+assert.equal(posts[10].path, '/loadout');
+assert.equal(posts[10].body.mode, 'mpw4');
+await confirm(10);
+assert.ok(posts.every((post) => post.path === '/loadout'));
+edit('mpw18Preset', 'II'); ui.dispose(); await settle();
+assert.equal(posts.length, 11, 'disposing cancels a queued autosave');
 // A failed detail read is visible and retryable without reloading the page.
 for (const key of Object.keys(settings)) delete settings[key];
 detailFailure = true;
@@ -253,4 +245,4 @@ executionSnapshot.setup_result.target = { ...executionSnapshot.setup_result.targ
 assert.doesNotMatch(proof(), /Soul Weapon et gravure vérifiées/);
 evidenceUi.dispose();
 assert.equal(deadlines.size, 0);
-console.log('Draft loadout, complete explicit apply, rejected save and accepted-target separation: OK');
+console.log('Automatic complete loadout saving, ordered revisions, rejected/ambiguous writes and current evidence: OK');

@@ -16,6 +16,7 @@ python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engra
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_reuse.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_coverage.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_equip_engraving.py -q
+python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_detection.py -q
 python3 "$(dirname "$0")/../slayer-legend/test_nav.py" Graph.test_low_preview_bar_stays_within_its_calibrated_reader_area Graph.test_consistent
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_agent_soul_weapon.py -q
 python3 "$(dirname "$0")/../slayer-legend/test_stage_change.py" \
@@ -28,8 +29,11 @@ python3 "$(dirname "$0")/../slayer-legend/test_watchdog.py" \
   GoldTrigger.test_failed_setup_only_clears_after_full_verified_transaction \
   GoldTrigger.test_an_open_interrupted_engraving_can_be_repaired_but_unknown_popup_cannot \
   GoldTrigger.test_pending_engraving_respects_switch_and_free_play \
+  GoldTrigger.test_missing_current_engraving_proof_repairs_healthy_parking_without_pending_marker \
+  GoldTrigger.test_engraving_verification_debt_respects_free_play_and_disabled_switch \
   PresetPolicyBlocks
 node "$(dirname "$0")/../slayer-legend/test_page_engraving.mjs"
+node "$(dirname "$0")/../slayer-legend/test_page_trace.mjs"
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_mode_setup_status.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_mode_rules.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_transaction_ownership.py -q
@@ -337,10 +341,11 @@ print("Server-confirmed plugin power control: OK")
 curl -fsS "${base%/}/plugins/slayer-legend/page_engraving.js" | python3 -c '
 import sys
 script = sys.stdin.read()
-assert "Appliquer" in script and "Modifications non appliquées" in script
-assert "Réessayer cette configuration" in script and "Recharger la cible" in script
+assert "scheduleSave" in script and "Enregistrement automatique en attente" in script
+assert "button: " + chr(39) + "Appliquer" + chr(39) not in script
+assert "Réessayer cette configuration" in script and "Recharger et réessayer" in script
 assert "result?.result === '\''done'\''" in script and "currentResult" in script
-print("Explicit complete loadout application: OK")
+print("Automatic complete loadout saving and verified outcomes: OK")
 '
 curl -fsS "${base%/}/api/v1/plugins/slayer-legend/mode" | python3 -c '
 import json, sys

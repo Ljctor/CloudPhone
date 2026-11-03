@@ -66,9 +66,16 @@ Rules:
       reads open, and another preset reads selected.
     - Battle settings' close button: after its preset reads selected.
   - Soul weapon (last step of a mode change, after the preset, and once after a
-    watchdog relaunch; never periodic; switch `soul_weapon`, real by
+    watchdog relaunch; switch `soul_weapon`, real by
     default, "off" stops it; skipped while the last check read the target
-    equipped and no relaunch or user input came since):
+    equipped and no relaunch or user input came since). In mpw18, mpw4 and
+    Soul Farming, current engraving readiness is verified on startup, after
+    user input or relaunch, and every five minutes under the shared lease.
+    A historical success without a current observation is unverified, even
+    without a pending marker. Its engraving check/repair precedes unrelated
+    preset policy refusals; a refusal leaves the mode failed and returns to
+    Soul Weapon parking. Free play, Agent and the mine never initiate this
+    farming verification:
     - Equipment (the bottom tab), from the battle screen with nothing over
       it; the Weapon tab when the panel reads Accessories (whose same
       top-right spot opens Black Orb).

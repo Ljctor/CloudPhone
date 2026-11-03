@@ -44,7 +44,7 @@ during it stops it at the next tap.
 - Park (last of all, inside the 60 s): the farming mode's idle place,
   the Soul Weapon screen, the battle going on above it
   (features/soul_weapon.py's park: the soul weapon step's own moves, the
-  screen left open after it). Only for mpw18 and mpw4, while the soul
+  screen left open after it). For mpw18, mpw4 and Soul Farming, while the soul
   weapon's switch is real. to_battle leaves it by its red X first;
   unpark(mode) does only that, when free play or the mine starts.
 - Soul Weapon (a slow one never delays farming): the
@@ -52,7 +52,11 @@ during it stops it at the next tap.
   switch, soul_weapon, is "real" by default (the user's choice: no plan
   mode), "off" an emergency stop; kept in state.json ("soul_weapon").
   Its failure is the sequence's, « Soul Weapon : <step> » (logged as an error) (stage and
-  preset are done by then). After a watchdog relaunch (relaunched(mode)) it
+  preset are normally done by then). Missing current engraving proof runs
+  this step before stage/preset gates, including after a gateway restart
+  and at five-minute intervals; a saved success alone is insufficient.
+  A preset policy refusal returns to Soul Weapon parking and remains a
+  failed mode. After a watchdog relaunch (relaunched(mode)) it
   runs alone, with one alert if it fails.
 
 api: farm(stage, preset, mode) runs the three and parks; change_stage, set_preset,
@@ -417,7 +421,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
             raise Stop("vérification du preset {preset} sur le badge", preset=name)
         noted({"preset": name})
 
-    async def run(mode, steps, force=False, preflight=None):
+    async def run(mode, steps, force=False, preflight=None, park_on_block=False):
         """Runs steps ((name, step) pairs) under the lease: {result, text,
         timings: {name: seconds}}; ports.Busy when the lease cannot be had
         (the caller tries again shortly). A plan step is written to the log
@@ -445,6 +449,11 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
             except Blocked as e:
                 answer = {"result": "failed", "text_t": e.t, "retryable": False,
                           "failure_code": e.failure_code}
+                if park_on_block and parks(mode):
+                    try:
+                        await park(mode)
+                    except (Stop, RuntimeError) as parking_error:
+                        ports.log("error", f"Stage change: parking after preset refusal failed: {parking_error}")
             except Stop as e:
                 answer = {"result": "failed", "text_t": e.t}
             except ports.Busy:
@@ -475,6 +484,12 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
 
     def parks(mode):
         return bool(souls) and mode in FARMED and souls["switch"]() == "real"
+
+    def soul_verification_needed(mode, loadout=None):
+        part = loadout if loadout is not None else (soul["loadout"](mode) if souls else None)
+        chosen = (part or {}).get("soul_weapon")
+        return bool(chosen and souls and souls.get("verification_needed", lambda *args: False)(
+            chosen["id"], chosen.get("variant")))
 
     def preflight_soul(mode, loadout=None):
         """Reject an impossible or unauthorized requested loadout before
@@ -564,14 +579,14 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         # Restore its completion bonus before unrelated stage/preset gates
         # can stop the full transaction. This stays inside the same lease.
         steps = ([("engraving_recovery", lambda: equip_soul_weapon(mode, target))]
-                 if recovery.get("required") else [])
+                 if recovery.get("required") or soul_verification_needed(mode, target) else [])
         if preset:
             steps.append(("preset_preflight", lambda: preflight_preset(preset)))
         steps.append(("stage", lambda: change_stage(stage, (target or {}).get("soul_weapon"))))
         if preset:
             steps.append(("preset", lambda: set_preset(preset)))
         steps += soul_steps(mode)
-        answer = await run(mode, steps, force, lambda: preflight_soul(mode))
+        answer = await run(mode, steps, force, lambda: preflight_soul(mode), park_on_block=True)
         # Only the complete transaction can acknowledge a failed setup.
         # A parking move and a healthy battle frame carry no such evidence.
         current = soul["loadout"](mode) if soul else None
@@ -707,6 +722,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
            "park": lambda mode: run(mode, [("park", lambda: park(mode))]), "parked": parked, "unpark": unpark,
            "soul_weapon_switch": lambda: souls["switch"]() if souls else "off",
            "soul_weapon_state": lambda: souls["state"]() if souls else None,
+           "soul_verification_needed": soul_verification_needed,
            "engraving_open": lambda shot: bool(soul and soul.get("engraving")
                                                 and soul["engraving"]["screen"].title(shot)),
            "engraving_switch": lambda: souls["state"]()["engraving"] if souls else "off",

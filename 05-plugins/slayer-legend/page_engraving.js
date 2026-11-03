@@ -1,4 +1,4 @@
-// Edit a draft, then explicitly apply one complete target to the gateway.
+// Persist each complete field change; the gateway applies an active mode’s target.
 // Accepted configuration and observed in-game equipment are separate facts.
 
 import { withDeadline } from './page_request_deadline.js';
@@ -14,7 +14,7 @@ const DOTS = { green: '🟢', blue: '🔵', red: '🔴' };
 
 const ENGLISH = {
   'Réessayer cette configuration': 'Retry this configuration',
-  'Recharger la cible': 'Reload target',
+  'Recharger et réessayer': 'Reload and retry',
   'Soul Weapon et gravure vérifiées · huit cartes verrouillées': 'Soul Weapon and engraving verified · eight cards locked',
   'Configuration vérifiée': 'Configuration verified',
   "Configuration demandée non vérifiée": "Requested configuration unverified",
@@ -48,9 +48,8 @@ const ENGLISH = {
   "Enregistrement de la cible…": "Submitting target\u2026",
   "Application non confirmée": "Application unconfirmed",
   "Cible acceptée · équipement en jeu à vérifier": "Target accepted \u00b7 in-game equipment awaiting verification",
-  "Modifications non appliquées": "Unapplied changes",
-  "Appliquer la configuration": "Apply configuration",
-  "Appliquer": "Apply",
+  "Enregistrement automatique en attente": "Automatic save pending",
+  "Réessayer l’enregistrement": "Retry saving",
   "Données de gravure indisponibles": "Engraving data unavailable",
   "Compatibilité non vérifiée": "Compatibility unverified",
   "Structure prise en charge · inventaire et équipement non vérifiés": "Structure supported · inventory and equipment unverified",
@@ -64,12 +63,15 @@ export default function loadoutFeature(api, { onApplied = () => {}, execution = 
   const data = { list: null, weapons: {}, asking: new Set(), failed: new Set(), saved: null, disposed: false, writes: 0, readAfterWrite: false, farming: null };
   const edits = Object.fromEntries(FARMING_MODES.map((mode) => [mode, {}]));
   const state = Object.fromEntries(FARMING_MODES.map((mode) => [mode,
-    { busy: false, error: null, uncertain: false, submitted: null }]));
+    { busy: false, dirty: false, queued: false, error: null, uncertain: false, submitted: null }]));
   const keyOf = (mode, field) => field === "Stage"
     ? ({ mpw18: 'stage18', mpw4: 'stage4', soul: 'stageSoul' }[mode]) : `${mode}${field}`;
   const loadList = async () => {
-    data.list = await withDeadline(api.get('/engravings')).catch(() => null);
+    const answer = await withDeadline(api.get('/engravings')).catch(() => null);
+    if (data.disposed) return;
+    data.list = answer;
     api.refresh();
+    for (const mode of FARMING_MODES) scheduleSave(mode);
   };
   const loadSaved = async () => {
     if (Object.values(state).some((part) => part.busy)) { data.readAfterWrite = true; return; }
@@ -85,6 +87,7 @@ export default function loadoutFeature(api, { onApplied = () => {}, execution = 
       }
     }
     api.refresh();
+    for (const mode of FARMING_MODES) scheduleSave(mode);
     return Boolean(answer?.loadouts);
   };
   loadList();
@@ -126,10 +129,12 @@ export default function loadoutFeature(api, { onApplied = () => {}, execution = 
     if (!(id in data.weapons) && !data.asking.has(id) && !data.failed.has(id)) {
       data.asking.add(id);
       withDeadline(api.get(`/engraving?id=${id}`)).catch(() => null).then((answer) => {
+        if (data.disposed) return;
         if (answer) data.weapons[id] = answer;
         data.asking.delete(id);
         if (!answer) data.failed.add(id);
         api.refresh();
+        for (const mode of FARMING_MODES) scheduleSave(mode);
       });
     }
     return data.weapons[id] ?? null;
@@ -261,7 +266,9 @@ export default function loadoutFeature(api, { onApplied = () => {}, execution = 
       ? `${part.weapon ?? weapon.id} / ${weapon.variant}` : api.tr('Sans Soul Weapon demandée')}`;
   };
   const save = async (mode) => {
-    if (state[mode].busy || invalid(mode)) return;
+    if (data.disposed || state[mode].busy || state[mode].conflict || state[mode].uncertain || invalid(mode)) return;
+    if (same(data.saved?.[mode], target(mode))) { state[mode].dirty = false; return; }
+    state[mode].dirty = false;
     const submitted = target(mode);
     const revision = data.saved?.[mode]?.revision;
     data.writes += 1;
@@ -278,7 +285,7 @@ export default function loadoutFeature(api, { onApplied = () => {}, execution = 
       // accepted target before reporting its outcome, without retrying a write.
       const confirmed = direct ?? (await withDeadline(api.get('/loadout')).catch(() => null))?.loadouts;
       if (data.disposed) return;
-      if (confirmed?.[mode]) data.saved = confirmed;
+      if (confirmed?.[mode]) data.saved = { ...data.saved, [mode]: confirmed[mode] };
       if (result?.status === 409) {
         state[mode].conflict = true;
         state[mode].error = result.body?.error_t ?? 'Configuration modifiée ailleurs : recharge la cible avant d’appliquer';
@@ -288,7 +295,7 @@ export default function loadoutFeature(api, { onApplied = () => {}, execution = 
           ?? (result ? `HTTP ${result.status}` : 'gateway injoignable');
       } else {
         onApplied(mode);
-        // Keep later draft edits; this acknowledgement concerns submitted only.
+        // Keep later edits; queue their latest complete target after this acknowledgement.
       }
     } catch { state[mode].error = 'gateway injoignable'; }
     finally {
@@ -296,8 +303,25 @@ export default function loadoutFeature(api, { onApplied = () => {}, execution = 
       if (!data.disposed) {
         api.refresh();
         if (data.readAfterWrite) { data.readAfterWrite = false; loadSaved(); }
+        scheduleSave(mode);
       }
     }
+  };
+  // Coalesce edits from one event turn and serialize a mode's writes. An
+  // ambiguous result or conflict is reconciled before another target is sent.
+  const scheduleSave = (mode) => {
+    const part = state[mode];
+    if (data.disposed || !part.dirty || part.busy || part.queued || part.conflict || part.uncertain) return;
+    part.queued = true;
+    Promise.resolve().then(() => {
+      part.queued = false;
+      if (!data.disposed && part.dirty) return save(mode);
+    });
+  };
+  const retrySave = (mode) => {
+    state[mode].error = null;
+    state[mode].dirty = true;
+    scheduleSave(mode);
   };
   const changed = (key, next) => {
     for (const mode of FARMING_MODES) {
@@ -310,7 +334,9 @@ export default function loadoutFeature(api, { onApplied = () => {}, execution = 
       }
       state[mode].error = null;
       state[mode].conflict = false;
+      state[mode].dirty = true;
       api.refresh();
+      scheduleSave(mode);
     }
   };
   const retry = () => {
@@ -321,7 +347,9 @@ export default function loadoutFeature(api, { onApplied = () => {}, execution = 
     if (await loadSaved()) {
       state[mode].conflict = false;
       state[mode].error = null;
+      state[mode].dirty = true;
       api.refresh();
+      scheduleSave(mode);
     }
   };
   const setupRequest = (mode) => {
@@ -343,14 +371,14 @@ export default function loadoutFeature(api, { onApplied = () => {}, execution = 
     // The options of a mode's dialog, in page_mode.js.
     options: (mode, stageChoices = () => []) => [
       { type: 'choice', key: keyOf(mode, 'Stage'), label: { mpw18: 'Stage mpw18', mpw4: 'Stage mpw4', soul: 'Stage Soul Farming' }[mode],
-        value: () => String(value(mode, 'Stage')), choices: stageChoices, disabled: () => state[mode].busy },
+        value: () => String(value(mode, 'Stage')), choices: stageChoices },
       {
-        type: 'choice', key: `${mode}Preset`, label: 'Préréglage de combat', value: () => value(mode, 'Preset'), disabled: () => state[mode].busy, choices: () => presetChoices(mode),
+        type: 'choice', key: `${mode}Preset`, label: 'Préréglage de combat', value: () => value(mode, 'Preset'), choices: () => presetChoices(mode),
       },
-      { type: 'choice', key: `${mode}Weapon`, label: 'Soul Weapon', value: () => value(mode, 'Weapon'), disabled: () => state[mode].busy, choices: () => weaponChoices(mode) },
+      { type: 'choice', key: `${mode}Weapon`, label: 'Soul Weapon', value: () => value(mode, 'Weapon'), choices: () => weaponChoices(mode) },
       {
         type: 'choice', key: `${mode}Variant`, label: 'Gravure',
-        value: () => value(mode, 'Variant'), disabled: () => state[mode].busy, visible: () => Boolean(value(mode, 'Weapon')), choices: () => variantChoices(mode),
+        value: () => value(mode, 'Variant'), visible: () => Boolean(value(mode, 'Weapon')), choices: () => variantChoices(mode),
       },
       { type: 'grid', label: 'Grille', visible: () => Boolean(variant(mode)), rows: () => gridRows(mode) },
       {
@@ -366,16 +394,15 @@ export default function loadoutFeature(api, { onApplied = () => {}, execution = 
         if (problem) return api.tr(problem);
         if (!same(data.saved?.[mode], target(mode))) {
           const support = applicability(mode);
-          return `${api.tr('Modifications non appliquées')}${support && !support.supported ? ` · ${applicabilityText(mode)}` : ''}`;
+          return `${api.tr('Enregistrement automatique en attente')}${support && !support.supported ? ` · ${applicabilityText(mode)}` : ''}`;
         }
         if (data.saved?.[mode]?.automation?.supported === false && data.saved?.[mode]?.soul_weapon) return acceptedState(mode);
         return evidence(mode);
       }, button: () => !data.saved || !data.list || data.failed.size ? { label: 'Réessayer', run: retry }
-        : state[mode].conflict ? { label: 'Recharger la cible', run: () => reloadTarget(mode) }
+        : state[mode].conflict ? { label: 'Recharger et réessayer', run: () => reloadTarget(mode) }
           : state[mode].uncertain ? { label: 'Vérifier', run: loadSaved }
-            : setupRequest(mode) ? { label: 'Réessayer cette configuration', run: () => execute(mode) } : null },
-      { type: 'action', label: 'Appliquer la configuration', button: 'Appliquer', run: () => save(mode),
-        disabled: () => state[mode].busy || Boolean(invalid(mode)) || same(data.saved?.[mode], target(mode)) },
+            : state[mode].error ? { label: 'Réessayer l’enregistrement', run: () => retrySave(mode) }
+              : setupRequest(mode) ? { label: 'Réessayer cette configuration', run: () => execute(mode) } : null },
     ],
     stage: (mode) => data.saved?.[mode]?.stage ?? null,
     onSetting: changed,

@@ -75,7 +75,7 @@ assert.deepEqual(statusRow.button().map((button) => button.label), ['Jeu libre',
 state.hold = null; state.setup_blocker_t = null; state.setup_result = null;
 await poll();
 const apply = statusRow.button();
-assert.equal(apply.label, 'Appliquer la configuration');
+assert.equal(apply.label, 'Réessayer');
 assert.equal(apply.disabled(), false);
 let resolveSetup;
 setupResponse = new Promise((resolve) => { resolveSetup = resolve; });

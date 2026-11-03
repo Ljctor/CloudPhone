@@ -610,7 +610,7 @@ class GoldTrigger(unittest.TestCase):
               game=True, launched=False, bar=lambda look: look * 0.27 % 1, screen=lambda look: "battle",
               park=None, hold=None, intention=None, user_input=lambda look: None,
               failed_setup=False, recovery=None, setup_real=True, policy_allowed=lambda look: False,
-              target=None, saved=None, relaunch_at=None, preset=lambda look: 1):
+              target=None, saved=None, relaunch_at=None, preset=lambda look: 1, verification_debt=None):
         """count looks, AUTO read as auto, viewers(look) connected, the
         stage progress bar read as bar(look) (None: unreadable; by default
         it moves) on screen(look); park: the soul weapon's switch when the
@@ -728,10 +728,13 @@ class GoldTrigger(unittest.TestCase):
 
         farming = {"read_controls": read_controls, "battle_stage": lambda shot, shade=1.0: stage,
                    "farm": farm, "switches": lambda: {"stage_change": "real", "preset": "plan"}}
-        if recovery is not None or failed_setup:
+        if recovery is not None or failed_setup or verification_debt is not None:
             farming.update(soul_weapon_state=lambda: {"recovery": recovery(looked[0]) if callable(recovery) else recovery},
                            soul_weapon_switch=lambda: "real", engraving_switch=lambda: "real" if setup_real else "off",
                            switches=lambda: {"stage_change": "real", "preset": "real"})
+        if verification_debt is not None:
+            farming["soul_verification_needed"] = lambda name: (
+                verification_debt(looked[0]) if callable(verification_debt) else verification_debt)
         self.parks = parks = []
         if park:
             async def parking(name):
@@ -796,6 +799,20 @@ class GoldTrigger(unittest.TestCase):
     def test_pending_engraving_respects_switch_and_free_play(self):
         for options in ({"setup_real": False}, {"mode": "free"}):
             self.looks(8, "on", recovery={"required": True}, **options)
+            self.assertEqual(self.farmed, [])
+
+    def test_missing_current_engraving_proof_repairs_healthy_parking_without_pending_marker(self):
+        self.looks(8, "on", mode="soul", park="real", screen=lambda look: "parked",
+                   recovery={"verified": True, "required": False}, verification_debt=True,
+                   target={"stage": 920, "preset": 1})
+        self.assertTrue(self.farmed, "a historical verified record cannot certify today's empty grid")
+        self.assertEqual(self.parks, [], "parking alone cannot verify engraving")
+        self.assertEqual(self.verified, [])
+
+    def test_engraving_verification_debt_respects_free_play_and_disabled_switch(self):
+        for options in ({"mode": "free"}, {"setup_real": False}):
+            self.looks(8, "on", park="real", screen=lambda look: "parked",
+                       verification_debt=True, **options)
             self.assertEqual(self.farmed, [])
 
     def test_a_stopped_stage_change_is_one_failure_and_retry_clears_it(self):
@@ -1025,6 +1042,13 @@ class PresetPolicyBlocks(unittest.TestCase):
                    recovery=lambda look: {'required': look >= 20})
         self.assertEqual(sum(look < 20 for look in self.farm_looks), 1)
         self.assertTrue(any(look >= 20 for look in self.farm_looks), 'pending grid repairs cannot be suppressed')
+        self.assertIsNone(self.last_look()['execution_blocker_t'])
+
+    def test_missing_current_proof_overrides_policy_latch_without_pending_marker(self):
+        self.looks(35, 'on', failed_setup=True, answer=self.policy_block(),
+                   recovery={'required': False, 'verified': True}, verification_debt=lambda look: look >= 20)
+        self.assertEqual(sum(look < 20 for look in self.farm_looks), 1)
+        self.assertTrue(any(look >= 20 for look in self.farm_looks))
         self.assertIsNone(self.last_look()['execution_blocker_t'])
 
 

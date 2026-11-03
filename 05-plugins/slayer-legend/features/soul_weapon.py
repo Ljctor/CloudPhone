@@ -29,8 +29,9 @@ Nothing inside the panel is tapped to park or to stay parked.
 Fast: each wait polls for what the move should show (POLL, at most
 WAIT_MOST for list readings, SCREEN_WAIT_MOST for screen transitions), no fixed long sleeps. Skipped altogether when the last check
 read the target equipped and neither a relaunch nor a user input came
-since (the cache, in memory: a gateway restart reads again). Its duration
-is logged.
+since (the cache, in memory: a gateway restart reads again). Engraving
+proof also expires after five minutes, so farming rechecks the actual grid
+even if a missed interruption left no pending marker. Its duration is logged.
 
 The engraving (features/engraving_setup.py), once the target is equipped:
 its engraving screen (the card's big icon) is set up as the loadout's
@@ -296,6 +297,30 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
         setup = engraving["setup"](ports, engraving["screen"], engraving["rules"], helpers, wait_for, reader.title,
                                    lambda: status["engraving"], source_weapon=reader.name)
 
+    def verification_needed(target_id, variant):
+        """A saved success is no proof of the current game after a restart.
+
+        Recheck after input/relaunch and at most five minutes after the last
+        complete observation. The caller only schedules this under farming;
+        this getter never touches the game or marks the full mode successful.
+        """
+        entry = by_id.get(target_id)
+        if not entry or not entry.get("grid"):
+            return False
+        cache = status["cache"]
+        last_input = (ports.last_input() or {}).get("wall") if hasattr(ports, "last_input") else None
+        if (not cache or cache.get("id") != target_id or cache.get("variant") != variant
+                or not rules.fresh_cache(cache, ports.clock.wall(), last_input, status["relaunched"])
+                or ports.clock.wall() - cache["at"] >= 5 * 60):
+            return True
+        state = setup.state() if setup and hasattr(setup, "state") else {}
+        recipe = state.get("recipe") or {}
+        return not (state.get("verified") and state.get("completion_verified") and state.get("locks_verified")
+                    and not state.get("required") and state.get("weapon_id") == target_id
+                    and state.get("variant") == variant and recipe.get("weapon_id") == target_id
+                    and recipe.get("name") == variant
+                    and engraving and recipe.get("variant") == engraving["variant"](target_id, variant))
+
     async def engrave(shot, entry, variant):
         """On the Soul Weapon screen with the target equipped: its engraving
         set up as the variant. (shot back on Soul Weapon, the alert's text
@@ -346,7 +371,8 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
         cache = status["cache"]
         pending = bool(setup and setup.state().get("required"))
         last_input = (ports.last_input() or {}).get("wall") if hasattr(ports, "last_input") else None
-        if cache and not pending and cache["id"] == target_id and cache.get("variant") == variant \
+        if cache and not pending and not verification_needed(target_id, variant) \
+                and cache["id"] == target_id and cache.get("variant") == variant \
                 and rules.fresh_cache(cache, ports.clock.wall(), last_input, status["relaunched"]):
             ports.log("normal", f"Soul weapon: {target} equipped (last read), skipped in 0.0 s")
             status["last"] = {"result": "cached", "weapon": target, "seconds": 0.0}
@@ -510,6 +536,7 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
             ports.store.save()
 
     return {"ensure": ensure, "park": park, "leave": leave, "recover_engraving": recover_engraving,
+            "verification_needed": verification_needed,
             "relaunched": relaunched, "forget": forget, "set_switch": set_switch,
             "switch": lambda: status["switch"], "set_engraving": set_engraving,
             "state": lambda: {"switch": status["switch"], "engraving": status["engraving"],

@@ -151,8 +151,12 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                 "preset_allowed": bool(callable(allowed) and allowed("battle_settings", "preset"))}
 
     def pending_engraving():
+        """Unfinished work or no current proof: both outrank preset policy."""
         soul = farming.get("soul_weapon_state", lambda: None)() if farming else None
-        return bool(((soul or {}).get("recovery") or {}).get("required"))
+        name = status["mode"] or mode_now()
+        return bool(((soul or {}).get("recovery") or {}).get("required")
+                    or farming and name in FARMED
+                    and farming.get("soul_verification_needed", lambda mode: False)(name))
 
     def active_policy_block():
         block = status["policy_block"]
@@ -452,9 +456,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         seen = await look()
         # A healthy battle/parking frame says nothing about an interrupted
         # engraving. Keep its durable repair intent visible after a restart.
-        soul = farming.get("soul_weapon_state", lambda: None)() if farming else None
-        recovery = (soul or {}).get("recovery") or {}
-        if name in FARMED and (mode_state.get("state") == "failed" or recovery.get("required")):
+        if name in FARMED and (mode_state.get("state") == "failed" or pending_engraving()):
             seen["loadout"] = ports.t("configuration demandée non vérifiée")
         if seen["anr"]:
             await wait_anr()
