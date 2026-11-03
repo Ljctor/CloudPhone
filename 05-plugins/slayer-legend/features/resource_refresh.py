@@ -154,8 +154,10 @@ def resource_refresh(ports, screens, navigation, equipment, weapon, scrolling, m
     async def read_l3(screen, field):
         for attempt in range(rules.MOST_SCROLLS + 1):
             shot, _ = await look(screen)
-            if await ports.analyse(equipment.read, shot) is not None:
-                first = await sample(shot, field)  # a real zero is valid
+            if await ports.analyse(equipment.card_visible, shot):
+                # The destination is the whole Legendary Grade 3 card.
+                # Failed OCR must not scroll past an already-visible target.
+                first = await sample_counter(shot, field, screen)  # a real zero is valid
                 counter = gold.get("resources", lambda: {})().get(field, {})
                 if (counter.get("rate") is None and ports.clock.monotonic() + rules.BOOTSTRAP_GAP
                         + rules.RETURN_RESERVE < running["deadline"]):
@@ -165,9 +167,9 @@ def resource_refresh(ports, screens, navigation, equipment, weapon, scrolling, m
                     check()
                     await ports.clock.sleep(rules.BOOTSTRAP_GAP)
                     second, _ = await look(screen)
-                    if await ports.analyse(equipment.read, second) is not None:
+                    if await ports.analyse(equipment.card_visible, second):
                         try:
-                            await sample(second, field)
+                            await sample_counter(second, field, screen)
                         except UnreadCounter:
                             await look(screen)
                 return first
@@ -187,14 +189,27 @@ def resource_refresh(ports, screens, navigation, equipment, weapon, scrolling, m
             await look(expected)
             status["missing"].append(field)
 
+    async def sample_counter(shot, field, screen):
+        # Recognition can precede the counter's settled raster. Retry only
+        # fresh frames of this same guarded screen, within the visit's
+        # existing deadline; never reuse the previous balance as a reading.
+        for attempt in range(3):
+            try:
+                return await sample(shot, field)
+            except UnreadCounter:
+                if attempt == 2:
+                    raise
+                await ports.clock.sleep(.3)
+                shot, _ = await look(screen)
+
     async def cubes(shot):
-        await sample(shot, "cubes")
+        await sample_counter(shot, "cubes", "weapon_detail")
         counter = gold.get("resources", lambda: {})().get("cubes", {})
         if (counter.get("rate") is None and ports.clock.monotonic() + rules.BOOTSTRAP_GAP
                 + rules.RETURN_RESERVE < running["deadline"]):
             await ports.clock.sleep(rules.BOOTSTRAP_GAP)
             second, _ = await look("weapon_detail")
-            await sample(second, "cubes")
+            await sample_counter(second, "cubes", "weapon_detail")
 
     async def circuit():
         shot, source = await look()

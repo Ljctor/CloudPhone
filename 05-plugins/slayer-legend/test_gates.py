@@ -42,6 +42,9 @@ GATES = [
     # Readings, not taps: full digits are read once a capture of them is a
     # fixture (the game's option on, the counters in full).
     ("gold", "FULL_DIGITS_CALIBRATED", ["gold_full"], "test_souls"),
+    ("cube_native", "NATIVE_DIGITS_CALIBRATED", ["cube_balance_480_base", "cube_balance_480_changed",
+        "cube_balance_480_zero_one", "cube_balance_480_five", "cube_balance_480_pair_a",
+        "cube_balance_480_unseen", "cube_balance_480_pair_b"], "test_cube_native"),
     ("gold_native", "NATIVE_FULL_DIGITS_CALIBRATED", ["gold_native_480_bright", "gold_native_480_a",
         "gold_native_480_b", "gold_native_480_c", "gold_native_480_d", "gold_native_480_e",
         "gold_native_480_unseen_a", "gold_native_480_unseen_b", "gold_native_480_ambiguous"], "test_gold_native"),

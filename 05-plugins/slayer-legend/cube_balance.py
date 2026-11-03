@@ -1,11 +1,19 @@
 """Read the Enhance Cube balance above an ordinary weapon's detail card.
 
-Calibrated from a real 720x1560 capture (fixtures/cube_balance_720.txt).
+Calibrated from real 720x1560 captures and the separately measured native
+480x1040 glyphs in cube_native.py.
 The reader is deliberately narrow: other screens and unreadable digits
 return None, so a stale balance is never silently replaced by a guess.
 """
 
+import importlib.util
+import os
 import re
+
+_native_spec = importlib.util.spec_from_file_location(
+    "cloudphone_plugin_slayer_legend_cube_native", os.path.join(os.path.dirname(__file__), "cube_native.py"))
+native = importlib.util.module_from_spec(_native_spec)
+_native_spec.loader.exec_module(native)
 
 
 # Pixel-font shapes from two real counter captures. Each row is about two
@@ -85,8 +93,10 @@ def _digit(mask):
 
 
 def read(shot):
-    """{text, value} or None. Only the weapon-detail counter at 720x1560+."""
+    """{text, value} or None. Only the observed weapon-detail Cube counter."""
     width, height, pixels = shot
+    if (width, height) == (480, 1040):
+        return native.read(shot)
     if width < 700 or height < 1500:
         return None
     sx, sy = width / 720, height / 1560
@@ -123,6 +133,6 @@ def read(shot):
             return None
         characters.append(digit)
     text = "".join(characters)
-    if not re.fullmatch(r"[1-9]\d{0,2}(?:,\d{3})*", text):
+    if not re.fullmatch(r"(?:0|[1-9]\d{0,2}(?:,\d{3})*)", text):
         return None
     return {"text": text, "value": int(text.replace(",", ""))}

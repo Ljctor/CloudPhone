@@ -87,12 +87,23 @@ def restored_resources(saved, now, rules):
         if not isinstance(model, dict) or model.get("resource") != field or model.get("source") != "scan":
             continue
         place = resource_ink(model.get("stage_ink"))
-        samples = resource_samples(model.get("samples"), now, rules.RESOURCE_WINDOW)
-        if not place or not samples or model.get("read") != samples[-1][0]:
+        samples = [] if model.get("samples") == [] else resource_samples(model.get("samples"), now, rules.RESOURCE_WINDOW)
+        balance = model.get("balance")
+        if balance is None and samples:
+            balance = {"value": samples[-1][1]}
+        value = balance.get("value") if isinstance(balance, dict) else None
+        read = model.get("read")
+        last = resource_samples([[read, value]], now, rules.RESOURCE_WINDOW)
+        if (not place or samples is None or not last
+                or samples and (read != samples[-1][0] or value != samples[-1][1])):
             continue
-        at, count = samples[-1]
+        at, count = last[0]
         restored[field] = {**rules.empty(), "place": place, "samples": samples,
-                           "pending": count, "pending_at": at, "text": str(count), "step": 1}
+                           "pending": samples[-1][1] if samples else None,
+                           "pending_at": samples[-1][0] if samples else None,
+                           "balance": {"value": count, "text": str(count), "read": at},
+                           "text": str(count), "step": 1}
+
     return restored
 
 
@@ -123,22 +134,30 @@ def gold(ports, screens, stage, counter, rules, souls=None, table=None):
                                   ports.clock.wall(), rules)
     for field, window in restored.items():
         status["resources"][field] = window
-        status["resource_read"][field] = window["samples"][-1][0]
+        status["resource_read"][field] = window["balance"]["read"]
     saved_at = ports.clock.monotonic()
     restored_at = ports.clock.wall()
     pending_restore = set(restored)
+    pending_stage = {}
+    context_at = None
 
     def resource_snapshot():
         models = {}
         now = ports.clock.wall()
         for field, window in status["resources"].items():
             place = resource_ink(window["place"])
-            samples = resource_samples(window["samples"][-RESOURCE_SAMPLE_LIMIT:], now, rules.RESOURCE_WINDOW)
-            if not place or not samples:
+            samples = resource_samples(window["samples"][-RESOURCE_SAMPLE_LIMIT:], now, rules.RESOURCE_WINDOW) or []
+            balance = window.get("balance")
+            if balance is None and samples:
+                balance = {"value": samples[-1][1], "read": samples[-1][0]}
+            last = resource_samples([[balance.get("read"), balance.get("value")]], now, rules.RESOURCE_WINDOW) if balance else None
+            if not place or not last:
                 continue
-            models[field] = {"resource": field, "source": "scan", "read": samples[-1][0],
+            models[field] = {"resource": field, "source": "scan", "read": last[0][0],
+                             "balance": {"value": last[0][1]},
                              "stage_ink": ["".join("1" if bit else "0" for bit in row) for row in place],
                              "samples": samples}
+
         return {"version": 1, "resources": models}
 
     if store is not None:
@@ -155,20 +174,32 @@ def gold(ports, screens, stage, counter, rules, souls=None, table=None):
         if (type(captured_at) not in (int, float) or captured_at < 0 or captured_at > now
                 or not math.isfinite(captured_at) or now - captured_at > rules.RESOURCE_WINDOW):
             return
-        nonlocal saved_at
+        nonlocal saved_at, context_at
         changed = False
         important = False
         kind, here = readings.get("gold_place") or (None, None)
-        # A restored model belongs to its original stage. An ordinary fresh
-        # scan can validate that identity without pretending a hidden counter
-        # was read again; a different stage cannot inherit the old slope.
-        if pending_restore and captured_at >= restored_at and kind == "battle" and resource_ink(here):
-            for field in tuple(pending_restore):
-                if not rules.same_place(here, status["resources"][field]["place"]):
-                    status["resources"][field] = rules.empty()
-                    status["resource_read"].pop(field, None)
-                    changed = important = True
-                pending_restore.remove(field)
+        valid_place = kind == "battle" and resource_ink(here) is not None
+        if context_at is None or captured_at > context_at:
+            context_at = captured_at
+            # Follow stage context even when the resource panel is hidden.
+            # One different mask suppresses a slope; only a second distinct
+            # capture agreeing on that mask discards its old-stage samples.
+            if valid_place:
+                for field, window in status["resources"].items():
+                    if field in pending_restore and captured_at < restored_at:
+                        continue
+                    place = window["place"]
+                    if place is None or rules.same_place(place, here):
+                        status["resources"][field] = {**window, "place": here if place is None else place, "odd": 0}
+                        pending_stage.pop(field, None)
+                        pending_restore.discard(field)
+                    elif field in pending_stage and rules.same_place(pending_stage[field], here):
+                        status["resources"][field] = rules.restarted(window, here)
+                        pending_stage.pop(field, None)
+                        pending_restore.discard(field)
+                        changed = important = True
+                    else:
+                        pending_stage[field] = here
         for field, window in status["resources"].items():
             value = readings.get(field)
             raw = value.get("value") if isinstance(value, dict) else value
@@ -179,7 +210,8 @@ def gold(ports, screens, stage, counter, rules, souls=None, table=None):
             if previous_read is not None and captured_at <= previous_read:
                 continue
             before = window
-            window, counts = rules.where(window, kind, here)
+            counts = (valid_place and field not in pending_stage and field not in pending_restore
+                      and window["place"] is not None and rules.same_place(window["place"], here))
             if counts:
                 exact = {
                     "value": raw,
@@ -191,6 +223,7 @@ def gold(ports, screens, stage, counter, rules, souls=None, table=None):
                     window, exact, captured_at, rules.RESOURCE_WINDOW, short=rules.RESOURCE_WINDOW
                 )
                 status["resource_read"][field] = captured_at
+                window = {**window, "balance": {"value": raw, "text": exact["text"], "read": captured_at}}
             status["resources"][field] = window
             if window != before:
                 changed = True
@@ -356,7 +389,7 @@ def gold(ports, screens, stage, counter, rules, souls=None, table=None):
                 read if read is not None else ports.clock.wall(),
                 rules.RESOURCE_WINDOW,
             )
-            if field in pending_restore:
+            if field in pending_restore or field in pending_stage:
                 rate = None
             state = (
                 "unread"
@@ -372,8 +405,8 @@ def gold(ports, screens, stage, counter, rules, souls=None, table=None):
                 "read": read,
                 "span": span(samples),
                 "window": rules.RESOURCE_WINDOW,
-                "text": window["text"],
-                "value": samples[-1][1] if samples else None,
+                "text": (window.get("balance") or {}).get("text", window["text"]),
+                "value": (window.get("balance") or {}).get("value", samples[-1][1] if samples else None),
                 "status": state,
             }
         return answer

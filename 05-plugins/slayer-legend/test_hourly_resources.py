@@ -188,7 +188,11 @@ class PersistentHourlyResources(unittest.TestCase):
         other_stage = [[False, True], [False, True]]
         again(300, {}, other_stage)
         self.assertIsNone(restored['resources']()['weapon_l3']['rate'])
-        self.assertNotIn('weapon_l3', persisted['hourly_resources']()['resources'])
+        self.assertEqual(restored['resources']()['weapon_l3']['value'], 4)
+        again(310, {}, other_stage)  # A second distinct stage confirmation.
+        model = persisted['hourly_resources']()['resources']['weapon_l3']
+        self.assertEqual(model['samples'], [])
+        self.assertEqual((model['balance']['value'], model['read']), (4, 200))
         again(320, {'weapon_l3': 52}, other_stage)
         self.assertEqual(restored['resources']()['weapon_l3']['span'], 0)
         again(330, {'weapon_l3': 53}, other_stage)
@@ -198,6 +202,92 @@ class PersistentHourlyResources(unittest.TestCase):
         restarted, _, _, _, _ = self.feature({'hourly_resources': persisted['hourly_resources']()}, now=350)
         self.assertEqual(restarted['resources']()['weapon_l3']['value'], 0)
         self.assertIsNone(restarted['resources']()['weapon_l3']['rate'])
+
+    def test_live_stage_change_suppresses_old_slope_and_bootstraps_a_fresh_pair(self):
+        api, observe, persisted, _, _ = self.feature()
+        other = [[False, True], [False, True]]
+        observe(100, {'weapon_l3': 3})
+        observe(110, {'weapon_l3': 4})
+        self.assertEqual(api['resources']()['weapon_l3']['rate'], .1)
+        observe(120, {}, other)
+        row = api['resources']()['weapon_l3']
+        self.assertEqual((row['rate'], row['read'], row['value']), (None, 110, 4))
+        observe(120, {}, other)  # Same acquisition is not two confirmations.
+        self.assertTrue(persisted['hourly_resources']()['resources']['weapon_l3']['samples'])
+        observe(130, {'weapon_l3': 10}, other)
+        row = api['resources']()['weapon_l3']
+        self.assertEqual((row['rate'], row['read'], row['span']), (None, 130, 0))
+        observe(140, {'weapon_l3': 11}, other)
+        row = api['resources']()['weapon_l3']
+        self.assertEqual((row['rate'], row['span'], row['value']), (.1, 10, 11))
+
+    def test_one_stage_noise_frame_or_unread_stage_cannot_discard_observed_history(self):
+        api, observe, _, _, _ = self.feature()
+        observe(100, {'cubes': {'value': 100}})
+        observe(110, {'cubes': {'value': 110}})
+        other = [[False, True], [False, True]]
+        observe(120, {}, other)
+        self.assertIsNone(api['resources']()['cubes']['rate'])
+        observe(130, {})  # The original stage returns: resume its real history.
+        self.assertEqual((api['resources']()['cubes']['rate'], api['resources']()['cubes']['read']), (1, 110))
+        api['observe_resources']((480, 1040, b'pixels'), {'gold_place': ('battle', None)}, 130)
+        self.assertAlmostEqual(api['resources']()['cubes']['rate'], 1)
+        observe(140, {'cubes': {'value': 140}})
+        self.assertAlmostEqual(api['resources']()['cubes']['rate'], 1)
+
+    def test_two_inconsistent_noise_masks_do_not_confirm_a_new_stage(self):
+        api, observe, _, _, _ = self.feature()
+        original = [[True, False, False]] * 3
+        noise_a = [[False, True, False]] * 3
+        noise_b = [[False, False, True]] * 3
+        observe(100, {'weapon_l3': 3}, original)
+        observe(110, {'weapon_l3': 4}, original)
+        observe(120, {}, noise_a)
+        observe(130, {}, noise_b)
+        self.assertIsNone(api['resources']()['weapon_l3']['rate'])
+        observe(140, {}, original)
+        row = api['resources']()['weapon_l3']
+        self.assertEqual((row['rate'], row['span'], row['read']), (.1, 10, 110))
+
+    def test_confirmed_new_stage_preserves_dated_balance_across_restart_without_a_rate(self):
+        api, observe, snapshots, _, _ = self.feature()
+        observe(100, {'weapon_l3': 3})
+        observe(110, {'weapon_l3': 4})
+        other = [[False, True], [False, True]]
+        observe(120, {}, other)
+        observe(130, {}, other)
+        row = api['resources']()['weapon_l3']
+        self.assertEqual((row['value'], row['read'], row['rate'], row['span']), (4, 110, None, 0))
+        restored, again, _, _, _ = self.feature({'hourly_resources': snapshots['hourly_resources']()}, now=140)
+        again(140, {}, other)
+        row = restored['resources']()['weapon_l3']
+        self.assertEqual((row['value'], row['read'], row['rate']), (4, 110, None))
+        again(150, {'weapon_l3': 10}, other)
+        again(160, {'weapon_l3': 11}, other)
+        self.assertEqual(restored['resources']()['weapon_l3']['rate'], .1)
+
+    def test_delayed_resource_ocr_can_count_when_newer_context_confirms_the_same_stage(self):
+        api, observe, _, _, _ = self.feature()
+        observe(100, {'weapon_l3': 3})
+        observe(110, {'weapon_l3': 4})
+        observe(130, {})
+        api['observe_resources']((480, 1040, b'pixels'),
+            {'gold_place': ('battle', self.PLACE), 'weapon_l3': 5}, 120)
+        row = api['resources']()['weapon_l3']
+        self.assertEqual((row['value'], row['read'], row['rate']), (5, 120, .1))
+
+    def test_delayed_old_stage_capture_cannot_clear_newer_stage_uncertainty(self):
+        api, observe, _, _, _ = self.feature()
+        observe(100, {'weapon_l3': 3})
+        observe(110, {'weapon_l3': 4})
+        other = [[False, True], [False, True]]
+        observe(130, {}, other)
+        api['observe_resources']((480, 1040, b'pixels'),
+            {'gold_place': ('battle', self.PLACE), 'weapon_l3': 999}, 120)
+        row = api['resources']()['weapon_l3']
+        self.assertEqual((row['value'], row['read'], row['rate']), (4, 110, None))
+        observe(140, {}, other)
+        self.assertEqual(api['resources']()['weapon_l3']['span'], 0)
 
     def test_untrusted_expired_future_or_wrong_resource_models_are_not_baselines(self):
         _, observe, snapshots, _, _ = self.feature()

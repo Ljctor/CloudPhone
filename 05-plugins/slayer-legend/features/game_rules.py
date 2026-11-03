@@ -121,7 +121,7 @@ READERS = {
     "progress": {"on": [("battle", "plain"), ("battle", "soul_weapon")], "fields": ("progress",), "every": 0},
     "gold": {"on": [("battle", "*"), ("saver", "*")], "fields": ("gold", "gold_reading", "gold_place"),
              "every": 2},
-    "cubes": {"on": [("battle", "*")], "fields": ("cubes",), "every": 10},
+    "cubes": {"on": [("battle", "weapon_detail")], "fields": ("cubes",), "every": 10},
     "currencies": {"on": [("battle", "*")], "fields": ("emerald", "diamond"), "every": 10},
     "saver_stage": {"on": [("saver", "*")], "fields": ("stage",), "every": 0},
     "badge": {"on": [("battle", None), ("battle", "plain")], "fields": ("preset",), "every": 0},

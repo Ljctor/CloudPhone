@@ -27,6 +27,11 @@ const RATE_FIELDS = [
 const RATE_NAMES = {
   weapon_l3: 'Arme L3', accessory_l3: 'Accessoire L3',
 };
+const RATE_LABELS = {
+  gold: 'Gold/h', cubes: 'Cubes/h', soul_green: 'Âmes vertes/h',
+  soul_blue: 'Âmes bleues/h', soul_red: 'Âmes rouges/h',
+  weapon_l3: 'Armes L3/h', accessory_l3: 'Accessoires L3/h',
+};
 
 function resourceNumber(value) {
   const raw = typeof value === 'object' && value !== null ? (value.value ?? value.text) : value;
@@ -253,18 +258,12 @@ export default function goldFeature(api, { overlay, enabled = () => true, screen
     askScreen();
     if (gold.answer?.rate_text) api.refresh();
   }, 1000);
-  const goldText = () => {
-    const answer = gold.answer;
-    if (!answer) return '…';
-    if (typeof answer.rate === 'number') return [{ icon: GOLD, text: `${shortNumber(answer.rate * 3600)}/h`,
-      color: rateColour(answer, (Date.now() - gold.at) / 1000) }];
-    return answer.read ? api.tr('pas encore mesuré') : 'never read';
-  };
-  const soulsValue = () => {
-    const answer = gold.answer;
-    if (!answer) return '…';
-    const parts = soulsParts(answer.souls);
-    return parts.length ? parts : api.tr('pas encore mesuré');
+  const rateSource = (field) => field === 'gold' ? gold.answer : field.startsWith('soul_')
+    ? gold.answer?.souls?.[field.slice(5)] : gold.answer?.resources?.[field];
+  const rateValue = (field) => {
+    const hourly = hourlyRate(gold.answer, field, gold.rates[field]);
+    return hourly !== null ? `${shortNumber(hourly)}/h`
+      : rateSource(field)?.read ? '.../h' : 'never read';
   };
   const showGold = () => {
     // Mode and timer describe the plugin, even when a menu hides the game's
@@ -310,10 +309,14 @@ export default function goldFeature(api, { overlay, enabled = () => true, screen
   return {
     // Draws again (or removes) after the plugin was turned on or off.
     update: () => showGold(),
-    resourceOptions: [
-      { type: 'status', label: 'Gold par heure', value: goldText, look: 'game' },
-      { type: 'status', label: 'Âmes par heure', value: soulsValue, look: 'game' },
-    ],
+    resourceOptions: RATE_FIELDS.map(([field, icon]) => ({
+      type: 'status', key: `hourly-${field}`, label: RATE_LABELS[field], icon, compact: true,
+      value: () => rateValue(field),
+      timestamp: () => rateSource(field)?.read
+        ? new Date(rateSource(field).read * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
+      color: () => hourlyRate(gold.answer, field, gold.rates[field]) === null
+        ? '#8a919c' : rateColour(rateSource(field)),
+    })),
     displayOptions: [
       { type: 'section', key: 'display-rates', label: 'Débits', folded: true, icon: GOLD },
       {

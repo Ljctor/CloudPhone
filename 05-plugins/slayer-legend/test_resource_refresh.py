@@ -98,6 +98,7 @@ class ResourceRefresh(unittest.IsolatedAsyncioTestCase):
                        inspect_weapon_safe=lambda shot: hooks["inspect_safe"] and shot[2]["screen"] == "equipment_weapon",
                        scroll_safe=lambda shot, tab: shot[2]["screen"] == "equipment_" + tab,
                        read=count)
+        equipment.card_visible = lambda shot: shot[2]["position"].get(shot[2]["screen"]) == 1
         equipment.scroll_safe = lambda shot, tab: shot[2]["screen"] == (
             "equipment_weapon" if tab == "weapon" else "equipment_accessories")
         screens = NS(REGISTRY={name: {"status": "registered", "fixtures": ["test-double"]}
@@ -129,6 +130,50 @@ class ResourceRefresh(unittest.IsolatedAsyncioTestCase):
                                        {"state": lambda: model["mode"]}, farming, gold, rules)
         refresh_ref.update(part)
         return model, inputs, captures, observed, intents, hooks, ports, part["api"]
+
+    async def test_cube_opening_frame_retries_fresh_popup_before_measuring(self):
+        model, inputs, captures, observed, intents, hooks, ports, api = self.build()
+        original = ports.game["scan"]
+        attempts = []
+
+        async def opening(shot, force):
+            values = await original(shot, force)
+            if shot[2]["screen"] == "weapon_detail":
+                attempts.append(shot)
+                if len(attempts) == 1:
+                    values.pop("cubes", None)
+            return values
+
+        ports.game["scan"] = opening
+        result = await api["tick"]()
+        self.assertEqual(result["result"], "complete")
+        self.assertEqual(len(attempts), 3)  # opening, baseline, later slope sample
+        self.assertIsNot(attempts[0], attempts[1])
+        self.assertEqual(sum(action == "inspect_weapon" for _, action in inputs), 1)
+
+    async def test_unread_l3_does_not_scroll_past_the_visible_target(self):
+        model, inputs, captures, observed, intents, hooks, ports, api = self.build(unread_l3=True)
+        result = await api["tick"]()
+        self.assertEqual(result["result"], "partial")
+        self.assertEqual(set(result["missing"]), {"weapon_l3", "accessory_l3"})
+        for screen in ("equipment_weapon", "equipment_accessories"):
+            self.assertEqual(inputs.count((screen, "forward")), 1)
+            self.assertEqual(model["position"][screen], 1)
+        self.assertEqual(model["screen"], "soul_weapon")
+
+    async def test_input_during_cube_retry_stops_without_closing_user_screen(self):
+        model, inputs, captures, observed, intents, hooks, ports, api = self.build(unread_cube=True)
+
+        def input_after_unread(screen):
+            if screen == "weapon_detail":
+                model["input"] = {"monotonic": model["now"], "wall": model["now"]}
+
+        hooks["scan"] = input_after_unread
+        result = await api["tick"]()
+        self.assertEqual(result["result"], "interrupted")
+        self.assertEqual(model["screen"], "weapon_detail")
+        self.assertEqual(inputs[-1], ("equipment_weapon", "inspect_weapon"))
+        self.assertEqual(observed, [])
 
     async def test_complete_guarded_circuit_and_valid_zero_returns_to_park(self):
         model, inputs, captures, observed, intents, hooks, ports, api = self.build(zero=True)
@@ -258,13 +303,13 @@ class ResourceRefresh(unittest.IsolatedAsyncioTestCase):
             readings = await original(shot, force)
             if "weapon_l3" in readings:
                 calls += 1
-                if calls == 2:
+                if calls >= 2:
                     readings["weapon_l3"] = None
             return readings
         ports.game["scan"] = unread_second
         result = await api["tick"]()
         self.assertEqual(result["result"], "complete")
-        self.assertEqual(calls, 2)
+        self.assertEqual(calls, 4)  # baseline, then three bounded fresh attempts
         positions = [index for index, (_, values) in enumerate(observed) if "weapon_l3" in values]
         self.assertEqual(len(positions), 1)
         self.assertEqual(result["read"]["weapon_l3"], hooks["observed_at"][positions[0]])

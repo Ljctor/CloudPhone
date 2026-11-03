@@ -34,8 +34,10 @@ python3 "$(dirname "$0")/../slayer-legend/test_watchdog.py" \
   PresetPolicyBlocks
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_hourly_resources.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_gold_native.py -q
+python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_cube_native.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_equipment_l3.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_resource_refresh.py -q
+node "$(dirname "$0")/../slayer-legend/test_page_gold.mjs"
 node "$(dirname "$0")/../slayer-legend/test_page_engraving.mjs"
 node "$(dirname "$0")/../slayer-legend/test_page_trace.mjs"
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_mode_setup_status.py -q

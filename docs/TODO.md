@@ -122,9 +122,23 @@ separate milestones. Historical checked items below do not close a new regressio
   ten digits, bright and parked text, plus independent unseen amounts and an
   ambiguous frame that must remain unread. A separate untrained capture batch
   yielded seven accepted frames out of ten (five distinct amounts); the first
-  accepted captures were 2.084 s apart. Installed Gold sampling/rendering and
-  the native soul, Cube and L3 acquisition paths still require verification;
-  this calibration does not close the end-to-end item.
+  accepted captures were 2.084 s apart. The installed Gold path was checked
+  over a minute: 28 successful browser polls, 13 distinct dated readings,
+  no browser errors or game inputs, and an hourly overlay matching the API
+  while the combat was shaded. Native Cube crops now cover all ten digits
+  and independently held-out balances; acquisition and interpolation still
+  need installed verification. L3 reads distinguish the card's visibility
+  from unread numbers so failed OCR cannot scroll past the target. Its
+  intensity ensemble retains strict glyph errors and requires agreement.
+  Native full-digit souls remain under investigation; no experimental or
+  ambiguous soul classifier is approved. This does not close the whole item.
+  Native Cube glyphs now cover all ten digits on reviewed counter-only crops.
+  The controlled visit supplied separate calibration cells and untrained full
+  amounts: 18 of 30 captures were accepted without publishing an ambiguous
+  alternative. The independently reviewed first/last values differ by 99,840
+  over 61.26696 s; tests use explicitly controlled times for rate arithmetic.
+  Installed Cube acquisition, two-observation measurement and browser rendering
+  remain to verify, and native soul decoding is still incomplete.
 - [ ] Finish automatic Soul Weapon selection and engraving for each farming
   target. Verify the actual weapon and pattern before acting; no successful
   status until the requested setup is observed in the game.

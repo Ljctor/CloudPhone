@@ -3,6 +3,7 @@
 import importlib.util
 import json
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -51,6 +52,47 @@ def scaled_720(capture):
 
 
 class EquipmentL3(unittest.TestCase):
+    def test_card_visibility_uses_calibrated_geometry_without_requiring_readable_numbers(self):
+        for tab in ('weapon', 'accessories'):
+            original = shot(tab)
+            for capture in (original, scaled_720(original)):
+                self.assertTrue(equipment.card_visible(capture))
+            width, height, pixels = original
+            top = equipment._card_top(original, 1)
+            damaged = bytearray(pixels)
+            for y in range(top + 85, top + 105):
+                for x in range(146, 222):
+                    offset = (y * width + x) * 3
+                    damaged[offset:offset + 3] = bytes(3)
+            unread = (width, height, bytes(damaged))
+            self.assertTrue(equipment.card_visible(unread), 'OCR failure is not permission to scroll past the card')
+            self.assertIsNone(equipment.read(unread))
+        for fixture in ('equipment_l3_weapon_phase_480', 'equipment_l3_weapon_threshold_480',
+                        'equipment_l3_accessories_sixty_480', 'equipment_l3_accessories_sixtytwo_480'):
+            self.assertTrue(equipment.card_visible(model_fixtures.screen(fixture)))
+
+    def test_clipped_missing_or_foreign_cards_are_not_visible(self):
+        self.assertFalse(equipment.card_visible(shot('weapon', include_row=False)))
+        self.assertFalse(equipment.card_visible((960, 2080, bytes(960 * 2080 * 3))))
+        self.assertFalse(equipment.card_visible((480, 1040, b'incomplete capture')))
+        for names in (
+            ('battle_emerald', 'equipment_l3_accessories_tabs', 'equipment_orange_grade3_480'),
+            ('battle_emerald', 'weapon_detail_tabs_720', 'weapon_detail_close_720'),
+            ('battle_emerald', 'growth_at_equipment_tabs_720'),
+        ):
+            self.assertFalse(equipment.card_visible(model_fixtures.screen(*names)))
+        # Translate a real red card below the calibrated visible-list limit.
+        capture = shot('weapon')
+        top = equipment._card_top(capture, 1)
+        pixels = bytearray(480 * 1040 * 3)
+        for row in range(106):
+            start = ((top + row) * 480 + 146) * 3
+            destination = ((820 + row) * 480 + 146) * 3
+            pixels[destination:destination + 76 * 3] = capture[2][start:start + 76 * 3]
+        clipped = (480, 1040, bytes(pixels))
+        self.assertIsNotNone(equipment._card_top(clipped, 1))
+        self.assertFalse(equipment.card_visible(clipped))
+
     def test_corrupted_known_digit_is_not_a_guessed_balance(self):
         capture = shot("weapon")
         top = equipment._card_top(capture, 1)
@@ -92,6 +134,7 @@ class EquipmentL3(unittest.TestCase):
         for tab, fixture, expected in (
             ("weapon", "equipment_l3_weapon_phase_480", 3),
             ("accessories", "equipment_l3_accessories_sixty_480", 60),
+            ("accessories", "equipment_l3_accessories_sixtytwo_480", 62),
         ):
             with self.subTest(tab=tab):
                 capture = model_fixtures.screen("battle_emerald", f"equipment_l3_{tab}_tabs", fixture)
@@ -105,6 +148,27 @@ class EquipmentL3(unittest.TestCase):
                     damaged[start:start + w * 3] = bytes(w * 3)
                 self.assertIsNone(equipment.read((width, height, bytes(damaged))))
         self.assertFalse(set("789") & equipment.SHAPES.keys(), "unobserved inventory glyphs remain uncalibrated")
+
+    def test_real_stationary_card_threshold_jitter_reads_without_relaxing_glyph_errors(self):
+        capture = model_fixtures.screen("battle_emerald", "equipment_l3_weapon_tabs", "equipment_l3_weapon_threshold_480")
+        self.assertEqual(equipment.MAX_DISTANCE, .06)
+        self.assertEqual(equipment.read(capture), 3)
+        # The original single threshold rejects this real stationary frame.
+        top = equipment._card_top(capture, 1)
+        glyph = next(equipment._glyphs(capture, top, 1, 130))
+        error = min(equipment._distance(glyph, item) for item in (equipment.SHAPES['3'],) + equipment.PHASES['3'])
+        self.assertGreater(error, equipment.MAX_DISTANCE)
+
+    def test_one_lone_threshold_or_disagreeing_complete_counts_are_uncertain(self):
+        capture = shot("weapon")
+        three = [equipment.SHAPES[c] for c in '3/5']
+        five = [equipment.SHAPES[c] for c in '5/5']
+        with patch.object(equipment, '_glyphs', side_effect=lambda sh, top, scale, threshold:
+                          iter(three if threshold == 130 else [])):
+            self.assertIsNone(equipment.read(capture))
+        with patch.object(equipment, '_glyphs', side_effect=lambda sh, top, scale, threshold:
+                          iter(five if threshold == 170 else three)):
+            self.assertIsNone(equipment.read(capture))
 
     def test_real_orange_grade3_card_cannot_be_mistaken_for_legendary(self):
         capture = model_fixtures.screen("battle_emerald", "equipment_l3_accessories_tabs", "equipment_orange_grade3_480")

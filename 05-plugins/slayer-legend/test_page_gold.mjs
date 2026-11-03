@@ -185,8 +185,13 @@ answer.read = null;
 assert.equal(feature.resourceOptions[0].value(), 'never read',
   'a visible but unread counter does not claim the number is hidden');
 answer.read = lastGoldRead;
-assert.equal(feature.resourceOptions[0].value(), 'pas encore mesuré',
+assert.equal(feature.resourceOptions[0].value(), '.../h',
   'one real reading without a slope remains unmeasured');
+assert.equal(feature.resourceOptions.length, 7, 'all requested hourly resources have their own analysis row');
+assert.equal(feature.resourceOptions.find((row) => row.key === 'hourly-weapon_l3').value(), '1.80A/h');
+assert.equal(feature.resourceOptions.find((row) => row.key === 'hourly-soul_red').value(), 'never read');
+assert.ok(feature.resourceOptions.every((row) => row.compact && row.icon && typeof row.timestamp === 'function'),
+  'hourly rows align their icons and preserve a separate observation timestamp');
 answer.rate = lastGoldRate;
 answer.read = 0;
 answer.box = null;

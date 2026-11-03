@@ -56,6 +56,9 @@ PHASES = {
         ('....#', '....#', '...##', '...#.', '..##.', '..#..', '.##..', '.#...', '.#...', '#....', '#....'),
         ('....##', '....##', '...###', '...##.', '..###.', '..##..', '.###..', '.##...', '.##...', '##....', '##....'),
     ),
+    '2': (
+        ('.###.', '#####', '#...#', '...##', '..##.', '.##..', '##...', '#....', '#####'),
+    ),
 }
 
 
@@ -88,6 +91,23 @@ def _card_top(shot, scale):
     return tops[0] if len(tops) == 1 else None
 
 
+def _visible_card_top(shot):
+    if not shot or len(shot) != 3 or shot[:2] not in ((WIDTH, HEIGHT), (720, 1560)):
+        return None
+    if len(shot[2]) != shot[0] * shot[1] * 3:
+        return None
+    scale = shot[0] / WIDTH
+    top = _card_top(shot, scale)
+    return top if top is not None and top + round(105 * scale) <= round(900 * scale) else None
+
+
+def card_visible(shot):
+    """A whole calibrated red Grade 3 card is visible, even if its number
+    is unread. The caller still verifies the selected Equipment tab before
+    navigating; this adds no action or coordinate authority."""
+    return _visible_card_top(shot) is not None
+
+
 def _distance(glyph, shape):
     """Pixel disagreement after scaling the observed glyph to a template."""
     height, width = len(glyph), len(glyph[0])
@@ -101,9 +121,9 @@ def _distance(glyph, shape):
     return wrong / (rows * cols) + 0.04 * abs(width - cols) / max(width, cols)
 
 
-def _glyphs(shot, top, scale):
+def _glyphs(shot, top, scale, threshold=130):
     x0, x1 = (round(x * scale) for x in COUNT_X)
-    rows = [[min(_pixel(shot, x, y)) > 130 for x in range(x0, x1)]
+    rows = [[min(_pixel(shot, x, y)) > threshold for x in range(x0, x1)]
             for y in range(top + round(85 * scale), top + round(105 * scale))]
     used = [any(row[x] for row in rows) for x in range(x1 - x0)]
     runs, start = [], None
@@ -123,21 +143,30 @@ def _glyphs(shot, top, scale):
 
 def read(shot):
     """Numerator of the visible red Grade 3 /5 card, or None."""
-    if shot[:2] not in ((WIDTH, HEIGHT), (720, 1560)):
+    top = _visible_card_top(shot)
+    if top is None:
         return None
     scale = shot[0] / WIDTH
-    top = _card_top(shot, scale)
-    if top is None or top + round(105 * scale) > round(900 * scale):
-        return None
-    chars = []
-    for glyph in _glyphs(shot, top, scale):
-        closest = sorted((min(_distance(glyph, item) for item in (shape,) + PHASES.get(char, ())), char)
-                         for char, shape in SHAPES.items())
-        if closest[0][0] > MAX_DISTANCE or closest[1][0] - closest[0][0] < 0.06:
-            return None
-        chars.append(closest[0][1])
-    text = "".join(chars)
-    return int(text[:-2]) if re.fullmatch(r"[0-6]{1,4}/5", text) else None
+    values = []
+    # Subpixel settling shifts anti-aliased edge intensities even when the
+    # card's integer geometry is unchanged. Normalize the whole line at a
+    # bounded set of white-core levels instead of relaxing glyph errors or
+    # learning a new literal mask for each intensity fluctuation.
+    for threshold in (90, 110, 130, 150, 170):
+        chars = []
+        for glyph in _glyphs(shot, top, scale, threshold):
+            closest = sorted((min(_distance(glyph, item) for item in (shape,) + PHASES.get(char, ())), char)
+                             for char, shape in SHAPES.items())
+            if closest[0][0] > MAX_DISTANCE or closest[1][0] - closest[0][0] < 0.06:
+                break
+            chars.append(closest[0][1])
+        else:
+            text = "".join(chars)
+            if re.fullmatch(r"[0-6]{1,4}/5", text):
+                values.append(int(text[:-2]))
+    # One lone parse, or two confident but different complete values, is
+    # uncertain. The thresholds never vote an unknown glyph into existence.
+    return values[0] if len(values) >= 2 and len(set(values)) == 1 else None
 
 
 _safety = None
