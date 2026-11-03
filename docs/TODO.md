@@ -94,11 +94,19 @@ separate milestones. Historical checked items below do not close a new regressio
 
 ### Immediate priorities
 
-- [ ] Diagnose and improve low frame rates end to end: compare Android frame
-  production, WebRTC reception/decoding/presentation, network loss and jitter,
-  browser rendering cost and plugin CPU on the same scene. Reduce measured
-  bottlenecks without weakening readers or interrupting user control; verify
-  the deployed result with matched before/after observations.
+- [x] Reduce repeated native-counter CPU work with bounded palette/raster
+  caches, shared Gold crop preparation and shared Soul candidate costs.
+  Preserve pixel results, candidate ordering and all reading thresholds.
+- [x] Persist bounded video performance evidence: monotonic browser sample
+  time, receive/decode/presentation counts, losses, retransmissions, decode
+  duration, jitter and buffer durations. Keep addresses and SDP out of logs.
+- [ ] Establish the trigger and remedy for intermittent Firefox delivery
+  collapse. Compare Android production and per-viewer receipt/decode/presentation
+  with network and lifecycle evidence. Successful isolated or paired sessions
+  do not establish that the intermittent issue is fixed. Do not disable TWCC,
+  cap bitrate or change codecs without a reproducible controlled improvement.
+- [ ] Validate actual Firefox Android background/foreground recovery;
+  bringing a tab forward in a headless browser does not prove visibility changed.
 - [ ] Validate independent server capture, priority recognition, bounded readers
   and deferred archives with the browser closed. Measure frame age and actual
   screen transitions; HTTP response time alone is not recognition latency.
