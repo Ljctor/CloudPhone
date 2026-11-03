@@ -179,6 +179,15 @@ assert.equal(label.isConnected, true, 'stale Gold and missing soul readings do n
 assert.ok(rateRows.slice(0, 6).every((row) => row.isConnected), 'resource rates do not disappear when Gold OCR is older than 25 seconds');
 assert.equal(rateRows[5].children[1].title, '1.80A/h', 'each resource rate renders independently');
 const lastGoldRead = answer.read;
+const lastGoldRate = answer.rate;
+answer.rate = null;
+answer.read = null;
+assert.equal(feature.resourceOptions[0].value(), 'never read',
+  'a visible but unread counter does not claim the number is hidden');
+answer.read = lastGoldRead;
+assert.equal(feature.resourceOptions[0].value(), 'pas encore mesuré',
+  'one real reading without a slope remains unmeasured');
+answer.rate = lastGoldRate;
 answer.read = 0;
 answer.box = null;
 feature.update();

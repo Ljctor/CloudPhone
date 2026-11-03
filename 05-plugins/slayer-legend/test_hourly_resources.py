@@ -3,6 +3,8 @@ No device, navigation or historical game facts stand in for observations.
 """
 import asyncio
 import importlib.util
+import json
+import copy
 from pathlib import Path
 from types import SimpleNamespace as NS
 import unittest
@@ -126,6 +128,115 @@ class HourlyResources(unittest.TestCase):
         self.assertEqual(result["cubes"]["rate"], 1)
         self.assertEqual(result["cubes"]["span"], 13)
         self.assertEqual(result["cubes"]["read"], 113)
+
+
+class PersistentHourlyResources(unittest.TestCase):
+    PLACE = [[True, False], [True, False]]
+
+    def feature(self, saved=None, now=100):
+        clock = [now]
+        snapshots = {}
+        writes = []
+        def save():
+            writes.append(json.loads(json.dumps({key: fn() for key, fn in snapshots.items()})))
+        store = NS(saved=saved or {}, register=lambda key, fn: snapshots.update({key: fn}), save=save)
+        ports = NS(store=store, clock=NS(wall=lambda: clock[0], monotonic=lambda: clock[0]))
+        part = feature.gold(ports, None, None, NS(rate_text=lambda value: value), rules)
+        def observe(at, counts, place=None):
+            clock[0] = at
+            part['api']['observe_resources']((480, 1040, b'pixels'),
+                {'gold_place': ('battle', place or self.PLACE), **counts}, at)
+        return part['api'], observe, snapshots, writes, clock
+
+    def test_exact_samples_survive_restart_without_retimestamping_or_rounding(self):
+        api, observe, snapshots, writes, _ = self.feature()
+        origin = 10 ** 40 + 17
+        observe(100, {'cubes': {'value': origin}})
+        observe(400, {'cubes': {'value': origin + 300}})
+        self.assertEqual(len(writes), 2, 'first baseline and second slope are immediately persisted')
+        saved = json.loads(json.dumps({'hourly_resources': snapshots['hourly_resources']()}))
+        restored, again, _, _, _ = self.feature(saved, now=410)
+        self.assertIsNone(restored['resources']()['cubes']['rate'], 'restoration alone cannot confirm the current stage')
+        again(410, {})  # Fresh stage only, with the counter still hidden.
+        row = restored['resources']()['cubes']
+        self.assertEqual((row['rate'], row['read'], row['span']), (1, 400, 300))
+        self.assertEqual(row['value'], origin + 300)
+        restored['observe_resources']((480, 1040, b'pixels'),
+            {'gold_place': ('battle', self.PLACE), 'cubes': {'value': origin + 999}}, 400)
+        self.assertEqual(restored['resources']()['cubes']['read'], 400, 'cached acquisition cannot become a new sample')
+        again(700, {'cubes': {'value': origin + 600}})
+        row = restored['resources']()['cubes']
+        self.assertEqual((row['rate'], row['span']), (1, 600))
+
+    def test_one_observed_baseline_survives_until_the_next_visit(self):
+        _, observe, snapshots, _, _ = self.feature()
+        observe(100, {'weapon_l3': 3, 'accessory_l3': 0})
+        saved = {'hourly_resources': snapshots['hourly_resources']()}
+        restored, again, _, _, _ = self.feature(saved, now=200)
+        self.assertIsNone(restored['resources']()['weapon_l3']['rate'])
+        again(400, {'weapon_l3': 4, 'accessory_l3': 0})
+        self.assertAlmostEqual(restored['resources']()['weapon_l3']['rate'], 1 / 300)
+        self.assertEqual(restored['resources']()['accessory_l3']['rate'], 0)
+        self.assertEqual(restored['resources']()['weapon_l3']['read'], 400)
+
+    def test_restored_stage_and_spending_boundaries_restart_the_window(self):
+        _, observe, snapshots, _, _ = self.feature()
+        observe(100, {'weapon_l3': 3})
+        observe(200, {'weapon_l3': 4})
+        saved = {'hourly_resources': snapshots['hourly_resources']()}
+        restored, again, persisted, _, _ = self.feature(saved, now=210)
+        other_stage = [[False, True], [False, True]]
+        again(300, {}, other_stage)
+        self.assertIsNone(restored['resources']()['weapon_l3']['rate'])
+        self.assertNotIn('weapon_l3', persisted['hourly_resources']()['resources'])
+        again(320, {'weapon_l3': 52}, other_stage)
+        self.assertEqual(restored['resources']()['weapon_l3']['span'], 0)
+        again(330, {'weapon_l3': 53}, other_stage)
+        self.assertAlmostEqual(restored['resources']()['weapon_l3']['rate'], .1)
+        again(340, {'weapon_l3': 0}, other_stage)
+        self.assertIsNone(restored['resources']()['weapon_l3']['rate'])
+        restarted, _, _, _, _ = self.feature({'hourly_resources': persisted['hourly_resources']()}, now=350)
+        self.assertEqual(restarted['resources']()['weapon_l3']['value'], 0)
+        self.assertIsNone(restarted['resources']()['weapon_l3']['rate'])
+
+    def test_untrusted_expired_future_or_wrong_resource_models_are_not_baselines(self):
+        _, observe, snapshots, _, _ = self.feature()
+        observe(100, {'cubes': {'value': 123}})
+        good = snapshots['hourly_resources']()
+        cases = [({'version': 2}, 110), ({**good, 'version': True}, 110), (good, 1901), (good, 90)]
+        corruptions = [dict(resource='weapon_l3'), dict(source='setup'), dict(read=101),
+                       dict(stage_ink=['12']), dict(stage_ink=['1' * 513]), dict(stage_ink=['0']),
+                       dict(samples=[[100, True]]), dict(samples=[[100, 123.0]]),
+                       dict(samples=[[100, -1]]), dict(samples=[[100, 10 ** 100]]),
+                       dict(samples=[[10 ** 1000, 123]]), dict(samples=[[-10 ** 1000, 123]]),
+                       dict(samples=[[100, 123], [100, 123]]),
+                       dict(samples=[[100, 123], [101, 122]], read=101),
+                       dict(samples=[[100, 123]] * (feature.RESOURCE_SAMPLE_LIMIT + 1))]
+        for replacement in corruptions:
+            bad = copy.deepcopy(good)
+            bad['resources']['cubes'].update(replacement)
+            cases.append((bad, 110))
+        for saved, now in cases:
+            with self.subTest(saved=saved, now=now):
+                api, _, _, _, _ = self.feature({'hourly_resources': saved}, now=now)
+                row = api['resources']()['cubes']
+                self.assertIsNone(row['read'])
+                self.assertIsNone(row['rate'])
+
+    def test_only_recent_exact_observations_are_persisted_and_store_size_is_bounded(self):
+        api, observe, snapshots, writes, clock = self.feature()
+        for bad in (True, 3.0, -1, float('nan'), 10 ** 100):
+            observe(100, {'weapon_l3': bad})
+        self.assertFalse(writes)
+        api['observe_resources']((480, 1040, b'pixels'),
+            {'gold_place': ('battle', self.PLACE), 'weapon_l3': 3}, 101)
+        self.assertIsNone(api['resources']()['weapon_l3']['read'], 'future captures must not seed a baseline')
+        for index in range(feature.RESOURCE_SAMPLE_LIMIT + 10):
+            observe(100 + index, {'weapon_l3': index})
+        model = snapshots['hourly_resources']()['resources']['weapon_l3']
+        self.assertLessEqual(len(model['samples']), feature.RESOURCE_SAMPLE_LIMIT)
+        self.assertEqual(model['read'], clock[0])
+        self.assertEqual(set(snapshots['hourly_resources']()['resources']), {'weapon_l3'})
 
 
 class ObservedStageDrop(unittest.TestCase):

@@ -16,10 +16,84 @@ the same rules, its length following the resolution read (full digits:
 a short window); spending souls is left out, spending gold starts its
 window again. The readings are the game's scan of the capture
 (features/game.py, its gold and souls readers forced on it). Read-only:
-it never touches the game.
+it never touches the game. Exact cube/L3 observations survive gateway
+restarts in state.json (hourly_resources), bounded by their original 30-minute
+window and stage identity. Restored rates wait for a fresh matching stage
+observation; restoring never refreshes a counter's acquisition timestamp.
 """
 
 import math
+
+RESOURCE_FIELDS = ("cubes", "weapon_l3", "accessory_l3")
+RESOURCE_SAMPLE_LIMIT = 1024
+RESOURCE_MAX_VALUE = 10 ** 100
+
+
+def resource_ink(value):
+    """Bound the stage-name mask; retain no screenshot colours or other pixels."""
+    if not isinstance(value, list) or not 1 <= len(value) <= 64:
+        return None
+    rows = []
+    width = None
+    for row in value:
+        if not isinstance(row, (list, str)) or not 1 <= len(row) <= 512:
+            return None
+        if width is None:
+            width = len(row)
+        if len(row) != width:
+            return None
+        if isinstance(row, str):
+            if set(row) - {"0", "1"}:
+                return None
+            rows.append([char == "1" for char in row])
+        elif all(type(item) is bool for item in row):
+            rows.append(list(row))
+        else:
+            return None
+    return rows if any(any(row) for row in rows) else None
+
+
+def resource_samples(value, now, seconds):
+    """Accept only original, ordered, recent exact integer observations."""
+    if not isinstance(value, list) or not 1 <= len(value) <= RESOURCE_SAMPLE_LIMIT:
+        return None
+    samples = []
+    previous = float("-inf")
+    for sample in value:
+        if not isinstance(sample, (list, tuple)) or len(sample) != 2:
+            return None
+        at, count = sample
+        if (type(at) not in (int, float) or at < 0 or at > now or not math.isfinite(at) or at <= previous
+                or type(count) is not int or not 0 <= count < RESOURCE_MAX_VALUE):
+            return None
+        if samples and count < samples[-1][1]:
+            return None
+        previous = at
+        if now - at <= seconds:
+            samples.append((at, count))
+    return samples or None
+
+
+def restored_resources(saved, now, rules):
+    """Untrusted stored history never becomes a new observation at restart."""
+    restored = {}
+    if not isinstance(saved, dict) or type(saved.get("version")) is not int or saved.get("version") != 1:
+        return restored
+    models = saved.get("resources")
+    if not isinstance(models, dict):
+        return restored
+    for field in RESOURCE_FIELDS:
+        model = models.get(field)
+        if not isinstance(model, dict) or model.get("resource") != field or model.get("source") != "scan":
+            continue
+        place = resource_ink(model.get("stage_ink"))
+        samples = resource_samples(model.get("samples"), now, rules.RESOURCE_WINDOW)
+        if not place or not samples or model.get("read") != samples[-1][0]:
+            continue
+        at, count = samples[-1]
+        restored[field] = {**rules.empty(), "place": place, "samples": samples,
+                           "pending": count, "pending_at": at, "text": str(count), "step": 1}
+    return restored
 
 
 def gold(ports, screens, stage, counter, rules, souls=None, table=None):
@@ -35,7 +109,7 @@ def gold(ports, screens, stage, counter, rules, souls=None, table=None):
         "asked": 0.0,
         "task": None,
         "souls": {colour: rules.empty() for colour in colours},
-        "resources": {field: rules.empty() for field in ("cubes", "weapon_l3", "accessory_l3")},
+        "resources": {field: rules.empty() for field in RESOURCE_FIELDS},
         "resource_read": {},
         "frame": None,
         "frame_at": None,
@@ -44,6 +118,32 @@ def gold(ports, screens, stage, counter, rules, souls=None, table=None):
         "reset_reason": None,
     }
 
+    store = getattr(ports, "store", None)
+    restored = restored_resources((getattr(store, "saved", {}) or {}).get("hourly_resources"),
+                                  ports.clock.wall(), rules)
+    for field, window in restored.items():
+        status["resources"][field] = window
+        status["resource_read"][field] = window["samples"][-1][0]
+    saved_at = ports.clock.monotonic()
+    restored_at = ports.clock.wall()
+    pending_restore = set(restored)
+
+    def resource_snapshot():
+        models = {}
+        now = ports.clock.wall()
+        for field, window in status["resources"].items():
+            place = resource_ink(window["place"])
+            samples = resource_samples(window["samples"][-RESOURCE_SAMPLE_LIMIT:], now, rules.RESOURCE_WINDOW)
+            if not place or not samples:
+                continue
+            models[field] = {"resource": field, "source": "scan", "read": samples[-1][0],
+                             "stage_ink": ["".join("1" if bit else "0" for bit in row) for row in place],
+                             "samples": samples}
+        return {"version": 1, "resources": models}
+
+    if store is not None:
+        store.register("hourly_resources", resource_snapshot)
+
     def observe_resources(shot, readings, captured_at=None):
         """Count a visit's forced scan now; a short popup need not wait for
         the background poll. Duplicate timestamps never count twice."""
@@ -51,14 +151,34 @@ def gold(ports, screens, stage, counter, rules, souls=None, table=None):
             captured_at = (
                 ports.capture_time(shot) if hasattr(ports, "capture_time") else ports.clock.wall()
             )
-        if captured_at is None:
+        now = ports.clock.wall()
+        if (type(captured_at) not in (int, float) or captured_at < 0 or captured_at > now
+                or not math.isfinite(captured_at) or now - captured_at > rules.RESOURCE_WINDOW):
             return
+        nonlocal saved_at
+        changed = False
+        important = False
         kind, here = readings.get("gold_place") or (None, None)
+        # A restored model belongs to its original stage. An ordinary fresh
+        # scan can validate that identity without pretending a hidden counter
+        # was read again; a different stage cannot inherit the old slope.
+        if pending_restore and captured_at >= restored_at and kind == "battle" and resource_ink(here):
+            for field in tuple(pending_restore):
+                if not rules.same_place(here, status["resources"][field]["place"]):
+                    status["resources"][field] = rules.empty()
+                    status["resource_read"].pop(field, None)
+                    changed = important = True
+                pending_restore.remove(field)
         for field, window in status["resources"].items():
             value = readings.get(field)
             raw = value.get("value") if isinstance(value, dict) else value
-            if not isinstance(raw, (int, float)) or isinstance(raw, bool) or raw < 0:
+            if type(raw) is not int or not 0 <= raw < RESOURCE_MAX_VALUE:
                 continue
+            # Each field carries its own acquisition watermark across restarts.
+            previous_read = status["resource_read"].get(field)
+            if previous_read is not None and captured_at <= previous_read:
+                continue
+            before = window
             window, counts = rules.where(window, kind, here)
             if counts:
                 exact = {
@@ -72,6 +192,13 @@ def gold(ports, screens, stage, counter, rules, souls=None, table=None):
                 )
                 status["resource_read"][field] = captured_at
             status["resources"][field] = window
+            if window != before:
+                changed = True
+                important |= (not before["samples"] or len(window["samples"]) <= 2
+                              or window["samples"][-1][1] != before["samples"][-1][1])
+        if store is not None and changed and (important or ports.clock.monotonic() - saved_at >= 10):
+            saved_at = ports.clock.monotonic()
+            store.save()
 
     def gold_facts(shot):
         """The gold counter's reading, where the game is: ("saver", stage
@@ -229,6 +356,8 @@ def gold(ports, screens, stage, counter, rules, souls=None, table=None):
                 read if read is not None else ports.clock.wall(),
                 rules.RESOURCE_WINDOW,
             )
+            if field in pending_restore:
+                rate = None
             state = (
                 "unread"
                 if read is None

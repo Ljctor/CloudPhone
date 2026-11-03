@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace as NS
 import unittest
+from unittest.mock import patch
 
 HERE = Path(__file__).parent
 
@@ -34,7 +35,7 @@ class ResourceRefresh(unittest.IsolatedAsyncioTestCase):
                  "mode": {"mode": "mpw18", "configured": True, "state": "farming", "setup": False, "hold": None}}
         inputs, captures, observed, intents = [], [], [], []
         hooks = {"input": lambda *args: None, "scan": lambda *args: None, "rate": None,
-                 "observed_at": []}
+                 "observed_at": [], "inspect_safe": True, "rates": {"weapon_l3": 1.0, "accessory_l3": 1.0}}
         refresh_ref = {}
 
         async def adb(*args, **kwargs):
@@ -94,7 +95,7 @@ class ResourceRefresh(unittest.IsolatedAsyncioTestCase):
             return (0 if zero else 3) if not blocked and shot[2]["position"].get(screen) == 1 else None
 
         equipment = NS(INSPECT_LEARNED=gate, SCROLL_LEARNED=gate,
-                       inspect_weapon_safe=lambda shot: shot[2]["screen"] == "equipment_weapon",
+                       inspect_weapon_safe=lambda shot: hooks["inspect_safe"] and shot[2]["screen"] == "equipment_weapon",
                        scroll_safe=lambda shot, tab: shot[2]["screen"] == "equipment_" + tab,
                        read=count)
         equipment.scroll_safe = lambda shot, tab: shot[2]["screen"] == (
@@ -121,7 +122,8 @@ class ResourceRefresh(unittest.IsolatedAsyncioTestCase):
             hooks["observed_at"].append(captured_at)
 
         gold = {"observe_resources": observe_resources, "current": lambda: None,
-                "resources": lambda: {"cubes": {"rate": hooks["rate"]}}}
+                "resources": lambda: {"cubes": {"rate": hooks["rate"]},
+                                      **{field: {"rate": rate} for field, rate in hooks["rates"].items()}}}
         farming = {"soul_weapon_switch": lambda: "real", "soul_weapon_state": lambda: {"recovery": model["recovery"]}}
         part = feature.resource_refresh(ports, screens, nav, equipment, weapon, scrolling,
                                        {"state": lambda: model["mode"]}, farming, gold, rules)
@@ -220,6 +222,80 @@ class ResourceRefresh(unittest.IsolatedAsyncioTestCase):
             if rate is None:
                 self.assertGreaterEqual(hooks["observed_at"][1] - hooks["observed_at"][0], 10)
 
+    async def test_first_l3_visit_bootstraps_two_exact_observations_within_its_deadline(self):
+        model, inputs, captures, observed, intents, hooks, ports, api = self.build()
+        hooks["rates"] = {"weapon_l3": None, "accessory_l3": None}
+        result = await api["tick"]()
+        self.assertEqual(result["result"], "complete")
+        self.assertLess(model["now"], 100 + rules.DEADLINE)
+        for field in ("weapon_l3", "accessory_l3"):
+            positions = [index for index, (_, values) in enumerate(observed) if field in values]
+            self.assertEqual(len(positions), 2)
+            self.assertGreaterEqual(hooks["observed_at"][positions[1]] - hooks["observed_at"][positions[0]],
+                                    rules.BOOTSTRAP_GAP)
+        self.assertEqual(model["screen"], "soul_weapon")
+
+    async def test_l3_bootstrap_never_extends_deadline_or_discards_first_baseline(self):
+        model, inputs, captures, observed, intents, hooks, ports, api = self.build()
+        hooks["rate"] = 1.0
+        hooks["rates"] = {"weapon_l3": None, "accessory_l3": None}
+        with patch.object(rules, "DEADLINE", 24):
+            result = await api["tick"]()
+        self.assertEqual(result["result"], "complete")
+        self.assertLess(model["now"], 124)
+        for field in ("weapon_l3", "accessory_l3"):
+            self.assertEqual(len([row for _, row in observed if field in row]), 1)
+            self.assertIn(field, result["read"])
+        self.assertEqual(model["screen"], "soul_weapon")
+
+    async def test_a_second_unread_l3_keeps_its_first_dated_observation(self):
+        model, inputs, captures, observed, intents, hooks, ports, api = self.build()
+        hooks["rates"]["weapon_l3"] = None
+        original = ports.game["scan"]
+        calls = 0
+        async def unread_second(shot, force):
+            nonlocal calls
+            readings = await original(shot, force)
+            if "weapon_l3" in readings:
+                calls += 1
+                if calls == 2:
+                    readings["weapon_l3"] = None
+            return readings
+        ports.game["scan"] = unread_second
+        result = await api["tick"]()
+        self.assertEqual(result["result"], "complete")
+        self.assertEqual(calls, 2)
+        positions = [index for index, (_, values) in enumerate(observed) if "weapon_l3" in values]
+        self.assertEqual(len(positions), 1)
+        self.assertEqual(result["read"]["weapon_l3"], hooks["observed_at"][positions[0]])
+        self.assertEqual(model["screen"], "soul_weapon")
+
+    async def test_failed_inspection_stays_visible_when_autonomous_supervision_gate_runs(self):
+        model, inputs, captures, observed, intents, hooks, ports, api = self.build(verified=False)
+        hooks["inspect_safe"] = False
+        failure = await api["tick"](supervised=True)
+        self.assertEqual(failure["result"], "failed")
+        self.assertIn("equipment_weapon/inspect_weapon", str(failure["reason_t"]))
+        self.assertNotIn(("equipment_weapon", "inspect_weapon"), inputs)
+        self.assertFalse(failure["supervised_verified"])
+        before = list(inputs)
+        for _ in range(3):
+            current = await api["tick"]()
+            self.assertEqual((current["result"], current["reason_t"]), (failure["result"], failure["reason_t"]))
+        self.assertEqual(inputs, before)
+
+    async def test_user_input_after_first_l3_sample_prevents_a_second_observation(self):
+        model, inputs, captures, observed, intents, hooks, ports, api = self.build()
+        hooks["rates"]["weapon_l3"] = None
+        def interrupt(screen):
+            if screen == "equipment_weapon":
+                model["input"] = {"monotonic": model["now"] + .001, "wall": model["now"]}
+        hooks["scan"] = interrupt
+        result = await api["tick"]()
+        self.assertEqual(result["result"], "interrupted")
+        self.assertEqual(len([row for _, row in observed if "weapon_l3" in row]), 1)
+        self.assertNotIn(("equipment_weapon", "accessories"), inputs)
+
     async def test_scan_can_evict_capture_metadata_without_losing_acquisition_time(self):
         model, inputs, captures, observed, intents, hooks, ports, api = self.build()
         original_scan = ports.game["scan"]
@@ -296,8 +372,11 @@ class ResourceRefresh(unittest.IsolatedAsyncioTestCase):
             self.assertIn(state["result"], ("failed", "interrupted"))
             self.assertFalse(state["supervised_verified"])
             before = list(inputs)
+            last_outcome = (state["result"], copy.deepcopy(state["reason_t"]))
             await api["tick"]()
             self.assertEqual(inputs, before)
+            self.assertEqual((api["state"]()["result"], api["state"]()["reason_t"]), last_outcome,
+                             "an autonomous supervision gate must preserve the failed/interrupted attempt")
 
     async def test_cancelled_supervision_does_not_arm_automation(self):
         model, inputs, captures, observed, intents, hooks, ports, api = self.build(verified=False)

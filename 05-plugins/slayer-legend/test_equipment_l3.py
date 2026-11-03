@@ -88,6 +88,14 @@ class EquipmentL3(unittest.TestCase):
                          if row["screen"] == "equipment_" + ("weapon" if tab == "weapon" else "accessories"))
             self.assertEqual(group["fields"][0]["value"], value)
 
+    def test_real_orange_grade3_card_cannot_be_mistaken_for_legendary(self):
+        capture = model_fixtures.screen("battle_emerald", "equipment_l3_accessories_tabs", "equipment_orange_grade3_480")
+        self.assertIsNone(equipment._card_top(capture, 1), "an orange rarity frame is not a red Legendary frame")
+        self.assertIsNone(equipment.read(capture))
+        larger = scaled_720(capture)
+        self.assertIsNone(equipment._card_top(larger, 1.5))
+        self.assertIsNone(equipment.read(larger))
+
     def test_unseen_or_unreadable_card_does_not_report_a_balance(self):
         self.assertIsNone(equipment.read(shot("weapon", include_row=False)))
         capture = shot("weapon")
@@ -118,6 +126,25 @@ class EquipmentSafety(unittest.TestCase):
         growth = model_fixtures.screen("battle_emerald", "growth_at_equipment_tabs_720")
         self.assertFalse(equipment.inspect_weapon_safe(growth))
         self.assertFalse(equipment.scroll_safe(growth, "weapon"))
+
+    def test_native_480_complete_first_card_is_calibrated_without_accepting_shifted_list(self):
+        before = model_fixtures.screen("battle_emerald", "equipment_l3_weapon_tabs", "equipment_inspect_card_480")
+        self.assertEqual(before[:2], (480, 1040))
+        self.assertTrue(equipment.inspect_weapon_safe(before))
+        width, height, rgb = before
+        for offset in (-20, 20):
+            moved = bytearray(rgb)
+            _, _, x, y, w, h, card = screens.fixture("equipment_inspect_card_480")
+            for row in range(h):
+                start = ((y + row) * width + x) * 3
+                moved[start:start + w * 3] = bytes(w * 3)
+            for row in range(h):
+                start = ((y + row + offset) * width + x) * 3
+                moved[start:start + w * 3] = card[row * w * 3:(row + 1) * w * 3]
+            self.assertFalse(equipment.inspect_weapon_safe((width, height, bytes(moved))),
+                             "a shifted first row cannot authorize the fixed inspect point")
+        accessories = model_fixtures.screen("battle_emerald", "equipment_l3_accessories_tabs", "equipment_inspect_card_480")
+        self.assertFalse(equipment.inspect_weapon_safe(accessories))
 
     def test_real_weapon_and_accessories_clear_gaps_before_and_after_scroll(self):
         captures = [

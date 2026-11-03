@@ -32,6 +32,9 @@ python3 "$(dirname "$0")/../slayer-legend/test_watchdog.py" \
   GoldTrigger.test_missing_current_engraving_proof_repairs_healthy_parking_without_pending_marker \
   GoldTrigger.test_engraving_verification_debt_respects_free_play_and_disabled_switch \
   PresetPolicyBlocks
+python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_hourly_resources.py -q
+python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_equipment_l3.py -q
+python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_resource_refresh.py -q
 node "$(dirname "$0")/../slayer-legend/test_page_engraving.mjs"
 node "$(dirname "$0")/../slayer-legend/test_page_trace.mjs"
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_mode_setup_status.py -q
@@ -196,6 +199,8 @@ assert "freshnessColour(age)" in script
 assert "observeResponse(answer, started)" in script
 assert "now = responseTime(answer)" in script
 assert "if (!Number.isFinite(now)) return base" in script
+assert "api.tr(" + chr(39) + "non visible" + chr(39) + ")" not in script
+assert "never read" in script
 assert "outline: 2" in script
 assert "combatCountersVisible" in script
 assert "screenObservationAge(scan)" in script

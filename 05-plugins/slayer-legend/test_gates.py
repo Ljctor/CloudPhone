@@ -27,6 +27,7 @@ def load(name):
 # test reading them).
 GATES = [
     ("equipment_l3", "INSPECT_LEARNED", ["equipment_weapon_tabs_720", "equipment_inspect_card_720",
+                                       "equipment_l3_weapon_tabs", "equipment_inspect_card_480",
                                        "weapon_detail_tabs_720", "weapon_detail_close_720",
                                        "growth_at_equipment_tabs_720"], "test_equipment_l3"),
     ("equipment_l3", "SCROLL_LEARNED", ["equipment_l3_weapon_tabs", "equipment_l3_accessories_tabs",

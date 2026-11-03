@@ -258,7 +258,7 @@ export default function goldFeature(api, { overlay, enabled = () => true, screen
     if (!answer) return '…';
     if (typeof answer.rate === 'number') return [{ icon: GOLD, text: `${shortNumber(answer.rate * 3600)}/h`,
       color: rateColour(answer, (Date.now() - gold.at) / 1000) }];
-    return answer.read ? api.tr('pas encore mesuré') : api.tr('non visible');
+    return answer.read ? api.tr('pas encore mesuré') : 'never read';
   };
   const soulsValue = () => {
     const answer = gold.answer;

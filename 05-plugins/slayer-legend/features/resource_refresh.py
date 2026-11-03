@@ -155,7 +155,22 @@ def resource_refresh(ports, screens, navigation, equipment, weapon, scrolling, m
         for attempt in range(rules.MOST_SCROLLS + 1):
             shot, _ = await look(screen)
             if await ports.analyse(equipment.read, shot) is not None:
-                return await sample(shot, field)  # a real zero is valid
+                first = await sample(shot, field)  # a real zero is valid
+                counter = gold.get("resources", lambda: {})().get(field, {})
+                if (counter.get("rate") is None and ports.clock.monotonic() + rules.BOOTSTRAP_GAP
+                        + rules.RETURN_RESERVE < running["deadline"]):
+                    # Establish a slope on this visit when time permits.
+                    # Keep its first dated baseline if the next number does
+                    # not read; changed screens/input still stop the circuit.
+                    check()
+                    await ports.clock.sleep(rules.BOOTSTRAP_GAP)
+                    second, _ = await look(screen)
+                    if await ports.analyse(equipment.read, second) is not None:
+                        try:
+                            await sample(second, field)
+                        except UnreadCounter:
+                            await look(screen)
+                return first
             if attempt < rules.MOST_SCROLLS:
                 before, after = await scroll(screen)
                 if await ports.analyse(scrolling.moved, before, after, viewport(screen)) < scrolling.MOVED:
@@ -230,7 +245,10 @@ def resource_refresh(ports, screens, navigation, equipment, weapon, scrolling, m
         if status["active"]:
             return state()
         if not status["supervised_verified"] and not supervised:
-            report("pending_supervision", ports.t("Actualisation des ressources : premier passage supervisé en attente"))
+            # A background eligibility check must not erase the outcome of
+            # the supervised attempt that explains why this gate is closed.
+            if status["result"] in ("idle", "pending_supervision"):
+                report("pending_supervision", ports.t("Actualisation des ressources : premier passage supervisé en attente"))
             return state()
         if supervised and status["supervised_verified"]:
             return state()

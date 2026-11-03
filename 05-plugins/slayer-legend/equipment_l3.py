@@ -46,7 +46,9 @@ def _red_line(shot, y, scale):
     hits = 0
     for x in range(round(CARD_X[0] * scale), round(CARD_X[1] * scale)):
         r, g, b = _pixel(shot, x, y)
-        hits += r > 140 and r > 1.5 * g and r > 1.3 * b
+        # The adjacent orange rarity border is (239,137,68) on real
+        # native captures; brightness alone must not call it Legendary.
+        hits += r > 140 and r > 2.5 * g and r > 2.5 * b
     return hits >= 60 * scale
 
 
@@ -124,7 +126,10 @@ def _safety_readers():
             "cloudphone_plugin_slayer_legend_equipment_safety", os.path.join(os.path.dirname(__file__), "screens.py"))
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        _safety = module, module.Patch("equipment_inspect_card_720", limit=.35)
+        _safety = module, {
+            (480, 1040): module.Patch("equipment_inspect_card_480", limit=.35),
+            (720, 1560): module.Patch("equipment_inspect_card_720", limit=.35),
+        }
     return _safety
 
 
@@ -143,8 +148,11 @@ def inspect_weapon_safe(shot):
     This authorises inspecting that card, never its Enhance or Equip buttons."""
     if not INSPECT_LEARNED or not _equipment_visible(shot, "weapon"):
         return False
-    _, card = _safety_readers()
-    return card.margin(shot) >= .3
+    _, cards = _safety_readers()
+    # Native rendering changes the card's thin edges; resizing a 720
+    # signature to 480 is not a calibrated native-480 safety reading.
+    card = cards.get(shot[:2])
+    return card is not None and card.margin(shot) >= .3
 
 
 def scroll_safe(shot, tab):
