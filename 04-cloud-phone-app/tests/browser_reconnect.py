@@ -87,7 +87,12 @@ async def run_browser(kind, playwright):
             if health in ('offline', 'unknown') and path in ('/api/v1/state', '/api/v1/ping'):
                 if health == 'unknown':
                     await asyncio.sleep(6)
-                await route.abort('connectionfailed')
+                try:
+                    await route.abort('connectionfailed')
+                except Exception:
+                    # The deliberate stall can outlive the temporary page.
+                    if context.pages:
+                        raise
             elif request.method not in ('GET','HEAD','OPTIONS') and not (request.method == 'POST' and path in ALLOWED_POST):
                 result['blockedMutations'].append({'method':request.method,'path':path})
                 await route.abort('blockedbyclient')
@@ -259,6 +264,7 @@ async def run_browser(kind, playwright):
         await case('server_unreachable_stable_27s', lambda: stable_notice('offline'))
         await case('initial_server_health_unknown', initial_health_unknown)
         assert not result['blockedMutations'], 'Unexpected mutation attempted: '+repr(result['blockedMutations'])
+        assert not result['errors'], 'Uncaught browser errors: '+repr(result['errors'])
     except Exception as e:
         result['safetyFailure'] = str(e)
     finally:

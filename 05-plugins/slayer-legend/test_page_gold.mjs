@@ -290,7 +290,12 @@ try {
   assert.ok(screenObservationAge(stale) > 2, 'legacy repeated source timestamps keep their original age');
   assert.equal(combatCountersVisible(stale), false);
   const slow = { async get() { monotonic += 2100; return { scan: { screen: 'battle', overlays: [], plain: true, at: 100, age: 0 } }; } };
-  assert.equal(combatCountersVisible((await getScreen(slow)).scan), false, 'slow request duration counts toward expiry');
+  assert.equal(combatCountersVisible((await getScreen(slow)).scan), false, 'a response taking over two seconds cannot authorise counters');
+  const processing = { async get() { monotonic += 1400; return { scan: { screen: 'battle', overlays: [], plain: true, at: 101, age: 1.1 } }; } };
+  const processed = (await getScreen(processing)).scan;
+  assert.equal(combatCountersVisible(processed), true, 'server age does not count response processing twice');
+  monotonic += 1000;
+  assert.equal(combatCountersVisible(processed), false, 'server age plus time since receipt still expires at two seconds');
   for (const age of [-.1, '0', null]) {
     const invalid = { async get() { return { scan: { screen: 'battle', overlays: [], plain: true, at: 100, age } }; } };
     assert.equal(combatCountersVisible((await getScreen(invalid)).scan), false, 'malformed or future source age cannot authorise counters');
@@ -313,6 +318,28 @@ try {
   monotonic += 400000;
   assert.equal(hourlyRate(timed, 'cubes'), null, 'truly stale data remains rejected');
   assert.equal(equipmentRateVisible(timed, 'weapon_l3'), false);
+  const late = { observed_at: 1000, resources: { cubes: { rate: 2, read: 1000, window: 300 } } };
+  observeResponse(late, monotonic / 1000 - 3);
+  assert.equal(hourlyRate(late, 'cubes'), null, 'an over-two-second response cannot revive a rate');
+  assert.equal(estimatedCubes({ value: 100, seen: 1000 }, late), 100,
+    'an unusable response clock retains the observed total instead of jumping to the forecast horizon');
+  let finishGame;
+  const pendingGame = new Promise((resolve) => { finishGame = resolve; });
+  const immediateGold = { observed_at: 1200, resources: {} };
+  const otherLayer = document.createElement('div');
+  const delayedGame = goldFeature({ ...api, layer: otherLayer, async get(path) {
+    if (path === '/gold') return immediateGold;
+    if (path === '/game') return pendingGame;
+    return null;
+  } }, { overlay: [], enabled: () => false, screenScan: () => null });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(responseTime(immediateGold), 1200, 'Gold is anchored when its own response arrives');
+  monotonic += 3000;
+  finishGame({ resources: [] });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(responseTime(immediateGold), 1203, 'a slow independent game response does not re-anchor or invalidate Gold');
+  window.clearInterval = () => {};
+  delayedGame.dispose();
 } finally {
   Object.defineProperty(globalThis, 'performance', { configurable: true, value: originalPerformance });
 }

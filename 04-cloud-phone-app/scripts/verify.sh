@@ -153,7 +153,9 @@ listens_only_on() {
   addresses=$(ss -Hltn | awk -v p=":$port" 'substr($4, length($4) - length(p) + 1) == p { print $4 }')
   [ "$addresses" = "$LISTEN_ADDRESS:$port" ]
 }
-nft_has() { nft list ruleset 2>/dev/null | grep -qF "$1"; }
+# Drain the producer: grep -q can close the pipe early and make nft fail
+# with SIGPIPE under pipefail, incorrectly reporting a missing rule.
+nft_has() { nft list ruleset 2>/dev/null | grep -F "$1" >/dev/null; }
 
 check "release $RELEASE_VERSION is the active one" cmp -s "$TREE/VERSION" "$PREFIX/current/VERSION"
 check "cloudphone-gateway is enabled" systemctl is-enabled --quiet cloudphone-gateway.service

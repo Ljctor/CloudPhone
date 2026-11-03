@@ -6,12 +6,13 @@ export function freshnessColour(age = 0) {
 }
 
 // Reading timestamps belong to the gateway's wall clock. Keep that origin
-// while elapsed time advances on this browser's monotonic clock. Including
-// the request duration conservatively ages a slow response.
+// while elapsed time advances on this browser's monotonic clock. Response
+// time already includes server processing; count only time after receipt.
 const observations = new WeakMap();
 export function observeResponse(answer, started = performance.now() / 1000) {
   if (answer && Number.isFinite(answer.observed_at) && answer.observed_at > 0) {
-    observations.set(answer, { wall: answer.observed_at, started });
+    const received = performance.now() / 1000;
+    observations.set(answer, { wall: received - started <= 2 ? answer.observed_at : Infinity, started: received });
   }
 }
 export function responseTime(answer, now = performance.now() / 1000) {

@@ -195,6 +195,7 @@ assert "api.layer.offsetHeight / 1560" in script
 assert "freshnessColour(age)" in script
 assert "observeResponse(answer, started)" in script
 assert "now = responseTime(answer)" in script
+assert "if (!Number.isFinite(now)) return base" in script
 assert "outline: 2" in script
 assert "combatCountersVisible" in script
 assert "screenObservationAge(scan)" in script
@@ -228,6 +229,8 @@ script = sys.stdin.read()
 assert "export function freshnessColour" in script
 assert "export function observeResponse" in script
 assert "export function responseTime" in script
+assert "received - started <= 2" in script
+assert "started: received" in script
 print("Shared value freshness colour: OK")
 '
 curl -fsS "${base%/}/plugins/slayer-legend/page_game.js" | python3 -c '
@@ -326,6 +329,8 @@ assert "export function screenObservationAge" in script
 assert "performance.now() / 1000" in script
 assert "state.observations.has(value.scan.at)" in script
 assert "value.scan.age" in script and "observed.set(value.scan" in script
+assert "received - started <= 2" in script
+assert "? received : state.observations.get(value.scan.at)" in script
 print("Shared live screen scan: OK")
 '
 curl -fsS "${base%/}/api/v1/plugins/slayer-legend/farming" | python3 -c '

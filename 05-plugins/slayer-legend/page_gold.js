@@ -69,6 +69,7 @@ export function hourlyRate(answer, field, fallback = null, now = responseTime(an
 export function estimatedCubes(cube, answer, fallback = null, now = responseTime(answer)) {
   const base = resourceNumber(cube?.value);
   if (base === null) return null;
+  if (!Number.isFinite(now)) return base;
   const server = Object.hasOwn(answer?.resources ?? {}, 'cubes');
   const model = server ? answer.resources.cubes : fallback;
   const rate = server ? model?.rate : model?.hourly / 3600;
@@ -285,10 +286,12 @@ export default function goldFeature(api, { overlay, enabled = () => true, screen
   const askGold = async () => {
     const started = performance.now() / 1000;
     const [answer, state] = await Promise.all([
-      api.get('/gold').catch(() => null), api.get('/game').catch(() => null),
+      api.get('/gold').then((answer) => {
+        observeResponse(answer, started);
+        return answer;
+      }).catch(() => null), api.get('/game').catch(() => null),
     ]);
     if (disposed) return;
-    observeResponse(answer, started);
     gold.answer = answer;
     for (const row of state?.resources ?? []) {
       if (RATE_FIELDS.some(([field]) => field === row.field))
