@@ -185,6 +185,9 @@ BROWSER_STATES = frozenset(("new", "connecting", "connected", "disconnected", "f
     "refused", "refreshed", "refresh-failed", "requested"))
 BROWSER_NUMBERS = frozenset(("elapsedMs", "framesDecoded", "bytesReceived", "packetsLost", "framesReceived",
                               "framesDropped", "framesPerSecond", "presented", "keyFramesDecoded", "freezeCount", "totalFreezesDuration",
+                              "sampleTimeMs", "packetsReceived", "totalDecodeTime", "totalProcessingDelay",
+                              "jitterBufferDelay", "jitterBufferTargetDelay", "jitterBufferMinimumDelay",
+                              "jitterBufferEmittedCount", "nackCount", "pliCount", "firCount", "jitterMs", "roundTripTimeMs",
                               "code", "attempt", "localStorageKeys", "sessionStorageKeys", "readyState", "width", "height"))
 BROWSER_FLAGS = frozenset(("storageAvailable", "tokenPresent", "secureContext", "online", "persisted", "clean", "paused", "muted", "hidden", "hadFrame"))
 

@@ -94,6 +94,11 @@ separate milestones. Historical checked items below do not close a new regressio
 
 ### Immediate priorities
 
+- [ ] Diagnose and improve low frame rates end to end: compare Android frame
+  production, WebRTC reception/decoding/presentation, network loss and jitter,
+  browser rendering cost and plugin CPU on the same scene. Reduce measured
+  bottlenecks without weakening readers or interrupting user control; verify
+  the deployed result with matched before/after observations.
 - [ ] Validate independent server capture, priority recognition, bounded readers
   and deferred archives with the browser closed. Measure frame age and actual
   screen transitions; HTTP response time alone is not recognition latency.

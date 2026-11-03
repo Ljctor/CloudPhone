@@ -2,6 +2,7 @@
 // addresses, typed keys or exception text leave the browser.
 import { diagnosticAttempt, onStreamDiagnostic, streamDiagnostic } from '../../src/components/emulator/net/stream_diagnostics';
 import { postFetch, postHeaders, VIEWER_ID } from './api';
+import { VIDEO_COUNTERS } from './streamStats';
 
 const sessions = new Map();
 let pending = [];
@@ -46,8 +47,8 @@ function selectEvent({ event, data }) {
   }
   if (event === 'stats') {
     const selected = { kind: 'stats' };
-    for (const key of ['framesDecoded', 'bytesReceived', 'packetsLost', 'framesReceived',
-      'presented', 'keyFramesDecoded', 'freezeCount', 'totalFreezesDuration']) {
+    for (const key of [...VIDEO_COUNTERS, 'packetsLost', 'presented', 'sampleTimeMs',
+      'jitterMs', 'roundTripTimeMs']) {
       if (Number.isFinite(data[key])) selected[key] = data[key];
     }
     return selected;

@@ -106,6 +106,26 @@ class StreamDiagnostics(unittest.TestCase):
         self.assertIn("12", records.output[0])
         self.assertIn("22", records.output[1])
 
+    def test_frame_pipeline_counters_survive_delayed_upload_without_addresses(self):
+        diagnostics = Diagnostics()
+        sid = diagnostics.begin()
+        counters = {"sampleTimeMs": 12345.5, "packetsReceived": 250,
+                    "totalDecodeTime": .2, "totalProcessingDelay": .5,
+                    "jitterBufferDelay": .3, "jitterBufferTargetDelay": .4,
+                    "jitterBufferMinimumDelay": .1, "jitterBufferEmittedCount": 20,
+                    "nackCount": 2, "pliCount": 1, "firCount": 0,
+                    "jitterMs": 5.0, "roundTripTimeMs": 20.0, "framesDropped": 1,
+                    "framesPerSecond": 12.0}
+        event = {"kind": "stats", **counters}
+        key, events = check_browser_events({"sessionId": sid, "events": [event]})
+        diagnostics.browser_events(key, events)
+        recorded = diagnostics.snapshot()["active"][0]["browser_events"][0]
+        self.assertEqual({key: recorded[key] for key in counters}, counters)
+        for field in counters:
+            for invalid in (True, float("inf"), -1, "private-address"):
+                with self.assertRaises(ValueError):
+                    check_browser_events({"sessionId": sid, "events": [{**event, field: invalid}]})
+
 
     def test_attempt_before_websocket_and_late_final_events_keep_identity(self):
         diagnostics = Diagnostics(limit=2)

@@ -28,6 +28,33 @@ _BANK = _font.glyph_bank(vertical_bold=True, padding=2)
 _WIDTH = 486.849853515625 * 480 / 1080
 
 
+def _palettes():
+    for horizontal in range(5, 50):
+        a = horizontal / 100
+        for vertical in range(horizontal, 50):
+            b = vertical / 100
+            weights = (a * b, a * (1 - b), (1 - a) * b, (1 - a) * (1 - b))
+            yield a, b, tuple(sum(weights[k] for k in range(4) if mask >> k & 1)
+                              for mask in range(16))
+
+
+_PALETTES = tuple(_palettes())
+
+
+@lru_cache(maxsize=128)
+def _level_errors(value):
+    """A gray level's losses are independent of the displayed digits/counts."""
+    return tuple(min((value - expected) ** 2 for expected in palette)
+                 for _, _, palette in _PALETTES)
+
+
+@lru_cache(maxsize=128)
+def _fit_axes(levels):
+    columns = [(_level_errors(value), count) for value, count in levels]
+    return min((sum(errors[index] * count for errors, count in columns), a, b)
+               for index, (a, b, _) in enumerate(_PALETTES))[1:]
+
+
 def _features(rows, char):
     """Normalize weak background and the body/descender scoring regions.
 
@@ -74,20 +101,7 @@ def _axes(shot, box, peak):
               for value, count in counts.items() if count >= 2]
     if len(levels) < 3:
         return None
-    best = None
-    for horizontal in range(5, 50):
-        a = horizontal / 100
-        for vertical in range(horizontal, 50):
-            b = vertical / 100
-            weights = (a * b, a * (1 - b), (1 - a) * b, (1 - a) * (1 - b))
-            palette = [sum(weights[k] for k in range(4) if mask >> k & 1)
-                       for mask in range(16)]
-            error = sum(min((value - expected) ** 2 for expected in palette) * count
-                        for value, count in levels)
-            candidate = error, a, b
-            if best is None or candidate < best:
-                best = candidate
-    return best[1:]
+    return _fit_axes(tuple(levels))
 
 
 def decode(shot, ink, box, peak, max_glyph_error, max_line_error, min_margin):

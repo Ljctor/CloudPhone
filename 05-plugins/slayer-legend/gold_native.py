@@ -12,13 +12,20 @@ MAX_GLYPH_ERROR = .065
 MAX_LINE_ERROR = .025
 MIN_MARGIN = 10
 
-def _candidates(shot, shade):
+def _candidate_data(shot):
     width, height, pixels = shot
     left, top, right, bottom = round(width * .25), round(height * .10), round(width * .85), round(height * .30)
     w, h = right - left, bottom - top
     rgb = [[pixels[((y + top) * width + x + left) * 3:((y + top) * width + x + left) * 3 + 3]
             for x in range(w)] for y in range(h)]
     values = [[min(pixel) for pixel in row] for row in rgb]
+    chroma = [[max(pixel) - min(pixel) for pixel in row] for row in rgb]
+    return left, top, w, h, rgb, values, chroma
+
+
+def _candidates(shot, shade, data=None):
+    left, top, w, h, rgb, original, chroma = data or _candidate_data(shot)
+    values = [row[:] for row in original]
     outside, queue = set(), []
     for y in range(h):
         for x in range(w):
@@ -33,7 +40,7 @@ def _candidates(shot, shade):
                 outside.add((a, b)); queue.append((a, b))
     for y in range(h):
         for x in range(w):
-            if (x, y) in outside or max(rgb[y][x]) - min(rgb[y][x]) > 25 * shade:
+            if (x, y) in outside or chroma[y][x] > 25 * shade:
                 values[y][x] = 0
     active = [sum(value >= 100 * shade for value in row) >= 18 for row in values]
     start = None
@@ -90,8 +97,9 @@ def read(shot, shades=(1.0,)):
     if not NATIVE_FULL_DIGITS_CALIBRATED or shot[:2] != (480, 1040):
         return None
     found = {}
+    data = _candidate_data(shot)
     for shade in shades:
-        for ink, box, peak in _candidates(shot, shade):
+        for ink, box, peak in _candidates(shot, shade, data):
             text = _source_decoder().decode(
                 shot, ink, box, peak,
                 MAX_GLYPH_ERROR, MAX_LINE_ERROR, MIN_MARGIN)

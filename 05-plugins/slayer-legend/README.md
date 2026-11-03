@@ -71,6 +71,14 @@ required readings. A slow resource reader does not occupy the detector lane.
 All work belongs to the plugin lifecycle and is drained before shared services
 close.
 
+Native counter readers reuse font geometry and pixel costs instead of repeating
+identical searches. Gold shares crop preparation across brightness hypotheses;
+palette fits and gray-level losses each retain at most 128 entries. Font raster
+caches retain at most 32,768 entries per loaded font module. Soul candidate
+paths share their unused-pixel cost by final advance and glyph. These caches
+preserve exact pixels, candidate ordering and reading thresholds. Worker threads
+still share Python's GIL: separate scheduling lanes do not imply CPU parallelism.
+
 Facts distinguish historical values from current verified observations. An
 unread new capture cannot be overwritten by an older delayed result. A process
 change invalidates observations and setup evidence. The highest observed stage

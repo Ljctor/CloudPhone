@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react';
 import { activePeerConnection } from '../../src/components/emulator/net/ws_jsep_protocol_driver';
 import { streamDiagnostic } from '../../src/components/emulator/net/stream_diagnostics';
-import { EMPTY_STATS, emptySample, readReport, statsFrom } from './streamStats';
+import { EMPTY_STATS, VIDEO_COUNTERS, emptySample, readReport, statsFrom } from './streamStats';
 
 const STATS_INTERVAL_MS = 1000;
 
@@ -107,6 +107,9 @@ export function useStreamStats(deviceRef, gatewayUrl) {
         if (connection && (sampledAt === 0 || now - sampledAt >= 5000)) {
           sampledAt = now;
           streamDiagnostic('stats', {
+            ...Object.fromEntries(VIDEO_COUNTERS.map((key) => [key, sampleData.details[key] ?? null])),
+            sampleTimeMs: now, jitterMs: sampleData.details.jitter ?? null,
+            roundTripTimeMs: pingSource === 'ICE' ? sampleData.ping : null,
             connection: connection.connectionState, ice: connection.iceConnectionState,
             framesReceived: sampleData.received, framesDecoded: decoded ?? null,
             bytesReceived: sampleData.bytes, presented: shown,

@@ -114,6 +114,19 @@ def _candidates(rows):
             if left<0 or right>width:
                 return 1e12,None
             return math.dist(rendered,patch(left,right))**2,left+centre if centre is not None else None
+        prefix_left=max(0,math.ceil(origin-1.))
+        prefix_error=sum((observed[y*width+x]-background)**2
+                         for y in range(height) for x in range(prefix_left))
+        @lru_cache(None)
+        def outside(pen,previous):
+            # All paths sharing an advance/last glyph have the same unused
+            # pixels. Reuse their exact cost, including the final bold tail.
+            right=min(width,math.ceil(origin+pen*.5-1.))
+            if exact:
+                tail=_raster(glyphs[previous],origin,baseline,pen-glyphs[previous][4],right,width,height)
+                return prefix_error+math.dist(tail.translate(lookup),patch(right,width))**2
+            return prefix_error+sum((observed[y*width+x]-background)**2
+                                    for y in range(height) for x in range(right,width))
         found=[]
         for leading in (1,2,3):
             roles = ['d']*leading
@@ -140,14 +153,7 @@ def _candidates(rows):
                 for score,text in paths:
                     if pen>MAX_ADVANCE or n+1 in GLYPHS and sum(GLYPHS[n+1][c][4] for c in text)<=MAX_ADVANCE:
                         continue
-                    left=max(0,math.ceil(origin-1.));right=min(width,math.ceil(origin+pen*.5-1.))
-                    outside=sum((observed[y*width+x]-background)**2 for y in range(height) for x in range(left))
-                    if exact:
-                        tail=_raster(glyphs[text[-1]],origin,baseline,pen-glyphs[text[-1]][4],right,width,height)
-                        outside+=math.dist(tail.translate(lookup),patch(right,width))**2
-                    else:
-                        outside+=sum((observed[y*width+x]-background)**2 for y in range(height) for x in range(right,width))
-                    found.append(((score+outside)/(width*height*255**2),text,n,origin,baseline))
+                    found.append(((score+outside(pen,text[-1] if exact else ''))/(width*height*255**2),text,n,origin,baseline))
         return found
     # A cheap glyph-only pass proposes poses; the second pass retains the
     # previous glyph, so overlap never becomes a guessed extra stroke.

@@ -17,6 +17,13 @@ export const EMPTY_STATS = {
   codec: null, path: null, connection: null,
 };
 
+// Keep cumulative durations and counts: their deltas isolate decode cost,
+// retransmissions and buffering on the user's browser, including long sessions.
+export const VIDEO_COUNTERS = ['framesDecoded', 'framesReceived', 'bytesReceived', 'packetsReceived',
+  'keyFramesDecoded', 'freezeCount', 'totalFreezesDuration', 'framesDropped', 'framesPerSecond',
+  'totalDecodeTime', 'totalProcessingDelay', 'jitterBufferDelay', 'jitterBufferTargetDelay',
+  'jitterBufferMinimumDelay', 'jitterBufferEmittedCount', 'nackCount', 'pliCount', 'firCount'];
+
 // What one sample reads: frames and bytes received, the ICE round trip
 // (ms) when the browser reports one, and the details for the panel.
 export function emptySample() {
@@ -32,8 +39,7 @@ export function readReport(report, connectionState, sampleData) {
     if (entry.type === 'inbound-rtp' && (entry.kind ?? entry.mediaType) === 'video') {
       sampleData.received = entry.framesReceived ?? entry.framesDecoded ?? null;
       sampleData.bytes = entry.bytesReceived ?? null;
-      for (const key of ['framesDecoded', 'framesReceived', 'bytesReceived', 'packetsReceived',
-        'keyFramesDecoded', 'freezeCount', 'totalFreezesDuration']) {
+      for (const key of VIDEO_COUNTERS) {
         sampleData.details[key] = entry[key] ?? null;
       }
       sampleData.details.packetsLost = entry.packetsLost ?? null;

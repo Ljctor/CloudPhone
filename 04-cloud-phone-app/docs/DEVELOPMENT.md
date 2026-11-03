@@ -95,6 +95,15 @@ plugin dialogs stay above the stream status cover and remain usable without
 a decoded frame. The original toolbar’s Options and Reconnect controls stay
 accessible above the notice; the notice contains only connection information.
 
+Video samples include the browser's monotonic `sampleTimeMs`, received,
+decoded, dropped and presented frames, packet/retransmission counters, ICE
+round-trip time and jitter in milliseconds. Decode/processing time and jitter
+buffer durations are cumulative seconds; divide successive duration deltas
+by the corresponding decoded/emitted frame delta to measure per-frame cost.
+Use sample-time deltas instead of upload arrival times when calculating FPS.
+Unsupported browser metrics stay absent. These bounded numeric samples require
+no screenshot, extra media connection or active network probe.
+
 On Linux x86-64 with git, curl, make, Node.js 18+ and Python 3.10+:
 
 ```sh

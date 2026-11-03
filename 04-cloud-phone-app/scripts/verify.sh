@@ -32,7 +32,17 @@ live_metrics() {
 }
 stream_diagnostics() {
   curl -fsS --max-time 5 "http://$host:$WEB_PORT/api/v1/stream-diagnostics" |
-    python3 -c 'import json,sys; x=json.load(sys.stdin); assert x["schema_version"] == 1; assert {"emulator","android","channels","signalling","media"} <= x.keys(); assert {"active","recent","hardware_inputs"} <= x["signalling"].keys(); assert x["media"]["frames_observed"] is None'
+    python3 -c 'import json,sys; x=json.load(sys.stdin); assert x["schema_version"] == 1; assert {"emulator","android","channels","signalling","media"} <= x.keys(); assert {"active","recent","hardware_inputs"} <= x["signalling"].keys(); assert x["media"]["frames_observed"] is None' || return 1
+  "$PREFIX/current/venv/bin/python" - <<'PYCODE'
+from videobridge_gateway.core.stream_diagnostics import check_browser_events
+metrics = {name: 1.5 for name in (
+    "sampleTimeMs", "packetsReceived", "totalDecodeTime", "totalProcessingDelay",
+    "jitterBufferDelay", "jitterBufferTargetDelay", "jitterBufferMinimumDelay",
+    "jitterBufferEmittedCount", "nackCount", "pliCount", "firCount", "jitterMs",
+    "roundTripTimeMs", "framesDropped", "framesPerSecond")}
+payload = {"sessionId": "abcdef123456", "events": [{"kind": "stats", **metrics}]}
+assert check_browser_events(payload)[1] == payload["events"]
+PYCODE
 }
 reconnect_contract() {
   python3 - "http://$host:$WEB_PORT" <<'PYCODE'

@@ -4698,6 +4698,7 @@ SOURCE_GLYPHS = {13: {',': (4, 2, 0, 1, 3, (14, 7)),
              4080))}}
 
 
+@lru_cache(maxsize=32768)
 def raster(glyph, origin, baseline, pen, left, right, height):
     """Bilinear texture sampling, including the tight atlas glyph's edges."""
     width, rows, bearing, top, _, bits = glyph
