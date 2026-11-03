@@ -118,6 +118,13 @@ separate milestones. Historical checked items below do not close a new regressio
   L3 weapons and L3 accessories. Read real changes, calculate per hour, show
   correct values and icons; no stone or white-soul rates. Verify farming,
   menu transitions, user inputs, spends/resets and stream reconnection.
+  Native 480px Gold now has reviewed counter-only calibration crops for all
+  ten digits, bright and parked text, plus independent unseen amounts and an
+  ambiguous frame that must remain unread. A separate untrained capture batch
+  yielded seven accepted frames out of ten (five distinct amounts); the first
+  accepted captures were 2.084 s apart. Installed Gold sampling/rendering and
+  the native soul, Cube and L3 acquisition paths still require verification;
+  this calibration does not close the end-to-end item.
 - [ ] Finish automatic Soul Weapon selection and engraving for each farming
   target. Verify the actual weapon and pattern before acting; no successful
   status until the requested setup is observed in the game.

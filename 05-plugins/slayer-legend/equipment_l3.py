@@ -23,8 +23,9 @@ ROW_TOP = (465, 840)
 MAX_DISTANCE = 0.06
 
 # White cores of the counter glyphs at 480x1040, from the red Grade 3
-# cards (the other cards in those captures provide 0 and 1). 6–9 have
-# not yet been observed in this counter font and deliberately do not read.
+# cards (the other cards in those captures provide 0 and 1). Native 480
+# captures additionally prove 6 in 60/5 and both vertical raster phases.
+# 7–9 remain unobserved in this counter font and deliberately do not read.
 SHAPES = {
     "0": (".####.", "##..##", "##..##", "##..##", "##..##", "##..##", "##..##", ".####."),
     "1": (".#.", "##.", ".#.", ".#.", ".#.", ".#.", ".#.", "###"),
@@ -32,7 +33,29 @@ SHAPES = {
     "3": (".####.", "##..##", "....##", "..###.", "....##", "....##", "##..##", ".####."),
     "4": ("....##.", "...###.", "..####.", ".##.##.", "##..##.", "#######", "....##.", "....##."),
     "5": ("######", "##....", "##....", "#####.", "....##", "....##", "##..##", ".####."),
+    "6": ('..###.', '.####.', '###...', '#####.', '######', '##..##', '##..##', '##..##', '.####.'),
     "/": ("....#", "....#", "...#.", "...#.", "..#..", "..#..", ".#...", ".#...", "#....", "#...."),
+}
+
+
+# Exact white-core masks from the reviewed settled native480 cards. Match
+# the nearest phase per character, so the ambiguity gap remains between
+# different characters rather than duplicate templates for the same one.
+PHASES = {
+    '3': (
+        ('.####.', '######', '##..##', '..####', '..####', '....##', '##..##', '##..##', '.####.'),
+    ),
+    '0': (
+        ('.###.', '#####', '#...#', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'),
+    ),
+    '5': (
+        ('######', '######', '##....', '#####.', '######', '....##', '##..##', '##..##', '.####.'),
+        ('#####', '#####', '#....', '####.', '#####', '....#', '#...#', '#...#', '.###.'),
+    ),
+    '/': (
+        ('....#', '....#', '...##', '...#.', '..##.', '..#..', '.##..', '.#...', '.#...', '#....', '#....'),
+        ('....##', '....##', '...###', '...##.', '..###.', '..##..', '.###..', '.##...', '.##...', '##....', '##....'),
+    ),
 }
 
 
@@ -108,12 +131,13 @@ def read(shot):
         return None
     chars = []
     for glyph in _glyphs(shot, top, scale):
-        closest = sorted((_distance(glyph, shape), char) for char, shape in SHAPES.items())
+        closest = sorted((min(_distance(glyph, item) for item in (shape,) + PHASES.get(char, ())), char)
+                         for char, shape in SHAPES.items())
         if closest[0][0] > MAX_DISTANCE or closest[1][0] - closest[0][0] < 0.06:
             return None
         chars.append(closest[0][1])
     text = "".join(chars)
-    return int(text[:-2]) if re.fullmatch(r"[0-5]{1,4}/5", text) else None
+    return int(text[:-2]) if re.fullmatch(r"[0-6]{1,4}/5", text) else None
 
 
 _safety = None

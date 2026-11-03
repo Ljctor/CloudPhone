@@ -33,6 +33,7 @@ python3 "$(dirname "$0")/../slayer-legend/test_watchdog.py" \
   GoldTrigger.test_engraving_verification_debt_respects_free_play_and_disabled_switch \
   PresetPolicyBlocks
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_hourly_resources.py -q
+python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_gold_native.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_equipment_l3.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_resource_refresh.py -q
 node "$(dirname "$0")/../slayer-legend/test_page_engraving.mjs"

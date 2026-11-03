@@ -7,7 +7,9 @@ not show it.
 The amount is a number with up to 3 significant digits and a unit letter:
 A is a thousand, B a thousand A, and so on (parse). The game can also
 write it in full digits (its option); that reading is gated by
-FULL_DIGITS_CALIBRATED until a real capture of it is a fixture.
+FULL_DIGITS_CALIBRATED until a real capture of it is a fixture. The native
+seven-row 480px font has its own reviewed calibration in gold_native.py;
+that path does not open the older thirteen-row full-digit gate.
 
 The Soul Weapon screen, the farming modes' parking screen, shades the
 battle above it: the counter is then read with its colours at
@@ -24,6 +26,10 @@ _spec = importlib.util.spec_from_file_location(
     "cloudphone_plugin_slayer_legend_gold_stage", os.path.join(os.path.dirname(__file__), "stage.py"))
 stage = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(stage)
+_native_spec = importlib.util.spec_from_file_location(
+    "cloudphone_plugin_slayer_legend_gold_native", os.path.join(os.path.dirname(__file__), "gold_native.py"))
+native = importlib.util.module_from_spec(_native_spec)
+_native_spec.loader.exec_module(native)
 
 # Where the counter may be, as (left, top, right, bottom) fractions.
 BAND = (0.25, 0.10, 0.85, 0.30)
@@ -258,6 +264,9 @@ def read(shot, shades=(1.0,)):
     box: [left, top, right, bottom] as fractions of the screen}, or None
     when it is not on screen or not readable. shades: the brightnesses
     tried in turn (screens.PARKED_SHADE: under the Soul Weapon screen)."""
+    reading = native.read(shot, shades)
+    if reading:
+        return reading
     for shade in shades:
         reading = _read(shot, shade)
         if reading:

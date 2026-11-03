@@ -88,6 +88,24 @@ class EquipmentL3(unittest.TestCase):
                          if row["screen"] == "equipment_" + ("weapon" if tab == "weapon" else "accessories"))
             self.assertEqual(group["fields"][0]["value"], value)
 
+    def test_real_settled_native_480_phases_and_new_six_are_read_exactly(self):
+        for tab, fixture, expected in (
+            ("weapon", "equipment_l3_weapon_phase_480", 3),
+            ("accessories", "equipment_l3_accessories_sixty_480", 60),
+        ):
+            with self.subTest(tab=tab):
+                capture = model_fixtures.screen("battle_emerald", f"equipment_l3_{tab}_tabs", fixture)
+                self.assertEqual(equipment.read(capture), expected)
+                _, _, x, y, w, h, data = screens.fixture(fixture)
+                width, height, pixels = capture
+                damaged = bytearray(pixels)
+                # Erasing the count cannot become zero or another balance.
+                for row in range(y + 85, y + 105):
+                    start = (row * width + x) * 3
+                    damaged[start:start + w * 3] = bytes(w * 3)
+                self.assertIsNone(equipment.read((width, height, bytes(damaged))))
+        self.assertFalse(set("789") & equipment.SHAPES.keys(), "unobserved inventory glyphs remain uncalibrated")
+
     def test_real_orange_grade3_card_cannot_be_mistaken_for_legendary(self):
         capture = model_fixtures.screen("battle_emerald", "equipment_l3_accessories_tabs", "equipment_orange_grade3_480")
         self.assertIsNone(equipment._card_top(capture, 1), "an orange rarity frame is not a red Legendary frame")
