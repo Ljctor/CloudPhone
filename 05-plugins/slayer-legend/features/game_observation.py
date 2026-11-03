@@ -40,6 +40,7 @@ class ObservationPipeline:
         self.input = None
         self.observations = []
         self.frames = []
+        self.active_frames = {}
         self.lanes = {}
         self.runtime = {
             "detected": 0,
@@ -51,6 +52,24 @@ class ObservationPipeline:
         self.detector_lock = None
         self.explicit_lock = None
         self.reader_limit = None
+        self.soul_limit = asyncio.Lock()
+        self.soul_waiting = 0
+        self.listeners = set()
+
+    def on_read(self, callback):
+        """Subscribe lightweight bookkeeping; no listener task or queue."""
+        self.listeners.add(callback)
+        return lambda: self.listeners.discard(callback)
+
+    def completed(self, frame, reader, values):
+        if not self.valid(frame):
+            return
+        for callback in tuple(self.listeners):
+            try:
+                callback({"reader": reader, "shot": frame["shot"], "at": frame["at"],
+                          "epoch": frame["epoch"], "context": dict(frame["context"]), "values": dict(values)})
+            except Exception as exc:
+                self.ports.log("warning", f"Game reader listener failed: {exc!r}")
 
     def observed(self, shot):
         """Capture acquisition time, never OCR completion time. Older ports
@@ -88,20 +107,29 @@ class ObservationPipeline:
     def valid(self, frame):
         return self.valid_stamp((frame["at"], frame["epoch"]))
 
+    def known_frame(self, shot):
+        # History may evict a frame while slow work still owns it. These
+        # references are bounded by the existing lanes and explicit batch.
+        pending = [lane["pending"] for lane in self.lanes.values() if lane["pending"] is not None]
+        for frame in self.frames + list(self.active_frames.values()) + pending:
+            if frame["pixels"] is shot[2] and frame["size"] == [shot[0], shot[1]]:
+                return frame
+        return None
+
     async def detect(self, shot, stamp):
         if not self.valid_stamp(stamp):
             self.runtime["discarded"] += 1
             return None
         at, epoch = stamp
-        for frame in self.frames:
-            if frame["pixels"] is shot[2]:
-                return frame if self.valid(frame) else None
+        frame = self.known_frame(shot)
+        if frame is not None:
+            return frame if self.valid(frame) else None
         if self.detector_lock is None:
             self.detector_lock = asyncio.Lock()
         async with self.detector_lock:
-            for frame in self.frames:
-                if frame["pixels"] is shot[2]:
-                    return frame if self.valid(frame) else None
+            frame = self.known_frame(shot)
+            if frame is not None:
+                return frame if self.valid(frame) else None
             frame = {
                 "shot": shot,
                 "pixels": shot[2],
@@ -116,8 +144,8 @@ class ObservationPipeline:
                 self.runtime["discarded"] += 1
                 return None
             began = time.perf_counter()
-            look = await getattr(self.ports, "detect", self.ports.analyse)(
-                self.registry.identify, shot
+            look, context = await getattr(self.ports, "detect", self.ports.analyse)(
+                self.registry.identify_context, shot
             )
             self.runtime["detection_seconds"] = time.perf_counter() - began
             if not self.valid(frame):
@@ -137,6 +165,8 @@ class ObservationPipeline:
             )
             if changed_input:
                 self.input = mark
+            frame["context"] = context
+            frame["readings"].update(context)
             frame.update(
                 look=look, shows=self.registry.shown(look), changed=changed or changed_input
             )
@@ -153,6 +183,21 @@ class ObservationPipeline:
             return frame
 
     async def read(self, frame, reader):
+        if reader == "souls":
+            # Waiting expensive Soul jobs must not occupy both shared OCR
+            # slots. Explicit and background jobs share this single flight.
+            self.soul_waiting += 1
+            try:
+                await self.soul_limit.acquire()
+            finally:
+                self.soul_waiting -= 1
+            try:
+                return await self.read_ready(frame, reader)
+            finally:
+                self.soul_limit.release()
+        return await self.read_ready(frame, reader)
+
+    async def read_ready(self, frame, reader):
         if self.reader_limit is None:
             self.reader_limit = asyncio.Semaphore(READER_CONCURRENCY)
         queued = time.perf_counter()
@@ -175,7 +220,7 @@ class ObservationPipeline:
             began = time.perf_counter()
             try:
                 values = await self.ports.analyse(
-                    self.registry.read, reader, frame["shot"], frame["look"]
+                    self.registry.read, reader, frame["shot"], frame["look"], frame["context"]
                 )
                 if not self.valid(frame):
                     metric["discarded"] += 1
@@ -193,6 +238,7 @@ class ObservationPipeline:
                 metric["discarded"] += self.fact_store.publish(values, frame["at"])
                 metric["at"] = frame["at"]
                 metric["runs"] += 1
+                self.completed(frame, reader, values)
                 return values
             except asyncio.CancelledError:
                 raise
@@ -213,16 +259,23 @@ class ObservationPipeline:
         return self.registry.due(frame, self.last_runs, frame["started"], force)
 
     def reader_task(self, frame, reader):
+        task = frame["jobs"].get(reader)
+        if task is not None and (not task.done() or reader in frame["ran"]):
+            return task
         task = asyncio.create_task(self.read(frame, reader))
+        frame["jobs"][reader] = task
+        self.active_frames[id(frame)] = frame
+        def release(completed):
+            if all(job.done() for job in frame["jobs"].values()):
+                self.active_frames.pop(id(frame), None)
+        task.add_done_callback(release)
         return getattr(self.ports, "track_task", lambda task: task)(task)
 
     async def reader_later(self, reader, lane):
         try:
             while lane["pending"] is not None:
                 frame, lane["pending"] = (lane["pending"], None)
-                task = self.reader_task(frame, reader)
-                frame["jobs"][reader] = task
-                await task
+                await self.reader_task(frame, reader)
         finally:
             lane["task"] = None
 
@@ -344,6 +397,8 @@ class ObservationPipeline:
                 }
                 for reader, metric in self.runtime["readers"].items()
             },
+            "soul_waiting": self.soul_waiting,
+            "active_reader_frames": len(self.active_frames),
             "reader_concurrency": READER_CONCURRENCY,
             "reader_running": sum(
                 metric.get("running", 0) for metric in self.runtime["readers"].values()

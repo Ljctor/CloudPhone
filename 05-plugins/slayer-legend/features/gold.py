@@ -14,9 +14,10 @@ the watchdog: api current(), which asks as a page does).
 Which readings count and the rate are in gold_rules.py: one window each,
 the same rules, its length following the resolution read (full digits:
 a short window); spending souls is left out, spending gold starts its
-window again. The readings are the game's scan of the capture
-(features/game.py, its gold and souls readers forced on it). Read-only:
-it never touches the game. Exact cube/L3 observations survive gateway
+window again. The game observer publishes each completed reader with its
+original capture timestamp and that frame's cheap stage context; slow Soul
+OCR never holds Gold sampling behind a full scan. Older game APIs retain the
+blocking exact-scan fallback. Read-only: it never touches the game. Exact cube/L3 observations survive gateway
 restarts in state.json (hourly_resources), bounded by their original 30-minute
 window and stage identity. Restored rates wait for a fresh matching stage
 observation; restoring never refreshes a counter's acquisition timestamp.
@@ -119,6 +120,10 @@ def gold(ports, screens, stage, counter, rules, souls=None, table=None):
         "shade": 1.0,
         "asked": 0.0,
         "task": None,
+        "watching": False,
+        "foreground": None,
+        "accept_after": None,
+        "observed": {},
         "souls": {colour: rules.empty() for colour in colours},
         "resources": {field: rules.empty() for field in RESOURCE_FIELDS},
         "resource_read": {},
@@ -248,71 +253,92 @@ def gold(ports, screens, stage, counter, rules, souls=None, table=None):
             souls.read(shot) if souls else None,
         )
 
+    def consume(reader, shot, captured_at, readings):
+        """Each completed reader advances its own acquisition watermark,
+        including unread results. Another reader on the same frame is new
+        evidence, not a duplicate of the first completion."""
+        if (type(captured_at) not in (int, float) or not math.isfinite(captured_at)
+                or captured_at > ports.clock.wall()
+                or status["accept_after"] is not None and captured_at < status["accept_after"]
+                or captured_at <= status["observed"].get(reader, float("-inf"))):
+            return
+        status["observed"][reader] = captured_at
+        kind, here = readings.get("gold_place") or (None, None)
+        if reader == "gold":
+            status["frame"], status["frame_at"] = shot[2], captured_at
+            reading = readings.get("gold_reading")
+            after_reset = status["reset_at"] is None or captured_at > status["reset_at"]
+            if reading and after_reset:
+                status["read"] = captured_at
+                status["balance"] = {"text": reading["text"], "value": reading["value"]}
+                status["box"] = reading["box"]
+                status["shade"] = reading.get("shade", 1.0)
+            window, counts = rules.where(status["window"], kind, here)
+            if counts and reading and after_reset:
+                previous = window["samples"]
+                window = rules.counted(window, reading, captured_at)
+                if (previous and window["samples"] and window["samples"][-1][0] == captured_at
+                        and window["samples"][-1][1] < previous[-1][1]):
+                    status["reset_at"] = captured_at
+                    status["reset_reason"] = "balance_decreased"
+            status["window"] = window
+        elif reader == "souls":
+            row = readings.get("souls_reading")
+            for colour in colours:
+                window, counts = rules.where(status["souls"][colour], kind, here)
+                count = (row or {}).get(colour)
+                if counts and count:
+                    window = rules.counted(window, count, captured_at, rules.SOULS_WINDOW, "skip")
+                status["souls"][colour] = window
+        if reader in ("gold", "cubes", "equipment_l3"):
+            observe_resources(shot, readings, captured_at)
+
+    def completed(event):
+        if (not status["watching"] or status["foreground"] is False
+                or ports.clock.monotonic() - status["asked"] >= rules.IDLE):
+            return
+        if event["reader"] in ("gold", "souls", "cubes", "equipment_l3"):
+            # Context was obtained from this exact frame before OCR started.
+            consume(event["reader"], event["shot"], event["at"], {**event["values"], **event["context"]})
+
+    streaming = game is not None and callable(game.get("on_read"))
+    unsubscribe = game["on_read"](completed) if streaming else lambda: None
+
     async def watch():
-        while ports.clock.monotonic() - status["asked"] < rules.IDLE:
-            try:
-                shot = await ports.capture(max_age=interval) if await ports.focused() else None
-                captured_at = (
-                    ports.capture_time(shot) if shot and hasattr(ports, "capture_time") else None
-                )
-                if captured_at is None and not hasattr(ports, "capture_time"):
-                    captured_at = ports.clock.wall()  # legacy-only, before OCR
-                readings = {}
-                if not shot:
-                    # Another app in front: the game stops.
-                    status["window"] = rules.elsewhere(status["window"])
-                    for colour in colours:
-                        status["souls"][colour] = rules.elsewhere(status["souls"][colour])
-                elif game is not None:
-                    # The game's scan of this capture (features/game.py).
-                    readings = await game["scan"](shot, ("gold", "souls", "cubes", "equipment_l3"))
-                    reading, row = readings.get("gold_reading"), readings.get("souls_reading")
-                    kind, here = readings.get("gold_place") or (None, None)
-                else:
-                    reading, (kind, here), row = await ports.analyse(gold_facts, shot)
-                distinct = (
-                    shot
-                    and captured_at is not None
-                    and (status["frame_at"] is None or captured_at > status["frame_at"])
-                )
-                if distinct:
-                    status["frame"], status["frame_at"] = shot[2], captured_at
-                    after_reset = status["reset_at"] is None or captured_at > status["reset_at"]
-                    if reading and after_reset:
-                        status["read"] = captured_at
-                        status["balance"] = {"text": reading["text"], "value": reading["value"]}
-                        status["box"] = reading["box"]
-                        status["shade"] = reading.get("shade", 1.0)
-                    window, counts = rules.where(status["window"], kind, here)
-                    if (
-                        counts
-                        and reading
-                        and after_reset
-                    ):
-                        previous = window["samples"]
-                        window = rules.counted(window, reading, captured_at)
-                        if (
-                            previous
-                            and window["samples"]
-                            and window["samples"][-1][0] == captured_at
-                            and window["samples"][-1][1] < previous[-1][1]
-                        ):
-                            status["reset_at"] = captured_at
-                            status["reset_reason"] = "balance_decreased"
-                    status["window"] = window
-                    for colour in colours:
-                        window, counts = rules.where(status["souls"][colour], kind, here)
-                        count = (row or {}).get(colour)
-                        if counts and count:
-                            window = rules.counted(
-                                window, count, captured_at, rules.SOULS_WINDOW, "skip"
-                            )
-                        status["souls"][colour] = window
-                    observe_resources(shot, readings, captured_at)
-            except Exception as e:
-                ports.log("warning", f"Gold reading failed: {e!r}")
-            await ports.clock.sleep(interval)
-        status["task"] = None
+        try:
+            while ports.clock.monotonic() - status["asked"] < rules.IDLE:
+                try:
+                    shot = await ports.capture(max_age=interval) if await ports.focused() else None
+                    if not shot:
+                        status["foreground"] = False
+                        status["accept_after"] = ports.clock.wall()
+                        status["window"] = rules.elsewhere(status["window"])
+                        for colour in colours:
+                            status["souls"][colour] = rules.elsewhere(status["souls"][colour])
+                    else:
+                        status["foreground"] = True
+                        # Real ports publish the capture to the bounded game
+                        # observer. Completion listeners consume its existing
+                        # jobs independently; this loop never waits for OCR.
+                        if not streaming:
+                            captured_at = ports.capture_time(shot) if hasattr(ports, "capture_time") else ports.clock.wall()
+                            if game is not None:
+                                readings = await game["scan"](shot, ("gold", "souls", "cubes", "equipment_l3"))
+                            else:
+                                reading, place, row = await ports.analyse(gold_facts, shot)
+                                readings = {"gold_reading": reading, "gold_place": place, "souls_reading": row}
+                            for reader in ("gold", "souls", "cubes", "equipment_l3"):
+                                consume(reader, shot, captured_at, readings)
+                except Exception as exc:
+                    ports.log("warning", f"Gold reading failed: {exc!r}")
+                await ports.clock.sleep(interval)
+        finally:
+            status["watching"] = False
+            status["task"] = None
+
+    async def stop(app):
+        status["watching"] = False
+        unsubscribe()
 
     def observe_spend(reason="enhance", at=None):
         """Reset Gold/hour after a verified paid gesture; keep the raw balance.
@@ -346,6 +372,7 @@ def gold(ports, screens, stage, counter, rules, souls=None, table=None):
         readings go on IDLE more."""
         status["asked"] = ports.clock.monotonic()
         if status["task"] is None:
+            status["watching"] = True
             status["task"] = ports.spawn(watch())
         status["window"], rate, samples, seconds = measured(status["window"])
         return rate, samples, seconds
@@ -475,6 +502,7 @@ def gold(ports, screens, stage, counter, rules, souls=None, table=None):
 
     return {
         "routes": [("GET", "/gold", handle_gold), ("GET", "/gold-font", handle_font)],
+        "shutdown": [stop],
         "api": {
             "current": current,
             "observe_resources": observe_resources,

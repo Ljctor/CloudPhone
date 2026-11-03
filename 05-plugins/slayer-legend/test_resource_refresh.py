@@ -161,6 +161,30 @@ class ResourceRefresh(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(model["position"][screen], 1)
         self.assertEqual(model["screen"], "soul_weapon")
 
+    async def test_cube_waits_for_the_next_real_counter_change(self):
+        model, inputs, captures, observed, intents, hooks, ports, api = self.build()
+        original = ports.game["scan"]
+        first = None
+        attempts = []
+
+        async def next_amount(shot, force):
+            nonlocal first
+            values = await original(shot, force)
+            if shot[2]["screen"] == "weapon_detail":
+                first = model["now"] if first is None else first
+                attempts.append(model["now"])
+                if model["now"] - first < 5:
+                    values.pop("cubes", None)
+            return values
+
+        ports.game["scan"] = next_amount
+        result = await api["tick"]()
+        self.assertEqual(result["result"], "complete")
+        self.assertGreaterEqual(attempts[-2] - first, 5)
+        self.assertLessEqual(attempts[-2] - first, rules.CUBE_READ_WAIT)
+        self.assertEqual(sum(action == "inspect_weapon" for _, action in inputs), 1)
+        self.assertEqual(model["screen"], "soul_weapon")
+
     async def test_input_during_cube_retry_stops_without_closing_user_screen(self):
         model, inputs, captures, observed, intents, hooks, ports, api = self.build(unread_cube=True)
 

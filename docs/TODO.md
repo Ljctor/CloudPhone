@@ -132,13 +132,20 @@ separate milestones. Historical checked items below do not close a new regressio
   intensity ensemble retains strict glyph errors and requires agreement.
   Native full-digit souls remain under investigation; no experimental or
   ambiguous soul classifier is approved. This does not close the whole item.
-  Native Cube glyphs now cover all ten digits on reviewed counter-only crops.
-  The controlled visit supplied separate calibration cells and untrained full
-  amounts: 18 of 30 captures were accepted without publishing an ambiguous
-  alternative. The independently reviewed first/last values differ by 99,840
-  over 61.26696 s; tests use explicitly controlled times for rate arithmetic.
-  Installed Cube acquisition, two-observation measurement and browser rendering
-  remain to verify, and native soul decoding is still incomplete.
+  Installed Cube acquisition and calculation now produce a measured slope;
+  a guarded browser run retained Cube/hour on all 28 API polls and showed
+  29 distinct extrapolated totals, without browser errors or game inputs.
+  Its seven Analysis rows have aligned icons and grey right-hand timestamps.
+  Automatic Cube visits still miss some amounts: native text changes size
+  with its digits, and quick retries can observe the same ambiguous raster.
+  The refresh now allows eight seconds for a changed amount, preserving its
+  return reserve; additional native size coverage remains open. L3 inventory
+  has a reviewed real 69/5 accessory fixture and independently validated
+  source-font 7–9 patterns, with no lost reading across 510 real frames.
+  Independent reader completions now keep slow Soul OCR out of Gold updates;
+  bounded jobs, exact-frame barriers and dated context have focused checks.
+  These latest changes still require deployed acceptance. Native soul decoding
+  remains incomplete, so the whole hourly-counter item stays open.
 - [ ] Finish automatic Soul Weapon selection and engraving for each farming
   target. Verify the actual weapon and pattern before acting; no successful
   status until the requested setup is observed in the game.

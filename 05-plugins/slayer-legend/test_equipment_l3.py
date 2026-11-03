@@ -68,7 +68,8 @@ class EquipmentL3(unittest.TestCase):
             self.assertTrue(equipment.card_visible(unread), 'OCR failure is not permission to scroll past the card')
             self.assertIsNone(equipment.read(unread))
         for fixture in ('equipment_l3_weapon_phase_480', 'equipment_l3_weapon_threshold_480',
-                        'equipment_l3_accessories_sixty_480', 'equipment_l3_accessories_sixtytwo_480'):
+                        'equipment_l3_accessories_sixty_480', 'equipment_l3_accessories_sixtytwo_480',
+                        'equipment_l3_accessories_sixtynine_480'):
             self.assertTrue(equipment.card_visible(model_fixtures.screen(fixture)))
 
     def test_clipped_missing_or_foreign_cards_are_not_visible(self):
@@ -135,6 +136,7 @@ class EquipmentL3(unittest.TestCase):
             ("weapon", "equipment_l3_weapon_phase_480", 3),
             ("accessories", "equipment_l3_accessories_sixty_480", 60),
             ("accessories", "equipment_l3_accessories_sixtytwo_480", 62),
+            ("accessories", "equipment_l3_accessories_sixtynine_480", 69),
         ):
             with self.subTest(tab=tab):
                 capture = model_fixtures.screen("battle_emerald", f"equipment_l3_{tab}_tabs", fixture)
@@ -147,7 +149,41 @@ class EquipmentL3(unittest.TestCase):
                     start = (row * width + x) * 3
                     damaged[start:start + w * 3] = bytes(w * 3)
                 self.assertIsNone(equipment.read((width, height, bytes(damaged))))
-        self.assertFalse(set("789") & equipment.SHAPES.keys(), "unobserved inventory glyphs remain uncalibrated")
+        self.assertEqual(set(equipment.FONT_DERIVED_PHASES), set("789"))
+
+    def test_source_font_derived_seven_eight_nine_read_with_real_card_geometry(self):
+        # This is an explicitly generated font replay, not a claim that an
+        # inventory balance containing 7–9 was observed on the real phone.
+        # The surrounding frame comes from the existing reviewed real crop.
+        original = shot("weapon")
+        top = equipment._card_top(original, 1)
+        for number in ('0', '7', '8', '9', '789', '9876'):
+            with self.subTest(number=number):
+                width, height, data = original
+                pixels = bytearray(data)
+                for y in range(top + 85, top + 105):
+                    start = (y * width + 150) * 3
+                    pixels[start:start + 65 * 3] = bytes(65 * 3)
+                left = 153
+                for char in number + '/5':
+                    shape = equipment.SHAPES[char]
+                    for y, row in enumerate(shape):
+                        for x, on in enumerate(row):
+                            if on == '#':
+                                offset = ((top + 88 + y) * width + left + x) * 3
+                                pixels[offset:offset + 3] = b'\xff\xff\xff'
+                    left += len(shape[0]) + 2
+                self.assertEqual(equipment.read((width, height, bytes(pixels))), int(number))
+        # All derived raster phases remain distinct from another character
+        # under the existing confidence gap; no threshold is relaxed.
+        self.assertEqual(equipment.MAX_DISTANCE, .06)
+        for char, phases in equipment.FONT_DERIVED_PHASES.items():
+            for phase in phases:
+                scores = sorted((min(equipment._distance(phase, item)
+                                     for item in (shape,) + equipment.PHASES.get(other, ())), other)
+                                for other, shape in equipment.SHAPES.items())
+                self.assertEqual(scores[0], (0, char))
+                self.assertGreaterEqual(scores[1][0] - scores[0][0], .06)
 
     def test_real_stationary_card_threshold_jitter_reads_without_relaxing_glyph_errors(self):
         capture = model_fixtures.screen("battle_emerald", "equipment_l3_weapon_tabs", "equipment_l3_weapon_threshold_480")
@@ -158,6 +194,13 @@ class EquipmentL3(unittest.TestCase):
         glyph = next(equipment._glyphs(capture, top, 1, 130))
         error = min(equipment._distance(glyph, item) for item in (equipment.SHAPES['3'],) + equipment.PHASES['3'])
         self.assertGreater(error, equipment.MAX_DISTANCE)
+
+    def test_leading_zero_and_overlong_counts_are_not_balances(self):
+        capture = shot("weapon")
+        for text in ('00/5', '03/5', '0789/5', '10000/5'):
+            with self.subTest(text=text), patch.object(
+                    equipment, '_glyphs', return_value=[equipment.SHAPES[c] for c in text]):
+                self.assertIsNone(equipment.read(capture))
 
     def test_one_lone_threshold_or_disagreeing_complete_counts_are_uncertain(self):
         capture = shot("weapon")

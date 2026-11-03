@@ -33,6 +33,7 @@ python3 "$(dirname "$0")/../slayer-legend/test_watchdog.py" \
   GoldTrigger.test_engraving_verification_debt_respects_free_play_and_disabled_switch \
   PresetPolicyBlocks
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_hourly_resources.py -q
+python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_rate_completions.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_gold_native.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_cube_native.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_equipment_l3.py -q
@@ -65,8 +66,8 @@ if scan is not None:
     assert len(scan["size"]) == 2 and all(size > 0 for size in scan["size"])
     assert set(scan["ran"]) <= set(scan["expected"])
     if scan["screen"] == "battle":
-        assert "cubes" in scan["expected"]
         assert "currencies" in scan["expected"]
+        assert ("cubes" in scan["expected"]) == ("weapon_detail" in scan["overlays"])
 # Observation may be idle, disabled, away from the game, or newly started.
 # Validate bounded work and truthful optional measurements without demanding
 # a capture, a recent fact, zero historical failures, or a running game.

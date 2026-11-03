@@ -5,6 +5,19 @@ ReaderRegistry gives the observation pipeline one recognition/read boundary.
 """
 
 
+def stage_context(stage):
+    """Cheap capture-local rate context, independent of resource OCR."""
+    def read(shot, base, overlays, plain):
+        if base == "saver":
+            place = ("saver", stage.read_saver(shot)[0])
+        elif base == "battle":
+            place = ("battle", stage._ink(stage._crop(shot, stage.BATTLE_NAME)))
+        else:
+            return {}
+        return {"gold_place": place}
+    return read
+
+
 def reader_table(
     screens,
     stage,
@@ -48,7 +61,7 @@ def reader_table(
     def progress(shot, base, overlays, plain):
         return {"progress": stage.progress(shot)}
 
-    def gold(shot, base, overlays, plain):
+    def gold(shot, base, overlays, plain, context=None):
         reading = counter.read(
             shot,
             (
@@ -57,14 +70,11 @@ def reader_table(
                 else (1.0,)
             ),
         )
-        if base == "saver":
-            place = ("saver", stage.read_saver(shot)[0])
-        else:
-            place = ("battle", stage._ink(stage._crop(shot, stage.BATTLE_NAME)))
+        context = stage_context(stage)(shot, base, overlays, plain) if context is None else context
         return {
             "gold": {"text": reading["text"], "value": reading["value"]} if reading else None,
             "gold_reading": reading,
-            "gold_place": place,
+            **context,
         }
 
     def cube_row(shot, base, overlays, plain):
@@ -202,10 +212,11 @@ def read_all(
 class ReaderRegistry:
     """Screen recognition and calibrated reader selection, with no async work or state writes."""
 
-    def __init__(self, screens, rules, readers):
+    def __init__(self, screens, rules, readers, context=None):
         self.screens = screens
         self.rules = rules
         self.readers = readers
+        self.context = context
 
     def identify(self, shot):
         look = self.screens.look(shot)
@@ -214,14 +225,23 @@ class ReaderRegistry:
             "classified": self.screens.classify(shot) if look["screen"] == "unknown" else None,
         }
 
+    def identify_context(self, shot):
+        look = self.identify(shot)
+        context = (self.context(shot, *self.rules.seen_screen(look, look.get("classified")))
+                   if self.context is not None and "gold" in self.shown(look) else {})
+        return look, context
+
     def identity(self, look):
         return self.rules.seen_screen(look, look.get("classified")), look.get("quest_tab")
 
     def shown(self, look):
         return set(self.rules.readers_for(look, look.get("classified")))
 
-    def read(self, reader, shot, look):
-        return self.readers[reader](shot, *self.rules.seen_screen(look, look.get("classified")))
+    def read(self, reader, shot, look, context=None):
+        args = self.rules.seen_screen(look, look.get("classified"))
+        if reader == "gold" and self.context is not None:
+            return self.readers[reader](shot, *args, context)
+        return self.readers[reader](shot, *args)
 
     def due(self, frame, last_runs, now, force=()):
         return [

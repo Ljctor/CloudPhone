@@ -88,7 +88,8 @@ def setup(context):
     readers = game_readers.ReaderRegistry(screens, game_rules, game_readers.reader_table(
         screens, stage, module("stage_select"), module("gold"), module("soul_counters"), module("soul_weapon"),
         module("engraving_screen"), module("battle_controls"), screen_rules, table, engraving["api"]["table"],
-        module("cube_balance"), module("top_currencies"), module("equipment_l3")))
+        module("cube_balance"), module("top_currencies"), module("equipment_l3")),
+        context=game_readers.stage_context(stage))
     facts = feature("game_facts").FactStore(ports, game_rules)
     pipeline = observation.ObservationPipeline(ports, readers, facts,
         archive=feature("screenshot_archive").archive(ports.data_path("screenshots")))
@@ -155,6 +156,7 @@ def setup(context):
     features.append({"routes": [("GET", "/templates", handle_templates)]})
     for part in features:
         context.app.on_startup.extend(part.get("startup", []))
+        context.app.on_shutdown.extend(part.get("shutdown", []))
         for method, path, handler in part["routes"]:
             add = {"GET": context.add_get, "POST": context.add_post,
                    "DELETE": getattr(context, "add_delete", None)}[method]

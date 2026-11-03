@@ -193,13 +193,20 @@ def resource_refresh(ports, screens, navigation, equipment, weapon, scrolling, m
         # Recognition can precede the counter's settled raster. Retry only
         # fresh frames of this same guarded screen, within the visit's
         # existing deadline; never reuse the previous balance as a reading.
-        for attempt in range(3):
+        # The Cube balance can retain one ambiguous raster for several
+        # seconds. Observe across its next real change instead of spending
+        # every retry on that same number; keep time for the safe return.
+        cube = field == "cubes"
+        until = min(ports.clock.monotonic() + rules.CUBE_READ_WAIT,
+                    running["deadline"] - rules.RETURN_RESERVE)
+        for attempt in range(12 if cube else 3):
             try:
                 return await sample(shot, field)
             except UnreadCounter:
-                if attempt == 2:
+                delay = rules.CUBE_READ_POLL if cube else .3
+                if attempt == (11 if cube else 2) or cube and ports.clock.monotonic() + delay > until:
                     raise
-                await ports.clock.sleep(.3)
+                await ports.clock.sleep(delay)
                 shot, _ = await look(screen)
 
     async def cubes(shot):

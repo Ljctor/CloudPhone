@@ -111,6 +111,7 @@ class GameState:
             "require": self.require,
             "fresh": self.fresh,
             "scan": self.pipeline.scan,
+            "on_read": self.pipeline.on_read,
             "scan_visible": self.scan_visible,
             "note": self.fact_store.note,
             "value": self.fact_store.value,
