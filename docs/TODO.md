@@ -114,10 +114,10 @@ separate milestones. Historical checked items below do not close a new regressio
   preserving detected and user-declared identity with the screenshot.
 - [ ] Show weapon/hour only on an observed weapon-drop stage and accessory/hour
   only on an observed accessory-drop stage; never infer this from mode alone.
-- [ ] Restore hourly counters end to end: gold, cubes, green/blue/red souls,
+- [x] Restore hourly counters end to end: gold, cubes, green/blue/red souls,
   L3 weapons and L3 accessories. Read real changes, calculate per hour, show
   correct values and icons; no stone or white-soul rates. Verify farming,
-  menu transitions, user inputs, spends/resets and stream reconnection.
+  resource-refresh navigation and stream reconnection.
   Installed acquisition now records dated Cube and L3 balances, retains
   their measured history across gateway restarts, and suppresses old-stage
   rates until fresh stage evidence agrees. Cube/hour and its extrapolated
@@ -142,11 +142,18 @@ separate milestones. Historical checked items below do not close a new regressio
   no missing counter. Production also exposed a separate calculation defect:
   full-digit Souls inherited Gold's 60-second window and lost sparse gains.
   Counting and measurement now both retain 30 minutes for Souls; Gold stays
-  at 60 seconds. The sparse-gain regression passes; that final window change
-  still requires deployment and a live span beyond one minute.
+  at 60 seconds. Deployed revision d93a73f retained the same initial Soul
+  sample across 195.8 seconds of live observations, preserving positive green
+  and red rates between gains. Blue correctly measured zero while unchanged.
+  Reader errors and queues were zero; Soul mode returned to status OK with
+  no held navigation lease. The sparse-gain regression also passes.
   Resource-spending resets are checked without spending game resources;
-  paid/action controls remain forbidden. The complete item stays open until
-  the installed readings, calculations and browser output agree.
+  paid/action controls remain forbidden. Installed readings, calculations
+  and browser output now agree on the verified farming path.
+- [ ] Extend hourly-counter live coverage to rapid user-driven navigation,
+  both weapon/accessory drop-stage transitions, and user-initiated spending.
+  Do not spend game resources merely to exercise a reset; spending/reset
+  calculation cases already pass focused regression checks.
 - [ ] Finish automatic Soul Weapon selection and engraving for each farming
   target. Verify the actual weapon and pattern before acting; no successful
   status until the requested setup is observed in the game.
