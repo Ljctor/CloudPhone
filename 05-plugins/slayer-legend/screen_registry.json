@@ -16,6 +16,7 @@
     "unknown": "the name of any screen not recognised"
   },
   "screens": {
+    "latent_power": {"kind": "screen", "status": "registered", "legacy": "menu", "anchors": [{"reader": "latent_power"}], "fixtures": ["latent_power_title_480", "latent_power_description_480", "latent_power_close_480"], "battle_viewport": {"size": "none", "rect": null, "source": "fixtures/latent_power_title_480.txt + latent_power_description_480.txt + latent_power_close_480.txt", "calibrated": true, "shaded": false}},
     "loading": {
       "battle_viewport": {"size": "none", "rect": null, "source": "fixtures/loading_dragon_gate_480.txt", "calibrated": true, "shaded": false},
       "kind": "screen", "status": "registered", "legacy": "loading",
@@ -195,6 +196,7 @@
     }
   },
   "tree": {
+    "latent_power": {"name": "Latent Power", "parent": null, "screen": "latent_power", "via": null, "look": "latent_power", "visit": false, "example": "screenshots/latent_power.png", "why": "Entrance and return destination not observed; only the calibrated close X is permitted.", "battle_viewport": {"size": "none", "rect": null, "source": "fixtures/latent_power_title_480.txt + latent_power_description_480.txt + latent_power_close_480.txt", "calibrated": true, "shaded": false}},
     "character_enhance": {"name": "Character: Enhance", "parent": "battle", "screen": "character_enhance", "via": "battle/menu_character", "back": "character_enhance/close", "look": "character_enhance", "visit": true, "example": "screenshots/character_enhance.png", "readings": {"exp": {"box": [110, 627, 278, 639], "format": "current / required", "status": "never_read", "fixtures": ["fixtures/character_exp_enhance.txt", "fixtures/character_exp_growth.txt"], "why": "small digits touch; existing pixel_font reader returns unknown glyphs"}}, "battle_viewport": {"size": "medium", "rect": [0.0, 0.046153846153846156, 1.0, 0.4442307692307692], "source": "screenshots/character_enhance.png", "calibrated": true, "shaded": false}},
     "character_growth": {"name": "Character: Growth", "parent": "character_enhance", "screen": "character_growth", "via": "character_enhance/growth", "back": "character_growth/enhance", "look": "panel", "visit": true, "example": "screenshots/character_growth.png", "battle_viewport": {"size": "medium", "rect": [0.0, 0.046153846153846156, 1.0, 0.4442307692307692], "source": "screenshots/character_growth.png", "calibrated": true, "shaded": false}},
     "character_growth_icon_1": {"name": "Character: Growth, first sub-tab icon", "parent": "character_growth", "screen": null, "via": null, "look": "panel", "visit": false, "why": "not explored: what it does is not known, so the tour does not tap it (icon at 0.48, 0.632)", "battle_viewport": {"size": "unknown", "rect": null, "source": null, "calibrated": false, "shaded": null}},

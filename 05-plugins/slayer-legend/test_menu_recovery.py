@@ -1,4 +1,4 @@
-"""Real Promotion/Character-tab readings and bounded, guarded menu recovery."""
+"""Real Latent Power/Promotion readings and bounded, guarded menu recovery."""
 import asyncio
 import unittest
 from unittest.mock import patch
@@ -35,12 +35,118 @@ class PromotionReader(unittest.TestCase):
                       verified=True, seen={**seen, 'look': {**seen['look'], 'overlays': ['panel']}}))
 
 
+class LatentPowerReader(unittest.TestCase):
+    PARTS = ('latent_power_title_480', 'latent_power_description_480', 'latent_power_close_480')
+
+    def test_complete_real_landmarks_scale_and_name_the_opaque_panel(self):
+        for size in ((360, 780), (480, 1040), (720, 1560)):
+            shot = model.scaled(model.screen(*self.PARTS, background=(12, 6, 3)), *size)
+            self.assertTrue(screens.latent_power(shot))
+            found = screens.look(shot)
+            self.assertEqual(found['screen'], 'latent_power')
+            self.assertEqual(found['battle_viewport']['size'], 'none')
+            self.assertEqual(screens.classify(shot), 'menu')
+            self.assertFalse(found['plain'])
+
+    def test_each_missing_landmark_refuses_and_neighbours_stay_distinct(self):
+        for missing in self.PARTS:
+            shot = model.screen(*(name for name in self.PARTS if name != missing))
+            self.assertFalse(screens.latent_power(shot), missing)
+            self.assertNotEqual(screens.look(shot)['screen'], 'latent_power')
+        for key in model.REGISTERED:
+            if key != 'latent_power':
+                self.assertFalse(screens.latent_power(model.made(key)), key)
+        # Real Growth/Promotion headers plus a shared red X are insufficient.
+        for header in ('character_growth_header', 'character_promotion_header_live_480', 'eg_title', 'sw_title'):
+            self.assertFalse(screens.latent_power(model.screen(header, self.PARTS[-1])))
+
+    def test_guard_requires_fresh_identity_and_refuses_every_control(self):
+        seen = {'look': {'screen': 'latent_power', 'overlays': [], 'plain': False}}
+        point = screens.LATENT_POWER_CLOSE
+        self.assertIsNone(soul.nav.guard('latent_power', 'close', *point, verified=True, seen=seen))
+        self.assertIsNotNone(soul.nav.guard('latent_power', 'close', *point, seen=seen))
+        for bad in (None, {'look': {'screen': 'unknown'}}, {'look': {'screen': 'battle'}}):
+            self.assertIsNotNone(soul.nav.guard('latent_power', 'close', *point, verified=True, seen=bad))
+        self.assertIsNotNone(soul.nav.guard('latent_power', 'panel_controls', .5, .85, verified=True, seen=seen))
+        self.assertIsNotNone(soul.nav.guard('latent_power', 'close', .5, .85, verified=True, seen=seen))
+        self.assertEqual(soul.nav.connections('latent_power')[0]['to'], 'unknown')
+
+
+class LatentPowerRecovery(unittest.TestCase):
+    def game(self, destination='battle', after_close=None):
+        game = soul.Game(screen='latent_power')
+        original = game.apply
+        def apply(screen, move, point):
+            original(screen, move, point)
+            if screen == 'latent_power' and move == 'close':
+                game.state['screen'] = destination
+                if after_close:
+                    after_close(game)
+        game.apply = apply
+        return game
+
+    def test_one_close_then_verified_battle_parks_under_existing_lease(self):
+        for mode in ('mpw4', 'mpw18', 'soul'):
+            game = self.game()
+            before = (game.state['equipped'], game.state['selected'])
+            _, api = build(game)
+            answer = asyncio.run(api['back_to_battle'](mode))
+            self.assertEqual(answer['result'], 'done')
+            self.assertEqual(game.moves, [('latent_power', 'close'), ('battle', 'menu_equipment'),
+                                          ('equipment_weapon', 'soul_weapon')])
+            self.assertEqual((game.state['equipped'], game.state['selected']), before)
+            self.assertEqual(game.leases, [('stage_change', 'farm '+mode)])
+            self.assertNotIn('verified_setup', answer)
+
+    def test_known_promotion_return_closes_only_its_calibrated_tab(self):
+        game = self.game('promotion')
+        _, api = build(game)
+        self.assertEqual(asyncio.run(api['back_to_battle']('soul'))['result'], 'done')
+        self.assertEqual(game.moves, [('latent_power', 'close'), ('character_promotion', 'close_tab'),
+                                      ('battle', 'menu_equipment'), ('equipment_weapon', 'soul_weapon')])
+
+    def test_falsely_lit_tab_on_unknown_return_cannot_authorize_a_second_tap(self):
+        game = self.game('growth')
+        original = soul.fake_screens()
+        original.open_tab = lambda shot: (.073, 'character_enhance') if shot[2]['screen'] == 'growth' else None
+        with patch.object(soul, 'fake_screens', return_value=original):
+            _, api = build(game)
+        self.assertEqual(asyncio.run(api['back_to_battle']('mpw4'))['result'], 'failed')
+        self.assertEqual(game.moves, [('latent_power', 'close')])
+
+    def test_unknown_destination_or_unchanged_panel_never_repeats_close(self):
+        for destination in ('unknown', 'latent_power', 'growth'):
+            game = self.game(destination)
+            _, api = build(game)
+            answer = asyncio.run(api['back_to_battle']('mpw4'))
+            self.assertEqual(answer['result'], 'failed')
+            self.assertEqual(game.moves, [('latent_power', 'close')])
+            self.assertLessEqual(game.now, 10.25)
+
+    def test_interruption_after_close_prevents_second_gesture(self):
+        game = self.game(after_close=lambda game: game.state.update(focused=False))
+        _, api = build(game)
+        asyncio.run(api['back_to_battle']('mpw4'))
+        self.assertEqual(game.moves, [('latent_power', 'close')])
+
+    def test_free_agent_mine_never_even_capture(self):
+        for mode in ('free', 'agent', 'mine'):
+            game = self.game()
+            _, api = build(game)
+            self.assertEqual(asyncio.run(api['back_to_battle'](mode))['result'], 'failed')
+            self.assertEqual((game.moves, game.captures), ([], 0))
+
+
 def build(game):
     original = soul.fake_screens()
+    original.LATENT_POWER_CLOSE = screens.LATENT_POWER_CLOSE
+    original.latent_power = lambda shot: shot[2]["screen"] == "latent_power"
     original.character_promotion = lambda shot: shot[2]['screen'] == 'promotion'
     old_look = original.look
     original.look = lambda shot: ({'screen': 'battle', 'plain': False, 'overlays': ['panel', 'character_promotion']}
-                                 if shot[2]['screen'] == 'promotion' else old_look(shot))
+                                 if shot[2]['screen'] == 'promotion' else
+                                 {"screen": "latent_power", "overlays": [], "plain": False}
+                                 if shot[2]['screen'] == 'latent_power' else old_look(shot))
     with patch.object(soul, 'fake_screens', return_value=original):
         return soul.build(game)
 

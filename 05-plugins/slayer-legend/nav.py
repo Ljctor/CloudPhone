@@ -57,6 +57,8 @@ def _needs(screen, move, x, y, seen):
     where = f"{screen}/{move['id']}"
     if not isinstance(seen, dict):
         return f"{where} needs what the fresh capture shows (seen)"
+    if needs.get("required_screen") and (seen.get("look") or {}).get("screen") != needs["required_screen"]:
+        return f"{where} needs the freshly recognised screen {needs['required_screen']!r}"
     if needs.get("reduced_battle"):
         look = seen.get("look") or {}
         overlays = set(look.get("overlays") or [])
@@ -175,6 +177,8 @@ def check():
             seen = {"tags": [], "tag": needs.get("tag"), "selected": "target", "target": "target",
                     "active_tab": needs.get("active_tab"),
                     "tag_box": [point[0] - 0.01, point[1] - 0.01, point[0] + 0.01, point[1] + 0.01]} if point else None
+            if point and needs.get("required_screen"):
+                seen.update(look={"screen": needs["required_screen"], "overlays": []})
             if point and needs.get("reduced_battle"):
                 overlays = ["panel"] + ([needs["required_overlay"]] if needs.get("required_overlay") else [])
                 seen.update(look={"screen": "battle", "plain": False, "overlays": overlays}, combat_visible=True)

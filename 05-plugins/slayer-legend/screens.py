@@ -470,6 +470,27 @@ _CHARACTER_TABS = ((26, 550, 88, 566), (121, 550, 171, 566), (204, 550, 274, 566
 _CHARACTER_PAID = ((353, 704, 454, 753), (353, 807, 454, 856), (353, 909, 454, 958))
 _character_patches = None
 _promotion_patch = None
+_latent_power_patches = None
+LATENT_POWER_CALIBRATED = True
+LATENT_POWER_CLOSE = (38 / 480, 984 / 1040)
+
+
+def latent_power(shot):
+    """Complete opaque Latent Power panel, never its close glyph alone.
+
+    Fixed title, instruction and red X are independent reviewed real crops.
+    No dynamic level, balance or awakening control contributes identity.
+    """
+    global _latent_power_patches
+    if not LATENT_POWER_CALIBRATED:
+        return False
+    if _latent_power_patches is None:
+        _latent_power_patches = [Patch(name, limit=limit) for name, limit in (
+            ("latent_power_title_480", .45), ("latent_power_description_480", .45),
+            ("latent_power_close_480", .6))]
+    return all(patch.margin(shot) >= MARGIN for patch in _latent_power_patches)
+
+
 CHARACTER_PROMOTION_CALIBRATED = True
 
 

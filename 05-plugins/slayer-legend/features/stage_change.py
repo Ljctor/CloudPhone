@@ -61,7 +61,7 @@ during it stops it at the next tap.
   complete setup. No detached navigation survives a mode change.
 
 api: farm(stage, preset, mode) runs the three and parks; change_stage, set_preset,
-back_to_battle(mode) closes only calibrated Character Promotion and parks,
+back_to_battle(mode) closes calibrated Latent Power or Character Promotion and parks,
 under one lease and a fixed overall deadline; it changes no loadout settings.
 ensure_soul_weapon(mode, loadout=None) alone (the last for a
 loadout change of the active mode); each answers {result: "done", "plan"
@@ -204,6 +204,8 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
     def battle_or_panel(shot):
         """"plain", the open panel's tab, "saver", "parked" (the Soul
         Weapon screen), or None (another screen)."""
+        if getattr(screens, "latent_power", lambda image: False)(shot):
+            return "latent_power"
         if screens.quest_panel(shot):
             return "quest"
         if controls.settings_open(shot) and "battle_settings" in screens.look(shot)["overlays"]:
@@ -234,6 +236,25 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
             raise Stop("fermeture de Character Promotion non confirmée")
         return fresh
 
+    async def close_latent_power(shot):
+        """One X under this lease; never assume what screen it exposes."""
+        seen = await ports.analyse(screens.look, shot)
+        if (seen.get("screen") != "latent_power"
+                or not await ports.analyse(getattr(screens, "latent_power", lambda image: False), shot)):
+            raise Stop("Latent Power non reconnu : panneau laissé ouvert")
+        await tap(shot, "latent_power", "close", screens.LATENT_POWER_CLOSE,
+                  verified=True, seen={"look": seen})
+        fresh, exposed = await settle(battle_or_panel, timeout=10.0,
+                                     accept=lambda value: value not in (None, "latent_power"))
+        identified = await ports.analyse(screens.look, fresh)
+        # A merely lit tab on an unknown screen cannot authorise cleanup.
+        if (exposed in (None, "latent_power") or identified.get("screen") != "battle"
+                or not (identified.get("plain") or any(name in identified.get("overlays", ())
+                        for name in ("character_promotion", "character_enhance", "equipment_weapon",
+                                     "equipment_accessories", "soul_weapon")))):
+            raise Stop("Écran après Latent Power non reconnu : navigation arrêtée")
+        return fresh, exposed
+
     async def to_battle(may_tap=True, recovery_target=None):
         """A fresh look at the battle screen with nothing over it, waiting
         up to SETTLE for it (a screen passing by, a toast sliding in): a
@@ -243,6 +264,10 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         parking) by its red X first. The game's « Better Soul Weapon »
         toast is no obstacle (screens.better_weapon_toast)."""
         shot, seen = await settle(battle_or_panel)
+        if seen == "latent_power":
+            if not may_tap:
+                raise Plan("fermer Latent Power")
+            shot, seen = await close_latent_power(shot)
         if seen == "settings":
             if not may_tap:
                 raise Plan("fermer Battle settings")
@@ -580,7 +605,10 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         async def leave_menu():
             shot = await look()
             if not parked(shot) and not await ports.analyse(screens.plain_battle, shot):
-                await close_promotion(shot)
+                if await ports.analyse(getattr(screens, "latent_power", lambda image: False), shot):
+                    await to_battle()
+                else:
+                    await close_promotion(shot)
 
         async def finish_parking():
             if not parks(mode):

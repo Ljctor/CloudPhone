@@ -1,4 +1,7 @@
 {
+  "Latent Power non reconnu : panneau laissé ouvert": "Latent Power not recognised; panel left open",
+  "Écran après Latent Power non reconnu : navigation arrêtée": "Latent Power close destination not recognised; navigation stopped",
+  "fermer Latent Power": "close Latent Power",
   "Marquer une valeur de progression": "Mark a progression value",
   "Marquer une valeur de ressource": "Mark a resource value",
   "Marquer un identifiant d’écran": "Mark a screen identifier",

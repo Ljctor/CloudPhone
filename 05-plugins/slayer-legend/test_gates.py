@@ -26,6 +26,9 @@ def load(name):
 # (module, flag, the fixtures of every state its reading tells apart, the
 # test reading them).
 GATES = [
+    ("screens", "LATENT_POWER_CALIBRATED", ["latent_power_title_480", "latent_power_description_480",
+        "latent_power_close_480", "character_growth_header", "character_promotion_header_live_480",
+        "eg_title", "sw_title"], "test_menu_recovery"),
     ("screens", "CHARACTER_PROMOTION_CALIBRATED", ["character_promotion_header_live_480",
         "character_close_tab_lit_480", "character_close_tab_unlit_480", "character_enhance_header",
         "character_growth_header"], "test_menu_recovery"),

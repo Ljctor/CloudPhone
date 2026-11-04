@@ -246,9 +246,20 @@ layers on item visuals, never baked into their base sprites or menu symbols.
 - [ ] Confirm the strengthened direct-repair persistence path during the next
   authorised live setup. Offline journal/interruption replay is not live acceptance.
 - [x] Verify the new pre-Equip durability path on an actual weapon switch,
-  followed immediately by full placement and eight verified locks. The
-  observed automatic Ambition Gold-maxed setup placed four I pieces and
-  verified eight locks before completing the farming transaction.
+  followed immediately by full placement and eight verified locks.
+  Historical acceptance on 2026-11-04, source revision `9c80641`: the
+  automatic Soul Farming entry equipped Ambition (weapon 32), then applied
+  Gold-maxed with four I pieces, zero removals and eight verified locks.
+  The recorded weapon result was `done` (actual Equip), not `equipped`
+  or `cached`: 115.9 s and nine list/equip moves; engraving used 18 gestures
+  in 72.4 s. The complete transaction then reached stage 970, preset IV
+  and Soul Weapon parking. The retained source archive matches this revision;
+  its executor requires the durable recipe write before sending Equip.
+  This successful path does not prove a real write/fsync failure, replacement
+  of an already placed lower-level piece, interruption during final readback,
+  strengthened direct-repair persistence or another farming target. It is
+  dated acceptance evidence, not proof of current readiness after new input
+  or a restart. Remaining cases stay open below.
 - [x] Separate the lower-left release anchor from the rotation pivot. Reviewed
   native captures calibrate T and L pivots at (1, 0), I at (2, 0), in each
   normalized base shape. Compute the initial drop before rotating; verify the
@@ -393,8 +404,9 @@ layers on item visuals, never baked into their base sprites or menu symbols.
   both weapon/accessory drop-stage transitions, and user-initiated spending.
   Do not spend game resources merely to exercise a reset; spending/reset
   calculation cases already pass focused regression checks.
-- [ ] Extend the verified engraving/recovery cases above to every farming
-  target and an actual weapon change through the new durable pre-Equip path.
+- [ ] Extend the verified engraving/recovery cases above beyond the recorded
+  Ambition Gold-maxed weapon switch to the remaining farming targets and
+  variants through the durable pre-Equip path.
   Prove highest-level eligible same-shape selection and replacement of an
   already placed lower-level piece; an option bonus cannot outrank level.
   Preserve identity, relock removed pieces and verify eight locks throughout
@@ -403,10 +415,6 @@ layers on item visuals, never baked into their base sprites or menu symbols.
 - [x] Obtain real Equip/Unequip calibration evidence: owned, unequipped
   Relax supplies Equip; equipped Ambition supplies Unequip. Read-only
   navigation produced the evidence; no Equip or engraving action was run.
-- [ ] Complete the outstanding supervised weapon-switch acceptance required
-  by part 05: durable intent before actual Equip, immediate engraving recovery,
-  target/highest-level proof, eight locks and the full requested farming setup.
-  Earlier already-equipped and interrupted-grid runs retain their stated scope.
 
 ### Mode, interface and notifications
 
@@ -498,10 +506,6 @@ layers on item visuals, never baked into their base sprites or menu symbols.
   browser-module suites pass, exact-commit build and shell checks pass.
   Installed backend/browser files match the commit; live browser options
   show the real disabled-engraving blocker and no successful attempt.
-- [ ] Complete the remaining full-setup acceptance after an actual weapon
-  change and for each requested farming target. Preserve the recorded successful
-  engraving/recovery runs; mocks and read-only calibration do not extend them
-  to untested target switches or the complete stage/preset/loadout result.
 
 ### Calibration follow-up
 
@@ -520,9 +524,6 @@ layers on item visuals, never baked into their base sprites or menu symbols.
   does not prove the expanded circuit, partial OCR recovery or all-resource routes.
 - [x] Complete Equip calibration on the real owned Relax capture, including
   the bright owned-cell border and rejection of a clipped top cell.
-- [ ] Complete the remaining first actual Equip/full-weapon-switch supervision.
-  Earlier successful already-equipped engraving/recovery runs remain valid
-  within their recorded scope; a calibrated Equip reader is not an Equip action.
 
 ### Counter presentation and release evidence
 
@@ -836,3 +837,5 @@ them; their crops go in on the next sighting, same rule.
   installed persistence/restart, editing and returning to a target, sparse
   visits, the correct weapon/accessory drop counter, and the date shown for
   each historical value. Offline tests alone do not close these acceptances.
+
+Latent Power recovery: fixed title, instruction and bottom-left X are calibrated from reviewed real crops. No game gesture has validated its return destination; the graph keeps it `unknown`. Observe the first supervised close, then calibrate any newly exposed panel before permitting further navigation. No Latent Power awakening or spending action is authorised.

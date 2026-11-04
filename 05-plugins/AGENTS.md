@@ -80,6 +80,11 @@ Rules:
   - Stage change and preset (mode changes, a change of the running
     mode's loadout, and the watchdog's repairs,
     each only while its switch is real):
+    - Closing Latent Power with its bottom-left red X: only when a fresh
+      capture matches its fixed title, dragon-power instruction and X.
+      One close only, then identify the exposed screen; an unknown return
+      permits no further gesture. Never its tiers, stats, magnifiers,
+      awakening, purchase or spending controls.
     - Closing a bottom panel with its own tab: only when that tab reads lit.
     - "Press here to finish Power Saving Mode": held 4 s, once per
       sequence, only when the screen reads Power Saving Mode.
