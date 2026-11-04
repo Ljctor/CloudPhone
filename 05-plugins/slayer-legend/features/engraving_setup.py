@@ -296,6 +296,9 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
                               ("soul_weapon_engraving_piece", "padlock"))
             """The card index locked: True once it reads closed."""
             shot, reading = await steady(size, shapes)
+            # Never tap a card/corner through an unowned or uncleared preview.
+            if await observe(screen.bar, shot):
+                raise Stop("gravure : aperçu non fermé")
             if reading["cards"][index]["locked"] is not False:
                 return reading["cards"][index]["locked"] is True
             if not done["corner_failed"]:
@@ -329,7 +332,8 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
 
         async def remove(cells, reading):
             require_followups(("soul_weapon_engraving", "lock"),
-                              ("soul_weapon_engraving_piece", "padlock"))
+                              ("soul_weapon_engraving_piece", "padlock"),
+                              ("soul_weapon_engraving_preview", "cancel"))
             shot, before = await steady(size, shapes)
             if any(before["grid"] is None or before["grid"]["cells"].get(cell) != "piece" for cell in cells):
                 problems.append(ports.t("la pièce à retirer a bougé"))
@@ -341,6 +345,7 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
             # removal. Observe its specific postcondition without another drag.
             last, latest = [None], [None]
             removing_since = ports.clock.monotonic()
+            cancelled_preview = False
             diagnostic = {"captures": 0, "freed": None, "preview": None, "cells": None}
 
             def removed_reading(s):
@@ -348,13 +353,29 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
                 latest[0] = after
                 cards = after["cards"]
                 diagnostic["captures"] += 1
-                diagnostic["preview"] = bool(screen.bar(s))
+                preview = screen.bar(s)
+                diagnostic["preview"] = bool(preview)
                 diagnostic["cells"] = ([{"cell": list(cell), "state": after["grid"]["cells"].get(cell)}
                                         for cell in cells] if after["grid"] is not None else None)
                 freed = [c["index"] for c, b in zip(cards, before["cards"])
                          if b["placed"] is True and c["placed"] is False]
                 known_placed = all(c["placed"] is True or c["placed"] is False for c in cards)
                 diagnostic["freed"] = [index + 1 for index in freed] if known_placed else None
+                # A removal can detach the card yet leave its moving preview.
+                # Cancel only this fresh, attributable result: exactly one E
+                # disappeared, its card is open, and everything outside the
+                # removed piece (including every other card) is unchanged.
+                attributable = (after["grid"] is not None and len(cards) == len(before["cards"])
+                    and known_placed and len(freed) == 1
+                    and cards[freed[0]]["locked"] is False
+                    and all(c == b for c, b in zip(cards, before["cards"]) if c["index"] != freed[0])
+                    and all(after["grid"]["cells"].get(cell) == value
+                            for cell, value in before["grid"]["cells"].items() if cell not in cells)
+                    and any(after["grid"]["cells"].get(cell) == "empty" for cell in cells))
+                if (preview and preview.get("cancel") is not None and not cancelled_preview
+                        and attributable and not screen.popup(s)):
+                    last[0] = None
+                    return ("cancel", preview)
                 complete = (after["grid"] is not None and len(cards) == len(before["cards"])
                             and known_placed
                             and all(after["grid"]["cells"].get(cell) == "empty" for cell in cells)
@@ -370,16 +391,23 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
                 return after if stable else False
 
             shot, after = await wait_for(removed_reading, TRANSITION_WAIT)
+            if isinstance(after, tuple) and after[0] == "cancel":
+                cancelled_preview = True  # Never repeat cancel, even if it has no effect.
+                await tap(shot, "soul_weapon_engraving_preview", "cancel", after[1]["cancel"], verified=True)
+                remaining = TRANSITION_WAIT - (ports.clock.monotonic() - removing_since)
+                shot, after = await wait_for(removed_reading, remaining) if remaining > 0 else (shot, False)
             ports.log("normal" if after else "warning", "Engraving removal diagnostic: " + json.dumps({
                 "weapon_id": entry["id"], "phase": "confirmed" if after else "timeout",
                 "seconds": round(ports.clock.monotonic() - removing_since, 3),
                 "capture_scope": "identity-confirmed post-drag observations",
-                "expected_empty": [list(cell) for cell in cells], **diagnostic,
+                "expected_empty": [list(cell) for cell in cells], "preview_cancelled": cancelled_preview, **diagnostic,
             }, sort_keys=True, separators=(",", ":")))
             if not after:
                 problems.append(ports.t("retirer la pièce en {cell} n’a pas libéré ses cases et une carte", cell=str(cells[0])))
                 if latest[0] is None:
                     raise Stop("gravure : lectures instables ou grille illisible")
+                if await observe(screen.bar, shot):
+                    raise Stop("gravure : aperçu non fermé")
                 for index in [c["index"] for c in latest[0]["cards"] if c["locked"] is False]:
                     await lock(index)
                 return False

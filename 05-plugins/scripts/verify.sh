@@ -58,7 +58,7 @@ python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engra
 # Reviewed L previews retain landing geometry and the same observed relative pickup.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_geometry.py -q
 # Existing-weapon repairs persist intent; one removal drag waits for its observed
-# postcondition twice before relocking, including stale/unknown animation frames and input revocation.
+# postcondition twice before relocking; cancel its attributable preview once, never lock through it.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_recovery.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_reuse.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_coverage.py -q
@@ -103,6 +103,8 @@ node "$(dirname "$0")/../slayer-legend/test_page_mode.mjs"
 # Recovery messages stay bound to their weapon/variant; accepted fields and
 # supported placement do not repeat an unverified capability status.
 node "$(dirname "$0")/../slayer-legend/test_page_engraving.mjs"
+# Accepted targets supersede stale viewer preferences without discarding active drafts.
+node "$(dirname "$0")/../slayer-legend/test_page_engraving_sync.mjs"
 # Placement capability comes from executor calibration; inventory remains unverified.
 python3 "$(dirname "$0")/../slayer-legend/test_engraving.py" Routes.test_installed_applicability_uses_executor_calibration_not_inventory_history
 node "$(dirname "$0")/../slayer-legend/test_page_engraving_requirements.mjs"

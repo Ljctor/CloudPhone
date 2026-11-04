@@ -89,11 +89,14 @@ export default function loadoutFeature(api, { onApplied = () => {}, execution = 
     api.refresh();
     for (const mode of FARMING_MODES) scheduleSave(mode);
   };
-  const loadSaved = async () => {
+  const pendingDraft = () => Object.values(state).some((part) =>
+    part.busy || part.dirty || part.queued || part.conflict || part.uncertain);
+  const loadSaved = async ({ passive = false } = {}) => {
+    if (passive && pendingDraft()) return false;
     if (Object.values(state).some((part) => part.busy)) { data.readAfterWrite = true; return; }
     const writes = data.writes;
     const answer = await withDeadline(api.get('/loadout')).catch(() => null);
-    if (data.disposed || writes !== data.writes) return;
+    if (data.disposed || writes !== data.writes || passive && pendingDraft()) return;
     if (answer?.loadouts) {
       data.saved = answer.loadouts;
       for (const mode of FARMING_MODES) if (state[mode].uncertain) {
@@ -122,12 +125,12 @@ export default function loadoutFeature(api, { onApplied = () => {}, execution = 
     api.refresh();
   };
   loadFarming();
-  const farmingTimer = globalThis.window?.setInterval?.(() => { loadFarming(); loadRates(); }, 10000);
+  const farmingTimer = globalThis.window?.setInterval?.(() => { loadSaved({ passive: true }); loadFarming(); loadRates(); }, 10000);
 
 
-  // What a selector shows: the page's option once chosen (null: never
-  // chosen; '' chosen empty), else the loadout saved on the server, so
-  // that options that never held it show, and keep, what is saved.
+  // Only an explicit edit in this session is a draft. Old viewer preferences
+  // cannot override a currently accepted target from another browser or API.
+  // Preferences remain a loading fallback until the accepted target arrives.
   const touched = (mode, field) => api.setting(keyOf(mode, field)) != null;
   const fromServer = (mode, field) => {
     const part = data.saved?.[mode];
@@ -137,7 +140,8 @@ export default function loadoutFeature(api, { onApplied = () => {}, execution = 
     // The saved variant only goes with the saved weapon.
     return part?.soul_weapon && value(mode, 'Weapon') === String(part.soul_weapon.id) ? part.soul_weapon.variant : '';
   };
-  const value = (mode, field) => edits[mode][field] ?? (touched(mode, field) ? api.setting(keyOf(mode, field)) : fromServer(mode, field));
+  const value = (mode, field) => edits[mode][field] ?? (data.saved?.[mode] ? fromServer(mode, field)
+    : touched(mode, field) ? api.setting(keyOf(mode, field)) : '');
   // A choice shows its first entry while untouched: the server's value goes first.
   const firstSaved = (mode, field, choices) => {
     const saved = touched(mode, field) ? '' : fromServer(mode, field);
@@ -347,6 +351,12 @@ export default function loadoutFeature(api, { onApplied = () => {}, execution = 
         state[mode].error = timedOut ? 'Délai dépassé · résultat non confirmé' : result?.body?.error_t ?? result?.body?.error
           ?? (result ? `HTTP ${result.status}` : 'gateway injoignable');
       } else {
+        // Release only the acknowledged draft fields. Edits made while this
+        // CAS was in flight keep their own values and subsequent queued save.
+        const confirmedFields = { Stage: String(submitted.stage ?? ''), Preset: submitted.preset ?? '',
+          Weapon: submitted.soul_weapon ? String(submitted.soul_weapon.id) : '',
+          Variant: submitted.soul_weapon?.variant ?? '' };
+        for (const field of FIELDS) if (edits[mode][field] === confirmedFields[field]) delete edits[mode][field];
         onApplied(mode);
         // Keep later edits; queue their latest complete target after this acknowledgement.
       }

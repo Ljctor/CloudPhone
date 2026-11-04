@@ -209,6 +209,98 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(sw.engraving_moves(game).count('remove_piece'), 4,
                                  'each original piece is removed once; an animation never repeats a drag')
 
+    def removal_preview_game(self, fault=None):
+        """Detached card and persistent partial preview, as observed in Atk."""
+        game = sw.vision_game(screen='engraving')
+        view = sw.fake_engraving_screen(game)
+        apply, grid, cards = game.apply, view.grid, view.cards
+        removals = []
+
+        def with_preview(screen, move, point, end=None):
+            if move == 'remove_piece':
+                before = copy.deepcopy(game.state['engraving']['pieces'])
+            if move == 'cancel' and fault == 'sticky':
+                return
+            apply(screen, move, point, end)
+            if move == 'remove_piece':
+                index = next(i for i in before if i not in game.state['engraving']['pieces'])
+                removals.append(index)
+                game.state['engraving']['preview'] = {'card': index, 'cells': before[index][1:] + [(5, -1)]}
+
+        def plain_snapshot(shot):
+            shot = copy.deepcopy(shot)
+            shot[2]['engraving']['preview'] = None
+            return shot
+
+        def preview_grid(shot, size):
+            result = grid(plain_snapshot(shot), size)
+            preview = shot[2]['engraving']['preview']
+            if result and preview:
+                for cell in preview['cells']:
+                    if cell in result['cells']:
+                        result['cells'][cell] = 'piece'
+            return result
+
+        def preview_cards(shot, shapes):
+            result = cards(plain_snapshot(shot), shapes)
+            if shot[2]['engraving']['preview'] and removals:
+                if fault == 'unknown':
+                    result[removals[-1]]['placed'] = None
+                elif fault == 'collateral':
+                    result[(removals[-1] + 1) % 8]['locked'] = False
+            return result
+
+        game.apply, view.grid, view.cards = with_preview, preview_grid, preview_cards
+        return game, view, removals
+
+    async def test_removal_explicitly_cancels_its_persistent_preview_then_relocks(self):
+        game, view, removals = self.removal_preview_game()
+        setup, _ = self.setup_for(game, view=view)
+        with self.assertLogs(level='INFO') as logs:
+            _, result = await self.apply(setup, game)
+        self.assertTrue(result['ok'], result)
+        self.assert_complete(game)
+        moves = sw.engraving_moves(game)
+        self.assertEqual(len(removals), 4)
+        self.assertEqual(moves.count('cancel'), 4)
+        for i, move in enumerate(moves):
+            if move == 'remove_piece':
+                self.assertEqual(moves[i + 1:i + 3], ['cancel', 'lock'])
+        self.assertTrue(any('"preview_cancelled":true' in line and '"phase":"confirmed"' in line
+                            for line in logs.output))
+
+    async def test_removal_unknown_or_changed_preview_never_cancels_or_locks_through_it(self):
+        for fault in ('unknown', 'collateral', 'sticky'):
+            with self.subTest(fault=fault):
+                game, view, _ = self.removal_preview_game(fault)
+                setup, _ = self.setup_for(game, view=view)
+                with self.assertRaises(sw.stage_change.Stop):
+                    await self.apply(setup, game)
+                self.assertEqual(sw.engraving_moves(game), ['remove_piece', 'cancel'] if fault == 'sticky'
+                                 else ['remove_piece'])
+                self.assertTrue(setup.state()['required'])
+                self.assertFalse(setup.state()['verified'])
+                self.assertLess(game.now, 12)
+
+    async def test_revocation_after_removal_preview_read_prevents_cancel_and_cleanup(self):
+        game, view, _ = self.removal_preview_game()
+        setup, ports = self.setup_for(game, view=view)
+        analyse = ports.analyse
+        async def revoke_cancel_identity(fn, *args):
+            caller = inspect.currentframe().f_back
+            cancelling = (caller.f_code.co_name == 'tap'
+                          and caller.f_locals.get('screen_id') == 'soul_weapon_engraving_preview')
+            del caller
+            result = await analyse(fn, *args)
+            if cancelling:
+                raise ports.Busy('l’utilisateur joue')
+            return result
+        ports.analyse = revoke_cancel_identity
+        with self.assertRaises(ports.Busy):
+            await self.apply(setup, game)
+        self.assertEqual(sw.engraving_moves(game), ['remove_piece'])
+        self.assertTrue(setup.state()['required'])
+
     async def test_removal_timeout_never_repeats_drag_and_still_relocks_visible_card(self):
         game = sw.vision_game(screen='engraving')
         removed_at, removed_index = [], []
@@ -640,6 +732,14 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(answer['result'], 'done', answer)
         self.assertGreaterEqual(first_input[0], .75)
         self.assert_complete(game)
+
+    async def test_forbidden_removal_cancel_stops_before_any_drag(self):
+        game, view, _ = self.removal_preview_game()
+        setup, ports = self.setup_for(game, view=view)
+        ports.action_allowed = lambda screen, move: move != 'cancel'
+        with self.assertRaises(sw.stage_change.Stop):
+            await self.apply(setup, game)
+        self.assertEqual(game.moves, [])
 
     async def test_forbidden_relock_stops_before_removal(self):
         game = sw.vision_game(screen='engraving')

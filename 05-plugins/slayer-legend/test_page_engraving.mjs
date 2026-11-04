@@ -291,8 +291,10 @@ for (const mode of ['free', 'mine', 'mpw4']) {
   assert.ok(historicalUi.rateOptions(mode)[0].items().every((row) => row.value === '—'));
 }
 settings.stage18 = String(accepted.mpw18.stage + 1);
+historicalUi.onSetting('stage18', settings.stage18);
 assert.ok(metrics().every((row) => row.value === '—'), 'a visible unsaved draft cannot borrow accepted target rates');
 settings.stage18 = String(accepted.mpw18.stage);
+historicalUi.onSetting('stage18', settings.stage18);
 assert.equal(metrics()[0].value, '1.23B');
 rateHistory.configs.mpw18.revision = 'different-configuration';
 assert.ok(metrics().every((row) => row.value === '—'), 'another revision cannot supply rates');

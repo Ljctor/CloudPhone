@@ -197,8 +197,12 @@ Rules:
     - Taking a piece out (a placed piece that is not the variant's, or
       one holding a card that is not the best): a slow drag (800 ms) from
       one of its cells to the inventory; its cells must read empty and
-      one card lose its E. It comes out unlocked: that card is locked
-      again at once.
+      one card lose its E. If that drag leaves a recognised moving preview,
+      cancel it once only after the same weapon, exactly one detached card
+      and unchanged unrelated cells/cards are freshly confirmed. Never rotate
+      or confirm a removal preview, repeat the drag, or lock through a preview.
+      Then require the freed cells and card on two matching observations.
+      It comes out unlocked: that card is locked again at once.
     - Placing a piece: a slow drag (1200 ms) from a card read locked and
       unplaced onto empty cells; on its preview, the rotate button until
       its shape is the target's, a drag of one of its cubes by the
