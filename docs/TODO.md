@@ -584,8 +584,11 @@ layers on item visuals, never baked into their base sprites or menu symbols.
   Skilfulness and Relax. Keep ownership-zero refusal and identity ambiguity gates.
 - [ ] Verify complete live list search and scroll endpoints before certifying
   automatic equipment selection; the first whole row can lie above the scroll lane.
-- [ ] Retry an unchanged accepted configuration explicitly, under the current
-  mode/revision and existing input lease; never report a queued attempt as ready.
+- [x] Retry an unchanged accepted configuration explicitly through `/mode/setup`,
+  under the current mode/revision and existing input lease. The recorded
+  `8248076` retry above produced a fresh complete receipt. A queued attempt is
+  not readiness; UI retry after failure and revision conflicts remain tracked
+  separately in SW10 of the session audit.
 
 - [x] Reproduce stale weapon identity during engraving: a changed name
   previously allowed further gestures and a ready result. Bind every raw
