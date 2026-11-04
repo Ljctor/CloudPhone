@@ -1,4 +1,7 @@
 {
+  "Entrée farming non vérifiée : état du processus ou premier plan inconnu": "Farming entry unverified: game process or foreground state unknown",
+  "Entrée farming arrêtée : lancement du jeu non confirmé": "Farming entry stopped: game launch not confirmed",
+  "vérification Soul Weapon interrompue par une relance": "Soul Weapon verification interrupted by a game relaunch",
   "Le jeu s’est arrêté pendant le lancement après {tries} réouvertures": "Game stopped during launch after {tries} reopen attempts",
   "Le jeu s’est arrêté pendant le lancement, réouverture {attempt}/{tries}": "Game stopped during launch; reopening {attempt}/{tries}",
   "Lancement non vérifié : état du processus du jeu inconnu": "Launch unverified: game process state unknown",

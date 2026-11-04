@@ -128,6 +128,8 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
     value: true, seen: (screenOf(screen.screen) ?? screen).example?.captured,
   }));
   const detailRows = (screen) => {
+    const provenance = () => (screenOf(screen.screen) ?? screen).details_provenance;
+    const capturedAt = () => provenance() ? provenance().captured : (screenOf(screen.screen) ?? screen).example?.captured;
     const summaries = new Set();
     if (screen.inventory?.items?.length) {
       ['Armes visibles', 'Accessoires visibles', 'Grades visibles', 'Niveau affiché sur les armes']
@@ -143,17 +145,19 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
       if (!detail.label || summaries.has(detail.label) || detail.value === null ||
           detail.value === undefined || !String(detail.value).trim()) return [];
       return [{
-        type: 'status', key: `scan-${screen.screen}-${index}`, label: detail.label,
-        ...archived(screen),
+        type: 'status', key: `scan-${screen.screen}-${index}`, label: `${api.tr(detail.label)} · ${api.tr('Capture d’exemple')}`,
+        ...observed(() => ({ value: detail.value, seen: capturedAt() })),
         value: () => screenOf(screen.screen)?.details?.[index]?.value ?? detail.value,
       }];
     });
     if (!details.length) return details;
     if (screen.inventory?.items?.length || screen.inventory?.kind === 'promotion_ranks') return details;
-    return [{ type: 'status', key: `scan-date-${screen.screen}`, label: 'Relevé historique',
+    return [{ type: 'status', key: `scan-date-${screen.screen}`, label: 'Capture d’exemple · relevé historique',
       value: () => {
-        const captured = screenOf(screen.screen)?.example?.captured;
-        return captured ? new Date(captured * 1000).toLocaleString() : 'Capture enregistrée';
+        const captured = capturedAt();
+        const subject = provenance()?.subject;
+        return [subject, captured ? new Date(captured * 1000).toLocaleString() : api.tr('Date de capture inconnue')]
+          .filter(Boolean).join(' · ');
       } }, ...details];
   };
   const inventoryRows = (screen) => {

@@ -66,6 +66,17 @@ Rules:
       lease, launches the game, or performs an input; the entry sequence
       remains the only owner of its authorised moves. Free play and Agent
       mode keep automatic monitoring and reminders suspended.
+  - Farming entry (mpw18, mpw4 and Soul Farming), including expiry of
+    Free play's timer: before stage/preset/weapon setup, the entry coordinator
+    checks the process and focus. A confirmed absent process or game away
+    uses the existing bounded launch sequence under its own shared lease,
+    without killing a running process. The complete setup runs afterwards,
+    serially. Input, mode/loadout change or shutdown interrupts this entry;
+    an unknown process or unknown focus for a running process never
+    authorises a launch. Confirmed process absence suffices independently
+    of focus. An already running
+    launch is joined, never duplicated. Free play and Agent mode never
+    initiate this automatic entry phase.
   - Stage change and preset (mode changes, a change of the running
     mode's loadout, and the watchdog's repairs,
     each only while its switch is real):

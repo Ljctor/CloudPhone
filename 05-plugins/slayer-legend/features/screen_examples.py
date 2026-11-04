@@ -78,8 +78,16 @@ def examples(directory, data_directory, prefix):
                 start, end = section.get("start"), section.get("end")
                 if start and end:
                     details.append({"label": "Défilement observé", "value": f"{start} → {end}"})
+        # These catalogue notes describe archived examples, never current
+        # scan fields. A variant capture must not date the primary snapshot.
+        primary = next((item for item in available if item["label"] == "Capture principale"), None)
+        subject = next((item["value"] for item in details
+                        if item.get("label") in ("Arme", "Arme sélectionnée")), None)
         return {"example": available[0] if available else None, "examples": available,
                 "details": details, "inventory": observed_inventory,
+                "details_provenance": {"kind": "historical_catalogue", "verified": False,
+                                       "subject": subject, "captured": primary.get("captured") if primary else None,
+                                       "example_url": primary["url"] if primary else None},
                 "observed": bool(available)}
 
     def enrich(answer):

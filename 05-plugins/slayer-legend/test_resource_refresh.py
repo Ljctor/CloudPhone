@@ -157,6 +157,30 @@ class ResourceRefresh(unittest.IsolatedAsyncioTestCase):
         refresh_ref.update(part)
         return model, inputs, captures, observed, intents, hooks, ports, part["api"]
 
+    async def test_failed_setup_never_gives_resource_visits_priority_over_repair(self):
+        for state in ('failed', 'idle', 'plan'):
+            with self.subTest(state=state):
+                model, inputs, captures, observed, intents, hooks, ports, api = self.build()
+                model['mode']['state'] = state
+                # A historical complete engraving does not prove the current
+                # setup after a launch or failed mode entry.
+                model['recovery'] = {'required': False, 'verified': True,
+                                     'completion_verified': True, 'locks_verified': True}
+                await api['tick']()
+                self.assertEqual(inputs, [])
+                self.assertEqual(captures, [])
+                self.assertIsNone(ports.lease.state())
+
+    async def test_new_setup_failure_stops_an_existing_resource_visit(self):
+        model, inputs, captures, observed, intents, hooks, ports, api = self.build()
+        def fail_setup(*args):
+            model['mode']['state'] = 'failed'
+        hooks['input'] = fail_setup
+        result = await api['tick']()
+        self.assertEqual(result['result'], 'interrupted')
+        self.assertEqual(len(inputs), 1, 'the repair gets control before another resource gesture')
+        self.assertIsNone(ports.lease.state())
+
     async def test_all_three_farming_modes_read_all_calibrated_resources_and_return(self):
         for mode in ("soul", "mpw18", "mpw4"):
             model, inputs, captures, observed, intents, hooks, ports, api = self.build()

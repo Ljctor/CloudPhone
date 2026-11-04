@@ -63,6 +63,8 @@ separate milestones. Historical checked items below do not close a new regressio
 - [x] Retain current-session equipment proof during periodic engraving checks
   when the selected equipped weapon's list cell is offscreen. Revalidate after
   user input or a relaunch and always verify the grid and its locks.
+- [x] Reserve autonomous resource tours for stable farming; failed or incomplete
+  setup keeps priority even when an old engraving receipt remains verified.
 - [ ] Verify the extended common resource visit in Soul Farming, mpw18 and mpw4:
   never-read values first, then unverified/old values, independent unread fields,
   input/loadout/recovery cancellation and a freshly recognised Soul Weapon return.
@@ -75,6 +77,10 @@ separate milestones. Historical checked items below do not close a new regressio
   other six balances still need reader evidence: crystals, dice, black feathers,
   Dragon Power, Dragon Spark and Black Mana. All thirteen additional routes
   remain an acceptance task; no balance may be guessed or a forbidden entry used.
+- [x] Put game readiness before the farming setup lease: join an existing
+  launcher or run the bounded launcher before inspecting stage or equipment.
+  Preserve interruption ownership and refuse uncertain process/focus evidence.
+- [ ] Verify the new entry-readiness ordering on a real HOME-to-farming return.
 - [ ] Complete a fresh automatic relaunch and target-setup acceptance after
   silent process death; interruption testing must yield to recent user input.
 

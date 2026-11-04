@@ -1,5 +1,5 @@
 """Starts the game and brings it to the battle screen, on the user's press
-or as the watchdog's relaunch (api: start(holder, user)). It never
+or serially before farming setup or as the watchdog's relaunch. It never
 kills the game: Android brings a running one to the front.
 
 GET  /launch   {state, message_t} of the last launch (message_t: a status text)
@@ -151,12 +151,16 @@ def launch(ports, screens, rules):
         report("blocked", t("Lancement non vérifié : état du processus du jeu inconnu") if running is None
                else t("Le jeu n’a pas atteint l’écran de combat en 3 minutes"))
 
-    async def run(holder="launch", user=True):
+    async def run(holder="launch", user=True, guard=None):
         """The launch under the shared lease: holder "launch" on the user's
         press (user: a user input does not stop it)."""
         status["quiet"] = holder == "watchdog"
         try:
+            if guard:
+                guard()
             async with ports.leased(holder, "Game launch", rules.DEADLINE + 60, user=user):
+                if guard:
+                    guard()
                 await steps()
         except ports.Busy as e:
             # Not a failure of the launch: the lease or the user (the
@@ -175,12 +179,26 @@ def launch(ports, screens, rules):
         task = status["task"]
         return task is not None and not task.done()
 
-    def start(holder="launch", user=True):
+    def start(holder="launch", user=True, guard=None):
         """A launch task, or None while one runs."""
         if running():
             return None
-        status["task"] = ports.spawn(run(holder, user))
+        status["task"] = ports.spawn(run(holder, user, guard))
         return status["task"]
+
+    async def ensure(holder="mode", user=False, guard=None):
+        """Join an existing launch, or own one until completion/cancellation.
+
+        A mode replacement cancels only the launch it started itself. Joining
+        a launch requested elsewhere never transfers its cancellation rights.
+        """
+        existing = running()
+        task = status["task"] if existing else start(holder, user, guard)
+        if existing:
+            await asyncio.shield(task)
+        else:
+            await task
+        return {"state": status["state"], "message": status["message"]}
 
     async def handle_launch(request):
         if not start():
@@ -191,5 +209,5 @@ def launch(ports, screens, rules):
     return {"routes": [("GET", "/launch", handle_state), ("POST", "/launch", handle_launch)],
             # For the watchdog: its relaunch (holder "watchdog", stopped by a
             # user input), whether one runs, and how the last one ended.
-            "api": {"start": start, "running": running,
+            "api": {"start": start, "ensure": ensure, "running": running,
                     "state": lambda: {"state": status["state"], "message": status["message"]}}}

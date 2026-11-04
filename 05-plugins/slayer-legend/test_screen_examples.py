@@ -51,9 +51,34 @@ class ScreenExamples(unittest.TestCase):
             self.assertEqual(forest["inventory"]["kind"], "weapons")
             self.assertEqual(forest["inventory"]["items"][0]["source"]["box"], [0, 0, 10, 10])
             self.assertTrue(forest["observed"])
+            self.assertEqual(forest['details_provenance']['kind'], 'historical_catalogue')
+            self.assertFalse(forest['details_provenance']['verified'])
+            self.assertEqual(forest['details_provenance']['captured'], 42)
             self.assertEqual(other["examples"], [])
             self.assertEqual(other["details"], [{"label": "Classes", "value": "never read"}])
             self.assertFalse(other["observed"])
+
+    def test_another_weapon_snapshot_cannot_become_current_scan_evidence(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            code, data = root / 'code', root / 'data'
+            code.mkdir(); shots = data / 'screenshots'; shots.mkdir(parents=True)
+            (code / 'screen_registry.json').write_text(json.dumps({'tree': {'soul_weapon': {
+                'example': 'screenshots/relax.png', 'variants': ['screenshots/ambition.png']}}}))
+            (code / 'screen_snapshots.json').write_text(json.dumps({'soul_weapon': [
+                {'label': 'Arme sélectionnée', 'value': 'Relax'}, {'label': 'Owned', 'value': '1'}]}))
+            (code / 'screen_snapshots_world.json').write_text('{}')
+            (shots / 'ambition.png').write_bytes(b'example')
+            (shots / 'manifest.json').write_text(json.dumps({'ambition': {'file': 'ambition.png', 'captured': 200}}))
+            api = module.examples(code, data, '/plugin')
+            live = {'field': 'soul_weapon_selected', 'value': 'Ambition', 'seen': 300, 'verified': True}
+            screen = api['enrich']({'screens': [{'screen': 'soul_weapon', 'fields': [live]}]})['screens'][0]
+            self.assertEqual(screen['fields'][0], live)
+            self.assertEqual(screen['details'][0]['value'], 'Relax', 'history remains available')
+            self.assertEqual(screen['details_provenance']['subject'], 'Relax')
+            self.assertFalse(screen['details_provenance']['verified'])
+            self.assertIsNone(screen['details_provenance']['captured'], 'another weapon variant cannot date the primary snapshot')
+            self.assertEqual(screen['example']['captured'], 200)
 
     def test_captured_equipment_is_individual_and_does_not_guess_ownership(self):
         inventory = json.loads((HERE / "screen_inventory.json").read_text(encoding="utf-8"))

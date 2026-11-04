@@ -59,11 +59,11 @@ assert.equal(options.find((row) => row.key === 'game-path-Equipment').icon, SCRE
 assert.equal(options.find((row) => row.key === 'game-path-Equipment/Weapon').depth, 3);
 assert.equal(options.find((row) => row.key === 'game-soul_weapon').depth, 4);
 assert.equal(options.find((row) => row.key === 'game-dungeon_forest').label, 'Forest of Circulation');
-assert.equal(options.find((row) => row.label === 'Étages vus').value(), '156–165');
-assert.equal(options.find((row) => row.label === 'Étages vus').timestamp(),
+assert.equal(options.find((row) => row.key === 'scan-dungeon_forest-0').value(), '156–165');
+assert.equal(options.find((row) => row.key === 'scan-dungeon_forest-0').timestamp(),
   new Date(1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-assert.equal(options.find((row) => row.label === 'Étages vus').color(), freshnessColour(600));
-assert.equal(options.find((row) => row.label === 'Relevé historique').value(), new Date(1000).toLocaleString());
+assert.equal(options.find((row) => row.key === 'scan-dungeon_forest-0').color(), freshnessColour(600));
+assert.equal(options.find((row) => row.label === 'Capture d’exemple · relevé historique').value(), new Date(1000).toLocaleString());
 assert.equal(options.find((row) => row.key === 'capture-dungeon_forest').examples().length, 2);
 assert.equal(options.filter((row) => row.label === 'Données').length, 0);
 const gold = options.find((row) => row.label === 'Gold');
@@ -205,4 +205,21 @@ for (const [key, label, depth, icon] of [
 }
 assert.equal(menuOptions.find((row) => row.key === 'game-equipment_accessories').depth, 3);
 assert.equal(menuOptions.find((row) => row.key === 'inventory-scroll-unread').value(), 'never read');
-console.log('Resource icons, nested inventory, unknown values and live counter updates: OK');
+const weaponHistory = { resources: [], screens: [{ screen: 'soul_weapon', path: ['Equipment: Weapon', 'Soul Weapon'],
+  fields: [{ field: 'soul_weapon_selected', label: 'Arme sélectionnée', shown: 'text', value: 'Ambition', seen: 300, verified: true }],
+  details: [{ label: 'Arme sélectionnée', value: 'Relax' }, { label: 'Completion Effect ATK', value: '+39.5%' }],
+  details_provenance: { kind: 'historical_catalogue', verified: false, subject: 'Relax', captured: 1 },
+  example: { url: '/relax', captured: 1 } }] };
+const weaponHistoryRows = [];
+gameFeature({ get: async () => weaponHistory, refresh() {}, tr: (value) => value }).rows(weaponHistoryRows, 0);
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(weaponHistoryRows.find((row) => row.label === 'Arme sélectionnée').value(), 'Ambition');
+assert.equal(weaponHistoryRows.find((row) => row.label === 'Arme sélectionnée · Capture d’exemple').value(), 'Relax');
+assert.equal(weaponHistoryRows.find((row) => row.label === 'Completion Effect ATK · Capture d’exemple').value(), '+39.5%');
+const historyDate = weaponHistoryRows.find((row) => row.label === 'Capture d’exemple · relevé historique');
+assert.equal(historyDate.value(), `Relax · ${new Date(1000).toLocaleString()}`);
+weaponHistory.screens[0].details_provenance.captured = null;
+weaponHistory.screens[0].example = { url: '/ambition-variant', captured: 200 };
+assert.equal(historyDate.value(), 'Relax · Date de capture inconnue');
+assert.equal(weaponHistoryRows.find((row) => row.key === 'scan-soul_weapon-0').timestamp(), '');
+console.log('Resource icons, nested inventory, example provenance, unknown values and live counter updates: OK');

@@ -16,6 +16,8 @@ python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_title
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_menu_recovery.py -q
 # Silent process loss, bounded reopen attempts, and the original launch deadline.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_launch.py -q
+# Farming entry joins or owns the ordinary launch before taking its farm lease.
+python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_mode_entry_readiness.py -q
 python3 "$(dirname "$0")/../slayer-legend/test_fixtures.py" ProgressBar
 python3 "$(dirname "$0")/../slayer-legend/test_soul_weapon.py" Tag ActualNativeCaptures Readers NativeReaders \
   Sequence.test_after_a_relaunch_no_detached_repair_or_notification
@@ -56,6 +58,7 @@ python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_cube_
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_soul_native.py -q
 # Selected Equipment text remains readable beside another tab's red badge.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_equipment_l3.py -q
+# Optional resource visits yield to failed or incomplete farming setup.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_resource_refresh.py -q
 node "$(dirname "$0")/../slayer-legend/test_page_gold.mjs"
 node "$(dirname "$0")/../slayer-legend/test_page_engraving.mjs"

@@ -108,7 +108,7 @@ def setup(context):
     farming = feature("stage_change").stage_change(ports, screens, module("stage_select"), module("battle_controls"),
                                                    feature("stage_change_rules"), table, soul)
     mode = feature("mode").mode(ports, feature("mode_rules"), timer, values, mine["api"], screens,
-                                module("gold_scroll"), engraving["api"], farming["api"], feature("mode_setup").mode_setup)
+                                module("gold_scroll"), engraving["api"], farming["api"], feature("mode_setup").mode_setup, launch["api"])
     farming["api"]["bind_agent_context"](lambda: mode["api"]["state"]()["mode"] == "agent"
                                         and mode["api"]["state"]()["state"] not in ("moving", "waiting")
                                         and not mine["api"]["state"]()["enabled"])

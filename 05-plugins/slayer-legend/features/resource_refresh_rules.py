@@ -23,9 +23,15 @@ MOVES = {"battle": ("menu_equipment",),
 
 
 def eligible(mode, enabled, recovery=None, *, supervised=False):
-    return bool(enabled and mode.get("configured") is True and (mode.get("mode") in MODES or supervised and mode.get("mode") == "agent")
+    # Optional information gathering must not take the shared lease ahead of
+    # a failed/incomplete farming setup. Old engraving history is insufficient
+    # after relaunch; only the active farming state permits an automatic tour.
+    stable = mode.get("mode") in MODES and mode.get("state") == "farming"
+    supervised_agent = (supervised and mode.get("mode") == "agent"
+                        and mode.get("state") in ("free", "farming"))
+    return bool(enabled and mode.get("configured") is True and (stable or supervised_agent)
                 and not mode.get("setup") and not mode.get("hold")
-                and mode.get("state") not in ("moving", "waiting")
+                and not mode.get("setup_blocker_t")
                 and not (recovery or {}).get("required"))
 
 

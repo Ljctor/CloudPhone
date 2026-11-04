@@ -64,12 +64,13 @@ stage4 here are read from them and written to them.
 """
 
 import asyncio
+import copy
 import secrets
 import math
 
 
 
-def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming, setup_factory):
+def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming, setup_factory, launches=None):
     """mines: the mine feature's api (start, stop, state, set_until, ended);
     scroll: gold_scroll.py; loadouts: the engraving feature's api (loadout,
     stage, set_stage, adopt_stage), which holds the mpw18 and mpw4 stages
@@ -270,6 +271,49 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
             if status["intention"] and status["intention"]["owner"] is owner:
                 status["intention"] = None
 
+    async def ready_game(name):
+        """One serial entry phase, before the farming lease, never in free play.
+
+        Reuse the ordinary launcher rather than interpreting Android HOME as
+        an unknown game panel. An unknown process, or unknown focus for a
+        running process, never authorises a launch; confirmed absence does.
+        """
+        if launches is None:  # Older standalone integrations.
+            return None
+        input_reader = getattr(ports, "last_input", None)
+        input_mark = copy.deepcopy(input_reader()) if callable(input_reader) else None
+        target = copy.deepcopy(loadouts["loadout"](name))
+
+        def current():
+            if name not in ("mpw18", "mpw4", "soul") or status["mode"] != name:
+                raise asyncio.CancelledError
+            if not ports.enabled():
+                raise ports.Busy("plugin désactivé")
+            if callable(input_reader) and input_reader() != input_mark:
+                raise ports.Busy("l’utilisateur joue")
+            if loadouts["loadout"](name) != target:
+                raise asyncio.CancelledError
+
+        current()
+        running = await ports.running()
+        current()
+        focus = await ports.focus()
+        current()
+        if (running is None or running and focus.get("game") is None) and not launches["running"]():
+            return {"result": "failed", "text_t": t("Entrée farming non vérifiée : état du processus ou premier plan inconnu")}
+        if running and focus.get("game") and not launches["running"]():
+            return None
+        ended = await launches["ensure"]("mode", False, guard=current)
+        current()
+        if ended["state"] == "deferred":
+            raise ports.Busy(ended["message"])
+        if ended["state"] != "done":
+            return {"result": "failed", "retryable": False,
+                    "text_t": ended.get("message") or t("Entrée farming arrêtée : lancement du jeu non confirmé")}
+        # The launcher proved a battle frame, but readiness still belongs to
+        # this unchanged entry; farming then verifies its complete loadout.
+        return None
+
     async def apply_stage(number, mpw, applied=False, step=None):
         """Brings the game to farming that stage with its loadout's preset.
         True once there; else one alert naming the step. While the
@@ -300,8 +344,10 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
                     report("moving", t("{switch} : repris à ta demande", switch=moving))
                 try:
                     forced = {"force": True} if force else {}
-                    answer = await (step(**forced) if step
-                                    else farming["farm"](number, preset, name, highest(), **forced))
+                    answer = await ready_game(name)
+                    if answer is None:
+                        answer = await (step(**forced) if step
+                                        else farming["farm"](number, preset, name, highest(), **forced))
                 except ports.Busy as e:
                     if not ports.enabled():
                         # The plugin off: it waits for as long, no alert.
