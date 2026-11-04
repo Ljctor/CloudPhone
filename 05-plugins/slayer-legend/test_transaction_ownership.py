@@ -105,6 +105,26 @@ class Ownership(unittest.IsolatedAsyncioTestCase):
                 await self.tap()
         self.assertEqual(self.inputs, [])
 
+    async def test_game_start_requires_own_live_lease_and_stops_after_user_input(self):
+        with self.assertRaises(self.ports.Busy):
+            await self.ports.start_game()
+        async with self.ports.leased("watchdog", "bounded launch recovery", 60):
+            self.assertTrue(await self.ports.start_game())
+            held = self.ports.lease.held
+            self.last_input = {"monotonic": held["mark"] + .001, "wall": self.ports.clock.wall()}
+            with self.assertRaises(self.ports.Busy):
+                await self.ports.start_game()
+        self.assertEqual(len(self.inputs), 1)
+        self.assertEqual(self.inputs[0][:3], ("shell", "am", "start"))
+        self.assertNotIn("-S", self.inputs[0])
+
+    async def test_explicit_user_launch_keeps_its_authorized_input_semantics(self):
+        async with self.ports.leased("launch", "user launch", 60, user=True):
+            held = self.ports.lease.held
+            self.last_input = {"monotonic": held["mark"] + .001, "wall": self.ports.clock.wall()}
+            self.assertTrue(await self.ports.start_game())
+        self.assertEqual(len(self.inputs), 1)
+
     async def test_external_holder_api_still_renews_and_releases_by_name(self):
         self.assertIsNone(self.ports.lease.take("agent", "outside", 60, user=True))
         self.assertIsNone(self.ports.lease.take("agent", "renewed", 120, user=True))

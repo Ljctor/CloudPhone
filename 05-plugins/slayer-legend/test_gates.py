@@ -37,7 +37,7 @@ GATES = [
     ("soul_weapon", "TAG_LEARNED", ["sw_tag_equip", "sw_tag_unequip", "sw_tag_unequip_720",
                                    "sw_owned_relax_720", "sw_badge_owned_unequipped_red_720"], "test_soul_weapon"),
     ("soul_weapon", "BADGE_TELLS", ["sw_badge_red", "sw_badge_grey", "sw_badge_owned_grey"], "test_soul_weapon"),
-    ("stage", "PROGRESS_CALIBRATED", ["bar_empty", "bar_partial", "bar_full", "bar_flash", "bar_parked_empty",
+    ("stage", "PROGRESS_CALIBRATED", ["bar_bright_empty_480", "bar_bright_partial_480", "bar_empty", "bar_partial", "bar_full", "bar_flash", "bar_parked_empty",
                                       "bar_parked_partial", "bar_parked_full", "bar_parked_flash"], "test_fixtures"),
     # Readings, not taps: full digits are read once a capture of them is a
     # fixture (the game's option on, the counters in full).

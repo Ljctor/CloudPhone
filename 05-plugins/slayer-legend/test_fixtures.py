@@ -165,6 +165,10 @@ class ProgressBar(unittest.TestCase):
     def test_nothing_drawn_is_unread(self):
         self.assertIsNone(stage.progress(screen("row_920")))
 
+    def test_native_bright_battle_palette(self):
+        self.assertEqual(stage.progress(screen("bar_bright_empty_480")), 0.0)
+        self.assertAlmostEqual(stage.progress(screen("bar_bright_partial_480")), 166 / 214)
+
     def test_on_the_parking_screen(self):
         # The Soul Weapon screen open below (a real series, stage 920):
         # the bar is drawn the same, its flash unread too.

@@ -21,6 +21,9 @@ import asyncio
 
 # A launch that ends in one of these is an error record (what was seen, and why).
 FAILED = ("blocked", "failed")
+PROCESS_GRACE = 9
+PROCESS_LOST_LOOKS = 2
+PROCESS_RETRIES = 2
 
 
 def launch(ports, screens, rules):
@@ -37,17 +40,45 @@ def launch(ports, screens, rules):
 
     async def steps():
         report("starting", t("Ouverture du jeu"))
+        deadline = ports.clock.monotonic() + rules.DEADLINE
         if not await ports.start_game():
             report("failed", t("Android ne répond pas"))
             return
-        deadline = ports.clock.monotonic() + rules.DEADLINE
+        started = ports.clock.monotonic()
+        missing, reopens, running = 0, 0, True
         memory = rules.fresh()
         while ports.clock.monotonic() < deadline:
             await ports.clock.sleep(rules.LOOK_EVERY)
+            if ports.clock.monotonic() >= deadline:
+                break
+            crash = await ports.crashed()
+            if not crash and ports.clock.monotonic() - started >= PROCESS_GRACE:
+                running = await ports.running()
+                missing = missing + 1 if running is False else 0
+                if running is None:
+                    report("loading", t("Lancement non vérifié : état du processus du jeu inconnu"))
+                    continue
+                if missing >= PROCESS_LOST_LOOKS:
+                    if reopens >= PROCESS_RETRIES:
+                        report("blocked", t("Le jeu s’est arrêté pendant le lancement après {tries} réouvertures", tries=PROCESS_RETRIES))
+                        return
+                    reopens += 1
+                    report("starting", t("Le jeu s’est arrêté pendant le lancement, réouverture {attempt}/{tries}",
+                                         attempt=reopens, tries=PROCESS_RETRIES))
+                    if ports.clock.monotonic() >= deadline:
+                        break
+                    if not await ports.start_game():
+                        report("failed", t("Android ne répond pas"))
+                        return
+                    started, missing = ports.clock.monotonic(), 0
+                    memory["seen_other"] = None
+                    continue
+                if running is False:
+                    # A first absent reading is not enough to reopen or tap.
+                    continue
             shot = await ports.capture()
             if not shot:
                 continue
-            crash = await ports.crashed()
             chooser = None
             if not crash and memory["signed_in"] is not None:
                 chooser = await ports.account_chooser()
@@ -70,6 +101,7 @@ def launch(ports, screens, rules):
                 if not await ports.start_game():
                     report("failed", t("Android ne répond pas"))
                     return
+                started, missing = ports.clock.monotonic(), 0
             elif move == "blocked_crash":
                 report("blocked", t("Le jeu plante encore après {tries} fermetures de sa fenêtre d’erreur", tries=rules.CRASH_TRIES))
                 return
@@ -116,7 +148,8 @@ def launch(ports, screens, rules):
                 name = await ports.analyse(screens.other_name, shot)
                 report("blocked", t("Lancement arrêté : écran inconnu {screen}", screen=name))
                 return
-        report("blocked", t("Le jeu n’a pas atteint l’écran de combat en 3 minutes"))
+        report("blocked", t("Lancement non vérifié : état du processus du jeu inconnu") if running is None
+               else t("Le jeu n’a pas atteint l’écran de combat en 3 minutes"))
 
     async def run(holder="launch", user=True):
         """The launch under the shared lease: holder "launch" on the user's

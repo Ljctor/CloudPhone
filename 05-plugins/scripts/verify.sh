@@ -6,7 +6,9 @@ base=${1:?Usage: verify.sh http://LISTEN_ADDRESS:WEB_PORT}
 # this check stays deterministic and never gestures on the installed game.
 python3 "$(dirname "$0")/../slayer-legend/test_screen_model.py" EngravingPreview
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_title_logo.py -q
+# Silent process loss, bounded reopen attempts, and the original launch deadline.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_launch.py -q
+python3 "$(dirname "$0")/../slayer-legend/test_fixtures.py" ProgressBar
 python3 "$(dirname "$0")/../slayer-legend/test_soul_weapon.py" Tag ActualNativeCaptures Readers NativeReaders \
   Sequence.test_after_a_relaunch_no_detached_repair_or_notification
 python3 "$(dirname "$0")/../slayer-legend/test_soul_weapon.py" \

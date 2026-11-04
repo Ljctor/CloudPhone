@@ -34,6 +34,10 @@ Rules:
   this reminder never authorises another gesture. Nothing outside the
   list below is ever tapped.
   - Launch:
+    - If the process disappears during an authorised launch, two absent
+      observations after the startup grace may reopen its normal activity,
+      at most twice within the original three-minute deadline. Never kill
+      a running process; uncertain ADB state permits no gesture or reopen.
     - "TAP TO START": on the title screen, at most every 8 s.
     - Confirm on the save notice: only when the notice shows (never Exit).
     - "Close app" on Android's crash dialog: found by uiautomator, at most

@@ -195,13 +195,16 @@ def read_battle(shot):
 # (measured on a real series at 480x1040, stage 920, 2026-10-22): its fill
 # is one flat orange, PROGRESS_FILL, from the bar's left end rightwards,
 # on PROGRESS (left, top, right, bottom fractions: x 121 to 334, 214 px,
-# rows 129 to 133). Its "?" box right of it is brown inside
-# (PROGRESS_BOX_COLOUR on PROGRESS_BOX): a white flash or a panel's shade
-# shifts both colours, and then the bar is not read.
+# rows 129 to 133). Real plain-battle captures also draw the bright
+# (255,142,0) fill and (142,110,73) brown box. Select their paired palette
+# by the box; a white flash or an unknown shade is never read as zero.
 PROGRESS = (121 / 480, 129 / 1040, 335 / 480, 134 / 1040)
 PROGRESS_FILL = (159, 89, 0)
-PROGRESS_BOX = (340 / 480, 121 / 1040, 358 / 480, 125 / 1040)
+# The top interior avoids the '?' glyph and its border at native 480.
+PROGRESS_BOX = (342 / 480, 121 / 1040, 357 / 480, 123 / 1040)
 PROGRESS_BOX_COLOUR = (89, 69, 45)
+PROGRESS_BRIGHT_BOX = (142, 110, 73)
+PROGRESS_BRIGHT_FILL = (255, 142, 0)
 PROGRESS_MARGIN = 16
 # Read only while calibrated on real captures of every state it tells
 # apart (test_gates.py: fixtures/bar_empty, bar_partial, bar_full,
@@ -226,15 +229,20 @@ def progress(shot):
         return (round(area[0] * width), round(area[1] * height), round(area[2] * width), round(area[3] * height))
 
     left, top, right, bottom = box(PROGRESS_BOX)
-    inside = [_near(pixels, (y * width + x) * 3, PROGRESS_BOX_COLOUR) for y in range(top, bottom)
-              for x in range(left, right)]
-    if not inside or sum(inside) < 0.8 * len(inside):
+    positions = [(y * width + x) * 3 for y in range(top, bottom) for x in range(left, right)]
+    fill = None
+    for box_colour, fill_colour in ((PROGRESS_BOX_COLOUR, PROGRESS_FILL),
+                                    (PROGRESS_BRIGHT_BOX, PROGRESS_BRIGHT_FILL)):
+        if positions and sum(_near(pixels, i, box_colour) for i in positions) >= .8 * len(positions):
+            fill = fill_colour
+            break
+    if fill is None:
         return None
     left, top, right, bottom = box(PROGRESS)
     runs = []
     for y in range(top, bottom):
         run = 0
-        while left + run < right and _near(pixels, (y * width + left + run) * 3, PROGRESS_FILL):
+        while left + run < right and _near(pixels, (y * width + left + run) * 3, fill):
             run += 1
         runs.append(run)
     # The middle row's run of the sorted ones: an effect across one row

@@ -123,7 +123,7 @@ class Ports:
     class Busy(RuntimeError):
         pass
 
-    def __init__(self, looks):
+    def __init__(self, looks, process=True):
         self.looks, self.seen, self.taps, self.alerts, self.now = list(looks), None, [], [], 0.0
         test = self
 
@@ -135,13 +135,18 @@ class Ports:
                 test.now += seconds
 
         self.clock = clock
+        self.process, self.starts = process, 0
 
     @contextlib.asynccontextmanager
     async def leased(self, holder, reason, seconds, user=False):
         yield
 
     async def start_game(self):
+        self.starts += 1
         return True
+
+    async def running(self):
+        return self.process(self) if callable(self.process) else self.process
 
     async def capture(self):
         self.seen = self.looks.pop(0) if self.looks else "other"
@@ -191,18 +196,22 @@ class Ports:
     exception = staticmethod(ports_module.exception_log(log))
 
 
-def launched(looks):
+def launched(looks, *, process=True, inspect=None):
     """(taps, alerts, the launch's last state) for screens seen look by look."""
-    fake = Ports(looks)
+    fake = Ports(looks, process)
     fake_screens = types.SimpleNamespace(**{name: getattr(screens, name) for name in dir(screens)
                                             if name.isupper()})
     fake_screens.classify = lambda shot: shot[2]
+    fake_screens.known_name = lambda shot: None
+    fake_screens.other_name = lambda shot: "unrecognised"
     built = launch.launch(fake, fake_screens, rules)
 
     async def run():
         await built["api"]["start"]("watchdog", False)
 
     asyncio.run(run())
+    if inspect:
+        inspect(fake)
     return fake.taps, fake.alerts, built["api"]["state"]()
 
 
@@ -211,6 +220,35 @@ for name, value in ports_module.text_ports().items():
 
 
 class SignInLaunch(unittest.TestCase):
+    def test_silent_process_loss_reopens_normally_then_reaches_battle(self):
+        seen = []
+        taps, _, state = launched(["other"] * 3 + ["battle"],
+                                  process=lambda ports: ports.starts >= 2, inspect=seen.append)
+        self.assertEqual(state["state"], "done")
+        self.assertEqual(seen[0].starts, 2)
+        self.assertEqual(taps, [])
+
+    def test_repeated_silent_process_loss_has_only_two_reopen_attempts(self):
+        seen = []
+        _, _, state = launched(["other"] * 100, process=False, inspect=seen.append)
+        self.assertEqual(state["state"], "blocked")
+        self.assertIn("réouvertures", state["message"]["template"])
+        self.assertEqual(seen[0].starts, 3)
+        self.assertLessEqual(seen[0].now, rules.DEADLINE)
+
+    def test_unknown_process_status_never_reopens_and_reports_unverified(self):
+        seen = []
+        _, _, state = launched(["other"] * 100, process=None, inspect=seen.append)
+        self.assertEqual(state["state"], "blocked")
+        self.assertIn("processus du jeu inconnu", state["message"]["template"])
+        self.assertEqual(seen[0].starts, 1)
+        self.assertLessEqual(seen[0].now, rules.DEADLINE)
+
+    def test_unknown_popup_with_live_process_never_reopens(self):
+        seen = []
+        _, _, state = launched(["other"] * 100, process=True, inspect=seen.append)
+        self.assertEqual(state["state"], "blocked")
+        self.assertEqual(seen[0].starts, 1)
     def test_real_loading_state_can_last_over_a_minute_then_reach_battle(self):
         taps, alerts, state = launched(["save"] + ["loading"] * 25 + ["battle"])
         self.assertEqual(taps, [("save_notice", "confirm")])

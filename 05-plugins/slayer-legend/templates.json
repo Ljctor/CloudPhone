@@ -1,4 +1,7 @@
 {
+  "Le jeu s’est arrêté pendant le lancement après {tries} réouvertures": "Game stopped during launch after {tries} reopen attempts",
+  "Le jeu s’est arrêté pendant le lancement, réouverture {attempt}/{tries}": "Game stopped during launch; reopening {attempt}/{tries}",
+  "Lancement non vérifié : état du processus du jeu inconnu": "Launch unverified: game process state unknown",
   "gravure récupérée : saisie utilisateur ou relance pendant la vérification finale": "Engraving recovered: user input or relaunch during final verification",
   "configuration demandée non vérifiée": "Requested setup not verified",
   "Configuration du mode non vérifiée après {seconds} s": "Mode setup not verified after {seconds} s",

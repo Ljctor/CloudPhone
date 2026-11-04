@@ -631,6 +631,7 @@ def build(context, nav):
         """True when Android started (or brought to the front) the game's
         activity, as the launcher does; never -S: a running game is not
         killed."""
+        check_lease()
         invalidate_capture()
         try:
             code, _ = await adb("shell", "am", "start", "-n", ACTIVITY, "-a", "android.intent.action.MAIN",
