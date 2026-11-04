@@ -15,6 +15,7 @@ import time
 import zlib
 
 VERSION = 1
+IDENTITY_VERSION = 2
 MAX_PIXELS = 3000000
 
 
@@ -134,13 +135,38 @@ def geometry(entry):
     return [max(0, tap['x'] - .015), max(0, tap['y'] - .015), min(1, tap['x'] + .015), min(1, tap['y'] + .015)]
 
 
-def identity(scan):
+def identity(scan, tree=None):
+    """One deepest registered overlay, independent of detector ordering.
+
+    Sibling/unrelated overlays or an invalid ancestry stay ambiguous. This
+    names visual evidence only and never grants navigation authority.
+    """
     base = scan.get('screen')
-    overlays = [s for s in scan.get('overlays', ()) if s not in ('panel', 'better_weapon_toast')]
-    if base in (None, 'unknown') or base == 'battle' and 'panel' in scan.get('overlays', ()) and not overlays:
+    if base in (None, 'unknown', 'other', 'menu'):
         return None
-    screen = overlays[-1] if overlays else base
-    return 'quest_' + scan['quest_tab'] if screen == 'quest_panel' and scan.get('quest_tab') else screen
+    tree = tree or {}
+    overlays = list(dict.fromkeys(s for s in scan.get('overlays', ())
+                                 if isinstance(s, str) and s not in ('panel', 'better_weapon_toast')))
+    ancestry = {}
+    for name in overlays:
+        parents, current = set(), name
+        while current:
+            if current in parents:
+                return None
+            parents.add(current)
+            # Some calibrated visual overlays are not navigation-tree nodes.
+            # The observed base still explicitly parents its own overlay.
+            current = (base if current == name and name not in tree and name != base and base in overlays
+                       else tree.get(current, {}).get('parent'))
+        ancestry[name] = parents
+    deepest = [name for name in overlays
+               if not any(name in ancestry[other] for other in overlays if other != name)]
+    if overlays and len(deepest) != 1:
+        return None
+    if not overlays and base == 'battle' and 'panel' in scan.get('overlays', ()):
+        return None
+    screen = deepest[0] if deepest else base
+    return 'quest_' + scan['quest_tab'] if screen == 'quest_panel' and scan.get('quest_tab') in ('daily', 'repeat', 'achievement') else screen
 
 
 def match_move(entry, source, target, navigation):
@@ -181,13 +207,14 @@ def graph_reviews(graph):
 
 def revision(plugin):
     files = [p for p in plugin.glob('*.py') if not p.name.startswith('test_')] + list(plugin.glob('*.json')) + list((plugin / 'fixtures').glob('*.txt'))
-    return digest(b''.join(str(p.relative_to(plugin)).encode() + p.read_bytes() for p in sorted(files)))
+    return digest(str(IDENTITY_VERSION).encode() + b''.join(str(p.relative_to(plugin)).encode() + p.read_bytes() for p in sorted(files)))
 
 
 def batch(data, plugin, screens, limit=16, ledger=None, feedback_file=None):
     """Review at most limit changed items, retaining unresolved evidence."""
     data, plugin = Path(data), Path(plugin)
     navigation = read_json(plugin / 'navigation.json', {})
+    tree = getattr(screens, 'TREE', None) or read_json(plugin / 'screen_registry.json', {}).get('tree', {})
     current = ledger or {'version': VERSION, 'items': {}, 'images': {}}
     rev = revision(plugin)
     if current.get('reader_revision') != rev:
@@ -206,7 +233,7 @@ def batch(data, plugin, screens, limit=16, ledger=None, feedback_file=None):
             try:
                 shot = png_rgb(raw)
                 scan = screens.look(shot)
-                screen = identity(scan)
+                screen = identity(scan, tree)
                 image_cache[sha] = {'screen': screen, 'status': 'processed' if screen else 'ambiguous',
                                     'reason': 'current_calibrated_reader' if screen else 'screen_not_recognised',
                                     'scan': {k: scan[k] for k in ('screen', 'overlays', 'plain', 'quest_tab') if k in scan}}

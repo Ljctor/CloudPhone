@@ -33,7 +33,7 @@ export function zonesFor(screen, graph, registry, scan = null, tracked = null, d
   const safe = moves.filter((move) => !move.debug_dynamic && !['action', 'draggable'].includes(move.semantic_kind)
     && eligible(move, moves, tolerance)
     && (!move.combat_return || (scan?.screen === 'battle' && scan.plain === false
-      && recognisedScreen(scan) === screen)));
+      && recognisedScreen(scan, registry) === screen)));
   const zones = safe.filter((move) => move.tap || move.hold || (move.area && move.kind !== 'swipe'))
     .map((move) => ({ id: move.id, kind: 'tap', conditional: Boolean(move.precondition), rect: move.area ?? [
       (move.tap ?? move.hold)[0] - 0.025, (move.tap ?? move.hold)[1] - 0.012,
@@ -104,11 +104,28 @@ export function zonesFor(screen, graph, registry, scan = null, tracked = null, d
     - Number(Boolean(b.forbidden || b.kind === 'forbidden')));
 }
 
-export function recognisedScreen(scan) {
-  if (!scan || scan.screen === 'unknown' || Date.now() / 1000 - scan.at > 10) return null;
-  const overlays = (scan.overlays ?? []).filter((item) => item !== 'panel' && item !== 'better_weapon_toast');
+export function recognisedScreen(scan, registry = null) {
+  if (!scan || !scan.screen || ['unknown', 'other', 'menu'].includes(scan.screen) || Date.now() / 1000 - scan.at > 10) return null;
+  const tree = registry?.tree ?? {};
+  const overlays = [...new Set((scan.overlays ?? []).filter((item) => typeof item === 'string'
+    && item !== 'panel' && item !== 'better_weapon_toast'))];
+  const ancestry = new Map();
+  for (const name of overlays) {
+    const parents = new Set();
+    let current = name;
+    while (current) {
+      if (parents.has(current)) return null;
+      parents.add(current);
+      // A visual overlay may be registered outside the navigation tree.
+      current = current === name && !tree[name] && name !== scan.screen && overlays.includes(scan.screen)
+        ? scan.screen : tree[current]?.parent;
+    }
+    ancestry.set(name, parents);
+  }
+  const deepest = overlays.filter((name) => !overlays.some((other) => other !== name && ancestry.get(other).has(name)));
+  if (overlays.length && deepest.length !== 1) return null;
   if (!overlays.length && scan.overlays?.includes('panel')) return null;
-  return overlays.at(-1) ?? scan.screen;
+  return deepest[0] ?? scan.screen;
 }
 
 // Detection evidence never authorises a navigation gesture.
@@ -700,7 +717,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
       ]);
       if (!active()) { clear(); return; }
       scan = state?.scan;
-      screen = recognisedScreen(scan);
+      screen = recognisedScreen(scan, registry);
       if (annotations?.annotations) userAnnotations = annotations.annotations;
       if (feedbackTarget && (feedbackTarget.displayScreen ?? feedbackTarget.screen) !== screen) feedbackTarget = null;
       if (['character_enhance', 'soul_weapon', 'soul_weapon_engraving', 'soul_weapon_engraving_piece', 'soul_weapon_engraving_preview'].includes(screen)

@@ -97,6 +97,19 @@ const at = Date.now() / 1000;
 assert.equal(recognisedScreen({ screen: 'battle', overlays: ['equipment_weapon'], at }), 'equipment_weapon');
 assert.equal(recognisedScreen({ screen: 'battle', overlays: ['panel'], at }), null);
 assert.equal(recognisedScreen({ screen: 'battle', overlays: [], at: at - 20 }), null);
+// Regression fixtures: Soul and Equipment parent anchors can match together.
+for (const overlays of [['panel', 'soul_weapon', 'equipment_weapon'],
+  ['equipment_weapon', 'panel', 'soul_weapon'],
+  ['soul_weapon', 'equipment_weapon', 'soul_weapon', 'better_weapon_toast']]) {
+  assert.equal(recognisedScreen({ screen: 'battle', overlays, at }, registry), 'soul_weapon');
+}
+assert.equal(recognisedScreen({ screen: 'soul_weapon_engraving',
+  overlays: ['soul_weapon_engraving_preview', 'soul_weapon_engraving'], at }, registry), 'soul_weapon_engraving_preview');
+assert.equal(recognisedScreen({ screen: 'battle', overlays: ['soul_weapon', 'quest_panel'], at }, registry), null);
+assert.equal(recognisedScreen({ screen: 'battle', overlays: ['soul_weapon', 'uncalibrated_overlay'], at }, registry), null);
+assert.equal(recognisedScreen({ screen: 'unknown', overlays: ['soul_weapon'], at }, registry), null);
+assert.equal(recognisedScreen({ screen: 'battle', overlays: ['a', 'b'], at },
+  { tree: { a: { parent: 'b' }, b: { parent: 'a' } } }), null);
 console.log('Navigation debug zones and screen name: OK');
 
 // Exercise the UI with a tiny DOM: annotation gestures must never leak to

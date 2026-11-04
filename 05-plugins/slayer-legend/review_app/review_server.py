@@ -281,7 +281,8 @@ class Evidence:
                 "feedback": self.feedback(), "review": {**self.review_state, "summary": summary}}
 
     def apply_zones(self, nodes, edges):
-        shared = self.zones.read_annotations(self.data_dir, self.known_screens())
+        tree = read_json(self.plugin_dir / "screen_registry.json", {}).get("tree", {})
+        shared = self.zones.read_annotations(self.data_dir, self.known_screens(), tree=tree)
         pending = self.zones.read()
         for node in nodes:
             for region in node["regions"]:
@@ -305,11 +306,14 @@ class Evidence:
                         node["regions"].append({**proposal, "id": proposal["zoneId"], "user": True, "source": "user_feedback", "proposal": "add"})
                     continue
                 matched = False
-                for region in node["regions"]:
+                def id_matches(region):
                     aliases = {region["id"], region.get("zoneId", region["id"])}
                     if region["id"].startswith("policy:"):
                         aliases.add("policy:" + node["screen"] + ":" + region["id"][7:])
-                    if proposal["zoneId"] in aliases or region["kind"] == proposal["kind"] and max(abs(a-b) for a,b in zip(region["rect"], proposal["rect"])) <= .003:
+                    return proposal["zoneId"] in aliases
+                anchored = any(id_matches(region) for region in node["regions"])
+                for region in node["regions"]:
+                    if id_matches(region) or not anchored and region["kind"] == proposal["kind"] and max(abs(a-b) for a,b in zip(region["rect"], proposal["rect"])) <= .003:
                         region.update(removedProposal=True, proposal="remove", pending=True)
                         matched = True
                 if not matched:
@@ -348,23 +352,29 @@ class Evidence:
                 filename = archive.get("file") if isinstance(archive, dict) else None
             if isinstance(filename, str) and filename.endswith(".png") and STEM.fullmatch(filename[:-4]):
                 representative = by_id.get(f"example:{filename[:-4]}")
-            if representative is None:
-                representative = next((node for node in nodes if node.get("image") and node.get("source") in {"example", "manual"}
-                                       and node.get("review", {}).get("status") == "processed" and node["screen"] == screen), None)
+            if (representative and representative.get("review", {}).get("status") == "processed"
+                    and representative["screen"] != screen):
+                representative = None
+            if representative is None or representative.get("review", {}).get("status") != "processed":
+                verified_candidate = next((node for node in nodes if node.get("image") and node.get("source") in {"example", "manual"}
+                                           and node.get("review", {}).get("status") == "processed" and node["screen"] == screen), None)
+                representative = verified_candidate or representative
             verified = bool(representative and representative.get("review", {}).get("status") == "processed"
                             and representative["screen"] == screen)
             node = {"id": f"screen:{screen}", "screen": screen,
                     "label": text(spec.get("label", named.get("name", screen))),
                     "image": representative.get("image") if representative else None, "source": "configured",
-                    "status": "configured" if verified else "configured_unverified", "regions": [],
+                    "status": "configured" if verified else "configured_unverified",
+                    "regions": self.configured_policy_regions(screen, named),
                     "review": {"status": "processed" if verified else "ambiguous",
                                "reason": "current_reader_confirms_representative" if verified else "configured_screen_identity_to_verify"},
                     "battleViewport": {"size": "unknown", "rect": None, "calibrated": False, "shaded": None}}
             if representative:
                 node["representativeNodeId"] = representative["id"]
-                node["regions"] = [dict(region) for region in representative.get("regions", [])]
-                node["scan"] = dict(representative.get("scan", {}))
                 if verified:
+                    node["regions"] += [dict(region) for region in representative.get("regions", [])
+                                        if region.get("source") != "navigation_guard_envelope"]
+                    node["scan"] = dict(representative.get("scan", {}))
                     node["battleViewport"] = dict(representative["battleViewport"])
             if screen == "battle" and not (verified and node.get("scan", {}).get("plain") is True):
                 node["label"] = text(named.get("name", "battle"))
@@ -422,6 +432,28 @@ class Evidence:
                     previous = target
                     edge_count += 1
         return created, edge_count
+
+    def configured_policy_regions(self, screen, spec):
+        """Policy geometry belongs to its declared screen, never to an
+        unverified representative frame carrying a different identity."""
+        dynamic = {"soul_weapon": {"equip", "unequip"}, "soul_weapon_engraving": {"lock", "piece", "drag_piece", "remove_piece"},
+                   "soul_weapon_engraving_piece": {"padlock"}, "soul_weapon_engraving_preview": {"rotate", "confirm", "cancel", "move"},
+                   "character_enhance": {"enhance_stat"}}
+        regions = []
+        for move in spec.get("moves", []):
+            if move.get("assumed") or move.get("id") in dynamic.get(screen, set()):
+                continue
+            rect = move.get("area")
+            tap = move.get("tap") or move.get("hold")
+            if rect is None and isinstance(tap, list) and len(tap) == 2 and point(*tap):
+                rect = [max(0, tap[0] - .015), max(0, tap[1] - .015), min(1, tap[0] + .015), min(1, tap[1] + .015)]
+            if not isinstance(rect, list) or len(rect) != 4 or not point(*rect[:2]) or not point(*rect[2:]):
+                continue
+            regions.append({"id": f"policy:{move.get('id')}", "rect": rect,
+                            "kind": "forbidden" if move.get("forbidden") else move.get("semantic_kind", "action"),
+                            "label": text(move.get("label", move.get("id"))), "source": "navigation_guard_envelope",
+                            "conditional": bool(move.get("precondition"))})
+        return regions
 
     def add_review(self, nodes, edges):
         ledger = read_json(self.ledger_path, {}) if self.ledger_path else {}
@@ -500,22 +532,7 @@ class Evidence:
                     continue
                 node["regions"].append({"id": f"landmark:{patch}", "kind": "detection", "rect": rect,
                                         "label": patch, "source": "calibrated_landmark"})
-            dynamic = {"soul_weapon": {"equip", "unequip"}, "soul_weapon_engraving": {"lock", "piece", "drag_piece", "remove_piece"},
-                       "soul_weapon_engraving_piece": {"padlock"}, "soul_weapon_engraving_preview": {"rotate", "confirm", "cancel", "move"},
-                       "character_enhance": {"enhance_stat"}}
-            for move in navigation.get("screens", {}).get(screen, {}).get("moves", []):
-                if move.get("assumed") or move.get("id") in dynamic.get(screen, set()):
-                    continue
-                rect = move.get("area")
-                tap = move.get("tap") or move.get("hold")
-                if rect is None and isinstance(tap, list) and len(tap) == 2 and point(*tap):
-                    rect = [max(0, tap[0] - .015), max(0, tap[1] - .015), min(1, tap[0] + .015), min(1, tap[1] + .015)]
-                if not isinstance(rect, list) or len(rect) != 4 or not point(*rect[:2]) or not point(*rect[2:]):
-                    continue
-                node["regions"].append({"id": f"policy:{move.get('id')}", "rect": rect,
-                                        "kind": "forbidden" if move.get("forbidden") else move.get("semantic_kind", "action"),
-                                        "label": text(move.get("label", move.get("id"))), "source": "navigation_guard_envelope",
-                                        "conditional": bool(move.get("precondition"))})
+            node["regions"].extend(self.configured_policy_regions(screen, navigation.get("screens", {}).get(screen, {})))
 
     def feedback(self):
         data = read_json(self.feedback_path, {"version": 1, "items": []})
@@ -654,7 +671,8 @@ def make_app(evidence):
                     raise ValueError("Proposal must identify its exact screen and evidence node")
                 if body.get("operation") == "remove":
                     zone = next((region for region in node["regions"]
-                                 if body.get("zoneId") in (region["id"], region.get("zoneId"))), None)
+                                 if body.get("zoneId") in (region["id"], region.get("zoneId"),
+                                     "policy:" + node["screen"] + ":" + region["id"][7:] if region["id"].startswith("policy:") else None)), None)
                     if zone is None:
                         edge = next((edge for edge in data["edges"] if "edge:" + edge["id"] == body.get("zoneId")
                                      and edge["from"] == node["id"]), None)

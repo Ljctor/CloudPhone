@@ -204,6 +204,52 @@ class ReviewAPI(AioHTTPTestCase):
         self.assertEqual((await self.client.get("/page_zone_style.js")).status, 200)
         self.assertEqual((await self.client.get("/zone_feedback.py")).status, 404)
 
+    async def test_canonical_soul_policy_rejects_conflicting_image_and_uses_its_own_regions(self):
+        plugin = self.root / "canonical-plugin"
+        plugin.mkdir()
+        (plugin / "navigation.json").write_text(json.dumps({"screens": {
+            "soul_weapon": {"moves": [{"id": "breakdown", "forbidden": True, "area": [.66, .8, .97, .88]}]},
+            "equipment_weapon": {"moves": [{"id": "accessories", "tap": [.3, .4]}]}}}))
+        (plugin / "screen_registry.json").write_text(json.dumps({"screens": {
+            "soul_weapon": {"example": "screenshots/soul_weapon.png", "status": "registered"},
+            "equipment_weapon": {"status": "registered"}}}))
+        (self.data / "screenshots" / "soul_weapon.png").write_bytes(b"mislabeled-archived-frame")
+        ledger = self.root / "canonical-ledger.json"
+        reviewed = {"items": {"example:soul_weapon": {"status": "ambiguous", "before": {
+            "status": "processed", "screen": "equipment_weapon", "scan": {"screen": "battle", "overlays": ["equipment_weapon"]}}}}}
+        ledger.write_text(json.dumps(reviewed))
+        self.evidence.plugin_dir, self.evidence.ledger_path = plugin, ledger
+        graph = await (await self.client.get("/api/graph")).json()
+        soul = next(node for node in graph["nodes"] if node["id"] == "screen:soul_weapon")
+        self.assertIsNone(soul["image"], "a calibrated conflicting identity cannot represent Soul Weapon")
+        self.assertEqual({region["id"] for region in soul["regions"]}, {"policy:breakdown"})
+        self.assertEqual(soul["regions"][0]["kind"], "forbidden")
+        reviewed["items"]["manual:" + CAPTURE] = {"status": "processed", "before": {
+            "status": "processed", "screen": "soul_weapon", "scan": {"screen": "battle", "overlays": ["soul_weapon"]}}}
+        ledger.write_text(json.dumps(reviewed))
+        graph = await (await self.client.get("/api/graph")).json()
+        soul = next(node for node in graph["nodes"] if node["id"] == "screen:soul_weapon")
+        self.assertEqual(soul["representativeNodeId"], NODE)
+        self.assertEqual(soul["status"], "configured")
+        self.assertTrue(any(region["id"] == "policy:breakdown" for region in soul["regions"]))
+        self.assertFalse(any(region["id"] == "policy:accessories" for region in soul["regions"]))
+
+    async def test_exact_removal_id_never_ghosts_another_policy_at_the_same_coordinates(self):
+        plugin = self.root / "same-point-plugin"
+        plugin.mkdir()
+        (plugin / "navigation.json").write_text(json.dumps({"screens": {"quest_panel": {"moves": [
+            {"id": "close", "semantic_kind": "navigation", "tap": [.5, .5]},
+            {"id": "close_to_shop_event", "semantic_kind": "navigation", "tap": [.5, .5]}]}}}))
+        self.evidence.plugin_dir = plugin
+        proposal = {"nodeId": "screen:quest_panel", "zoneId": "policy:quest_panel:close", "screen": "quest_panel",
+                    "operation": "remove", "kind": "navigation", "rect": [.485, .485, .515, .515]}
+        self.assertEqual((await self.client.post("/api/zone-feedback", json=proposal)).status, 201)
+        graph = await (await self.client.get("/api/graph")).json()
+        node = next(node for node in graph["nodes"] if node["id"] == "screen:quest_panel")
+        regions = {region["id"]: region for region in node["regions"]}
+        self.assertTrue(regions["policy:close"]["removedProposal"])
+        self.assertFalse(regions["policy:close_to_shop_event"].get("removedProposal", False))
+
 
 class ReviewerLifetime(unittest.IsolatedAsyncioTestCase):
     async def test_service_shutdown_kills_and_drains_its_passive_reviewer_child(self):

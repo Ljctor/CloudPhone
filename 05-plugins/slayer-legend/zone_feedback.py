@@ -1,5 +1,6 @@
 """Shared advisory overlays. Pending edits never change navigation authority."""
 import contextlib
+import importlib.util
 import fcntl
 import json
 import math
@@ -12,6 +13,9 @@ import uuid
 
 KINDS = {"navigation", "action", "forbidden", "detection", "vertical", "horizontal", "draggable"}
 UNKNOWN = {"unknown", "other", "menu", "", "None"}
+_identity_spec = importlib.util.spec_from_file_location("shared_evidence_identity", Path(__file__).with_name("evidence_review.py"))
+_identity_module = importlib.util.module_from_spec(_identity_spec)
+_identity_spec.loader.exec_module(_identity_module)
 
 
 def rectangle(value):
@@ -115,7 +119,7 @@ class ZoneFeedback:
                     os.unlink(temporary)
         return item
 
-    def read_annotations(self, data_dir, known_screens=None):
+    def read_annotations(self, data_dir, known_screens=None, tree=None):
         data = Path(data_dir)
         ledger = _json(self.directory / "trace-review.json", {})
         ledger = ledger if isinstance(ledger, dict) else {}
@@ -126,6 +130,13 @@ class ZoneFeedback:
         for annotation in ledger.get("annotations", []):
             if not isinstance(annotation, dict) or annotation.get("review_status") != "processed" or not known(annotation.get("screen")):
                 continue
+            screen = annotation["screen"]
+            item = items.get(annotation.get("id"), {}) if isinstance(items, dict) else {}
+            scan = item.get("before", {}).get("scan") if isinstance(item, dict) else None
+            if isinstance(scan, dict):
+                screen = _identity_module.identity(scan, tree or {})
+                if not known(screen):
+                    continue
             try:
                 rect = rectangle(annotation.get("rect"))
             except ValueError:
@@ -136,7 +147,7 @@ class ZoneFeedback:
             zone_id = annotation.get("id")
             if not isinstance(zone_id, str):
                 continue
-            zones[zone_id] = {"id": zone_id, "zoneId": zone_id, "screen": annotation["screen"], "kind": kind,
+            zones[zone_id] = {"id": zone_id, "zoneId": zone_id, "screen": screen, "kind": kind,
                               "rect": rect, "nodeId": annotation.get("nodeId"), "source": "reviewed_user_evidence",
                               "user": True, "conditional": False, "forbidden": kind == "forbidden", "gestureAuthority": False}
         for path in sorted((data / "manual-clicks").glob("*.json")):
@@ -159,12 +170,7 @@ class ZoneFeedback:
                 scan = entry.get("before_scan", {})
             if not isinstance(scan, dict):
                 continue
-            overlays = [value for value in scan.get("overlays", []) if value not in {"panel", "better_weapon_toast"}]
-            screen = before.get("screen") if before.get("status") == "processed" else (overlays[-1] if overlays else scan.get("screen"))
-            if screen == "battle" and "panel" in scan.get("overlays", []) and not overlays:
-                continue
-            if screen == "quest_panel" and scan.get("quest_tab"):
-                screen = "quest_" + scan["quest_tab"]
+            screen = _identity_module.identity(scan, tree or {})
             if not known(screen):
                 continue
             tap = entry.get("tap", {})
@@ -201,9 +207,11 @@ class ZoneFeedback:
                 zones[item["zoneId"]] = {**item, "id": item["zoneId"], "source": "user_feedback", "user": True, "proposal": "add"}
                 continue
             matched = False
+            anchored = any(zone["screen"] == item["screen"] and item["zoneId"] in [zone["id"], *zone.get("aliases", [])]
+                           for zone in zones.values())
             for zone in zones.values():
                 if zone["screen"] == item["screen"] and (item["zoneId"] in [zone["id"], *zone.get("aliases", [])]
-                        or zone["kind"] == item["kind"] and max(abs(a - b) for a, b in zip(zone["rect"], item["rect"])) <= .003):
+                        or not anchored and zone["kind"] == item["kind"] and max(abs(a - b) for a, b in zip(zone["rect"], item["rect"])) <= .003):
                     zone.update(proposal="remove", removedProposal=True, pending=True)
                     matched = True
             if not matched:

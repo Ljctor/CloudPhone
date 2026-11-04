@@ -18,6 +18,35 @@ def append_worker(directory, index):
 
 
 class SharedZoneFeedback(unittest.TestCase):
+    def test_fresh_nested_annotation_uses_deepest_identity_not_overlay_order(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manual = root / "data" / "manual-clicks"
+            manual.mkdir(parents=True)
+            capture = "c" * 32
+            tree = {"battle": {"parent": None}, "equipment_weapon": {"parent": "battle"},
+                    "soul_weapon": {"parent": "equipment_weapon"}}
+            for overlays in (["panel", "soul_weapon", "equipment_weapon"], ["panel", "equipment_weapon", "soul_weapon"]):
+                entry = {"id": capture, "at": time.time(), "kind": "scannable", "capture_status": "complete",
+                         "before_scan": {"screen": "battle", "overlays": overlays}, "rect": [.1, .2, .3, .4]}
+                (manual / f"{capture}.json").write_text(json.dumps(entry))
+                zones = shared.ZoneFeedback(root / "review").read_annotations(root / "data", set(tree), tree=tree)
+                self.assertEqual([zone["screen"] for zone in zones], ["soul_weapon"])
+
+    def test_exact_user_zone_removal_does_not_mark_same_geometry_with_another_id(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            annotations = [{"id": "manual:" + character * 32, "nodeId": "manual:" + character * 32 + ":before",
+                            "screen": "battle", "kind": "scannable", "rect": [.1, .2, .3, .4], "review_status": "processed"}
+                           for character in ("a", "b")]
+            (root / "trace-review.json").write_text(json.dumps({"annotations": annotations}))
+            store = shared.ZoneFeedback(root)
+            store.append({"nodeId": annotations[0]["nodeId"], "zoneId": annotations[0]["id"], "screen": "battle",
+                          "operation": "remove", "kind": "detection", "rect": [.1, .2, .3, .4]}, {"battle"})
+            zones = {zone["id"]: zone for zone in store.read_annotations(root, {"battle"})}
+            self.assertTrue(zones[annotations[0]["id"]]["removedProposal"])
+            self.assertFalse(zones[annotations[1]["id"]].get("removedProposal", False))
+
     def test_cross_process_writers_preserve_every_distinct_proposal(self):
         with tempfile.TemporaryDirectory() as directory:
             context = multiprocessing.get_context("fork")

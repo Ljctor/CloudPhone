@@ -18,6 +18,45 @@ review = load('evidence_review', HERE / 'evidence_review.py')
 archive = load('archive_png', HERE / 'features/screenshot_archive.py')
 
 class EvidenceReview(unittest.TestCase):
+    def test_nested_overlay_identity_uses_ancestry_not_detector_order(self):
+        tree=json.loads((HERE/'screen_registry.json').read_text())['tree']
+        # The Soul title and its Equipment parent both match on a real card.
+        for overlays in (['panel','soul_weapon','equipment_weapon'],
+                         ['equipment_weapon','panel','soul_weapon'],
+                         ['soul_weapon','equipment_weapon','soul_weapon','better_weapon_toast']):
+            self.assertEqual(review.identity({'screen':'battle','overlays':overlays},tree),'soul_weapon')
+        self.assertEqual(review.identity({'screen':'soul_weapon_engraving',
+                         'overlays':['soul_weapon_engraving_preview','soul_weapon_engraving']},tree),
+                         'soul_weapon_engraving_preview')
+        self.assertIsNone(review.identity({'screen':'battle','overlays':['soul_weapon','quest_panel']},tree))
+        self.assertIsNone(review.identity({'screen':'battle','overlays':['soul_weapon','uncalibrated_overlay']},tree))
+        self.assertIsNone(review.identity({'screen':'battle','overlays':['panel']},tree))
+        self.assertIsNone(review.identity({'screen':'unknown','overlays':['soul_weapon']},tree))
+        self.assertIsNone(review.identity({'screen':'battle','overlays':['a','b']},
+                                         {'a':{'parent':'b'},'b':{'parent':'a'}}))
+
+    def test_identity_policy_change_reclassifies_a_previously_wrong_cached_parent(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);(root/'screenshots').mkdir();plugin=root/'plugin';plugin.mkdir()
+            png=archive.png((2,2,bytes(12)))
+            (root/'screenshots/soul_weapon.png').write_bytes(png)
+            tree={'equipment_weapon':{'parent':'battle'},'soul_weapon':{'parent':'equipment_weapon'}}
+            scan={'screen':'battle','overlays':['panel','soul_weapon','equipment_weapon']}
+            screens=NS(TREE=tree,look=lambda shot:scan)
+            current_version=review.IDENTITY_VERSION
+            try:
+                review.IDENTITY_VERSION=current_version-1
+                old_revision=review.revision(plugin)
+            finally:
+                review.IDENTITY_VERSION=current_version
+            old={'version':1,'reader_revision':old_revision,'items':{},'images':{
+                review.digest(png):{'screen':'equipment_weapon','status':'processed','scan':scan}}}
+            ledger,count=review.batch(root,plugin,screens,ledger=old)
+            self.assertEqual(count,1)
+            item=ledger['items']['example:soul_weapon']
+            self.assertEqual(item['before']['screen'],'soul_weapon')
+            self.assertEqual(item['status'],'processed')
+
     def test_png_round_trip_and_checksum_rejection(self):
         shot = (4, 3, bytes(range(36)))
         png = archive.png(shot)

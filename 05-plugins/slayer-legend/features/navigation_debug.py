@@ -136,7 +136,7 @@ def navigation_debug(ports, navigation, directory, screens=None, geometry=None):
 
     async def annotations(request):
         try:
-            return ports.respond({"annotations": await asyncio.to_thread(feedback.read_annotations, data_directory, known_screens)
+            return ports.respond({"annotations": await asyncio.to_thread(feedback.read_annotations, data_directory, known_screens, tree=registry["tree"])
                                   if data_directory else [], "gestureAuthority": False})
         except OSError:
             return ports.respond({"annotations": [], "error": "Annotation storage unavailable"}, status=503)
