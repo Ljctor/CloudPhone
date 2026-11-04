@@ -30,6 +30,11 @@ reference docs are linked from there. Execution model and safety rules:
   outcome; distinguish deployed code from unverified gameplay. Report failure
   truthfully. Use the existing notification configuration without exposing its
   private topic or changing subscription settings.
+- After changing the video frontend or reconnect path, validate the published
+  page through its configured user-facing origin, including HTTPS when used.
+  In real Firefox and Chromium, require advancing decoded frames and media
+  time before and after Retry, plus accessible Options without a stream.
+  API/service health alone is not video acceptance. Record any untested path.
 - Before committing:
 
 ```sh
