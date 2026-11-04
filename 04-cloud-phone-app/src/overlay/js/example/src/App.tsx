@@ -88,7 +88,7 @@ function App() {
             <Emulator
               key={stream.generation}
               ref={emulatorRef}
-              uri={gateway}
+              uri={gatewayUrl}
               width={screen.width}
               height={screen.height}
               muted

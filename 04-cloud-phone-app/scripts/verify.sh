@@ -46,8 +46,15 @@ PYCODE
 }
 reconnect_contract() {
   python3 - "http://$host:$WEB_PORT" <<'PYCODE'
-import json, sys, urllib.request, urllib.error
+import json, re, sys, urllib.request, urllib.error
 base = sys.argv[1]
+# Inspect the installed bundle; source files are not part of a release.
+page = urllib.request.urlopen(base + "/", timeout=5).read().decode()
+scripts = re.findall(r'<script[^>]+src="([^"]+)"', page)
+bundle = "\n".join(urllib.request.urlopen(base + path, timeout=5).read().decode()
+                   for path in scripts if path.startswith("/"))
+origins = re.findall(r'(\w+)=`\$\{window\.location\.protocol\}//\$\{\w+\}`', bundle)
+assert any(re.search(r"\buri:" + re.escape(name) + r"[,}]", bundle) for name in origins), "Installed video URI loses its page scheme"
 with urllib.request.urlopen(base + "/api/v1/session/token", timeout=5) as response:
     assert "no-store" in response.headers.get("Cache-Control", "")
     assert isinstance(json.load(response).get("token"), str)
