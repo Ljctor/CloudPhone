@@ -955,3 +955,22 @@ Release acceptance for source `f0af993` exercised the published passive review i
 
 
 HTTPS video acceptance: source `e605012` fixes a host-only Emulator URI that the SDK converted to insecure HTTP/WS even when the page used HTTPS. Both Firefox and Chromium reproduced the pre-fix failure; published acceptance then observed advancing decoded frames and media time initially and after Retry, a new connected peer with the old one closed, and accessible Options without Android inputs. The installed-bundle check now verifies preservation of the page protocol. This does not attribute every historical reconnect issue to the same cause or claim direct verification of the user's own phone.
+
+Media recovery acceptance for source `4b67656`: published HTTPS Firefox and
+Chromium both advanced decoded frames/media time before and after Retry;
+Options and the five-mode configuration remained accessible with WebSockets
+blocked in separate test viewers. A local presentation-track removal, after
+healthy video, stopped native frame callbacks while RTC decoding continued.
+Both browsers automatically reset only that viewer, closed its old peer and
+resumed native decoded/presented frames. Firefox retained cached dimensions
+while frozen; zero dimensions are not a valid cross-browser acceptance rule.
+These cases sent no Android input or configuration writes. They validate an
+injected presentation failure, not the user's exact mobile background incident.
+
+- [ ] Validate long background/resume on the user's mobile Firefox path;
+  desktop headless tab switching did not reproduce a real hidden transition.
+- [ ] Exercise a genuine decoder stall separately from the verified injected
+  presentation failure; deterministic evidence rules are not a mobile decoder test.
+- [ ] Verify interrupted launch followed by a changed farming target in live
+  use: `4b67656` retains unfinished launch intent and checks startup screens on
+  retry, but its cancellation/retry regression is not a new live launch trial.
