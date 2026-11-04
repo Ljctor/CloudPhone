@@ -4,6 +4,7 @@ set -euo pipefail
 # Optional review upgrades keep their app and reader snapshot on the same release.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend/review_app" -p test_review_install.py -q
 # Review scrolls stay in measured lists; visible-tab variants retain calibrated returns.
+# Real manual-edge:<capture> graph IDs retain history and consume only their exact integration marker.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend/review_app" -p test_review_server.py -q
 base=${1:?Usage: verify.sh http://LISTEN_ADDRESS:WEB_PORT}
 curl -fsS "${base%/}/api/v1/plugins/slayer-legend/navigation/oral-feedback?limit=1" | python3 -c '

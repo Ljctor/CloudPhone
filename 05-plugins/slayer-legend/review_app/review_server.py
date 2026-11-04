@@ -297,8 +297,16 @@ class Evidence:
         pending = self.zones.read()
         integrated = self.zones.integrated_annotations(tree)
         for edge in edges:
-            if edge.get("id") in integrated:
-                edge["integration"] = integrated[edge["id"]]
+            # Graph edges use manual-edge:<capture>, while the attestation is
+            # keyed by manual:<capture>. Bind both endpoints to that EXACT
+            # capture; never infer integration from a label or nearby geometry.
+            origin = re.fullmatch(r"manual:([0-9a-f]{32}):before", edge.get("from", ""))
+            if edge.get("source") == "manual" and origin:
+                capture = origin.group(1)
+                key = "manual:" + capture
+                if (edge.get("id") == "manual-edge:" + capture
+                        and edge.get("to") == key + ":after" and key in integrated):
+                    edge["integration"] = integrated[key]
         for node in nodes:
             for area in tree.get(node["screen"], {}).get("scroll", []):
                 source = area.get("visual_source") or {}

@@ -50,7 +50,8 @@ class ReviewAPI(AioHTTPTestCase):
         marker = self.evidence.zones.mark_integrated(key, 'soul_weapon', tree, 'abcdef1', 'a' * 64)
         nodes = [{'id': key + ':before', 'screen': 'soul_weapon', 'captureId': key[7:],
                   'regions': [{'id': key, 'kind': 'vertical', 'source': 'recorded', 'rect': tree['soul_weapon']['scroll'][0]['rect']}]}]
-        edges = [{'id': key, 'kind': 'swipe', 'source': 'manual'}]
+        edges = [{'id': 'manual-edge:' + key[7:], 'from': key + ':before', 'to': key + ':after',
+                  'kind': 'swipe', 'source': 'manual'}]
         self.evidence.apply_zones(nodes, edges)
         permanent = [r for r in nodes[0]['regions'] if r['source'] == 'registered_scroll_viewport']
         self.assertEqual(len(permanent), 1)
@@ -65,13 +66,41 @@ class ReviewAPI(AioHTTPTestCase):
         self.assertTrue(original['removedProposal'])
         self.assertNotIn('integration', original, 'pending removal cannot be hidden by integration')
         edges[0]['from'] = nodes[0]['id']
-        self.evidence.zones.append({'nodeId': key + ':before', 'zoneId': 'edge:' + key, 'screen': 'soul_weapon',
+        self.evidence.zones.append({'nodeId': key + ':before', 'zoneId': 'edge:' + edges[0]['id'], 'screen': 'soul_weapon',
             'operation': 'remove', 'kind': 'vertical', 'rect': permanent[0]['rect']}, {'soul_weapon'})
         self.evidence.apply_zones(nodes, edges)
         self.assertTrue(edges[0]['removedProposal'])
         self.assertNotIn('integration', edges[0], 'pending edge removal stays visible')
 
 
+
+    async def test_graph_generated_manual_edge_uses_exact_integrated_capture_origin(self):
+        capture = '80a60ff702964e3fa33ca2f28eea23fc'
+        key = 'manual:' + capture
+        tree = json.loads((Path(__file__).parents[1] / 'screen_registry.json').read_text())['tree']
+        entry = {**self.entry, 'id': capture, 'before': 'quest_repeat', 'after': 'quest_repeat',
+                 'rect': [.08053691275167785, .25219639031461966, .587248322147651, .9328165453533793]}
+        (self.manual / (capture + '.json')).write_text(json.dumps(entry))
+        self.evidence.zones.mark_integrated(key, 'quest_repeat', tree, 'abcdef1', 'a' * 64)
+        graph = self.evidence.graph()
+        edge = next(edge for edge in graph['edges'] if edge['id'] == 'manual-edge:' + capture)
+        self.assertEqual(edge['from'], key + ':before')
+        self.assertEqual(edge['to'], key + ':after')
+        self.assertEqual(edge['integration']['annotation'], key)
+        self.assertEqual(edge['source'], 'manual')
+        self.assertEqual(edge['kind'], 'swipe', 'history remains intact; rendering consumes the integration flag')
+        for foreign in ({**edge, 'source': 'trace'}, {**edge, 'to': NODE},
+                        {**edge, 'id': 'manual-edge:' + CAPTURE}):
+            foreign.pop('integration', None)
+            self.evidence.apply_zones(graph['nodes'], [foreign])
+            self.assertNotIn('integration', foreign, 'no association across another source/capture')
+        self.evidence.zones.append({'nodeId': key + ':before', 'zoneId': 'edge:' + edge['id'],
+            'screen': 'quest_repeat', 'operation': 'remove', 'kind': 'vertical',
+            'rect': entry['rect']}, {'quest_repeat'})
+        refreshed = self.evidence.graph()
+        pending = next(e for e in refreshed['edges'] if e['id'] == edge['id'])
+        self.assertTrue(pending['removedProposal'])
+        self.assertNotIn('integration', pending, 'pending removal remains visible through the real graph API')
 
     async def test_recording_url_comes_only_from_explicit_https_frontend_origins(self):
         response = await self.client.get("/api/recording-config")
