@@ -45,6 +45,13 @@ function selectEvent({ event, data }) {
   if (event === 'presentation-stalled' || event === 'presentation-resumed') {
     return { kind: 'playback', state: event };
   }
+  if (event === 'media-stall-detected' || event === 'media-stall-reconnect') {
+    const selected = { kind: 'playback', state: event === 'media-stall-reconnect' ? event : data.state };
+    for (const key of ['elapsedMs', 'framesReceived', 'framesDecoded', 'presented', 'bytesReceived', 'packetsReceived']) {
+      if (Number.isFinite(data[key])) selected[key] = data[key];
+    }
+    return selected;
+  }
   if (event === 'stats') {
     const selected = { kind: 'stats' };
     for (const key of [...VIDEO_COUNTERS, 'packetsLost', 'presented', 'sampleTimeMs',
@@ -59,6 +66,9 @@ function selectEvent({ event, data }) {
 function eventFor(record) {
   const selected = selectEvent(record);
   if (!selected) return null;
+  // Timestamp at observation, not upload: mobile browsers may hold a batch
+  // for minutes while hidden. Keep that gap separate from server receipt.
+  if (Number.isFinite(record.eventTimeMs)) selected.eventTimeMs = record.eventTimeMs;
   if (['frame', 'playback', 'stats', 'error'].includes(selected.kind)) {
     for (const key of ['readyState', 'width', 'height']) {
       if (Number.isFinite(record.data[key])) selected[key] = record.data[key];

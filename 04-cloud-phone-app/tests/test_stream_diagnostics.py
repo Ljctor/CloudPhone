@@ -109,7 +109,7 @@ class StreamDiagnostics(unittest.TestCase):
     def test_frame_pipeline_counters_survive_delayed_upload_without_addresses(self):
         diagnostics = Diagnostics()
         sid = diagnostics.begin()
-        counters = {"sampleTimeMs": 12345.5, "packetsReceived": 250,
+        counters = {"eventTimeMs": 12346.0, "sampleTimeMs": 12345.5, "packetsReceived": 250,
                     "totalDecodeTime": .2, "totalProcessingDelay": .5,
                     "jitterBufferDelay": .3, "jitterBufferTargetDelay": .4,
                     "jitterBufferMinimumDelay": .1, "jitterBufferEmittedCount": 20,
@@ -125,6 +125,19 @@ class StreamDiagnostics(unittest.TestCase):
             for invalid in (True, float("inf"), -1, "private-address"):
                 with self.assertRaises(ValueError):
                     check_browser_events({"sessionId": sid, "events": [{**event, field: invalid}]})
+
+    def test_batched_wake_events_keep_observation_times_distinct_from_receipt(self):
+        now = [10.0]
+        diagnostics = Diagnostics(clock=lambda: now[0])
+        sid = diagnostics.begin()
+        events = [{"kind": "wake", "state": "hidden", "eventTimeMs": 5000},
+                  {"kind": "wake", "state": "visible", "eventTimeMs": 1805000}]
+        now[0] = 1810.0
+        key, checked = check_browser_events({"sessionId": sid, "events": events})
+        diagnostics.browser_events(key, checked)
+        stored = diagnostics.snapshot()["active"][0]["browser_events"]
+        self.assertEqual([item["eventTimeMs"] for item in stored], [5000, 1805000])
+        self.assertEqual([item["received_after_seconds"] for item in stored], [1800, 1800])
 
 
     def test_attempt_before_websocket_and_late_final_events_keep_identity(self):

@@ -36,12 +36,15 @@ stream_diagnostics() {
   "$PREFIX/current/venv/bin/python" - <<'PYCODE'
 from videobridge_gateway.core.stream_diagnostics import check_browser_events
 metrics = {name: 1.5 for name in (
-    "sampleTimeMs", "packetsReceived", "totalDecodeTime", "totalProcessingDelay",
+    "eventTimeMs", "sampleTimeMs", "packetsReceived", "totalDecodeTime", "totalProcessingDelay",
     "jitterBufferDelay", "jitterBufferTargetDelay", "jitterBufferMinimumDelay",
     "jitterBufferEmittedCount", "nackCount", "pliCount", "firCount", "jitterMs",
     "roundTripTimeMs", "framesDropped", "framesPerSecond")}
 payload = {"sessionId": "abcdef123456", "events": [{"kind": "stats", **metrics}]}
 assert check_browser_events(payload)[1] == payload["events"]
+for state in ("decode-stalled", "presentation-stalled", "media-stall-reconnect"):
+    payload = {"sessionId": "abcdef123456", "events": [{"kind": "playback", "state": state, "eventTimeMs": 25, "elapsedMs": 15000}]}
+    assert check_browser_events(payload)[1] == payload["events"]
 PYCODE
 }
 reconnect_contract() {
@@ -55,6 +58,8 @@ bundle = "\n".join(urllib.request.urlopen(base + path, timeout=5).read().decode(
                    for path in scripts if path.startswith("/"))
 origins = re.findall(r'(\w+)=`\$\{window\.location\.protocol\}//\$\{\w+\}`', bundle)
 assert any(re.search(r"\buri:" + re.escape(name) + r"[,}]", bundle) for name in origins), "Installed video URI loses its page scheme"
+for marker in ("media-stall-detected", "media-stall-reconnect", "eventTimeMs"):
+    assert marker in bundle, "Missing media recovery or event timing: " + marker
 with urllib.request.urlopen(base + "/api/v1/session/token", timeout=5) as response:
     assert "no-store" in response.headers.get("Cache-Control", "")
     assert isinstance(json.load(response).get("token"), str)

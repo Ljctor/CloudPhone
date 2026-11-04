@@ -180,12 +180,13 @@ BROWSER_STATES = frozenset(("new", "connecting", "connected", "disconnected", "f
     "have-local-pranswer", "have-remote-pranswer", "video", "audio", "mute", "unmute", "ended", "first-frame",
     "resolved", "rejected", "first-frame-timeout", "volume-up", "volume-down", "volume-mute", "power", "wake",
     "visible", "hidden", "focus", "blur", "presentation-stalled", "presentation-resumed",
+    "decode-stalled", "media-stall-reconnect",
     "open", "error", "constructor-error", "started", "manual-reconnect", "reconnect-queued",
     "signaling-error", "signaling-invalid-json", "remote-description-error", "remote-candidate-error", "peer-created", "page-shown",
     "refused", "refreshed", "refresh-failed", "requested"))
 BROWSER_NUMBERS = frozenset(("elapsedMs", "framesDecoded", "bytesReceived", "packetsLost", "framesReceived",
                               "framesDropped", "framesPerSecond", "presented", "keyFramesDecoded", "freezeCount", "totalFreezesDuration",
-                              "sampleTimeMs", "packetsReceived", "totalDecodeTime", "totalProcessingDelay",
+                              "eventTimeMs", "sampleTimeMs", "packetsReceived", "totalDecodeTime", "totalProcessingDelay",
                               "jitterBufferDelay", "jitterBufferTargetDelay", "jitterBufferMinimumDelay",
                               "jitterBufferEmittedCount", "nackCount", "pliCount", "firCount", "jitterMs", "roundTripTimeMs",
                               "code", "attempt", "localStorageKeys", "sessionStorageKeys", "readyState", "width", "height"))

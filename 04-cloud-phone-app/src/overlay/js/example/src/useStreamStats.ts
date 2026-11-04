@@ -1,14 +1,17 @@
 // Samples the stream once per STATS_INTERVAL_MS (the numbers are in
 // streamStats.ts): ICE or HTTP ping, frames received and shown, the
 // network details.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { activePeerConnection } from '../../src/components/emulator/net/ws_jsep_protocol_driver';
 import { streamDiagnostic } from '../../src/components/emulator/net/stream_diagnostics';
+import { mediaStall, resetMediaWindow } from './streamHealth';
 import { EMPTY_STATS, VIDEO_COUNTERS, emptySample, readReport, statsFrom } from './streamStats';
 
 const STATS_INTERVAL_MS = 1000;
 
-export function useStreamStats(deviceRef, gatewayUrl) {
+export function useStreamStats(deviceRef, gatewayUrl, { generation = 0, onMediaStall = null } = {}) {
+  const stallCallback = useRef(onMediaStall);
+  stallCallback.current = onMediaStall;
   const [stats, setStats] = useState(EMPTY_STATS);
 
   useEffect(() => {
@@ -20,6 +23,8 @@ export function useStreamStats(deviceRef, gatewayUrl) {
     let decodedBefore = null;
     let busy = false;
     let stopped = false;
+    let mediaHealth = null;
+    let reportedStall = false;
     // Frames presented on screen, counted with requestVideoFrameCallback where
     // available: getVideoPlaybackQuality() stays at 0 for WebRTC streams in
     // some browsers.
@@ -31,6 +36,8 @@ export function useStreamStats(deviceRef, gatewayUrl) {
       if (video === watchedVideo) return;
       if (watchedVideo && frameCallback !== null) watchedVideo.cancelVideoFrameCallback(frameCallback);
       watchedVideo = video;
+      mediaHealth = null;
+      reportedStall = false;
       presented = 0;
       frameCallback = null;
       if (!video || typeof video.requestVideoFrameCallback !== 'function') return;
@@ -64,6 +71,8 @@ export function useStreamStats(deviceRef, gatewayUrl) {
           noPresentationSince = null;
           frozen = false;
           sampledAt = 0;
+          mediaHealth = null;
+          reportedStall = false;
           previousConnection = connection;
         }
         if (connection) {
@@ -104,6 +113,19 @@ export function useStreamStats(deviceRef, gatewayUrl) {
           });
         }
         decodedBefore = decoded;
+        const health = mediaStall(mediaHealth, {
+          time: now, visible: !document.hidden,
+          connected: connection?.connectionState === 'connected', paused: video?.paused ?? true,
+          // Explicit framesReceived only: readReport's display fallback to
+          // framesDecoded is not independent proof of arriving media frames.
+          framesReceived: sampleData.details.framesReceived,
+          framesDecoded: decoded, presented: shown,
+          bytesReceived: sampleData.bytes, packetsReceived: sampleData.details.packetsReceived,
+        });
+        mediaHealth = health.state;
+        if (health.evidence && !reportedStall) streamDiagnostic('media-stall-detected', health.evidence);
+        reportedStall = Boolean(health.evidence);
+        if (health.evidence) stallCallback.current?.({ connection, generation, evidence: health.evidence });
         if (connection && (sampledAt === 0 || now - sampledAt >= 5000)) {
           sampledAt = now;
           streamDiagnostic('stats', {
@@ -136,13 +158,16 @@ export function useStreamStats(deviceRef, gatewayUrl) {
       }
     };
 
+    const visibilityChanged = () => { mediaHealth = resetMediaWindow(mediaHealth); reportedStall = false; };
+    document.addEventListener('visibilitychange', visibilityChanged);
     const timer = window.setInterval(sample, STATS_INTERVAL_MS);
     return () => {
       stopped = true;
+      document.removeEventListener('visibilitychange', visibilityChanged);
       window.clearInterval(timer);
       if (watchedVideo && frameCallback !== null) watchedVideo.cancelVideoFrameCallback(frameCallback);
     };
-  }, [deviceRef, gatewayUrl]);
+  }, [deviceRef, gatewayUrl, generation]);
 
   return stats;
 }

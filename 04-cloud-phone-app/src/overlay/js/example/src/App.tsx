@@ -49,7 +49,6 @@ function App() {
   }, [gatewayUrl]);
   const display = useAndroidDisplay(gatewayUrl);
   const screen = useFittedScreen(display, barFolded, settings.barDocked);
-  const stats = useStreamStats(deviceRef, gatewayUrl);
   const server = useServerState(gatewayUrl, serverTab);
   const [emulatorSettings, refreshEmulatorSettings] = useEmulatorSettings(gatewayUrl, serverTab);
   useServerLog(gatewayUrl);
@@ -66,6 +65,9 @@ function App() {
   // Connection status and failed input delivery are separate observations.
   const { touchFailures } = input;
   const stream = useStream({ server, input });
+  const stats = useStreamStats(deviceRef, gatewayUrl, {
+    generation: stream.generation, onMediaStall: stream.recoverMediaStall,
+  });
   const { state, reconnecting } = stream;
   useReloadOnResize(displayState);
   const problem = diagnose({ server, stream: state, touchFailures });

@@ -96,6 +96,9 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
     stopping = set()
     setup = setup_factory(ports, loadouts, farming)
     setup_listeners = []
+    # A cancelled entry may leave a running, focused process on sign-in or
+    # loading. Process/focus alone cannot certify that unfinished launch.
+    launch_pending = False
 
     def highest():
         """The highest stage seen: the game's state (features/game.py)."""
@@ -276,6 +279,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
         an unknown game panel. An unknown process, or unknown focus for a
         running process, never authorises a launch; confirmed absence does.
         """
+        nonlocal launch_pending
         if launches is None:  # Older standalone integrations.
             return None
         input_reader = getattr(ports, "last_input", None)
@@ -299,8 +303,18 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
         current()
         if (running is None or running and focus.get("game") is None) and not launches["running"]():
             return {"result": "failed", "text_t": t("Entrée farming non vérifiée : état du processus ou premier plan inconnu")}
-        if running and focus.get("game") and not launches["running"]():
-            return None
+        if running and focus.get("game") and not launches["running"]() and not launch_pending:
+            shot = await ports.capture()
+            current()
+            if not shot:
+                return {"result": "failed", "text_t": t("Entrée farming non vérifiée : état du processus ou premier plan inconnu")}
+            seen = await ports.analyse(screens.classify, shot)
+            current()
+            if seen not in ("title", "save", "sign_in", "saver", "loading"):
+                return None
+        # Keep this intent through cancellation/replacement. The next accepted
+        # target joins any surviving launcher or resumes its bounded sequence.
+        launch_pending = True
         ended = await launches["ensure"]("mode", False, guard=current)
         current()
         if ended["state"] == "deferred":
@@ -310,6 +324,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
                     "text_t": ended.get("message") or t("Entrée farming arrêtée : lancement du jeu non confirmé")}
         # The launcher proved a battle frame, but readiness still belongs to
         # this unchanged entry; farming then verifies its complete loadout.
+        launch_pending = False
         return None
 
     async def apply_stage(number, mpw, applied=False):

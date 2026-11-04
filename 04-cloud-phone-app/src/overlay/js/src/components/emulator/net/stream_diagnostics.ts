@@ -1,14 +1,14 @@
 // Bounded, address-free browser trace. No SDP, ICE addresses, input text or tokens.
 // Inspect/copy with window.cloudphoneDiagnostics.snapshot() in browser tools.
 type Fields = Record<string, string | number | boolean | null>;
-const records: { time: number; session: number; event: string; data: Fields }[] = [];
+const records: { time: number; eventTimeMs: number; session: number; event: string; data: Fields }[] = [];
 const listeners = new Set<(record: typeof records[number]) => void>();
 let session = 0;
 const attempts = new Map<number, string>();
 export function diagnosticAttempt(id = session): string | undefined { return attempts.get(id); }
 
 export function streamDiagnostic(event: string, data: Fields = {}, id = session) {
-  const record = { time: Date.now() / 1000, session: id, event, data };
+  const record = { time: Date.now() / 1000, eventTimeMs: performance.now(), session: id, event, data };
   records.push(record);
   if (records.length > 250) records.shift();
   listeners.forEach((listener) => listener(record));

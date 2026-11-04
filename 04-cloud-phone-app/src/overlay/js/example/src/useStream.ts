@@ -3,11 +3,12 @@
 // feedback while a manual reconnect waits for its first frame, and how long
 // it has been connecting. When to reconnect is in streamRules.ts.
 import { useEffect, useRef, useState } from 'react';
-import { disconnectActiveStream } from '../../src/components/emulator/net/ws_jsep_protocol_driver';
+import { activePeerConnection, disconnectActiveStream } from '../../src/components/emulator/net/ws_jsep_protocol_driver';
 import { postFetch, postHeaders, VIEWER_ID } from './api';
 import { english } from './i18n';
 import { pageLog } from './logs';
 import { streamDiagnostic } from '../../src/components/emulator/net/stream_diagnostics';
+import { MEDIA_RECONNECT_COOLDOWN_MS } from './streamHealth';
 import {
   AUTO_RECONNECT_DELAY_MS, RECONNECT_FEEDBACK_MS, REMOUNT_DELAY_MS, STUCK_AFTER_S,
   autoReconnectDue, secondsSince, serverHealthy, streamStateLine,
@@ -21,6 +22,7 @@ export function useStream({ server, input }) {
   const acceptingState = useRef(true);
   const currentGeneration = useRef(0);
   const resetAbort = useRef(null);
+  const mediaReconnectAt = useRef(-Infinity);
   const feedbackTimer = useRef(null);
   const reconnectTimer = useRef(null);
   const [reconnecting, setReconnecting] = useState(false);
@@ -133,6 +135,17 @@ export function useStream({ server, input }) {
   const healthy = server.connection === 'reachable' && !server.stateError && serverHealthy(server) && !server.value?.kicked;
   const latestHealthy = useRef(healthy);
   latestHealthy.current = healthy;
+  const recoverMediaStall = ({ connection, generation: fromGeneration, evidence }) => {
+    if (!alive.current || !acceptingState.current || document.hidden
+        || !latestHealthy.current || latestState.current !== 'connected'
+        || fromGeneration !== currentGeneration.current || connection !== activePeerConnection()
+        || performance.now() - mediaReconnectAt.current < MEDIA_RECONNECT_COOLDOWN_MS) return;
+    mediaReconnectAt.current = performance.now();
+    streamDiagnostic('media-stall-reconnect', evidence);
+    // Existing reset is scoped to VIEWER_ID; never restart Android or reset
+    // another viewer. Generation/connection checks reject stale async stats.
+    reconnectStream();
+  };
   useEffect(() => {
     if (!visible || !autoReconnectDue({ healthy, stream: state, connectingFor })) return undefined;
     const timer = window.setTimeout(reconnectStream, AUTO_RECONNECT_DELAY_MS);
@@ -192,5 +205,5 @@ export function useStream({ server, input }) {
     };
   }, []);
 
-  return { state, mounted, generation, reconnecting, connectingFor, manualReconnect, handleState, handleError };
+  return { state, mounted, generation, reconnecting, connectingFor, manualReconnect, handleState, handleError, recoverMediaStall };
 }

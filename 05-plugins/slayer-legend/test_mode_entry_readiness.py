@@ -37,6 +37,8 @@ class EntryReadiness(unittest.IsolatedAsyncioTestCase):
         self.allow_launch = asyncio.Event()
         self.allow_launch.set()
         self.farmed = asyncio.Event()
+        self.scene = 'battle'
+        self.farm_calls = []
 
         async def adb(*args, **kwargs):
             self.commands.append(args)
@@ -54,6 +56,7 @@ class EntryReadiness(unittest.IsolatedAsyncioTestCase):
                 self.launch_started.set()
                 await self.allow_launch.wait()
                 self.process = self.front = True
+                self.scene = 'battle'
                 return 0, ''
             return 0, ''
 
@@ -81,7 +84,7 @@ class EntryReadiness(unittest.IsolatedAsyncioTestCase):
         self.ports.clock.sleep = sleep
 
         async def capture(**kwargs):
-            return (480, 1040, 'battle')
+            return (480, 1040, self.scene)
 
         self.ports.capture = capture
         self.ports.crashed = lambda: self.async_value(False)
@@ -99,7 +102,8 @@ class EntryReadiness(unittest.IsolatedAsyncioTestCase):
         loadouts = {'loadout': lambda name: dict(self.parts[name]),
                     'stage': lambda name: self.parts[name]['stage'],
                     'set_stage': lambda name, value: self.parts[name].update(stage=value),
-                    'adopt_stage': lambda *args: None}
+                    'adopt_stage': lambda *args: None,
+                    'on_change': lambda fn: setattr(self, 'loadout_changed', fn)}
         mines = {'state': lambda: {'enabled': False, 'state': 'off', 'floor': None, 'area': None},
                  'start': lambda *args: None, 'stop': lambda: None,
                  'set_until': lambda *args: None, 'ended': False}
@@ -107,8 +111,12 @@ class EntryReadiness(unittest.IsolatedAsyncioTestCase):
         async def farm(*args, **kwargs):
             async with self.ports.leased('stage_change', 'farming test', 60):
                 self.assertTrue(self.process and self.front)
+                self.assertEqual(self.scene, 'battle')
+                self.farm_calls.append(args)
                 self.order.append('farm')
                 self.farmed.set()
+            if callable(getattr(self, 'farm_answer', None)):
+                return self.farm_answer()
             return {'result': 'done', 'text_t': None, 'verified_setup': True}
 
         self.mode = mode_module.mode(
@@ -236,6 +244,51 @@ class EntryReadiness(unittest.IsolatedAsyncioTestCase):
         await self.turns()
         self.assertEqual(self.order, ['launch'])
         self.assertFalse(self.farmed.is_set())
+
+    async def test_loadout_replacement_resumes_interrupted_focused_startup_before_farm(self):
+        self.allow_launch.clear()
+        await self.choose('mpw4')
+        await asyncio.wait_for(self.launch_started.wait(), 1)
+        # Android is already running/front while the old launch is waiting.
+        # Cancelling it does not make sign-in/loading a ready farming scene.
+        self.process = self.front = True
+        self.scene = 'other'
+        before = dict(self.parts['mpw4'])
+        self.parts['mpw4']['stage'] = 974
+        self.loadout_changed('mpw4', before, dict(self.parts['mpw4']))
+        await self.turns()
+        self.assertEqual(self.order, ['launch', 'launch'])
+        self.assertFalse(self.farmed.is_set())
+        self.allow_launch.set()
+        await asyncio.wait_for(self.farmed.wait(), 1)
+        self.assertEqual(self.farm_calls[0][0], 974, 'only the latest accepted target may farm')
+        self.assertEqual(self.order, ['launch', 'launch', 'farm'])
+        self.assertTrue(all('-S' not in command and 'force-stop' not in command for command in self.commands))
+
+    async def test_focused_sign_in_still_requires_launcher_before_farming(self):
+        self.process = self.front = True
+        self.scene = 'sign_in'
+        await self.choose('mpw4')
+        await asyncio.wait_for(self.farmed.wait(), 1)
+        self.assertEqual(self.order, ['launch', 'farm'])
+
+    async def test_retry_rechecks_focused_sign_in_before_next_farming_attempt(self):
+        self.process = self.front = True
+
+        def answer():
+            if len(self.farm_calls) == 1:
+                self.scene = 'sign_in'
+                return {'result': 'failed', 'text_t': self.ports.t('Configuration demandée non vérifiée')}
+            return {'result': 'done', 'text_t': None, 'verified_setup': True}
+
+        self.farm_answer = answer
+        await self.choose('mpw4')
+        for _ in range(100):
+            await asyncio.sleep(0)
+            if len(self.farm_calls) >= 2:
+                break
+        self.assertEqual(self.order[:3], ['farm', 'launch', 'farm'])
+        self.assertGreaterEqual(len(self.farm_calls), 2)
 
     async def test_unknown_process_or_focus_never_authorises_launch(self):
         for process, front in ((None, False), (True, None)):

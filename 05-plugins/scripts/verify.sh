@@ -29,7 +29,8 @@ python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_title
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_menu_recovery.py -q
 # Silent process loss, bounded reopen attempts, and the original launch deadline.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_launch.py -q
-# Farming entry joins or owns the ordinary launch before taking its farm lease.
+# Farming entry joins/resumes launch before its farm lease, including focused startup
+# after loadout cancellation and a retry that encounters Sign In.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_mode_entry_readiness.py -q
 # Real AUTO-labelled control tile versus Android volume-overlay Roman false positives.
 python3 "$(dirname "$0")/../slayer-legend/test_fixtures.py" ProgressBar Readings.test_actual_android_volume_bar_is_not_a_game_badge
