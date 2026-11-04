@@ -9,7 +9,7 @@ separate milestones. Historical checked items below do not close a new regressio
 
 ### Navigation review and resource coverage acceptance
 
-- [ ] Deploy the private navigation review application on the requested port;
+- [x] Deploy the private navigation review application on the requested port;
   verify screenshot navigation, recorded slides, overlay toggle and saved feedback
   from a browser. Keep configured routes distinct from observed transitions.
 - [x] Classify archived screenshots, manual annotations and passive edges into
@@ -25,6 +25,9 @@ separate milestones. Historical checked items below do not close a new regressio
   proposed removals. Live correction mode consumes holds without game input.
 - [ ] Review and resolve pending zone proposals as developer changes; feedback
   alone never modifies navigation permissions, readers or farming behavior.
+- [ ] Calibrate Character > Promotion and recover its open panel through the
+  existing lit-tab close action. A menu symptom currently has no executable
+  return-to-battle repair; unknown panels must still refuse blind input.
 - [x] Separate screen identity (Combat Interface / Interface de combat) from
   battlefield size (champ de bataille), measured bounds and shading. Unmeasured
   layouts stay unknown; a menu displaying combat is not Combat Interface.

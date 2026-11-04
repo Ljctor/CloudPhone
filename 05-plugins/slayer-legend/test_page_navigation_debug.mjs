@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import trace from './page_trace.js';
 import capturePreview, { archivedScreen } from './page_navigation_preview.js';
-import navigationDebug, { ANNOTATIONS, annotationPoint, floatingDebugPanel, landmarksFor, zonesFor, recognisedScreen, feedbackZones } from './page_navigation_debug.js';
+import navigationDebug, { ANNOTATIONS, annotationPoint, floatingDebugPanel, landmarksFor, zonesFor, recognisedScreen, feedbackZones, zoneRemovalProposal } from './page_navigation_debug.js';
 
 const graph = JSON.parse(readFileSync(new URL('./navigation.json', import.meta.url)));
 const registry = JSON.parse(readFileSync(new URL('./screen_registry.json', import.meta.url)));
@@ -17,6 +17,19 @@ assert.ok(equipment.some((zone) => zone.move === 'batch_combine' && zone.forbidd
 const breakdown = zonesFor('soul_weapon', graph, registry, null,
   new Map([['breakdown-0', [.1, .1, .2, .2]]])).find((zone) => zone.move === 'breakdown');
 assert.deepEqual(breakdown.rect, [.66, .8, .97, .88], 'the full forbidden area cannot shrink or track an unrelated button');
+const removal = zoneRemovalProposal({ ...breakdown, screen: 'soul_weapon' });
+assert.equal(removal.zoneId, 'policy:soul_weapon:breakdown');
+assert.equal(removal.kind, 'forbidden');
+assert.deepEqual(removal.rect, breakdown.rect);
+assert.notEqual(removal.rect, breakdown.rect, 'proposal geometry cannot mutate its original policy');
+assert.equal(zoneRemovalProposal({ id: 'menu_equipment', screen: 'battle', kind: 'tap', rect: [.1, .2, .3, .4] }).zoneId, 'policy:battle:menu_equipment');
+assert.equal(zoneRemovalProposal({ id: 'battle_emerald', screen: 'battle', kind: 'scannable', detection: true, rect: [.1, .2, .3, .4] }).zoneId, 'landmark:battle_emerald');
+const userZone = { id: 'manual:test', nodeId: 'manual:source:before', screen: 'battle', kind: 'detection', rect: [.1, .2, .3, .4], user: true };
+assert.equal(zoneRemovalProposal(userZone).zoneId, userZone.id);
+assert.equal(zoneRemovalProposal(userZone).nodeId, userZone.nodeId);
+const dynamicZone = { id: 'equip', move: 'equip', dynamic: true, screen: 'soul_weapon', kind: 'action', rect: [.1, .2, .3, .4] };
+assert.match(zoneRemovalProposal(dynamicZone).zoneId, /^dynamic:soul_weapon:equip:/);
+assert.notEqual(zoneRemovalProposal(dynamicZone).zoneId, zoneRemovalProposal({ ...dynamicZone, rect: [.1, .3, .3, .5] }).zoneId);
 for (const zoneId of ['policy:breakdown', 'policy:soul_weapon:breakdown', 'edge:configured:soul_weapon:breakdown']) {
   const configured = { ...breakdown, source: 'navigation_guard' };
   const decorated = feedbackZones('soul_weapon', [configured], [{ id: 'proposal', zoneId, screen: 'soul_weapon',

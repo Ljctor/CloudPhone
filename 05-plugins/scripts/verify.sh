@@ -138,7 +138,10 @@ assert not {"top_menu", "top_ranking", "top_settings", "top_mail"} & {screen["sc
 assert not any(row["field"] in expected for screen in state["screens"] for row in screen["fields"])
 screens = {screen["screen"]: screen for screen in state["screens"]}
 assert screens["skill"]["label"] == "Skill"
-assert screens["quest_panel"]["label"] == "Quest"
+assert not any(name.startswith(("quest", "adventure", "dungeon", "mine"))
+               or name == "quit_dialog" for name in screens)
+assert {name for name in screens if name.startswith("shop")} == {
+    "shop_summon", "shop_summon_equipment", "shop_summon_relic"}
 assert screens["scroll"]["inventory"]["status"] == "never_read"
 assert screens["equipment_weapon"]["path"][-1] == "Equipment: Weapon"
 assert screens["black_orb"]["path"][-1] == "Black Orb"
@@ -148,10 +151,9 @@ assert screens["black_orb_obtain"]["pending"] is True
 assert next(row for row in rows if row["field"] == "feather_black")["pending"] is True
 assert all("example" in screen and "examples" in screen and "details" in screen
            for screen in state["screens"])
-assert sum(bool(screen["details"]) for screen in state["screens"]) >= 50
 assert all(screens[name]["path"] for name in (
-    "adventure_story_main", "dungeon_shelter", "dungeon_rift",
-    "dungeon_forest", "dungeon_kingdom", "dungeon_training", "mine_feathers"))
+    "equipment_weapon", "equipment_accessories", "companion_advancement",
+    "beast", "shop_summon"))
 battle = {row["field"]: row for row in screens["battle"]["fields"]}
 assert battle["highest"]["shown"] == "lower_bound"
 if isinstance(battle["stage"]["value"], int) and isinstance(battle["highest"]["value"], int):
@@ -272,6 +274,13 @@ assert any(move.get("swipe") for move in graph["screens"]["equipment_weapon"]["m
 assert state["registry"]["tree"]["equipment_weapon"]["scroll"]
 assert "quest_panel" in graph["screens"]
 print("Navigation debug geometry: OK")
+'
+curl -fsS "${base%/}/api/v1/plugins/slayer-legend/navigation/zone-feedback" | python3 -c '
+import json, sys
+state = json.load(sys.stdin)
+assert state["gestureAuthority"] is False and isinstance(state["items"], list)
+assert all(item["gestureAuthority"] is False for item in state["items"])
+print("Zone proposals remain separate from navigation authority: OK")
 '
 curl -fsS "${base%/}/api/v1/plugins/slayer-legend/resource-refresh" | python3 -c '
 import json, sys

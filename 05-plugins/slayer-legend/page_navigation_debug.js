@@ -67,12 +67,13 @@ export function zonesFor(screen, graph, registry, scan = null, tracked = null, d
     for (const [index, rect] of rects.entries()) {
       if (zones.some((zone) => zone.kind === move.semantic_kind && JSON.stringify(zone.rect) === JSON.stringify(rect))) continue;
       zones.push({ id: `${move.id}-${index}`, move: move.id,
+        dynamic: Boolean(move.debug_dynamic || rects.length > 1),
         kind: move.semantic_kind === 'draggable' ? 'draggable' : 'action', forbidden: Boolean(move.forbidden),
         conditional: Boolean(move.precondition), rect });
     }
   }
   if (dynamic?.screen === screen && Date.now() / 1000 - dynamic.at >= 0
-      && Date.now() / 1000 - dynamic.at <= 2) zones.push(...dynamic.zones);
+      && Date.now() / 1000 - dynamic.at <= 2) zones.push(...dynamic.zones.map((zone) => ({ ...zone, dynamic: true })));
   if (scan) {
     // The battle remains behind these measured bottom panels. Other
     // overlays can cover the controls, so do not draw through them.
@@ -117,6 +118,20 @@ export function landmarksFor(screen, registry) {
   }));
 }
 
+export function zoneRemovalProposal(target) {
+  const kind = target.forbidden || target.kind === 'forbidden' ? 'forbidden'
+    : target.detection || target.kind === 'scannable' ? 'detection'
+      : target.kind === 'tap' ? 'navigation' : target.kind;
+  let zoneId = target.zoneId ?? target.id;
+  if (!target.user && !/^(manual|region|user):/.test(zoneId)) {
+    if (target.dynamic) zoneId = `dynamic:${target.screen}:${target.id}:${target.rect.map((v) => v.toFixed(6)).join(':')}`;
+    else if (kind === 'detection') zoneId = zoneId.startsWith('landmark:') ? zoneId : `landmark:${zoneId}`;
+    else zoneId = `policy:${target.screen}:${target.move ?? target.id}`;
+  }
+  return { zoneId, nodeId: target.nodeId ?? `screen:${target.screen}`, screen: target.screen,
+    operation: 'remove', kind, rect: [...target.rect], conditional: Boolean(target.conditional || target.dynamic) };
+}
+
 export function feedbackZones(screen, configured, annotations, scan = null) {
   if (!screen || ['unknown', 'other', 'menu'].includes(screen)) return configured;
   const identities = new Set([screen]);
@@ -128,7 +143,8 @@ export function feedbackZones(screen, configured, annotations, scan = null) {
   const matched = new Set();
   const canonical = (id) => typeof id === 'string' ? id
     .replace(/^edge:configured:[^:]+:/, '').replace(new RegExp(`^policy:${screen}:`), '').replace(/^policy:/, '') : null;
-  const kind = (zone) => zone.detection || ['scannable', 'detection'].includes(zone.kind) ? 'detection'
+  const kind = (zone) => zone.forbidden || zone.kind === 'forbidden' ? 'forbidden'
+    : zone.detection || ['scannable', 'detection'].includes(zone.kind) ? 'detection'
     : zone.kind === 'tap' ? 'navigation' : zone.kind;
   const idMatches = (item, zone) => {
     const configuredIds = [zone.id, zone.move, ...(zone.aliases ?? [])].map(canonical).filter(Boolean);
@@ -441,9 +457,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
           stop(event);
           const target = feedbackTarget;
           if (!active() || !target || (target.displayScreen ?? target.screen) !== screen) return;
-          const proposal = { zoneId: target.zoneId ?? target.id, nodeId: target.nodeId ?? `screen:${target.screen}`,
-            screen: target.screen, operation: 'remove', kind: target.kind === 'tap' ? 'navigation'
-              : target.kind === 'scannable' ? 'detection' : target.kind, rect: target.rect };
+          const proposal = zoneRemovalProposal(target);
           try {
             const response = await api.post('/navigation/zone-feedback', proposal);
             if (!response?.ok) throw Error('feedback rejected');
