@@ -483,7 +483,10 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
         if not all(getattr(screen, gate, False) for gate in
                    ("PADLOCK_LEARNED", "POPUP_LEARNED", "PREVIEW_LEARNED")):
             raise Stop("lectures de la gravure pas calibrées, rien n’a bougé")
-        remember_state(required=True)
+        # Repairing an already equipped weapon can remove its completion
+        # bonus just like Equip. Persist the exact recipe before any gesture;
+        # a best-effort observation save cannot protect a later restart.
+        remember_state(durable=True, required=True)
         if not await ports.analyse(screen.title, shot):
             await tap(shot, "soul_weapon", "engraving", ENGRAVING_TAP)
             shot, opened = await wait_for(screen.title, transition="opening")

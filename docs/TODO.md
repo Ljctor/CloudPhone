@@ -121,6 +121,11 @@ separate milestones. Historical checked items below do not close a new regressio
   refuse Equip if persistence or mandatory engraving actions are unavailable.
   Keep recovery pending across cancellation inside Equip and resume it before
   stage/preset work. The next game gesture after confirmed Equip opens engraving.
+- [x] Require the same durable recipe write before repairing an already equipped
+  weapon. A real filesystem write failure must refuse all engraving gestures;
+  an interrupted removal must resume from the on-disk journal after restart.
+- [ ] Confirm the strengthened direct-repair persistence path during the next
+  authorised live setup. Offline journal/interruption replay is not live acceptance.
 - [ ] Verify the new pre-Equip durability path on an actual weapon switch,
   followed immediately by full placement and eight verified locks.
 - [x] Separate the lower-left release anchor from the rotation pivot. Reviewed

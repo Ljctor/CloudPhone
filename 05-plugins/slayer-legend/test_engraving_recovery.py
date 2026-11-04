@@ -1,6 +1,8 @@
 """Interrupted engraving resumes its durable recipe before leaving the grid."""
 import asyncio
 import copy
+import os
+import tempfile
 from types import SimpleNamespace
 import unittest
 
@@ -42,6 +44,48 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sorted(game.state['engraving']['pieces'].values()), want)
         self.assertTrue(all(card['locked'] for card in game.state['engraving']['cards']))
         self.assertEqual(game.state['screen'], 'soul')
+
+    async def test_already_equipped_repair_refuses_unwritable_recovery_journal(self):
+        game = sw.vision_game(screen='engraving')
+        setup, ports = self.setup_for(game)
+        before = copy.deepcopy(game.state['engraving'])
+        with tempfile.TemporaryDirectory() as directory:
+            state = sw.load('features/ports').State(os.path.join(directory, 'missing'))
+            state.sections = dict(ports.store.sections)
+            ports.store = state
+            with self.assertRaises(sw.stage_change.Stop) as stopped:
+                await self.apply(setup, game)
+            self.assertIsInstance(stopped.exception.__cause__, OSError)
+        self.assertEqual(game.moves, [], 'an existing loadout must survive a journal failure')
+        self.assertEqual(game.state['engraving'], before)
+        self.assertFalse(setup.state()['verified'])
+
+    async def test_existing_weapon_repair_survives_restart_from_real_journal(self):
+        game = sw.vision_game(screen='engraving')
+        setup, ports = self.setup_for(game)
+        state_module = sw.load('features/ports')
+        original = ports.swipe
+        with tempfile.TemporaryDirectory() as directory:
+            state = state_module.State(directory)
+            state.sections = dict(ports.store.sections)
+            ports.store = state
+
+            async def interrupt_after_removal(*args, **kwargs):
+                # Read only the actual on-disk journal, not setup.state().
+                pending = state_module.State(directory).saved['engraving_recovery']
+                self.assertTrue(pending['required'])
+                self.assertEqual(pending['recipe']['name'], 'Gold-balanced')
+                await original(*args, **kwargs)
+                raise asyncio.CancelledError()
+
+            ports.swipe = interrupt_after_removal
+            with self.assertRaises(asyncio.CancelledError):
+                await self.apply(setup, game)
+            persisted = state_module.State(directory).saved['engraving_recovery']
+            restarted, _ = self.setup_for(game, persisted)
+            _, result = await self.apply(restarted, game, recover=True)
+            self.assertTrue(result['ok'])
+            self.assert_complete(game)
 
     async def test_restart_replays_recipe_after_cancelled_removal(self):
         game = sw.vision_game(screen='engraving')

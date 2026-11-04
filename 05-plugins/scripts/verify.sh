@@ -28,6 +28,7 @@ python3 "$(dirname "$0")/../slayer-legend/test_soul_weapon.py" \
   Engraving.test_retained_equipment_proof_still_repairs_current_grid_and_locks
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_screen.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_geometry.py -q
+# Existing-weapon repairs require durable intent before their first gesture.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_recovery.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_reuse.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_coverage.py -q

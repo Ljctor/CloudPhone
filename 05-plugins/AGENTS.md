@@ -133,6 +133,9 @@ Rules:
     engraving action refuses Equip. After Equip is confirmed, opening the
     engraving is the next game gesture under the same lease; interruptions
     leave recovery pending before stage/preset work.
+  - Before repairing an already equipped weapon, also require a durable write
+    of its exact pending engraving recipe. If writing or syncing fails, no
+    engraving gesture is sent; a restart must retain the requested recipe.
   - Soul weapon engraving (right after the equip, the card's big icon;
     the step is done, the weapon « prête », only once the grid is the
     loadout's variant with the highest-level cards and all 8 cards read
