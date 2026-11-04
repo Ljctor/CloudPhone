@@ -221,8 +221,8 @@ layers on item visuals, never baked into their base sprites or menu symbols.
   This was an API retry of an already correct engraving, not a new Equip,
   lower-level replacement or live interruption/fault-injection acceptance.
 - [ ] Reproduce the receipt-publication interruption scenarios in authorised
-  gameplay: input during the last readback, Resume followed by new input, and
-  readiness relaunch. Offline regressions cover these paths; the successful
+  gameplay: input during the last readback and readiness relaunch. Offline
+  regressions cover these paths; the successful
   unchanged retry above does not prove them in game.
 - [x] Exercise mode cancellation and real Android input during setup on source
   `8248076`. Finite Agent mode drained the Soul operation, cleared its current
@@ -240,8 +240,29 @@ layers on item visuals, never baked into their base sprites or menu symbols.
   report active movement without publishing readiness. The live input test
   exposed a stale zero-second hold during approximately 57 seconds of work;
   the correction preserves live holds and foreign ownership.
-- [ ] Confirm the corrected resumed status in production: no zero-second hold
-  or "you are playing" explanation while the resumed setup is actively working.
+- [x] Confirm the corrected resumed status and explicit Resume followed by new
+  input in production on source `15686e8`. Real volume down, Resume, then volume
+  up restored the original volume and reinstated the approximately five-second
+  quiet period. All 46 sampled active-retry states were moving with no hold;
+  the complete matching-revision receipt followed the second input by 39.6 s.
+  Independent post-input pixels confirm Ambition Gold-maxed, I levels
+  47/47/49/49 and eight locked cards. This is an unchanged-target verification,
+  not replacement of a lower piece. The separate fast preset observer retained
+  91 frames and hit its two-minute deadline during a final capture; its timeout
+  is not a setup failure or evidence of completion. The receipt comes from the
+  scenario's own sampler, with separate final parking observations.
+- [x] Verify the published configuration dialog at 390 px on source `15686e8`:
+  four I pieces, automatic-placement capability and inventory uncertainty are
+  visible; the dialog, panel and document have no horizontal overflow. Real
+  published modules loaded successfully with no JavaScript error, no gameplay
+  input and no configuration POST.
+- [ ] Reject false preset numerals from non-game overlays or unrelated panel
+  controls, and require adequate confirmation before a persistent preset
+  refusal. The real volume-input acceptance retained three frames where the
+  reader returns I from Android's volume panel while no game badge is visible.
+  Earlier genuine IV frames and the completed setup do not prove why an older
+  III refusal occurred after relaunch: its original reader frames are missing.
+  Preserve this distinction and never change action permissions to hide it.
 - [x] Keep automatic repair authority scoped through bounded child tasks.
   The old menu-return reproduction sent two more navigation gestures after a
   Free/Agent mode change. A shared context guard now rechecks mode epoch,
