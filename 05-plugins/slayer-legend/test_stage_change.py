@@ -39,6 +39,7 @@ feature = load("features/stage_change")
 mode_feature = load("features/mode")
 setup_feature = load("features/mode_setup")
 mode_rules = load("features/mode_rules")
+engraving_feature = load("features/engraving")
 nav = load("nav")
 select = load("stage_select")
 controls = load("battle_controls")
@@ -564,7 +565,7 @@ class Store:
 
 
 class Mode(unittest.TestCase):
-    def enter(self, answers, confirm=None, verified_setup=False, watch_timer=False):
+    def enter(self, answers, confirm=None, verified_setup=False, watch_timer=False, with_revision=True):
         """answers: what farm does each time: an answer ({result, text}:
         its text a template), or Busy's text."""
         game = Game()
@@ -597,9 +598,14 @@ class Mode(unittest.TestCase):
         ports.respond = lambda value, status=200: (status, value)
         mines = {"start": lambda *a: None, "stop": lambda: None, "set_until": lambda until: None, "ended": False,
                  "state": lambda: {"enabled": False, "state": "off", "floor": None, "area": None}}
-        loadouts = {"loadout": lambda mode: {"stage": 920, "preset": "III", "soul_weapon": None},
-                    "stage": lambda mode: {"mpw18": 920, "mpw4": 931}[mode], "set_stage": lambda mode, n: None,
-                    "adopt_stage": lambda mode, n: None}
+        targets = {mode: {"stage": stage, "preset": "III", "soul_weapon": None}
+                   for mode, stage in (("mpw18", 920), ("mpw4", 931))}
+        loadouts = {"loadout": lambda mode: dict(targets[mode]),
+                    "stage": lambda mode: targets[mode]["stage"],
+                    "set_stage": lambda mode, stage: targets[mode].update(stage=stage),
+                    "adopt_stage": lambda mode, stage: targets[mode].update(stage=stage)}
+        if with_revision:
+            loadouts["revision"] = lambda mode: engraving_feature.revision(targets[mode])
         values = SimpleNamespace(time_or_none=lambda v: v, number_or_none=lambda v, top: v)
         scroll = SimpleNamespace(fresh=lambda: {"gold": None}, seen=lambda *args: None,
                                  look=lambda kept, seen: (kept, None))
@@ -613,7 +619,7 @@ class Mode(unittest.TestCase):
 
             class Request:
                 async def json(self):
-                    return {"mode": "mpw4", "stage4": 931}
+                    return {"mode": "mpw4", "stage18": 920, "stage4": 931}
             await handler(Request())
             for _ in range(20):
                 await asyncio.sleep(0)
@@ -630,6 +636,31 @@ class Mode(unittest.TestCase):
         self.assertEqual(calls, [(931, "III", "mpw4")])
         self.assertEqual(state["state"], "farming", french(state["message_t"]))
         self.assertEqual(alerts, ["Gold Farming ready in 0 s"])
+
+    def test_complete_setup_publishes_a_current_exact_target_receipt(self):
+        calls, state, alerts = self.enter([{**done(), "verified_setup": True}])
+        target = {"stage": 931, "preset": "III", "soul_weapon": None}
+        receipt = state["setup_result"]
+        self.assertEqual(receipt["mode"], "mpw4")
+        self.assertEqual(receipt["target"], target)
+        self.assertEqual(receipt["revision"], engraving_feature.revision(target))
+        self.assertEqual(receipt["result"], "done")
+        self.assertGreater(receipt["at"], 0)
+        self.assertEqual(state["state"], "farming")
+        self.assertEqual(alerts, ["Gold Farming ready in 0 s"])
+
+    def test_revisionless_fixture_cannot_publish_a_ready_receipt(self):
+        calls, state, alerts = self.enter([{**done(), "verified_setup": True}], with_revision=False)
+        self.assertIsNone(state["setup_result"])
+        self.assertNotEqual(state["state"], "farming")
+        self.assertEqual(alerts, [])
+
+    def test_done_without_full_setup_verification_cannot_publish_ready(self):
+        calls, state, alerts = self.enter([done()])
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(state["state"], "failed")
+        self.assertNotEqual((state["setup_result"] or {}).get("result"), "done")
+        self.assertFalse(any("ready" in alert for alert in alerts))
 
     def test_failure_is_tried_again_within_the_budget_then_one_alert(self):
         failed = {"result": "failed", "text": "ouverture de Select Region"}

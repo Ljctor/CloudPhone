@@ -172,10 +172,13 @@ layers on item visuals, never baked into their base sprites or menu symbols.
 ### Menu-return timing acceptance
 
 - [ ] Make the post-input return respect the requested five-second quiet period.
-  `MENU_GRACE` currently adds a separate sixty-second menu observation grace;
-  the watcher cadence can add more delay. Keep unknown-screen refusal and
-  guarded per-frame navigation while verifying the complete visible countdown
-  and actual return timing. Recognition alone does not prove prompt recovery.
+  Calibrated Latent Power and Character Growth/Promotion now use the existing
+  watcher loop to acquire two fresh observations after the five-second pause,
+  without another sixty-second grace. Real startup-loop regressions cover new
+  input between the observations, capture latency, startup observation and
+  backoff/lease exclusions. Verify the visible countdown and actual return in
+  production; other menus still need calibrated return coverage. Recognition
+  alone does not prove prompt recovery.
 
 ### Architecture refactor acceptance
 
@@ -221,6 +224,34 @@ layers on item visuals, never baked into their base sprites or menu symbols.
   gameplay: input during the last readback, Resume followed by new input, and
   readiness relaunch. Offline regressions cover these paths; the successful
   unchanged retry above does not prove them in game.
+- [x] Exercise mode cancellation and real Android input during setup on source
+  `8248076`. Finite Agent mode drained the Soul operation, cleared its current
+  receipt and released its lease; returning to Soul produced a fresh complete
+  receipt for the unchanged accepted target. A separate volume down/up sequence
+  restored the original volume and restarted the five-second quiet period:
+  the next Soul lease began 5.031 seconds after the last input request.
+  No ready receipt was observed during the hold. The new complete receipt
+  followed 62.386 seconds after that input. Independent reading of the retained
+  engraving frame confirms Ambition, the exact four I columns, selected levels
+  47/47/49/49 and eight closed locks. Evidence is archived privately with hashes.
+  This covers ordinary cancellation and input retry, not input at the final
+  readback, explicit Resume, a new Equip or lower-level piece replacement.
+- [x] Clear the expired input hold when its owner actually resumes setup and
+  report active movement without publishing readiness. The live input test
+  exposed a stale zero-second hold during approximately 57 seconds of work;
+  the correction preserves live holds and foreign ownership.
+- [ ] Confirm the corrected resumed status in production: no zero-second hold
+  or "you are playing" explanation while the resumed setup is actively working.
+- [x] Keep automatic repair authority scoped through bounded child tasks.
+  The old menu-return reproduction sent two more navigation gestures after a
+  Free/Agent mode change. A shared context guard now rechecks mode epoch,
+  accepted target and input before gestures and final equipment evidence,
+  including menu return, parking, full repair and the Agent weapon endpoint.
+  The regression also covers leaving and returning to the same mode, revocation
+  during the final readback and context cleanup. These are execution tests,
+  not a claim of a new live mode-change acceptance.
+- [ ] Verify revocation of an already-running watchdog return in gameplay;
+  ordinary setup cancellation and input retry are separate acceptance cases.
 
 - [x] Distinguish a due equipment/engraving check from observed damage or a
   failed check. Pending verification is orange; an actual failure retains its
@@ -433,6 +464,11 @@ layers on item visuals, never baked into their base sprites or menu symbols.
   Preserve identity, relock removed pieces and verify eight locks throughout
   interruption/restart. Existing successful repairs cover their recorded
   weapons/shapes, not every target or still-uncalibrated shape.
+  Historical candidate evidence exists beyond Ambition: Relax Gold-balanced
+  needs two I pieces out of four readable levels, and old Vision captures
+  show a lower L placed beside a higher free L. Neither is current acceptance:
+  possession and all eight cards must be reread; a new Equip clears the grid,
+  so an old lower-piece conflict cannot be assumed to survive a weapon switch.
 - [x] Obtain real Equip/Unequip calibration evidence: owned, unequipped
   Relax supplies Equip; equipped Ambition supplies Unequip. Read-only
   navigation produced the evidence; no Equip or engraving action was run.
@@ -861,4 +897,4 @@ them; their crops go in on the next sighting, same rule.
 
 Latent Power recovery: fixed title, instruction and bottom-left X are calibrated from reviewed real crops. The supervised close returned to Character Growth; the destination was reread and further input stopped while Growth lacked its own identity. The graph keeps `unknown` because each return must be identified from a fresh frame, not assumed. No Latent Power awakening or spending action is authorised.
 
-Character Growth recovery: existing real selected-header and lit/unlit Character-tab crops identify the panel, independently validated on the newly observed return from Latent Power. One close-tab is guarded by that identity and reduced battle, followed by fresh plain-Battle verification. The supervised setup acceptance of source `8248076` observed close-tab returning to plain Battle, then verified the complete setup separately from parking. The packaged navigation metadata still conservatively marks this transition assumed; update that calibration marker in the next release.
+Character Growth recovery: existing real selected-header and lit/unlit Character-tab crops identify the panel, independently validated on the newly observed return from Latent Power. One close-tab is guarded by that identity and reduced battle, followed by fresh plain-Battle verification. The supervised setup acceptance of source `8248076` observed close-tab returning to plain Battle, then verified the complete setup separately from parking. The navigation metadata records this observed transition; each execution still requires fresh plain-Battle verification.

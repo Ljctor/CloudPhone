@@ -54,6 +54,8 @@ python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_equip
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_detection.py -q
 python3 "$(dirname "$0")/../slayer-legend/test_nav.py" Graph.test_low_preview_bar_stays_within_its_calibrated_reader_area Graph.test_consistent
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_agent_soul_weapon.py -q
+# Repair ownership survives bounded child tasks; revoked mode/input cannot navigate or publish proof.
+python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_watchdog_repair_ownership.py -q
 python3 "$(dirname "$0")/../slayer-legend/test_stage_change.py" \
   Sequence.test_user_input_during_parking_after_preset_refusal_stays_deferred \
   Sequence.test_user_input_during_readback_defers_success_and_stale_failure \
@@ -80,9 +82,13 @@ node "$(dirname "$0")/../slayer-legend/test_page_gold.mjs"
 # Autosave/revisions and fixed history slots reject rates for another visible target.
 node "$(dirname "$0")/../slayer-legend/test_page_mode.mjs"
 node "$(dirname "$0")/../slayer-legend/test_page_engraving.mjs"
+# Placement capability comes from executor calibration; inventory remains unverified.
+python3 "$(dirname "$0")/../slayer-legend/test_engraving.py" Routes.test_installed_applicability_uses_executor_calibration_not_inventory_history
+node "$(dirname "$0")/../slayer-legend/test_page_engraving_requirements.mjs"
 node "$(dirname "$0")/../slayer-legend/test_page_trace.mjs"
 # Startup idle requires a complete current setup receipt, never a healthy frame.
 # Receipt, ready state and event commit together; Busy/readiness retries renew their snapshot.
+# Resumed setup clears only its expired input hold and reports moving before farming.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_mode_setup_status.py -q
 # POST /loadout requires complete stage/preset/weapon proof, including weapon-only edits.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_loadout_receipt.py -q

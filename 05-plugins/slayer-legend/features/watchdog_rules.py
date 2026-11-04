@@ -37,7 +37,8 @@ Symptom → response, one look at a time (SYMPTOMS, REPAIRS):
 | dialog, its title or save notice          |                                       |
 | the sign-in screen (after a relaunch)     | relaunch: "Sign in with Google" once, |
 |                                           | the chooser's one account (launch)    |
-| a game menu 60 s with no user input       | back to battle, no relaunch           |
+| calibrated menu after 5 s without input | fresh confirmation, then safe return |
+| other game menu after 60 s              | existing bounded recovery only       |
 | battle on another stage than the profile's| stage change (phase 2)                |
 | Power Saving Mode                         | well; the stage is unread there: only |
 |                                           | a battle look can say "wrong stage"   |
@@ -137,6 +138,8 @@ def input_wake_delay(now, regular_at, resume_at=None):
     return max(0.05, min(1.0, due - now))
 # A game menu open this long (seconds) with no user input is a symptom.
 MENU_GRACE = 60
+# Keep two observations; calibrated menu recovery alone gets a fresh recheck.
+MENU_CONFIRM = .25
 ALERT_AFTER = 2
 # Good looks in a row (battle or Power Saving Mode) before "recovered".
 RECOVERED_AFTER = 4
@@ -475,6 +478,9 @@ def judge(seen, profile, numeral_of, last_input, resumed, memory, now, after_mod
         since = now if menu_since is None else menu_since
         memory["menu_since"] = since
         quiet = now - max(since, last_input if last_input is not None else since)
+        if (seen.get("menu_recoverable") and last_input is not None
+                and now - last_input >= PAUSE_AFTER_INPUT):
+            return "menu", "menu du jeu ouvert", {}, memory
         if resumed or quiet >= MENU_GRACE:
             return "menu", SYMPTOMS["menu"], {}, memory
         return "pending", "menu du jeu ouvert", {}, memory

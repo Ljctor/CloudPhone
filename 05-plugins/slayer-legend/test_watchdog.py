@@ -123,6 +123,132 @@ class Watch:
         return [said(text, params) for _, level, text, params, notify in self.records if notify]
 
 
+class InputMenuScheduler(unittest.TestCase):
+    """Run the public startup loop with real screen readers and virtual time."""
+
+    def run_watch(self, *, inputs=(41.3,), mode='mpw4', known=True, held=False,
+                  capture_cost=0, saved=None, duration=55):
+        import test_screen_model as model
+        feature = model.load('features/watchdog')
+        coroutines, captures, repairs = [], [], []
+        battle = model.made('battle')
+        menu = model.screen('battle_emerald', 'character_growth_header', 'character_close_tab_lit_480')
+        logs = []
+
+        @text_ports
+        class Ports:
+            Busy = ports_module.Busy
+            store = types.SimpleNamespace(saved=saved or {}, register=lambda *a: None, save=lambda: None)
+            enabled = staticmethod(lambda: True)
+            log = staticmethod(lambda *a: logs.append(a))
+            exception = staticmethod(lambda *a: logs.append(a))
+            respond = staticmethod(lambda body, status=200: body)
+            spawn = staticmethod(coroutines.append)
+            action_allowed = staticmethod(lambda *a: False)
+
+            class clock:
+                now = 0.
+                monotonic = staticmethod(lambda: Ports.clock.now)
+                wall = staticmethod(lambda: EPOCH + Ports.clock.now)
+                @staticmethod
+                async def sleep(seconds):
+                    if asyncio.current_task().get_name() == 'slayer-watchdog-reminders':
+                        await asyncio.Event().wait()
+                    if Ports.clock.now + seconds > duration:
+                        raise asyncio.CancelledError
+                    Ports.clock.now += seconds
+                    await asyncio.sleep(0)
+
+            @staticmethod
+            def last_input():
+                stamps = [stamp for stamp in inputs if stamp <= Ports.clock.now]
+                return {'monotonic': stamps[-1], 'wall': EPOCH + stamps[-1]} if stamps else None
+
+            @staticmethod
+            async def user_input():
+                return Ports.last_input()
+
+            @staticmethod
+            async def running(): return True
+            @staticmethod
+            async def dialog(): return None
+            @staticmethod
+            async def focus(): return {'game': True, 'window': 'game'}
+            @staticmethod
+            async def capture(max_age):
+                captures.append((Ports.clock.now, max_age))
+                Ports.clock.now += capture_cost
+                return menu if Ports.clock.now >= inputs[0] else battle
+            @staticmethod
+            async def analyse(fn, *args): return fn(*args)
+            @staticmethod
+            async def notify(text): return True
+
+        Ports.lease = types.SimpleNamespace(last_input=Ports.last_input,
+                state=lambda: {'holder': 'user'} if held else None)
+        async def recover(name):
+            repairs.append((Ports.clock.now, name))
+            return {'result': 'done', 'text_t': None}
+        async def read_controls(): return None
+        farming = {'switches': lambda: {'stage_change': 'plan', 'preset': 'plan'},
+                   'back_to_battle': recover, 'menu_recoverable': lambda shot: known and model.screens.character_growth(shot),
+                   'battle_stage': lambda shot, *args: 920, 'read_controls': read_controls}
+        built = feature.watchdog(Ports, model.screens,
+                    types.SimpleNamespace(read_battle=lambda shot: 3, progress=lambda shot: .5),
+                    rules, NUMERALS.get,
+                    {'state': lambda: {'mode': mode, 'state': 'farming'}, 'confirm': lambda *a: None},
+                    {'state': lambda: {'enabled': mode == 'mine'}},
+                    {'running': lambda: False}, lambda name: {'stage': 920}, farming)
+        async def run():
+            await built['startup'][0](None)
+            with self.assertRaises(asyncio.CancelledError):
+                await coroutines[0]
+        asyncio.run(run())
+        return captures, repairs, built['api']['look'](), logs
+
+    def test_two_fresh_menu_reads_start_at_pause_expiry_not_sixty_seconds_later(self):
+        captures, repairs, _, logs = self.run_watch()
+        self.assertEqual([round(at, 2) for at, age in captures], [15, 30, 46.3, 46.55])
+        self.assertEqual([age for at, age in captures][-2:], [0, 0])
+        self.assertEqual(repairs, [(46.55, 'mpw4')])
+        self.assertFalse(any('failed' in str(line).lower() for line in logs), logs)
+
+    def test_capture_cost_is_added_without_reusing_a_cached_frame(self):
+        captures, repairs, _, _ = self.run_watch(capture_cost=.4)
+        self.assertEqual([age for at, age in captures][-2:], [0, 0])
+        self.assertGreaterEqual(repairs[0][0], 46.3 + 2 * .4 + rules.MENU_CONFIRM)
+        self.assertLess(repairs[0][0], 48)
+
+    def test_a_second_input_resets_the_pause_before_any_recovery(self):
+        captures, repairs, _, _ = self.run_watch(inputs=(41.3, 45.8))
+        self.assertEqual([round(at, 2) for at, age in captures][-2:], [50.8, 51.05])
+        self.assertEqual(repairs, [(51.05, 'mpw4')])
+
+    def test_input_between_confirmations_requires_two_new_post_pause_captures(self):
+        captures, repairs, _, _ = self.run_watch(inputs=(41.3, 46.4), duration=57)
+        self.assertEqual([round(at, 2) for at, age in captures][-3:], [46.3, 51.4, 51.65])
+        self.assertEqual([age for at, age in captures][-3:], [0, 0, 0])
+        self.assertEqual(repairs, [(51.65, 'mpw4')])
+
+    def test_unknown_menus_and_other_modes_do_not_get_fast_recovery(self):
+        _, repairs, _, _ = self.run_watch(known=False)
+        self.assertEqual(repairs, [])
+        for mode in ('free', 'agent', 'mine'):
+            _, repairs, _, _ = self.run_watch(mode=mode)
+            self.assertEqual(repairs, [], mode)
+
+    def test_held_lease_and_failure_backoff_are_not_bypassed(self):
+        for kwargs in ({'held': True}, {'saved': {'watchdog': {'backoff': {
+                'back_to_battle': {'failures': 2, 'next': EPOCH + 1000, 'delay': 120, 'said': []}}}}}):
+            _, repairs, _, _ = self.run_watch(**kwargs)
+            self.assertEqual(repairs, [])
+
+    def test_gateway_observation_window_is_not_shortened(self):
+        captures, repairs, _, _ = self.run_watch(inputs=(0,), duration=50)
+        self.assertEqual([round(at, 2) for at, age in captures], [5, 20, 35, 50])
+        self.assertEqual(repairs[0], (35, 'mpw4'))
+
+
 class Timing(unittest.TestCase):
     def test_a_crash_is_alerted_and_relaunched_within_30_s(self):
         w = Watch()

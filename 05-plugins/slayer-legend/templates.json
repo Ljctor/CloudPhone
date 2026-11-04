@@ -1,4 +1,9 @@
 {
+  "Pièces nécessaires": "Required pieces",
+  "Placement automatique": "Automatic placement",
+  "Disponibilité à vérifier en jeu": "Availability to check in game",
+  "Même disposition que {variant}": "Same layout as {variant}",
+  "Gravure de {name} : placement non calibré pour {shapes}": "Engraving of {name}: placement not calibrated for {shapes}",
   "{panel} non reconnu : panneau laissé ouvert": "{panel} not recognised; panel left open",
   "fermeture de {panel} non confirmée": "Closing {panel} not confirmed",
   "Latent Power non reconnu : panneau laissé ouvert": "Latent Power not recognised; panel left open",

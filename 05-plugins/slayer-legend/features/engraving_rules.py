@@ -489,7 +489,7 @@ def weapon_by_id(weapon_id, table):
     return next((entry for entry in table["weapons"] if entry["id"] == weapon_id), None)
 
 
-def automation(weapon_id, table, rotate=False, variant=None):
+def automation(weapon_id, table, rotate=False, variant=None, *, calibrated_shapes=None):
     """Static executor applicability only; never proof of owned pieces,
     equipment, calibrated readings, switch authorization or final locks.
     variant=None describes the weapon, a supplied name describes its recipe.
@@ -526,6 +526,13 @@ def automation(weapon_id, table, rotate=False, variant=None):
                       t("Gravure {variant} de {name} invalide : couverture hors motif ou superposée, bonus de complétion indisponible",
                         variant=variant, name=entry["name"]))
             return result("incomplete_variant", reason)
+        # These are executor capabilities, independent of any inventory observation.
+        # None preserves integrations which do not inject their placement calibration.
+        if calibrated_shapes is not None:
+            missing = sorted({piece["shape"] for piece in choices[variant]["pieces"]} - set(calibrated_shapes))
+            if missing:
+                return result("uncalibrated_shape", t("Gravure de {name} : placement non calibré pour {shapes}",
+                                                      name=entry["name"], shapes=", ".join(missing)))
     return result("supported")
 
 

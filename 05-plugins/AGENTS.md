@@ -48,6 +48,12 @@ Rules:
       exactly one is listed and the launch's own tap opened the chooser.
     - "Press here to finish Power Saving Mode": held 4 s, at most 3 times.
   - Watchdog:
+    - After the last game input, wait at least five seconds before farming
+      menu recovery. Only Latent Power and Character Growth/Promotion with
+      calibrated close readers get a second fresh observation shortly
+      after that pause; the initial observation window, two-read threshold,
+      shared lease and failure backoff remain required. Other menus keep
+      their observation grace; Free play and Agent never trigger recovery.
     - "Wait" on Android's "isn't responding" dialog: once per dialog, never
       its "Close app".
     - The right edge's arrow that unfolds the controls, to read the preset
@@ -89,7 +95,8 @@ Rules:
       fresh capture recognises Growth selected, reduced battle and the
       Character tab as the only lit tab. One close, then verify plain Battle;
       no stat +, LEVEL UP or sub-tab icon is authorised. The close-tab
-      transition still awaits its first supervised gameplay confirmation.
+      transition is calibrated by supervised gameplay; every return still
+      requires its own fresh plain-Battle confirmation.
     - Closing a bottom panel with its own tab: only when that tab reads lit.
     - "Press here to finish Power Saving Mode": held 4 s, once per
       sequence, only when the screen reads Power Saving Mode.

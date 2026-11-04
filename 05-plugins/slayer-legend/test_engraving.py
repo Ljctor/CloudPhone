@@ -673,6 +673,29 @@ class Routes(unittest.TestCase):
                 self.assertEqual(chosen["automation"]["code"], expected)
                 self.assertFalse(chosen["automation"]["runtime_verified"])
 
+    def test_installed_applicability_uses_executor_calibration_not_inventory_history(self):
+        for saved_grid in (None, {"weapon": "another weapon", "cards": []}):
+            with self.subTest(history=saved_grid), tempfile.TemporaryDirectory() as data_dir:
+                with open(os.path.join(data_dir, "state.json"), "w", encoding="utf-8") as file:
+                    json.dump({"game": {"engraving": saved_grid}}, file)
+                call = self.setup_gateway(data_dir)
+                detail = call("GET", "/engraving", Request(id="32")).body
+                variants = {v["name"]: v for v in detail["variants"]}
+                for name, shape in (("Balanced", "J"), ("Crit", "O")):
+                    support = variants[name]["automation"]
+                    self.assertFalse(support["supported"])
+                    self.assertEqual(support["code"], "uncalibrated_shape")
+                    self.assertIn(shape, french(support["reason_t"]))
+                    # This blocks execution capability, not saving a preference.
+                    response = call("POST", "/loadout", Request({"mode": "mpw4", "soul_weapon": {
+                        "id": 32, "variant": name}}))
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(response.body["loadouts"]["mpw4"]["automation"]["code"], "uncalibrated_shape")
+                self.assertTrue(variants["Gold-maxed"]["automation"]["supported"])
+                self.assertTrue(variants["Gold-balanced"]["automation"]["supported"])
+                self.assertEqual(variants["Gold-maxed"]["needed"], {"I": 4})
+                self.assertEqual(variants["Gold-balanced"]["needed"], {"I": 4})
+
     def test_no_search_at_run_time(self):
         # The routes only read engravings.json: the searches run when it is built.
         with open(os.path.join(HERE, "features", "engraving.py"), encoding="utf-8") as f:
@@ -684,6 +707,27 @@ class Routes(unittest.TestCase):
 
 
 class AutomationApplicability(unittest.TestCase):
+    def test_calibration_limits_are_injected_and_never_imply_inventory(self):
+        # The same complete recipe becomes executable once J is calibrated;
+        # an old/unknown inventory cannot veto this structural capability.
+        blocked = rules.automation(32, TABLE, True, "Balanced", calibrated_shapes={"I", "L", "T"})
+        self.assertEqual(blocked["code"], "uncalibrated_shape")
+        supported = rules.automation(32, TABLE, True, "Balanced", calibrated_shapes={"I", "L", "T", "J"})
+        self.assertTrue(supported["supported"])
+        self.assertFalse(supported["runtime_verified"])
+        # Non-I targets remain eligible; this is not a four-bar-only policy.
+        non_bar_recipes = 0
+        for entry in TABLE["weapons"]:
+            for name, variant in rules.variants(entry, True).items():
+                shapes = {piece["shape"] for piece in variant["pieces"]}
+                if "L" in shapes and shapes <= {"I", "L", "T"}:
+                    non_bar_recipes += 1
+                    base = rules.automation(entry["id"], TABLE, True, name)
+                    calibrated = rules.automation(entry["id"], TABLE, True, name,
+                                                   calibrated_shapes={"I", "L", "T"})
+                    self.assertEqual(calibrated, base)
+        self.assertGreater(non_bar_recipes, 0)
+
     def test_static_support_is_not_runtime_verification(self):
         capability = rules.automation(32, TABLE, True, "Gold-maxed")
         self.assertTrue(capability["supported"])

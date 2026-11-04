@@ -8,24 +8,28 @@ import test_stage_change as stage
 
 
 class AgentSoulWeapon(unittest.IsolatedAsyncioTestCase):
-    def build(self):
+    def build(self, child_task=False):
         self.game = stage.Game(stage=915, preset="II")
         self.target = {"stage": 920, "preset": "IV", "soul_weapon": {"id": 32, "variant": "Gold-maxed"}}
         self.revision = "accepted-1"
         self.agent = True
         self.interrupt = lambda: None
         self.calls = []
+        self.finished = []
         self.input = None
         ports = self.game.ports()
         ports.last_input = lambda: self.input
 
         def soul_feature(ports, screens, reader, rules, table, helpers, engraving):
             async def ensure(weapon, variant, park):
-                await helpers.front()
-                self.calls.append((weapon, variant, park))
-                self.interrupt()
-                await helpers.front()
-                return "equipped"
+                async def execute():
+                    await helpers.front()
+                    self.calls.append((weapon, variant, park))
+                    self.interrupt()
+                    await helpers.front()
+                    self.finished.append(True)
+                    return "equipped"
+                return await asyncio.wait_for(asyncio.create_task(execute()), 1) if child_task else await execute()
 
             async def park():
                 await helpers.front()
@@ -64,6 +68,17 @@ class AgentSoulWeapon(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((self.game.state["stage"], self.game.state["preset"]), (915, "II"))
         self.assertEqual(self.target, before)
         self.assertEqual(self.game.leases, [("stage_change", "farm mpw18")])
+
+    async def test_agent_expiry_is_guarded_inside_a_bounded_child_task(self):
+        self.build(child_task=True)
+        self.interrupt = lambda: setattr(self, "agent", False)
+        status, answer = await self.request()
+        self.assertEqual(status, 200)
+        self.assertEqual(answer["result"], "failed")
+        self.assertFalse(answer["verified_weapon"])
+        self.assertEqual(self.calls, [(32, "Gold-maxed", True)])
+        self.assertEqual(self.finished, [], "the child cannot continue after Agent expires")
+        self.assertEqual(self.game.moves, [])
 
     async def test_agent_and_revision_required_before_any_execution(self):
         for change in (lambda: setattr(self, "agent", False), lambda: setattr(self, "revision", "changed")):

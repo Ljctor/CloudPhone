@@ -75,7 +75,8 @@ def setup(context):
     with open(os.path.join(context.directory, "stages.json"), encoding="utf-8") as f:
         table = json.load(f)
     timer = feature("timer_rules")
-    engraving = feature("engraving").engraving(ports, feature("engraving_rules"))
+    engraving = feature("engraving").engraving(ports, feature("engraving_rules"),
+                                               executor_shapes=feature("engraving_setup_rules").ROTATION_PIVOTS)
     screen_rules = feature("screen_rules")
     # Composition root: readers know pixels, facts own persistence, observation
     # owns bounded work, and the facade exposes their stable public API.

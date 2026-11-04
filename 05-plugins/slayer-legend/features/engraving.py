@@ -30,7 +30,7 @@ def revision(part):
     return hashlib.sha256(json.dumps(part, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:24]
 
 
-def engraving(ports, rules):
+def engraving(ports, rules, *, executor_shapes=None):
     table = rules.load()
     # Layouts hold turned pieces only once the game is known to turn them
     # ("rotation": true) or pieces are known to drop in every orientation
@@ -75,8 +75,11 @@ def engraving(ports, rules):
         entry = rules.weapon_by_id(weapon_id, table)
         return rules.variants(entry, rotate).get(name) if entry and entry.get("grid") else None
 
+    def capability(weapon_id, name=None):
+        return rules.automation(weapon_id, table, rotate, name, calibrated_shapes=executor_shapes)
+
     def applicability(chosen):
-        return rules.automation(chosen.get("id"), table, rotate, chosen.get("variant") or "") if chosen else rules.automation(None, table)
+        return capability(chosen.get("id"), chosen.get("variant") or "") if chosen else capability(None)
 
     api = {"loadout": lambda mode: dict(loadouts[mode]), "stage": lambda mode: loadouts[mode]["stage"],
            "set_stage": set_stage, "adopt_stage": adopt_stage, "expected_cells": expected_cells,
@@ -86,17 +89,17 @@ def engraving(ports, rules):
         return {key: entry.get(key) for key in ("id", "name", "stage", "grid", "source", "verified_in_game",
                                                 "wiki_check")} | {
             "variants": list(rules.variants(entry, rotate)) if entry.get("grid") else [],
-            "automation": rules.automation(entry["id"], table, rotate)}
+            "automation": capability(entry["id"])}
 
     def detail(entry):
         answer = {key: entry.get(key) for key in ("id", "name", "aliases", "stage", "colour", "grid", "cells",
                                                   "completion", "source", "wiki_check", "verified_in_game",
                                                   "tileable_with_rotation", "tileable_without", "note")}
         answer["rotation"] = table.get("rotation")
-        answer["automation"] = rules.automation(entry["id"], table, rotate)
+        answer["automation"] = capability(entry["id"])
         answer["variants"] = [
             dict(variant, needed=rules.needed(variant), needs_rotation=rules.needs_rotation(variant),
-                 automation=rules.automation(entry["id"], table, rotate, variant["name"]),
+                 automation=capability(entry["id"], variant["name"]),
                  needed_oriented=rules.needed(variant, oriented) if oriented else None)
             for variant in (rules.variants(entry, rotate).values() if entry.get("grid") else [])]
         return answer

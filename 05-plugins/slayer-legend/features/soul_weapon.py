@@ -393,6 +393,8 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
                 raise ports.Busy("l’utilisateur joue")
             if equipment_launch != status["relaunched"]:
                 raise Stop("vérification Soul Weapon interrompue par une relance")
+            if callable(getattr(helpers, "require_authority", None)):
+                helpers.require_authority()
         shot = await open_screen(recovered, {"id": target_id, "variant": variant})
         memory = rules.fresh_memory(status["direction"])
         view = await ports.analyse(view_of, shot)

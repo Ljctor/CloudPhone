@@ -413,6 +413,77 @@ class SetupStatus(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(observed_holds, [None])
         self.assertEqual(notification_holds, [None])
 
+    async def test_expired_input_hold_is_removed_before_resumed_farm(self):
+        self.engraving = 'real'
+        calls = []
+        revoked = []
+        self.ports.action_token = lambda *args: 'hold-action'
+        self.ports.revoke_action = revoked.append
+        self.ports.pause_left = lambda: max(0, 5 - (self.now - self.input['wall'])) if self.input else 0
+
+        async def farm(*args, **kwargs):
+            state = self.part['api']['state']()
+            calls.append(state)
+            if len(calls) == 1 or self.ports.pause_left():
+                if not self.input:
+                    self.input = {'wall': self.now, 'monotonic': self.now}
+                raise self.ports.Busy(rules.USER_PLAYING)
+            return {'result': 'done', 'verified_setup': True, 'text_t': None, 'timings': {}}
+
+        self.farming['farm'] = farm
+        await self.attempt()
+        self.assertIsNone(calls[-1]['hold'])
+        self.assertEqual(calls[-1]['state'], 'moving')
+        self.assertTrue(calls[-1]['setup'])
+        self.assertIsNone(calls[-1]['setup_result'])
+        self.assertGreaterEqual(self.now - self.input['wall'], 5)
+        self.assertEqual(revoked, ['hold-action'])
+        self.assertEqual(self.part['api']['state']()['setup_result']['result'], 'done')
+
+    async def test_retry_preserves_live_input_hold_until_pause_expires(self):
+        self.engraving = 'real'
+        calls = []
+        self.ports.pause_left = lambda: max(0, 5 - (self.now - self.input['wall'])) if self.input else 0
+
+        async def farm(*args, **kwargs):
+            state = self.part['api']['state']()
+            calls.append(state)
+            if len(calls) == 1:
+                self.input = {'wall': self.now, 'monotonic': self.now}
+                raise self.ports.Busy(rules.USER_PLAYING)
+            if self.ports.pause_left():
+                self.assertIsNotNone(state['hold'])
+                self.assertGreater(state['hold']['left'], 0)
+                self.assertEqual(state['state'], 'waiting')
+                self.assertIsNone(state['setup_result'])
+                raise self.ports.Busy(rules.USER_PLAYING)
+            return {'result': 'done', 'verified_setup': True, 'text_t': None, 'timings': {}}
+
+        self.farming['farm'] = farm
+        await self.attempt()
+        self.assertTrue(any(state['hold'] for state in calls[1:]))
+        self.assertEqual(self.part['api']['state']()['setup_result']['result'], 'done')
+
+    async def test_retry_does_not_clear_another_coordinators_expired_hold(self):
+        self.engraving = 'real'
+        # Model a foreign owner directly: normal replacement drains its owner
+        # first, so the public route deliberately cannot manufacture overlap.
+        state_function = self.part['api']['state']
+        private = dict(zip(state_function.__code__.co_freevars,
+                           (cell.cell_contents for cell in state_function.__closure__)))['status']
+        foreign = {'id': 'foreign', 'mode': 'mpw18', 'owner': object(),
+                   'until': self.now - 1, 'action': None}
+        private['hold'] = foreign
+
+        async def farm(*args, **kwargs):
+            self.assertIs(private['hold'], foreign)
+            self.assertEqual(self.part['api']['state']()['hold']['id'], 'foreign')
+            return {'result': 'failed', 'retryable': False, 'text_t': rules.t('écran inattendu'), 'timings': {}}
+
+        self.farming['farm'] = farm
+        await self.attempt()
+        self.assertIs(private['hold'], foreign)
+
     async def test_readiness_relaunch_precedes_the_actual_attempt_snapshot(self):
         self.engraving = 'real'
         receipts = []

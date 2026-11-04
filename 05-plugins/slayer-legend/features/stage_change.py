@@ -71,6 +71,7 @@ on one unfold, or None. relaunched(mode) for the watchdog's relaunch.
 
 import asyncio
 import copy
+from contextvars import ContextVar
 from types import SimpleNamespace
 
 # After a move: a fresh capture every POLL seconds until the screen
@@ -151,7 +152,30 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
     switches = kept_switches((ports.store.saved.get("farming") or {}).get("switches"))
     status = {"last": None}
     agent_context = [lambda: False]
-    agent_guards = {}
+    transaction_guard = ContextVar("farming_transaction_guard", default=None)
+
+    def require_authority():
+        guard = transaction_guard.get()
+        if guard:
+            guard()
+
+    async def guarded(operation, guard):
+        """Scope a caller's ownership through bounded child tasks as well."""
+        previous = transaction_guard.get()
+
+        def current():
+            if previous:
+                previous()
+            guard()
+
+        token = transaction_guard.set(current)
+        try:
+            require_authority()
+            answer = await operation()
+            require_authority()
+            return answer
+        finally:
+            transaction_guard.reset(token)
     ports.store.register("farming", lambda: {"switches": dict(switches)})
 
     def real(name):
@@ -181,13 +205,10 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
             await ports.clock.sleep(POLL)
 
     async def front():
-        guard = agent_guards.get(asyncio.current_task())
-        if guard:
-            guard()
+        require_authority()
         if not await ports.focused():
             raise Stop("le jeu n’est plus au premier plan")
-        if guard:
-            guard()
+        require_authority()
 
     async def tap(shot, screen, move, point, verified=False, seen=None):
         await front()
@@ -476,10 +497,12 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         waited for (they asked to resume now)."""
         plans = []
         timings = {}
+        require_authority()
         async with ports.leased(HOLDER, f"farm {mode}", LEASE_SECONDS, **({"pause": False} if force else {})):
             input_reader = getattr(ports, "last_input", None)
             started_input = copy.deepcopy(input_reader()) if callable(input_reader) else None
             def require_current_input():
+                require_authority()
                 if callable(input_reader) and input_reader() != started_input:
                     raise ports.Busy("l’utilisateur joue")
             try:
@@ -531,7 +554,8 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
     souls = None
     if soul:
         souls = soul["feature"](ports, screens, soul["reader"], soul["rules"], soul["table"],
-                                SimpleNamespace(look=look, tap=tap, front=front, to_battle=to_battle, Stop=Stop),
+                                SimpleNamespace(look=look, tap=tap, front=front, to_battle=to_battle,
+                                                require_authority=require_authority, Stop=Stop),
                                 soul.get("engraving"))
         if hasattr(ports, "on_relaunch"):
             # A relaunch seen anywhere: the weapon read equipped is read again.
@@ -600,6 +624,15 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
             await souls["park"]()
         except Stop as e:
             raise Stop("Soul Weapon : {why}", why=e.t) from None
+
+    def menu_recoverable(shot):
+        """Read-only capability: exactly the panels this recovery can close."""
+        seen = screens.look(shot)
+        if seen.get("screen") == "latent_power":
+            return bool(getattr(screens, "latent_power", lambda image: False)(shot))
+        return bool(seen.get("screen") == "battle" and any(
+            panel in seen.get("overlays", ()) and getattr(screens, panel, lambda image: False)(shot)
+            for panel in ("character_growth", "character_promotion")))
 
     async def back_to_battle(mode):
         """Bounded menu recovery; no guessed panels and no loadout changes."""
@@ -738,7 +771,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
             if not ports.enabled():
                 raise Stop("Test Soul Weapon arrêté : plugin désactivé")
             if callable(getattr(ports, "last_input", None)) and ports.last_input() != input_mark:
-                raise Stop("Test Soul Weapon arrêté : vous avez repris la main")
+                raise ports.Busy("l’utilisateur joue")
             if not agent_context[0]():
                 raise Stop("Test Soul Weapon arrêté : mode Agent indisponible")
             if (not revision or revision(name) != body["if_revision"]
@@ -749,17 +782,12 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
             guard()
         except Stop as exc:
             return ports.respond({"error_t": exc.t}, status=409)
-        task = asyncio.current_task()
-        agent_guards[task] = guard
         try:
-            answer = await ensure_soul_weapon(name, target)
-            guard()
+            answer = await guarded(lambda: ensure_soul_weapon(name, target), guard)
         except ports.Busy as exc:
             return ports.respond({"error_t": exc.t}, status=409)
         except Stop as exc:
             return ports.respond({"result": "failed", "verified_weapon": False, "text_t": exc.t})
-        finally:
-            agent_guards.pop(task, None)
         answer = dict(answer, mode=name, if_revision=body["if_revision"],
                       verified_weapon=answer["result"] == "done")
         # This route deliberately has no verified_setup receipt and never
@@ -797,7 +825,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
            "read_controls": read_controls, "switches": lambda: dict(switches),
            "relaunched": relaunched, "ensure_soul_weapon": ensure_soul_weapon,
            "park": lambda mode: run(mode, [("park", lambda: park(mode))]), "parked": parked, "unpark": unpark,
-           "back_to_battle": back_to_battle,
+           "back_to_battle": back_to_battle, "menu_recoverable": menu_recoverable, "guarded": guarded,
            "soul_weapon_switch": lambda: souls["switch"]() if souls else "off",
            "soul_weapon_state": lambda: souls["state"]() if souls else None,
            "soul_verification_needed": soul_verification_needed,

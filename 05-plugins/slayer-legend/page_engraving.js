@@ -63,6 +63,10 @@ const ENGLISH = {
   "Réessayer l’enregistrement": "Retry saving",
   "Données de gravure indisponibles": "Engraving data unavailable",
   "Compatibilité non vérifiée": "Compatibility unverified",
+  "Pièces nécessaires": "Required pieces",
+  "Placement automatique": "Automatic placement",
+  "Disponibilité à vérifier en jeu": "Availability to check in game",
+  "Même disposition que {variant}": "Same layout as {variant}",
   "Structure prise en charge · inventaire et équipement non vérifiés": "Structure supported · inventory and equipment unverified",
   "Exécution non prise en charge": "Execution unsupported",
   "Cible acceptée · exécution bloquée": "Target accepted · execution blocked",
@@ -197,6 +201,34 @@ export default function loadoutFeature(api, { onApplied = () => {}, execution = 
   // grids the wiki's players disagree on): the confidence of the data
   // stays in engravings.json and the README.
   const warned = (mode) => Boolean(variant(mode)) && weapon(mode)?.wiki_check === 'community-differs';
+  const requirements = (mode) => {
+    const chosen = variant(mode);
+    const needed = chosen?.needed ?? (chosen?.pieces ?? []).reduce((out, piece) => {
+      if (piece.shape) out[piece.shape] = (out[piece.shape] ?? 0) + 1;
+      return out;
+    }, {});
+    const pieces = Object.entries(needed).sort(([a], [b]) => a.localeCompare(b))
+      .map(([shape, count]) => `${count} × ${shape}`).join(' · ');
+    return `${pieces || '—'} · ${api.tr('Disponibilité à vérifier en jeu')}`;
+  };
+  // Names, sheet colours and objective labels do not make two layouts different.
+  const layoutKey = (entry) => {
+    // API recipes contain cells for every piece. Missing/malformed data must
+    // not crash the dialog or turn two unknown layouts into an equivalence.
+    if (!Array.isArray(entry?.pieces) || !entry.pieces.length
+        || entry.pieces.some((piece) => !Array.isArray(piece?.cells) || !piece.cells.length
+          || piece.cells.some((cell) => !Array.isArray(cell) || cell.length !== 2
+            || !cell.every(Number.isInteger)))) return null;
+    return JSON.stringify(entry.pieces.map((piece) => JSON.stringify([piece.shape ?? null,
+      [...piece.cells].map(([r, c]) => [r, c]).sort(([ar, ac], [br, bc]) => ar - br || ac - bc)])).sort());
+  };
+  const equivalentVariant = (mode) => {
+    const chosen = variant(mode);
+    const key = layoutKey(chosen);
+    if (!key) return null;
+    const previous = (weapon(mode)?.variants ?? []).slice(0, weapon(mode).variants.indexOf(chosen));
+    return previous.find((candidate) => layoutKey(candidate) === key) ?? null;
+  };
   const applicability = (mode) => variant(mode)?.automation ?? weapon(mode)?.automation;
   const applicabilityText = (mode) => {
     const support = applicability(mode);
@@ -423,6 +455,10 @@ export default function loadoutFeature(api, { onApplied = () => {}, execution = 
         value: () => value(mode, 'Variant'), visible: () => Boolean(value(mode, 'Weapon')), choices: () => variantChoices(mode),
       },
       { type: 'grid', label: 'Grille', visible: () => Boolean(variant(mode)), rows: () => gridRows(mode) },
+      { type: 'status', label: 'Pièces nécessaires', visible: () => Boolean(variant(mode)), value: () => requirements(mode) },
+      { type: 'status', label: 'Placement automatique', visible: () => Boolean(variant(mode)), value: () => applicabilityText(mode) },
+      { type: 'status', label: 'Attention', visible: () => Boolean(equivalentVariant(mode)),
+        value: () => api.tr('Même disposition que {variant}', { variant: equivalentVariant(mode)?.name ?? '' }) },
       {
         type: 'status', label: 'Attention', visible: () => warned(mode),
         value: () => api.tr('Grille à vérifier en jeu avant la pose'),

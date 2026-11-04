@@ -66,10 +66,18 @@ class GrowthReader(unittest.TestCase):
             self.assertIsNotNone(soul.nav.guard('character_growth', 'close_tab', .073, .966, verified=True, seen=bad))
         self.assertIsNotNone(soul.nav.guard('character_growth', 'close_tab', .073, .966, seen=seen))
         move = next(move for move in soul.nav.connections('character_growth') if move['id'] == 'close_tab')
-        self.assertTrue(move['assumed'], 'No actual close-tab transition has been observed yet')
+        self.assertFalse(move['assumed'], 'The close-tab return has supervised gameplay evidence')
 
 
 class GrowthRecovery(unittest.TestCase):
+    def test_fast_menu_capability_excludes_unrecognised_and_other_screens(self):
+        for name in ('growth', 'promotion', 'latent_power', 'unknown', 'battle', 'equipment', 'soul'):
+            game = soul.Game(screen=name)
+            _, api = build(game)
+            self.assertEqual(api['menu_recoverable'](game.snapshot()),
+                             name in ('growth', 'promotion', 'latent_power'))
+
+
     def test_growth_closes_once_then_parks_without_changing_equipment(self):
         for mode in ('mpw4', 'mpw18', 'soul'):
             game = soul.Game(screen='growth')

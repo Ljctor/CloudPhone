@@ -45,8 +45,12 @@ while paused (free play, a mode's entry, a user input), in the mine, on
 another screen (a menu: its own symptom) or within rules.BAR_SETTLE of a
 relaunch: the count starts over. The way
 back to battle from a game menu is available only through the farming
-feature's calibrated menu-recovery capability. It recognises Promotion,
-closes its lit Character tab, confirms plain battle, then parks. Other
+feature's calibrated menu-recovery capability. It recognises Latent Power,
+Growth and Promotion, closes only their calibrated X or lit Character tab,
+confirms plain battle, then parks. After a user input, the five-second
+pause is followed by two fresh observations of a recoverable menu (the
+second after MENU_CONFIRM), without another menu grace. Startup observation,
+lease ownership and failure backoff remain unchanged. Other
 panels stay blocked; no relaunch or guessed close is substituted.
 
 Parking (rules.park_wanted): while mpw18 or mpw4 farms, its idle place
@@ -103,6 +107,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
               "intention": None, "redirect_episode": None, "failure_notices": {}, "gold": rules.gold_fresh(),
               "bar": rules.bar_fresh(), "relaunched_at": None,
               "policy_block": copy.deepcopy(saved_block), "last_input": None,
+              "observed_input": None, "menu_confirm_at": None,
               "notice_wall": None, "notice_attempt": None, "notice_mode": None, "observed": None,
               "critical_observation": None, "entry_mode": None, "entry_since": None,
               "setup_failure": None, "verification_since": None}
@@ -371,7 +376,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                 stage.progress(shot) if name == "parked" or battle and screens.plain_battle(shot) else None,
                 screens.other_name(shot) if name == "other" else None)
 
-    async def look():
+    async def look(max_age=rules.MAX_AGE):
         """What one look sees (watchdog_rules.judge's seen)."""
         running = await ports.running()
         seen = {"adb": running is not None, "running": bool(running), "crash": False, "anr": False,
@@ -388,10 +393,12 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                 # dialog, Google's; never the account's).
                 ports.log("normal", f"Watchdog: the game is not in front: {focus['window']}")
         if seen["focused"]:
-            shot = await ports.capture(max_age=rules.MAX_AGE)
+            shot = await ports.capture(max_age=max_age)
             if shot:
                 seen["screen"], seen["numeral"], seen["stage"], seen["bar"], seen["named"] = \
                     await (scanned_facts(shot) if game is not None else ports.analyse(facts, shot))
+                if seen["screen"] == "menu" and farming and callable(farming.get("menu_recoverable")):
+                    seen["menu_recoverable"] = bool(await ports.analyse(farming["menu_recoverable"], shot))
         return seen
 
     async def read_controls(seen):
@@ -437,14 +444,30 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         part = profile()
         name = part["mode"]
         attempt_context = policy_context(name)
+        epoch_reader = modes.get("mode_epoch", lambda: None)
+        epoch = epoch_reader()
+
+        def require_current_repair():
+            if (mode_now() != name or epoch_reader() != epoch
+                    or modes["state"]().get("state") == "moving"
+                    or policy_context(name) != attempt_context):
+                raise ports.Busy("Configuration demandée non vérifiée")
+
         status["repairing"] = kind
         status["intention"] = rules.redirect_intention(kind, profile())
         show(ports.t("Vers {destination} : {purpose}", destination=status["intention"]["destination_t"],
                      purpose=status["intention"]["purpose_t"]))
         try:
-            answer = await (farming["back_to_battle"](name) if kind == "back_to_battle" else
-                            farming["park"](name) if kind == "park" else
-                            farming["farm"](part["stage"], part["preset"], name, modes["state"]().get("highest")))
+            async def operation():
+                return await (farming["back_to_battle"](name) if kind == "back_to_battle" else
+                              farming["park"](name) if kind == "park" else
+                              farming["farm"](part["stage"], part["preset"], name, modes["state"]().get("highest")))
+            require_current_repair()
+            if "guarded" in farming:
+                answer = await farming["guarded"](operation, require_current_repair)
+            else:
+                answer = await operation()
+            require_current_repair()
         except ports.Busy as e:
             memory = rules.not_run(memory, kind)
             say("normal", "Action waiting: {repair}; {why}", {"repair": rules.REPAIR_NAMES[kind], "why": e.t})
@@ -576,11 +599,17 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         nonlocal memory
         name = mode_now()
         now, wall = ports.clock.monotonic(), ports.clock.wall()
+        confirming_menu = status["menu_confirm_at"] is not None
+        status["menu_confirm_at"] = None
         last = await ports.user_input()  # only an input with the game in front
         if last != status["last_input"]:
             # A manual preset correction must be freshly observed as soon as
             # the normal input pause ends, not from the five-minute cache.
             status["controls"] = None
+            # Menu observations before a new user interaction cannot be
+            # reused as the two confirmations after its pause. Keep backoff.
+            if memory.get("symptom") == "menu":
+                memory = {**memory, "streak": 0, "since_repair": 0, "menu_since": None}
             status["last_input"] = copy.deepcopy(last)
         if name != status["mode"]:
             status["critical_observation"] = None
@@ -622,7 +651,11 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         if launches["running"]():
             show(ports.t("Lancement du jeu en cours"))
             return False
-        seen = await look()
+        stamp = last["monotonic"] if last else None
+        fresh_input = stamp is not None and stamp != status["observed_input"]
+        seen = await look(max_age=0 if fresh_input or confirming_menu else rules.MAX_AGE)
+        if seen.get("screen") is not None:
+            status["observed_input"] = stamp
         # A healthy battle/parking frame says nothing about an interrupted
         # engraving. Keep its durable repair intent visible after a restart.
         if name in FARMED:
@@ -697,6 +730,11 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         if symptom in (None, "unparked") and name in FARMED:
             modes["confirm"](name)
         memory, actions = rules.decide(memory, symptom, text, params, context, wall)
+        if (symptom == "menu" and seen.get("menu_recoverable") and name in FARMED
+                and last is not None and now - last["monotonic"] >= rules.PAUSE_AFTER_INPUT
+                and memory["looks"] > rules.OBSERVE_FIRST
+                and memory["since_repair"] == 1 and memory["verifying"] is None):
+            status["menu_confirm_at"] = ports.clock.monotonic() + rules.MENU_CONFIRM
         if symptom == "unknown" and memory.get("symptom") == "monitoring_unavailable":
             symptom = status["symptom"] = "monitoring_unavailable"
             text, params = "Monitoring unavailable: no reliable game observation; farming unverified", {}
@@ -778,19 +816,20 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
     async def watch_steps():
         # Poll only the input timestamp between regular looks. A fresh input
         # is reflected at once, then the first look after the 5 s pause is
-        # scheduled at its expiry. Full game checks keep their 15 s cadence.
+        # scheduled at its expiry. Full checks normally keep their 15 s cadence;
+        # only a recognised recoverable menu gets one close confirmation.
         input_stamp = None
         resume_at = None
         next_look = ports.clock.monotonic() + rules.EVERY
         monitor_input = callable(getattr(ports.lease, "last_input", None))
         while True:
             try:
-                if not monitor_input:
+                if not monitor_input and status["menu_confirm_at"] is None:
                     await ports.clock.sleep(rules.EVERY)
                     await tick()
                     continue
                 now = ports.clock.monotonic()
-                last = ports.last_input()
+                last = ports.last_input() if monitor_input else status["last_input"]
                 stamp = last["monotonic"] if last else None
                 if stamp != input_stamp:
                     input_stamp = stamp
@@ -803,11 +842,15 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                     resume_at = None
                     await tick()
                     next_look = ports.clock.monotonic() + rules.EVERY
+                elif status["menu_confirm_at"] is not None and now >= status["menu_confirm_at"]:
+                    await tick()
+                    next_look = ports.clock.monotonic() + rules.EVERY
                 elif now >= next_look:
                     await tick()
                     next_look = ports.clock.monotonic() + rules.EVERY
                 now = ports.clock.monotonic()
-                await ports.clock.sleep(rules.input_wake_delay(now, next_look, resume_at))
+                due = min(next_look, status["menu_confirm_at"]) if status["menu_confirm_at"] is not None else next_look
+                await ports.clock.sleep(rules.input_wake_delay(now, due, resume_at))
             except asyncio.CancelledError:
                 raise
             except Exception as e:

@@ -355,6 +355,15 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
                     require_target()
                     answer = await ready_game(name)
                     require_target()
+                    # A resumed setup is active work, not an expired input
+                    # hold. Preserve a live hold or another coordinator's hold.
+                    hold = status["hold"]
+                    if (answer is None and hold and hold["owner"] is me
+                            and hold["until"] <= ports.clock.monotonic()
+                            and not ports.pause_left()):
+                        end_hold("timeout")
+                    if answer is None and status["hold"] is None:
+                        report("moving", moving)
                     # Readiness may have launched the game. Each actual farm
                     # attempt owns its current input mark and verified launch
                     # epoch; accepted target/revision stay bound across waits.
