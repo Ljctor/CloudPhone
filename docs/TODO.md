@@ -30,10 +30,15 @@ separate milestones. Historical checked items below do not close a new regressio
   privately. Later captures, reclassification or overlay updates must not rewrite the
   report's original context. Verify recording, saved replay/review and developer
   disposition end to end; feedback never replays a game input by itself.
-- [ ] Show display names only in the screen picker; keep technical IDs, paths
+  The capture/upload implementation preserves PNG, rendered SVG/DOM and hashes;
+  browser checks cover HTTP attachments, secure-origin recording and navigation
+  after capture. Direct recording requires HTTPS. Optional offline transcription
+  remains separate and produces machine drafts requiring developer review.
+- [x] Show display names only in the screen picker; keep technical IDs, paths
   and provenance in developer details. Optional category tabs may organise the
   choices without exposing internal paths or submitting an invisible selection.
-  Verify desktop/mobile selection and meaningful labels after the UI changes.
+  Desktop/mobile browser checks cover category filtering, readable labels and
+  clearing a hidden selection when the active category changes.
 - [x] Distinguish navigation, actions, forbidden rectangles and recognition-only
   landmarks in the shared live and archived debug renderer.
 - [x] Persist user zone edits separately from navigation authority and share them

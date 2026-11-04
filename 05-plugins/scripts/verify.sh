@@ -2,6 +2,13 @@
 # Read-only validation of the installed Slayer Legend resource catalogue.
 set -euo pipefail
 base=${1:?Usage: verify.sh http://LISTEN_ADDRESS:WEB_PORT}
+curl -fsS "${base%/}/api/v1/plugins/slayer-legend/navigation/oral-feedback?limit=1" | python3 -c '
+import json, sys
+queue = json.load(sys.stdin)
+assert isinstance(queue["items"], list) and len(queue["items"]) <= 1
+assert all(item.get("gestureAuthority") is False for item in queue["items"])
+print("Private oral developer-review queue: OK")
+'
 # Real reviewed crops distinguish red drag ghosts from actionable controls;
 # this check stays deterministic and never gestures on the installed game.
 python3 "$(dirname "$0")/../slayer-legend/test_screen_model.py" EngravingPreview Registry
@@ -52,6 +59,7 @@ python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_trans
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_game.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_navigation_debug.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_trace_feature.py -q
+# Evidence matching: exact registered capture aliases and destination-specific panel tabs.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_evidence_review.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_zone_feedback.py -q
 node "$(dirname "$0")/../slayer-legend/review_app/test_model.mjs"

@@ -32,6 +32,9 @@ for edge in graph['edges']:
     assert edge['kind'] in ('tap', 'long', 'swipe')
     assert all(0 <= edge['start'][axis] <= 1 for axis in ('x', 'y'))
 assert isinstance(json.loads(request('/api/feedback'))['items'], list)
+assert isinstance(json.loads(request('/api/oral-feedback'))['items'], list)
+assert b'freezeOralContext' in request('/page_oral_feedback.js')
+request('/api/oral-feedback/contexts', 403, data=b'{}', headers={'Content-Type': 'application/json', 'Origin': 'https://external.invalid'})
 request('/review_server.py', 404)
 request('/api/image/example:missing-image', 404)
 # Invalid empty objects cannot create feedback even if a guard regresses.

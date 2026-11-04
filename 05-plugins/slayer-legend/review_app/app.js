@@ -1,4 +1,5 @@
 import { COLOURS, matchGesture, gestureLabel, screenLabel, battlefieldLabel, inside } from './model.js';
+import oralFeedback, { freezeOralContext, oralTransport } from '../page_oral_feedback.js';
 import { zoneStyle } from '../page_zone_style.js';
 
 const $ = (id) => document.getElementById(id);
@@ -19,6 +20,16 @@ const svg = (tag, attributes = {}, text) => {
   return node;
 };
 const current = () => state.nodes.get(state.current);
+const oral = oralFeedback({ transport: oralTransport('/api/oral-feedback'), capture: () => {
+  const node = current();
+  if (!node) throw Error('Aucune capture sélectionnée.');
+  return freezeOralContext({ image: $('screen-image'), layer: $('phone'), svgElement: $('overlay'),
+    source: 'review', nodeId: node.id, screen: node.screen, displayName: screenLabel(node),
+    regions: node.regions ?? [], enabled: state.overlay,
+    state: { selectedEdge: state.selectedEdge, representativeNodeId: node.representativeNodeId, review: node.review },
+  });
+} });
+$('feedback-panel').append(oral.element);
 const outgoing = () => state.outgoing.get(state.current) ?? [];
 const safeImage = (url) => typeof url === 'string' && url.startsWith('/api/image/') && !url.startsWith('//') ? url : null;
 const date = (node) => {
@@ -27,7 +38,7 @@ const date = (node) => {
 };
 const reviewText = (node) => {
   const status = node.review?.processingStatus ?? node.review?.status ?? node.review_status;
-  return ({ processed: 'Éléments examinés', ambiguous: 'À vérifier', rejected: 'Capture inexploitable' })[status] ?? 'Capture enregistrée';
+  return ({ processed: 'Analyse automatique effectuée', ambiguous: 'À examiner par l’agent', rejected: 'Capture inexploitable' })[status] ?? 'Capture enregistrée';
 };
 
 function notice(message, error = false) {

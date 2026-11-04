@@ -136,7 +136,7 @@ globalThis.window = { setInterval(fn) {
 const all = (node) => [node, ...node.children.flatMap(all)];
 const root = new Element('main'); root.root = true;
 const status = () => all(root).find((item) => item.attrs.role === 'status')?.textContent;
-const buttons = () => all(root).filter((item) => item.tagName === 'button' && !('data-debug-toggle' in item.attrs) && !('data-screen-evidence' in item.attrs));
+const buttons = () => all(root).filter((item) => item.tagName === 'button' && !('data-debug-toggle' in item.attrs) && !('data-screen-evidence' in item.attrs) && !('data-oral-control' in item.attrs));
 const event = (clientX = 30, clientY = 70) => ({ clientX, clientY, pointerId: 1,
   preventDefault() { this.prevented = true; }, stopPropagation() { this.stopped = true; } });
 // Yield one event-loop turn so shared request/finally chains settle without

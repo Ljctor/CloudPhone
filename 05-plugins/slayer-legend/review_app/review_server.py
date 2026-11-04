@@ -14,6 +14,7 @@ import uuid
 import sys
 import hashlib
 import importlib.util
+import urllib.parse
 
 from aiohttp import web
 
@@ -23,6 +24,12 @@ if not _zone_path.is_file():
 _zone_spec = importlib.util.spec_from_file_location("cloudphone_shared_zone_feedback", _zone_path)
 zone_feedback = importlib.util.module_from_spec(_zone_spec)
 _zone_spec.loader.exec_module(zone_feedback)
+_oral_path = Path(__file__).with_name("oral_feedback.py")
+if not _oral_path.is_file():
+    _oral_path = Path(__file__).parent.parent / "oral_feedback.py"
+_oral_spec = importlib.util.spec_from_file_location("cloudphone_shared_oral_feedback", _oral_path)
+oral_feedback = importlib.util.module_from_spec(_oral_spec)
+_oral_spec.loader.exec_module(oral_feedback)
 
 CAPTURE = re.compile(r"[0-9a-f]{32}")
 THUMB = re.compile(r"[0-9a-f]{312}")
@@ -62,7 +69,7 @@ def safe_image(directory, capture_id, side):
 
 
 class Evidence:
-    def __init__(self, data_dir, feedback_path, static_dir=None, ledger_path=None, plugin_dir=None, processor=None):
+    def __init__(self, data_dir, feedback_path, static_dir=None, ledger_path=None, plugin_dir=None, processor=None, frontend_origins=()):
         self.data_dir = Path(data_dir)
         self.manual_dir = self.data_dir / "manual-clicks"
         self.feedback_path = Path(feedback_path)
@@ -75,6 +82,8 @@ class Evidence:
         self.review_event = asyncio.Event()
         self.review_state = {"enabled": bool(processor), "state": "idle", "lastRun": None}
         self.zones = zone_feedback.ZoneFeedback(self.feedback_path.parent)
+        self.oral = oral_feedback.OralFeedback(self.feedback_path.parent)
+        self.frontend_origins = tuple(frontend_origins)
 
     def known_screens(self):
         registry = read_json(self.plugin_dir / "screen_registry.json", {})
@@ -583,8 +592,10 @@ class Evidence:
 
 @web.middleware
 async def private_headers(request, handler):
-    if request.method == "POST":
-        if request.content_type != "application/json":
+    voice = request.path == "/api/oral-feedback" or request.path.startswith("/api/oral-feedback/")
+    if request.method == "POST" and not voice:
+        audio_upload = bool(re.fullmatch(r"/api/oral-feedback/[0-9a-f]{32}/audio", request.path))
+        if request.content_type != "application/json" and not audio_upload:
             raise web.HTTPUnsupportedMediaType(text="JSON required")
         origin = request.headers.get("Origin")
         if origin and origin != f"{request.scheme}://{request.host}":
@@ -610,6 +621,8 @@ def make_app(evidence):
             await asyncio.gather(task, return_exceptions=True)
 
     app.cleanup_ctx.append(reviewer_lifetime)
+    for method, path, handler in oral_feedback.routes(evidence.oral, "/api/oral-feedback", evidence.frontend_origins):
+        app.router.add_route(method, path, handler)
 
     async def graph(request):
         async with evidence.lock:
@@ -697,14 +710,22 @@ def make_app(evidence):
 
     async def static(request):
         filename = request.match_info.get("filename", "index.html")
-        if filename not in {"index.html", "style.css", "app.js", "model.js", "page_zone_style.js"}:
+        if filename not in {"index.html", "style.css", "app.js", "model.js", "page_zone_style.js", "page_oral_feedback.js"}:
             raise web.HTTPNotFound()
         path = evidence.static_dir / filename
-        if filename == "page_zone_style.js" and not path.is_file():
-            path = evidence.plugin_dir / filename
+        if filename in {"page_zone_style.js", "page_oral_feedback.js"} and not path.is_file():
+            parent = evidence.static_dir.parent / filename
+            path = parent if parent.is_file() else evidence.plugin_dir / filename
         if path.is_symlink() or not path.is_file():
             raise web.HTTPNotFound()
-        return web.FileResponse(path)
+        headers = {}
+        origin = request.headers.get("Origin")
+        if filename == "page_oral_feedback.js" and origin:
+            if origin not in evidence.frontend_origins and origin != f"{request.scheme}://{request.host}":
+                raise web.HTTPForbidden(text="Untrusted feedback frontend")
+            if origin in evidence.frontend_origins:
+                headers = {"Access-Control-Allow-Origin": origin, "Vary": "Origin"}
+        return web.FileResponse(path, headers=headers)
 
     app.router.add_get("/api/graph", graph)
     app.router.add_get("/api/image/{node_id}", image)
@@ -729,6 +750,7 @@ def main():
     parser.add_argument("--ledger", type=Path)
     parser.add_argument("--plugin-dir", type=Path, default=Path(__file__).parent.parent)
     parser.add_argument("--process-reviews", action="store_true", help="Run bounded passive evidence review batches")
+    parser.add_argument("--frontend-origin", action="append", default=[], help="Explicit trusted frontend origin for VOICE-only CORS")
     args = parser.parse_args()
     try:
         address = ipaddress.ip_address(args.host)
@@ -736,8 +758,14 @@ def main():
         parser.error("--host must be an explicit private IP address")
     if address.is_unspecified or not address.is_private or address.is_multicast:
         parser.error("--host must be a private, non-wildcard address")
+    for origin in args.frontend_origin:
+        parsed = urllib.parse.urlsplit(origin)
+        if (parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password
+                or parsed.path or parsed.query or parsed.fragment or not re.fullmatch(r"https?://[A-Za-z0-9._:\[\]-]+", origin)):
+            parser.error("--frontend-origin must be an explicit HTTP(S) origin without a path or wildcard")
     evidence = Evidence(args.data_dir, args.feedback_file, args.static_dir, args.ledger, args.plugin_dir,
-                        Path(__file__).with_name("evidence_review.py") if args.process_reviews else None)
+                        Path(__file__).with_name("evidence_review.py") if args.process_reviews else None,
+                        args.frontend_origin)
     web.run_app(make_app(evidence), host=args.host, port=args.port, access_log=None)
 
 

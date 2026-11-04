@@ -5,6 +5,7 @@ set -euo pipefail
 source_dir=$(cd "$(dirname "$0")" && pwd)
 listen_address=
 port=7890
+frontend_origins=()
 data_dir=/var/lib/cloudphone/plugins/slayer-legend
 feedback_file=/var/lib/cloudphone-review/feedback.json
 ledger_file=/var/lib/cloudphone-review/trace-review.json
@@ -16,6 +17,7 @@ while [ "$#" -gt 0 ]; do
   case $1 in
     --host) listen_address=${2:?Missing host}; shift 2 ;;
     --port) port=${2:?Missing port}; shift 2 ;;
+    --frontend-origin) frontend_origins+=("${2:?Missing frontend origin}"); shift 2 ;;
     --data-dir) data_dir=${2:?Missing data directory}; shift 2 ;;
     --feedback-file) feedback_file=${2:?Missing feedback file}; shift 2 ;;
     --ledger) ledger_file=${2:?Missing ledger file}; shift 2 ;;
@@ -34,6 +36,17 @@ for path in "$data_dir" "$feedback_file" "$ledger_file" "$python_path"; do
   [[ $path =~ ^/[A-Za-z0-9._/-]+$ ]] || { echo 'Paths must be absolute and contain only safe path characters' >&2; exit 2; }
 done
 [[ $port =~ ^[0-9]+$ ]] || exit 2
+frontend_argument=
+for frontend_origin in "${frontend_origins[@]}"; do
+  python3 - "$frontend_origin" <<'PY'
+import re, sys, urllib.parse
+url = urllib.parse.urlsplit(sys.argv[1])
+assert url.scheme in ('http', 'https') and url.hostname and not (url.username or url.password or url.path or url.query or url.fragment)
+assert re.fullmatch(r'[A-Za-z0-9._:-]+', url.hostname)
+assert re.fullmatch(r'https?://[A-Za-z0-9._:\[\]-]+', sys.argv[1])
+PY
+  frontend_argument+=" --frontend-origin $frontend_origin"
+done
 [ -d "$data_dir" ] || { echo 'Recorded evidence directory is missing' >&2; exit 1; }
 [ -x "$python_path" ] || { echo 'Gateway Python environment is missing' >&2; exit 1; }
 "$python_path" -c 'import aiohttp'
@@ -41,7 +54,7 @@ for name in review_server.py index.html style.css app.js model.js; do
   [ -f "$source_dir/$name" ] || { printf 'Missing application file: %s\n' "$name" >&2; exit 1; }
 done
 [ -f "$source_dir/../evidence_review.py" ] || { echo 'Passive evidence reviewer is missing' >&2; exit 1; }
-for name in zone_feedback.py page_zone_style.js; do
+for name in zone_feedback.py oral_feedback.py page_zone_style.js page_oral_feedback.js; do
   [ -f "$plugin_source/$name" ] || { printf 'Missing shared module: %s\n' "$name" >&2; exit 1; }
 done
 feedback_directory=$(dirname "$feedback_file")
@@ -54,7 +67,9 @@ for name in review_server.py index.html style.css app.js model.js; do
 done
 install -m 644 "$source_dir/../evidence_review.py" "$destination/evidence_review.py"
 install -m 644 "$plugin_source/zone_feedback.py" "$destination/zone_feedback.py"
+install -m 644 "$plugin_source/oral_feedback.py" "$destination/oral_feedback.py"
 install -m 644 "$plugin_source/page_zone_style.js" "$destination/page_zone_style.js"
+install -m 644 "$plugin_source/page_oral_feedback.js" "$destination/page_oral_feedback.js"
 # A private reader snapshot keeps catalogue review independent of gateway
 # upgrades. It contains repository code/crops only, never runtime captures.
 rm -rf "$destination/readers.new"
@@ -84,7 +99,7 @@ Type=simple
 User=cloudphone
 Group=cloudphone
 WorkingDirectory=$destination
-ExecStart=$python_path $destination/review_server.py --host $listen_address --port $port --data-dir $data_dir --feedback-file $feedback_file --ledger $ledger_file --plugin-dir $destination/readers --process-reviews
+ExecStart=$python_path $destination/review_server.py --host $listen_address --port $port --data-dir $data_dir --feedback-file $feedback_file --ledger $ledger_file --plugin-dir $destination/readers --process-reviews$frontend_argument
 Restart=on-failure
 RestartSec=3
 CPUQuota=30%

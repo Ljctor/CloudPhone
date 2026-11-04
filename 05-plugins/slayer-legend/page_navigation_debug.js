@@ -339,9 +339,31 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
   let feedbackMessage = '';
   let currentZones = [];
   let holdTimer = null;
+  let oral = null, oralPending = false, oralRetryAt = 0, oralUnavailable = false;
+  async function ensureOral() {
+    if (oral || oralPending || Date.now() < oralRetryAt || !api.url) return;
+    oralPending = true; oralUnavailable = false; oralRetryAt = Date.now() + 30000;
+    try {
+      // This independent, explicitly CORS-allowed module can be upgraded
+      // without restarting the game gateway during the user's Free play.
+      const url = new URL(api.url('/'));
+      if (url.protocol === 'https:') url.pathname = '/navigation-review/page_oral_feedback.js';
+      else { url.port = '7890'; url.pathname = '/page_oral_feedback.js'; }
+      url.search = `?attempt=${Math.floor(Date.now() / 30000)}`; url.hash = '';
+      const { default: oralFeedback, freezeOralContext, liveOralTransport } = await import(url.href);
+      if (disposed) return;
+      oral = oralFeedback({ tr: api.tr, transport: liveOralTransport(api), capture: () => freezeOralContext({
+        image: api.video?.(), layer: api.layer, source: 'live', nodeId: screen ? `screen:${screen}` : `live:${Date.now()}`,
+        screen, displayName: screenDisplayName(screen, graph, registry, api.tr), regions: currentZones,
+        state: { scan, correctionGroup, feedbackMode, selectedZone: feedbackTarget, debugEnabled: active() },
+      }) });
+      rendered = ''; render();
+    } catch { oralUnavailable = true; }
+    finally { oralPending = false; if (!disposed) { rendered = ''; render(); } }
+  }
   const active = () => !disposed && enabled() && api.setting('navigationDebug') === 'on';
   const busy = () => ['arming', 'armed', 'saving', 'cancelling'].includes(captureState);
-  const clear = () => { closePreview?.(); closePreview = null; layer.replaceChildren(); layer.remove(); rendered = ''; };
+  const clear = () => { if (oral?.busy) oral.cancel(); closePreview?.(); closePreview = null; layer.replaceChildren(); layer.remove(); rendered = ''; };
   const stop = (event) => { event.preventDefault(); event.stopPropagation(); };
   const floating = floatingDebugPanel(api.layer, stop);
   const finishTouch = (tap, synthetic = false) => {
@@ -442,6 +464,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
 
   function render() {
     if (!active() || !graph || !registry) { clear(); return; }
+    ensureOral();
     floating.clamp();
     if (floating.dragging) { floating.afterDrag(render); return; }
     const signature = JSON.stringify([screen, scan?.plain, scan?.overlays, captureState, captureId, captureKind, record, snapshotPending, snapshotMessage, correctionOpen, correctionGroup, feedbackMode, feedbackTarget?.id, feedbackMessage]);
@@ -665,6 +688,12 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
         feedback.textContent = api.tr(snapshotMessage); content.append(feedback);
       }
     }
+    if (oral && (!busy() || oral.busy)) content.append(oral.element);
+    else if (!busy() && (oralPending || oralUnavailable)) {
+      const notice = document.createElement('div'); notice.setAttribute('role', 'status');
+      notice.textContent = api.tr(oralPending ? 'Chargement du retour vocal…' : 'Retour vocal indisponible · nouvelle tentative automatique');
+      content.append(notice);
+    }
     const status = document.createElement('div');
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
@@ -803,6 +832,6 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
       value: () => api.tr('Turquoise : repère de détection · jaune : navigation · orange : action · rouge : action interdite · rose : déplaçable · chevrons bleus : vertical · chevrons violets : horizontal · pointillés : vos annotations · double trait : condition à vérifier') }],
     onSetting: (key) => { if (key === 'navigationDebug') update(); },
     update,
-    dispose: () => { disposed = true; clearTimeout(holdTimer); closePreview?.(); window.removeEventListener?.('resize', floating.clamp); stopTap?.(); window.clearInterval(timer); window.cancelAnimationFrame?.(animation); tracker.reset(); clear(); },
+    dispose: () => { disposed = true; oral?.dispose(); clearTimeout(holdTimer); closePreview?.(); window.removeEventListener?.('resize', floating.clamp); stopTap?.(); window.clearInterval(timer); window.cancelAnimationFrame?.(animation); tracker.reset(); clear(); },
   };
 }

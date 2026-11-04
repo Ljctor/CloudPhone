@@ -132,6 +132,7 @@ def setup(context):
         feature("lease").lease(ports),
         feature("counters").counters(ports, module("emerald_mask")),
         feature("screen").screen(ports, screens, stage, screen_rules, values, table),
+        feature("oral_feedback").oral_feedback(context.directory),
         feature("navigation_debug").navigation_debug(ports, module("nav"), context.directory, screens,
             geometry={"engraving": module("engraving_screen"), "soul_weapon": module("soul_weapon")}),
         launch,

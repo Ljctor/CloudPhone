@@ -57,6 +57,47 @@ class EvidenceReview(unittest.TestCase):
             self.assertEqual(item['before']['screen'],'soul_weapon')
             self.assertEqual(item['status'],'processed')
 
+    def test_exact_registered_capture_aliases_without_suffix_guessing(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);(root/'screenshots').mkdir();plugin=root/'plugin';plugin.mkdir()
+            registry={'tree':{'soul_weapon':{'example':'screenshots/soul_weapon.png',
+                      'variants':['screenshots/soul_weapon_relax_owned.png'],
+                      'scroll':[{'captures':['soul_weapon_scroll_after.png']}]}}}
+            (plugin/'screen_registry.json').write_text(json.dumps(registry))
+            for name in ('soul_weapon_relax_owned','soul_weapon_scroll_after','soul_weapon_unregistered'):
+                (root/'screenshots'/f'{name}.png').write_bytes(archive.png((2,2,bytes(12))))
+            ledger,_=review.batch(root,plugin,NS(look=lambda shot:{'screen':'soul_weapon'}))
+            self.assertEqual(ledger['items']['example:soul_weapon_relax_owned']['status'],'processed')
+            self.assertEqual(ledger['items']['example:soul_weapon_scroll_after']['status'],'processed')
+            self.assertEqual(ledger['items']['example:soul_weapon_unregistered']['status'],'ambiguous')
+            # A registered example recognised as another screen is still a conflict.
+            ledger,_=review.batch(root,plugin,NS(look=lambda shot:{'screen':'battle'}))
+            self.assertTrue(all(v['status']=='ambiguous' for v in ledger['items'].values()))
+
+    def test_real_quest_tab_geometry_retains_tolerance_and_destination_guards(self):
+        tree=json.loads((HERE/'screen_registry.json').read_text())['tree']
+        navigation=json.loads((HERE/'navigation.json').read_text())
+        transitions=(('quest_repeat','quest_daily',.2277778,.2262821,'daily'),
+                     ('quest_daily','quest_achievement',.8013889,.2192308,'achievement'),
+                     ('quest_achievement','quest_daily',.2236111,.2217949,'daily'),
+                     ('quest_achievement','quest_repeat',.525,.2166667,'repeat'),
+                     ('quest_repeat','quest_achievement',.8138889,.2275641,'achievement'),
+                     ('quest_daily','quest_repeat',.5541667,.2205128,None))
+        for source,target,x,y,expected in transitions:
+            with self.subTest(source=source,target=target,x=x):
+                self.assertEqual(review.match_move({'tap':{'x':x,'y':y}},source,target,navigation,tree),expected)
+        self.assertIsNone(review.match_move({'tap':{'x':.2,'y':.225}},
+                                           'quest_repeat','quest_achievement',navigation,tree))
+        for flag in ('forbidden','assumed'):
+            blocked=json.loads(json.dumps(navigation))
+            for move in blocked['screens']['quest_panel']['moves']:
+                if move['id']=='daily':move[flag]=True
+            self.assertIsNone(review.match_move({'tap':{'x':.2,'y':.225}},
+                                               'quest_repeat','quest_daily',blocked,tree))
+        missing_via={**tree,'quest_daily':{'screen':'quest_panel'}}
+        self.assertIsNone(review.match_move({'tap':{'x':.2,'y':.225}},
+                                           'quest_repeat','quest_daily',navigation,missing_via))
+
     def test_png_round_trip_and_checksum_rejection(self):
         shot = (4, 3, bytes(range(36)))
         png = archive.png(shot)

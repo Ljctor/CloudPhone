@@ -169,10 +169,35 @@ def identity(scan, tree=None):
     return 'quest_' + scan['quest_tab'] if screen == 'quest_panel' and scan.get('quest_tab') in ('daily', 'repeat', 'achievement') else screen
 
 
-def match_move(entry, source, target, navigation):
+def capture_owners(registry):
+    """Exact registered examples/variants/scroll captures, never filename guesses."""
+    owners = {}
+    for section in ('screens', 'tree'):
+        for screen, node in registry.get(section, {}).items():
+            paths = [node.get('example')] + node.get('variants', [])
+            for scroll in node.get('scroll', []):
+                paths.extend(scroll.get('captures', []))
+            for path in paths:
+                if isinstance(path, str) and path.endswith('.png'):
+                    owners.setdefault(Path(path).stem, set()).add(screen)
+    return owners
+
+
+def match_move(entry, source, target, navigation, tree=None):
     tap = entry.get('tap') or {}
-    for move in navigation.get('screens', {}).get(source, {}).get('moves', []):
-        if move.get('forbidden') or move.get('assumed') or move.get('to') != target:
+    tree = tree or {}
+    source_panel = tree.get(source, {}).get('screen', source)
+    # A child tab must name the exact existing physical-panel move. A shared
+    # destination panel alone cannot establish which tab was selected.
+    target_node = tree.get(target, {})
+    target_panel = target_node.get('screen', target)
+    target_via = target_node.get('via') if target_panel != target else None
+    if target_panel != target and not target_via:
+        return None
+    for move in navigation.get('screens', {}).get(source_panel, {}).get('moves', []):
+        if target_via and target_via != source_panel + '/' + move.get('id', ''):
+            continue
+        if move.get('forbidden') or move.get('assumed') or move.get('to') != target_panel:
             continue
         point = move.get('tap')
         if point and tap.get('kind', 'tap') == 'tap' and all(normal(tap.get(k)) for k in ('x', 'y')):
@@ -214,7 +239,9 @@ def batch(data, plugin, screens, limit=16, ledger=None, feedback_file=None):
     """Review at most limit changed items, retaining unresolved evidence."""
     data, plugin = Path(data), Path(plugin)
     navigation = read_json(plugin / 'navigation.json', {})
-    tree = getattr(screens, 'TREE', None) or read_json(plugin / 'screen_registry.json', {}).get('tree', {})
+    registry = read_json(plugin / 'screen_registry.json', {})
+    tree = getattr(screens, 'TREE', None) or registry.get('tree', {})
+    owners = capture_owners(registry)
     current = ledger or {'version': VERSION, 'items': {}, 'images': {}}
     rev = revision(plugin)
     if current.get('reader_revision') != rev:
@@ -253,7 +280,7 @@ def batch(data, plugin, screens, limit=16, ledger=None, feedback_file=None):
         if example:
             result = inspect(path, key)
             item = {'nodeId': key, 'kind': 'screen_example', 'status': result['status'], 'reason': result['reason'], 'before': result}
-            if result.get('screen') and result['screen'] != path.stem:
+            if result.get('screen') and result['screen'] != path.stem and result['screen'] not in owners.get(path.stem, set()):
                 item.update(status='ambiguous', reason='archived_label_disagrees_with_current_reader')
         else:
             entry = read_json(path, None)
@@ -273,7 +300,7 @@ def batch(data, plugin, screens, limit=16, ledger=None, feedback_file=None):
                 if item['kind'] == 'navigation':
                     after = inspect(manual / (path.stem + '-after.png'), key + ':after')
                     item['after'] = after
-                    move = match_move(entry, before.get('screen'), after.get('screen'), navigation)
+                    move = match_move(entry, before.get('screen'), after.get('screen'), navigation, tree)
                     if before['status'] == after['status'] == 'processed' and move and entry.get('after_stable') is True:
                         item.update(status='processed', reason='existing_validated_navigation_match', moveId=move)
                     else:
