@@ -107,6 +107,12 @@ separate milestones. Historical checked items below do not close a new regressio
 
 ### Engraving completion and motion acceptance
 
+- [x] Reject setup proof if user input or relaunch crosses the final asynchronous
+  equipment readback; an input during the last return also defers the attempt.
+  Require fresh equipment, full-grid and lock evidence for the full farm receipt.
+- [ ] Confirm these publication guards during the next authorised live setup;
+  capture/reader interruption replays do not replace in-game acceptance.
+
 - [x] Require fresh engraving proof after startup, input and relaunch, with
   a bounded five-minute recheck even when no interruption marker exists.
   Repair before preset policy blockers and return farming to Soul Weapon.

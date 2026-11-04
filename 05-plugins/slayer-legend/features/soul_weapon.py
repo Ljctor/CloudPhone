@@ -380,6 +380,15 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
         status["cache"] = None
         recovered = {}
         equipment_input, equipment_launch = input_mark(), status["relaunched"]
+        def require_current_observation():
+            # The lease checks before gestures. A user can also intervene
+            # while an asynchronous readback/close completes, with no next
+            # gesture left to detect it. Never publish that old frame as a
+            # new proof, or treat the user's interruption as a setup failure.
+            if equipment_input != input_mark():
+                raise ports.Busy("l’utilisateur joue")
+            if equipment_launch != status["relaunched"]:
+                raise Stop("vérification Soul Weapon interrompue par une relance")
         shot = await open_screen(recovered, {"id": target_id, "variant": variant})
         memory = rules.fresh_memory(status["direction"])
         view = await ports.analyse(view_of, shot)
@@ -470,6 +479,7 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
             shot = await helpers.look()
             final = await ports.analyse(final_view, shot)
             require_enabled()
+            require_current_observation()
             if reuse and not recovery_current():
                 raise Stop("gravure récupérée : saisie utilisateur ou relance pendant la vérification finale")
             selected = final.get("selected")
@@ -488,6 +498,7 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
                        tag=final.get("tag") or ports.t("étiquette illisible"))
         if not park:
             await close_screen(shot)
+        require_current_observation()
         seconds = round(ports.clock.monotonic() - since, 1)
         over = seconds > BUDGET
         ports.log("warning" if over else "normal",

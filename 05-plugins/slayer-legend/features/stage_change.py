@@ -448,10 +448,16 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         plans = []
         timings = {}
         async with ports.leased(HOLDER, f"farm {mode}", LEASE_SECONDS, **({"pause": False} if force else {})):
+            input_reader = getattr(ports, "last_input", None)
+            started_input = copy.deepcopy(input_reader()) if callable(input_reader) else None
+            def require_current_input():
+                if callable(input_reader) and input_reader() != started_input:
+                    raise ports.Busy("l’utilisateur joue")
             try:
                 if preflight is not None:
                     preflight()
                 for name, step in steps:
+                    require_current_input()
                     if preflight is not None:
                         preflight()
                     began = ports.clock.monotonic()
@@ -462,25 +468,33 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
                         ports.log("normal", f"Stage change, plan only: {ports.english(e.t)}")
                     finally:
                         timings[name] = round(ports.clock.monotonic() - began, 1)
+                    require_current_input()
             except Plan as e:
                 answer = {"result": "plan", "text_t": e.t}
             except Blocked as e:
+                require_current_input()
                 answer = {"result": "failed", "text_t": e.t, "retryable": False,
                           "failure_code": e.failure_code}
                 if park_on_block and parks(mode):
                     try:
                         await park(mode)
+                    except ports.Busy:
+                        raise
                     except (Stop, RuntimeError) as parking_error:
                         ports.log("error", f"Stage change: parking after preset refusal failed: {parking_error}")
             except Stop as e:
+                require_current_input()
                 answer = {"result": "failed", "text_t": e.t}
             except ports.Busy:
                 raise
             except RuntimeError as e:  # a move the navigation guard refused (ports.Refused)
+                require_current_input()
                 ports.log("error", f"Stage change: {e}")
                 answer = {"result": "failed", "text_t": getattr(e, "t", None) or t("Erreur : {error}", error=f"{e!r}"[:200])}
             else:
+                require_current_input()
                 answer = {"result": "plan" if plans else "done", "text_t": joined(plans)}
+        require_current_input()
         answer["timings"] = timings
         status["last"] = {**answer, "mode": mode}
         return answer
@@ -640,7 +654,9 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         answer["verified_setup"] = bool(
             answer["result"] == "done" and target == current
             and (not target or target.get("stage") == stage and target.get("preset") == preset)
-            and (not engraving_required or recovery.get("verified") and not recovery.get("required")
+            and (not engraving_required or recovery.get("verified") and recovery.get("completion_verified")
+                 and recovery.get("locks_verified") and not recovery.get("required")
+                 and not soul_verification_needed(mode, target)
                  and recovery.get("weapon_id") == chosen.get("id")
                  and recovery.get("variant") == chosen.get("variant")))
         return answer

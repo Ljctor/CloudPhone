@@ -25,7 +25,11 @@ python3 "$(dirname "$0")/../slayer-legend/test_soul_weapon.py" \
   Engraving.test_recovery_before_stage_refuses_unknown_identity_or_unread_locks \
   Engraving.test_periodic_grid_check_keeps_valid_equipment_proof_when_target_cell_is_offscreen \
   Engraving.test_offscreen_selection_after_relaunch_cannot_reuse_equipment_proof \
-  Engraving.test_retained_equipment_proof_still_repairs_current_grid_and_locks
+  Engraving.test_retained_equipment_proof_still_repairs_current_grid_and_locks \
+  Engraving.test_complete_farm_receipt_requires_both_completion_and_lock_proofs \
+  Engraving.test_user_input_during_final_readback_cannot_publish_fresh_equipment_proof \
+  Engraving.test_user_unlock_during_return_from_engraving_leaves_no_fresh_setup_proof \
+  Engraving.test_relaunch_during_final_readback_cannot_publish_fresh_equipment_proof
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_screen.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_geometry.py -q
 # Existing-weapon repairs require durable intent before their first gesture.
@@ -37,6 +41,8 @@ python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engra
 python3 "$(dirname "$0")/../slayer-legend/test_nav.py" Graph.test_low_preview_bar_stays_within_its_calibrated_reader_area Graph.test_consistent
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_agent_soul_weapon.py -q
 python3 "$(dirname "$0")/../slayer-legend/test_stage_change.py" \
+  Sequence.test_user_input_during_parking_after_preset_refusal_stays_deferred \
+  Sequence.test_user_input_during_readback_defers_success_and_stale_failure \
   Sequence.test_recognized_settings_closes_without_changing_preset \
   Sequence.test_accessible_preset_mismatch_stops_before_stage_navigation \
   Sequence.test_correct_visible_preset_does_not_block_stage_change \

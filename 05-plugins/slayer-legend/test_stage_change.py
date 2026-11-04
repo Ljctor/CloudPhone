@@ -289,6 +289,55 @@ def done():
 
 
 class Sequence(unittest.TestCase):
+    def test_user_input_during_parking_after_preset_refusal_stays_deferred(self):
+        for busy_in_park in (False, True):
+            with self.subTest(busy_in_park=busy_in_park):
+                game = Game(stage=915, preset="II", unfolded_forever=True)
+                ports = game.ports()
+                user = [None]
+                ports.last_input = lambda: user[0]
+
+                async def park():
+                    user[0] = {"wall": ports.clock.wall(), "monotonic": ports.clock.monotonic()}
+                    if busy_in_park:
+                        raise ports.Busy("l’utilisateur joue")
+
+                souls = {"switch": lambda: "real", "state": lambda: {}, "park": park}
+                soul = {"feature": lambda *args: souls, "reader": None, "rules": None, "table": None,
+                        "loadout": lambda mode: {"stage": 915, "preset": "IV"}}
+                ports.action_allowed = lambda *args: False
+                part = feature.stage_change(ports, *readers(game), rules, TABLE, soul)
+                with self.assertRaises(ports.Busy) as stopped:
+                    asyncio.run(part["api"]["farm"](915, "IV", "mpw18"))
+                self.assertEqual(stopped.exception.t["template"], "l’utilisateur joue")
+                self.assertEqual(game.moves, [])
+
+    def test_user_input_during_readback_defers_success_and_stale_failure(self):
+        for scenario in ("success", "menu_failure", "preset_refusal"):
+            with self.subTest(scenario=scenario):
+                game = Game(stage=915, screen="other" if scenario == "menu_failure" else "battle",
+                            preset="II", unfolded_forever=scenario == "preset_refusal")
+                ports = game.ports()
+                user = [None]
+                ports.last_input = lambda: user[0]
+                original = ports.analyse
+                interrupted_reader = {"success": "battle_stage", "menu_failure": "view_of",
+                                      "preset_refusal": "badge"}[scenario]
+
+                async def analyse(fn, *args):
+                    value = await original(fn, *args)
+                    if fn.__name__ == interrupted_reader:
+                        user[0] = {"wall": ports.clock.wall(), "monotonic": ports.clock.monotonic()}
+                    return value
+
+                ports.analyse = analyse
+                part = feature.stage_change(ports, *readers(game), rules, TABLE)
+                preset = "IV" if scenario == "preset_refusal" else None
+                with self.assertRaises(ports.Busy) as stopped:
+                    asyncio.run(part["api"]["farm"](915, preset, "mpw18"))
+                self.assertEqual(stopped.exception.t["template"], "l’utilisateur joue")
+                self.assertEqual(game.moves, [])
+
     def test_recognized_settings_closes_without_changing_preset(self):
         game = Game(screen="settings", selected="II", preset="II")
         self.assertEqual(run(game, lambda api: api['change_stage'](915)), done())

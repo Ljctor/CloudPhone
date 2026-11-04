@@ -1299,6 +1299,101 @@ class Engraving(unittest.TestCase):
                 if missing == "padlock":
                     self.assertTrue(api["soul_weapon_state"]()["recovery"]["required"])
 
+    def test_complete_farm_receipt_requires_both_completion_and_lock_proofs(self):
+        for missing in ("completion_verified", "locks_verified"):
+            with self.subTest(missing=missing):
+                original = feature.soul_weapon
+
+                def factory(*args, **kwargs):
+                    part = original(*args, **kwargs)
+                    state = part["state"]
+
+                    def incomplete():
+                        value = state()
+                        if value.get("recovery"):
+                            value["recovery"][missing] = False
+                        return value
+
+                    part["state"] = incomplete
+                    return part
+
+                game = vision_game()
+                stage_reader = SimpleNamespace(regions=lambda table: ["known"] * 50,
+                                               battle_stage=lambda shot, names, *args: 920)
+                feature.soul_weapon = factory
+                try:
+                    ports, api = self.setup_game(game, stage_reader)
+                finally:
+                    feature.soul_weapon = original
+                answer = asyncio.run(api["farm"](920, None, "mpw18"))
+                self.assertFalse(answer["verified_setup"], answer)
+
+    def test_user_unlock_during_return_from_engraving_leaves_no_fresh_setup_proof(self):
+        game = vision_game()
+        ports, api = self.setup_game(game)
+        user = [None]
+        ports.last_input = lambda: user[0]
+        original = ports.capture
+
+        async def capture(*args, **kwargs):
+            if (user[0] is None and ("soul_weapon_engraving", "close") in game.moves
+                    and game.state["screen"] == "soul"):
+                user[0] = {"wall": ports.clock.wall(), "monotonic": ports.clock.monotonic()}
+                game.state["engraving"]["cards"][0]["locked"] = False
+                game.now += .05
+            return await original(*args, **kwargs)
+
+        ports.capture = capture
+        notes = []
+        ports.game = {"note": lambda *args: notes.append(args)}
+        with self.assertRaises(ports.Busy):
+            asyncio.run(api["soul_weapon"]("mpw18"))
+        self.assertEqual(sum(card["locked"] for card in game.state["engraving"]["cards"]), 7)
+        self.assertIsNone(api["soul_weapon_state"]()["cached"])
+        self.assertTrue(api["soul_verification_needed"]("mpw18"))
+        self.assertEqual(notes, [])
+        self.assertFalse(any(" ready:" in alert for alert in game.alerts))
+
+    def test_user_input_during_final_readback_cannot_publish_fresh_equipment_proof(self):
+        game = vision_game()
+        ports, api = self.setup_game(game)
+        user = [None]
+        ports.last_input = lambda: user[0]
+        original = ports.analyse
+
+        async def analyse(fn, *args):
+            result = await original(fn, *args)
+            if fn.__name__ == "final_view":
+                user[0] = {"wall": ports.clock.wall(), "monotonic": ports.clock.monotonic()}
+                game.now += .05
+                game.state["equipped"] = AMBITION
+            return result
+
+        ports.analyse = analyse
+        with self.assertRaises(ports.Busy):
+            asyncio.run(api["soul_weapon"]("mpw18"))
+        self.assertIsNone(api["soul_weapon_state"]()["cached"])
+        self.assertTrue(api["soul_verification_needed"]("mpw18"))
+
+    def test_relaunch_during_final_readback_cannot_publish_fresh_equipment_proof(self):
+        game = vision_game()
+        ports, api = self.setup_game(game)
+        original = ports.analyse
+
+        async def analyse(fn, *args):
+            result = await original(fn, *args)
+            if fn.__name__ == "final_view":
+                api["relaunched"]("mpw18")
+                game.now += .05
+            return result
+
+        ports.analyse = analyse
+        answer = asyncio.run(api["soul_weapon"]("mpw18"))
+        self.assertEqual(answer["result"], "failed", answer)
+        self.assertIn("interrompue par une relance", french(answer["text_t"]))
+        self.assertIsNone(api["soul_weapon_state"]()["cached"])
+        self.assertTrue(api["soul_verification_needed"]("mpw18"))
+
     def test_final_equipment_readback_rejects_changed_or_unread_tag_after_engraving(self):
         for lost_equipment in (True, False):
             with self.subTest(lost_equipment=lost_equipment):
