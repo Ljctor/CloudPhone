@@ -35,9 +35,10 @@ MOST_MOVES = 10
 # and how long at most.
 POLL = 0.25
 WAIT_MOST = 3.0
-# Scrolling can require slow capture/analysis plus a second fresh stable
-# observation. This allowance never retries the gesture.
-SCROLL_WAIT_MOST = 10.0
+# A list move needs two matching changed observations. Slow capture/analysis
+# and one stale frame must fit for selects and Equip as well as scrolls.
+# This allowance never retries the gesture.
+LIST_WAIT_MOST = 10.0
 
 
 def order_names(table):

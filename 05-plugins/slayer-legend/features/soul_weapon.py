@@ -27,7 +27,7 @@ its red X (leave, then the panel's tab: the stage change's to_battle).
 Nothing inside the panel is tapped to park or to stay parked.
 
 Fast: each wait polls for what the move should show (POLL, at most
-WAIT_MOST for list readings, SCREEN_WAIT_MOST for screen transitions), no fixed long sleeps. Skipped altogether when the last check
+LIST_WAIT_MOST for stable list readings, SCREEN_WAIT_MOST for screen transitions), no fixed long sleeps. Skipped altogether when the last check
 read the target equipped and neither a relaunch nor a user input came
 since (the cache, in memory: a gateway restart reads again). Engraving
 proof also expires after five minutes, so farming rechecks the actual grid
@@ -139,21 +139,25 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
     def view_of(shot):
         return reader.view(shot, names)
 
-    async def settled(before, move):
+    async def settled(before, move, require_current):
         """The first view that differs from before and reads the same on
         the next look (the card's name follows the frame a moment later):
         (shot, view) or (shot, None)."""
         since = ports.clock.monotonic()
-        most = rules.SCROLL_WAIT_MOST if move == "scroll" else rules.WAIT_MOST
+        most = rules.LIST_WAIT_MOST
         end = since + most
         last = None
         polls, changed_seen = 0, False
         while True:
             require_enabled()
+            require_current()
             await ports.clock.sleep(rules.POLL)
             require_enabled()
+            require_current()
             shot = await helpers.look()
+            require_current()
             seen = await ports.analyse(view_of, shot)
+            require_current()
             polls += 1
             if seen.get("selected") and rules.progressed(before, seen):
                 changed_seen = True
@@ -163,10 +167,10 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
             else:
                 last = None
             if ports.clock.monotonic() >= end:
-                if move == "scroll":
-                    elapsed = round(ports.clock.monotonic() - since, 2)
-                    ports.log("warning", f"Soul weapon: scroll settling failed: elapsed={elapsed}s "
-                              f"polls={polls} changed_seen={changed_seen}")
+                elapsed = round(ports.clock.monotonic() - since, 2)
+                ports.log("warning", f"Soul weapon: {move} settling failed: elapsed={elapsed}s "
+                          f"polls={polls} changed_seen={changed_seen} "
+                          f"selected={seen.get('selected')!r} tag={seen.get('tag')!r}")
                 return shot, None
 
     def input_mark():
@@ -430,7 +434,7 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
             await move(shot, view, step, target)
             if step[0] == "scroll":
                 memory = rules.scrolled(memory)
-            shot, after = await settled(view, step[0])
+            shot, after = await settled(view, step[0], require_current_observation)
             if after is None:
                 raise Stop({"select": "choix dans la liste sans effet", "scroll": "défilement de la liste sans effet",
                             "equip": "Equip sans effet"}[step[0]])

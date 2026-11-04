@@ -1,5 +1,15 @@
 # Known bugs
 
+## Soul Weapon slow list readback
+
+- [ ] Verify the bounded list observation wait during a supervised setup with
+  slow capture/analysis. An entry-point regression reproduces a stale frame
+  followed by two-second reads: select and Equip must each confirm with two
+  matching changed observations, without repeating either gesture. An unchanged
+  selection still stops after the observation deadline; user input interrupts
+  before another capture. This simulation does not establish the cause of every
+  production selection failure or certify an in-game setup.
+
 ## Active acceptance checklist
 
 This list tracks requested outcomes, not the number of patches or captures.

@@ -720,6 +720,44 @@ class RunningSoulSwitch(unittest.IsolatedAsyncioTestCase):
 
 
 class Sequence(unittest.TestCase):
+    def test_slow_readback_confirms_select_and_equip_without_repeating_gestures(self):
+        class SlowGame(Game):
+            def ports(self):
+                ports = super().ports()
+                capture, analyse, tap = ports.capture, ports.analyse, ports.tap
+                stale = None
+
+                async def delayed_tap(shot, screen, move, point, **kwargs):
+                    nonlocal stale
+                    if screen == "soul_weapon" and move in ("select", "equip"):
+                        stale = self.snapshot()
+                    await tap(shot, screen, move, point, **kwargs)
+
+                async def delayed_capture(*args, **kwargs):
+                    nonlocal stale
+                    if stale is not None:
+                        shot, stale = stale, None
+                        return shot
+                    return await capture(*args, **kwargs)
+
+                async def slow_analyse(fn, *args):
+                    result = await analyse(fn, *args)
+                    if fn.__name__ == "view_of":
+                        self.now += 2.0
+                    return result
+
+                ports.tap, ports.capture, ports.analyse = delayed_tap, delayed_capture, slow_analyse
+                return ports
+
+        game = SlowGame(screen="soul", selected=GRAND)
+        _, api = build(game)
+        answer = asyncio.run(api["soul_weapon"]("mpw4"))
+        self.assertEqual(answer["result"], "done", answer)
+        self.assertEqual(game.state["equipped"], GRAND - 1)
+        self.assertEqual(game.moves.count(("soul_weapon", "select")), 1)
+        self.assertEqual(game.moves.count(("soul_weapon", "equip")), 1)
+        self.assertLess(game.now, 30)
+
     def test_real_gridded_weapon_without_setup_cannot_be_equipped(self):
         game = Game(selected=GRAND - 1)
         self.assertTrue(next(entry for entry in TABLE["weapons"] if entry["id"] == GRAND - 1)["grid"])
@@ -830,6 +868,58 @@ class Sequence(unittest.TestCase):
             self.assertEqual(answer["result"], "failed", state)
             self.assertNotIn(("soul_weapon", "equip"), game.moves)
             self.assertEqual(game.state["equipped"], AMBITION)
+
+    def test_input_during_select_readback_stops_before_second_observation(self):
+        game = Game(screen="soul", selected=GRAND)
+        make_ports = game.ports
+        interrupted_at = []
+
+        def ports():
+            result = make_ports()
+            analyse = result.analyse
+            mark = {}
+            result.last_input = lambda: mark or None
+
+            async def interrupting_analyse(fn, *args):
+                seen = await analyse(fn, *args)
+                if fn.__name__ == "view_of" and ("soul_weapon", "select") in game.moves:
+                    mark.update(wall=1e9 + game.now, mono=game.now)
+                    interrupted_at.append(game.captures)
+                return seen
+
+            result.analyse = interrupting_analyse
+            return result
+
+        game.ports = ports
+        ports, api = build(game)
+        with self.assertRaises(ports.Busy):
+            asyncio.run(api["soul_weapon"]("mpw4"))
+        self.assertEqual(interrupted_at, [game.captures])
+        self.assertEqual(game.moves, [("soul_weapon", "select")])
+        self.assertIsNone(api["soul_weapon_state"]()["cached"])
+
+    def test_select_without_effect_stops_with_bounded_observation(self):
+        game = Game(screen="soul", selected=GRAND)
+        apply = game.apply
+        game.apply = lambda screen, move, point: None if move == "select" else apply(screen, move, point)
+        logs = []
+        make_ports = game.ports
+
+        def ports():
+            result = make_ports()
+            result.log = lambda level, message: logs.append((level, message))
+            return result
+
+        game.ports = ports
+        _, api = build(game)
+        answer = asyncio.run(api["soul_weapon"]("mpw4"))
+        self.assertEqual(answer["result"], "failed")
+        self.assertIn("choix dans la liste sans effet", french(answer["text_t"]))
+        self.assertEqual(game.moves, [("soul_weapon", "select")])
+        self.assertLessEqual(game.now, 11)
+        self.assertTrue(any("select settling failed" in message and "changed_seen=False" in message
+                            for _, message in logs), logs)
+        self.assertIsNone(api["soul_weapon_state"]()["cached"])
 
     def test_equip_without_effect_stops(self):
         game = Game(selected=AMBITION, equip_fails=True)

@@ -20,7 +20,10 @@ python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_launc
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_mode_entry_readiness.py -q
 python3 "$(dirname "$0")/../slayer-legend/test_fixtures.py" ProgressBar
 python3 "$(dirname "$0")/../slayer-legend/test_soul_weapon.py" Tag ActualNativeCaptures Readers NativeReaders \
-  Sequence.test_after_a_relaunch_no_detached_repair_or_notification
+  Sequence.test_after_a_relaunch_no_detached_repair_or_notification \
+  Sequence.test_slow_readback_confirms_select_and_equip_without_repeating_gestures \
+  Sequence.test_select_without_effect_stops_with_bounded_observation \
+  Sequence.test_input_during_select_readback_stops_before_second_observation
 python3 "$(dirname "$0")/../slayer-legend/test_soul_weapon.py" \
   Engraving.test_opening_can_outlast_the_card_polling_deadline \
   Engraving.test_timed_out_opening_is_recovered_before_the_next_stage_navigation \
