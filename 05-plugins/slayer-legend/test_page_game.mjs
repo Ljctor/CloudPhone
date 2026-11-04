@@ -70,9 +70,9 @@ const game = gameFeature({ get: async () => answer, refresh() {}, tr: (text) => 
 game.rows(options, 0);
 await new Promise((resolve) => setImmediate(resolve));
 const categories = options.filter((row) => row.type === 'section' && row.key?.startsWith('progression-'));
-assert.deepEqual(categories.map((row) => row.label), ['Vue d’ensemble', 'Enhance', 'Growth', 'Companions', 'Beasts',
+assert.deepEqual(categories.map((row) => row.label), ['Vue d’ensemble', 'Enhance - Growing Knowledge', 'Growth - Latent Power', 'Companions', 'Beasts',
   'Weapons', 'Soul Weapons', 'Accessories', 'Classes', 'Black Orb', 'Spirit', 'Familiars', 'Skills',
-  'Constellations', 'Memory Tree', 'Relics', 'Summon', 'Latent Power']);
+  'Constellations', 'Memory Tree', 'Relics', 'Summon']);
 assert.ok(categories.every((row) => row.depth === 2));
 assert.ok(!options.some((row) => row.type === 'section' && (row.depth > 2 && row.key !== 'display-rates' || /Equipment|Adventure|A menu path/.test(row.label))));
 assert.equal(options.filter((row) => row.key === 'game-state').length, 1);

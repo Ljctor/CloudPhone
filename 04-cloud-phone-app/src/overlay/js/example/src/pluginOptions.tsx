@@ -241,9 +241,10 @@ function pluginOption(context, plugin, option, index) {
       <div key={key} title={resolved(option.title) ?? ''}
         style={{ ...styles.infoRow, display: 'grid', alignItems: 'center', minWidth: 0,
           gridTemplateColumns: option.compact
-            ? 'minmax(0, 1fr) 14px minmax(0, 9ch) 5ch' : 'minmax(0, 1fr) 14px minmax(0, auto) 5ch',
-          columnGap: 6 }}>
-        <span style={{ ...styles.infoLabel, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            ? 'minmax(0, 1fr) 14px minmax(0, 9ch) minmax(0, max-content)'
+            : 'minmax(0, 1fr) 14px minmax(0, 1fr) minmax(0, max-content)',
+          columnGap: 4 }}>
+        <span style={{ ...styles.infoLabel, minWidth: 0, overflowWrap: 'anywhere' }}>
           {tr(option.label)}
         </span>
         <span style={{ width: 14, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -253,7 +254,8 @@ function pluginOption(context, plugin, option, index) {
         <span style={{ minWidth: 0, textAlign: 'right', overflowWrap: 'anywhere',
           color: color ?? '#fff', fontVariantNumeric: 'tabular-nums' }}>{shown}</span>
         <span data-timestamp="true" style={{ color: styles.infoNote.color, textAlign: 'right',
-          whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', fontSize: '0.85em' }}>{timestamp}</span>
+          minWidth: 0, maxWidth: '9ch', whiteSpace: 'normal', overflowWrap: 'anywhere',
+          fontVariantNumeric: 'tabular-nums', fontSize: '0.85em', lineHeight: 1.2 }}>{timestamp}</span>
       </div>
     );
     return infoRow(tr(option.label), buttons.length ? (

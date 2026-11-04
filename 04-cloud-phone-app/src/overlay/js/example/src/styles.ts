@@ -48,26 +48,27 @@ export const styles = {
   },
   // Interactive plugin children must be above the Android touch surface.
   pluginLayer: { position: 'absolute', inset: 0, zIndex: 3, pointerEvents: 'none' },
-  // A plugin's dialog, over the options panel.
+  // A plugin's dialog stays above the options panel and every toolbar dock.
   pluginDialog: {
-    position: 'fixed', left: '6px', right: '6px', top: '8px', zIndex: 9,
-    maxHeight: 'calc(100dvh - 16px)', overflowY: 'auto', touchAction: 'pan-y', boxSizing: 'border-box',
-    padding: '10px 12px', borderRadius: '10px', background: '#212833',
+    position: 'fixed', left: 'max(3px, env(safe-area-inset-left))',
+    right: 'max(3px, env(safe-area-inset-right))', top: 'max(8px, env(safe-area-inset-top))', zIndex: 21,
+    maxHeight: 'calc(100dvh - max(8px, env(safe-area-inset-top)) - max(8px, env(safe-area-inset-bottom)))', overflowY: 'auto', touchAction: 'pan-y', boxSizing: 'border-box',
+    padding: '10px 8px', borderRadius: '10px', background: '#212833',
     border: '1px solid #536174',
     boxShadow: '0 18px 48px rgba(0, 0, 0, 0.55), 0 0 0 100vmax rgba(7, 10, 15, 0.35)',
     fontFamily: 'system-ui, sans-serif', fontSize: '13px', display: 'flex', flexDirection: 'column', gap: '4px',
   },
   // Nested sections retain their border while leaving three inventory columns
-  // enough room on narrow phones. Desktop spacing stays at eight pixels.
-  pluginSection: { marginLeft: 'clamp(2px, calc(2vw - 5px), 8px)',
-    paddingLeft: 'clamp(2px, calc(2vw - 5px), 8px)', borderLeft: '1px solid #303946' },
+  // enough room on narrow phones. Their indentation stays small on desktop too.
+  pluginSection: { marginLeft: 'clamp(1px, calc(1vw - 2px), 4px)',
+    paddingLeft: 'clamp(1px, calc(1vw - 2px), 4px)', borderLeft: '1px solid #303946' },
   pluginGrid: { display: 'grid', gap: '2px' },
   pluginGridCell: { width: '14px', height: '14px', boxSizing: 'border-box', borderRadius: '2px' },
   pluginGridEmpty: { border: '1px solid #8a919c' },
   pluginSectionTitle: { marginTop: '4px', color: '#c4cad3', fontWeight: 600, cursor: 'pointer' },
   pluginTitle: { marginTop: '6px', fontWeight: 600, cursor: 'pointer' },
   // A plugin's or a section's icon before its title (pixel art kept sharp).
-  pluginIcon: { width: '14px', height: '14px', marginRight: '6px', verticalAlign: '-2px', imageRendering: 'pixelated' },
+  pluginIcon: { width: '14px', height: '14px', marginRight: '6px', verticalAlign: '-2px', objectFit: 'contain', imageRendering: 'pixelated' },
   // A status value's part: an icon at its own size, then its text.
   statusPart: { display: 'inline-flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' },
   statusIcon: { imageRendering: 'pixelated' },
@@ -145,7 +146,7 @@ export const styles = {
   // in reach.
   infoHeader: {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px',
-    position: 'sticky', top: '-10px', zIndex: 1, margin: '-10px -12px 4px', padding: '10px 12px 6px',
+    position: 'sticky', top: '-10px', zIndex: 1, margin: '-10px -8px 4px', padding: '10px 8px 6px',
     background: '#202631', borderBottom: '1px solid #354050', borderRadius: '10px 10px 0 0',
   },
   infoClose: {
@@ -200,13 +201,14 @@ export const styles = {
   info: {
     // Options and diagnostics remain interactive above a missing-stream cover
     // and every plugin overlay. Their lifetime is independent of the video.
-    position: 'fixed', left: '6px', right: '6px', top: '8px', zIndex: 8,
-    maxHeight: 'calc(100dvh - 16px)', overflowY: 'auto', touchAction: 'pan-y', boxSizing: 'border-box',
-    padding: '10px 12px', borderRadius: '10px', background: '#171c24',
+    position: 'fixed', left: 'max(3px, env(safe-area-inset-left))',
+    right: 'max(3px, env(safe-area-inset-right))', top: 'max(8px, env(safe-area-inset-top))', zIndex: 20,
+    maxHeight: 'calc(100dvh - max(8px, env(safe-area-inset-top)) - max(8px, env(safe-area-inset-bottom)))', overflowY: 'auto', touchAction: 'pan-y', boxSizing: 'border-box',
+    padding: '10px 8px', borderRadius: '10px', background: '#171c24',
     border: '1px solid #465365', boxShadow: '0 12px 36px rgba(0, 0, 0, 0.45)', fontFamily: 'system-ui, sans-serif', fontSize: '13px',
     display: 'flex', flexDirection: 'column', gap: '4px',
   },
-  infoRow: { display: 'flex', justifyContent: 'space-between', gap: '12px' },
+  infoRow: { display: 'flex', justifyContent: 'space-between', gap: '8px' },
   infoLabel: { color: '#b1bccb' },
   button: {
     flex: '0 0 34px', width: '34px', height: '34px', minWidth: '34px', margin: 0, padding: 0,

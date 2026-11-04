@@ -82,7 +82,10 @@ scripts = re.findall(r'<script[^>]+src="([^"]+)"', page)
 bundle = "\n".join(urllib.request.urlopen(base + path, timeout=5).read().decode()
                    for path in scripts if path.startswith("/"))
 for marker in ("inventory-table", "display_text", "inheritance", "#00ffff", "tablist", "tabpanel",
-               "clamp(2px, calc(2vw - 5px), 8px)", "calc(100dvh - 16px)", "aspectRatio"):
+               "clamp(1px, calc(1vw - 2px), 4px)",
+               "max(3px, env(safe-area-inset-left))", "max(3px, env(safe-area-inset-right))",
+               "calc(100dvh - max(8px, env(safe-area-inset-top)) - max(8px, env(safe-area-inset-bottom)))",
+               "aspectRatio"):
     assert marker in bundle, "Missing inventory/dialog renderer: " + marker
 PYCODE
 }

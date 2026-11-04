@@ -210,7 +210,7 @@ const ENGLISH = {
   'Détection des émeraudes': 'Emerald detection',
   'Détection des diamants': 'Diamond detection',
   'Réessayer': 'Retry',
-  'État du jeu': 'Game state',
+  'Progression': 'Progression',
   'Case équipée': 'Equipped slot',
   'Défi': 'Challenge',
   'Niveau affiché sur les armes': 'Level shown on weapons',

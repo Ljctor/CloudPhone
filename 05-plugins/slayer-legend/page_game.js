@@ -160,20 +160,21 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
     return [];
   };
   const categories = [
-    ['overview', 'Vue d’ensemble', 'character'], ['enhance', 'Enhance', 'character'],
-    ['growth', 'Growth', 'character'], ['companions', 'Companions', 'companion'],
+    ['overview', 'Vue d’ensemble', 'character'], ['enhance', 'Enhance - Growing Knowledge', 'character'],
+    ['growth', 'Growth - Latent Power', 'character'], ['companions', 'Companions', 'companion'],
     ['beasts', 'Beasts', 'companion'], ['weapons', 'Weapons', 'weapon'],
     ['soul-weapons', 'Soul Weapons', 'weapon'], ['accessories', 'Accessories', 'equipment'],
     ['classes', 'Classes', 'character'], ['black-orb', 'Black Orb', 'black_orb'], ['spirit', 'Spirit', 'equipment'],
     ['familiars', 'Familiars', 'skill'], ['skills', 'Skills', 'skill'],
     ['constellations', 'Constellations', 'companion'], ['memory-tree', 'Memory Tree', 'companion'],
-    ['relics', 'Relics', 'equipment'], ['summon', 'Summon', 'shop'], ['latent-power', 'Latent Power', 'character'],
+    ['relics', 'Relics', 'equipment'], ['summon', 'Summon', 'shop'],
   ];
   const categoryOf = (screen) => {
     const id = screen.screen;
+    if (/growing_knowledge/.test(id)) return 'enhance';
     if (/constell/.test(id)) return 'constellations';
     if (/memory/.test(id)) return 'memory-tree';
-    if (/latent|dragon_power|dragon_spark/.test(id)) return 'latent-power';
+    if (/latent|dragon_power|dragon_spark/.test(id)) return 'growth';
     if (id === 'character_promotion') return 'overview';
     if (id === 'character_class') return 'classes';
     if (id.startsWith('character_enhance')) return 'enhance';
@@ -228,10 +229,11 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
       visible: () => { ask(); return true; },
     }));
   const sections = () => {
-    const rows = [...resourceRows(),
+    const rows = [
       { type: 'section', key: 'overlay', label: 'Overlay', depth: 1, folded: true }, ...resourceOptions,
       ...displayOptions.map((option) => option.type === 'section' ? { ...option, depth: 2 } : option),
-      { type: 'section', key: 'game-state', label: 'État du jeu', depth: 1, folded: true }];
+      ...resourceRows(),
+      { type: 'section', key: 'game-state', label: 'Progression', depth: 1, folded: true }];
     for (const [id, label, icon] of categories) {
       rows.push({ type: 'section', key: `progression-${id}`, label, depth: 2, folded: true, icon: SCREEN_ICONS[icon] });
       const content = id === 'overview' ? overviewRows() : [];
@@ -239,7 +241,15 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
         if (categoryOf(screen) !== id) continue;
         content.push(...fieldRows(screen), ...detailRows(screen), ...inventoryRows(screen));
       }
-      if (id === 'latent-power') for (const field of ['dragon_power', 'dragon_spark']) {
+      if (id === 'enhance' && !game.answer?.screens?.some((screen) => /growing_knowledge/.test(screen.screen))) {
+        content.push({ type: 'status', key: 'progression-growing-knowledge', label: 'Growing Knowledge',
+          value: () => 'never read' });
+      }
+      if (id === 'growth' && !game.answer?.screens?.some((screen) => /latent/.test(screen.screen))) {
+        content.push({ type: 'status', key: 'progression-latent-power', label: 'Latent Power',
+          value: () => 'never read' });
+      }
+      if (id === 'growth') for (const field of ['dragon_power', 'dragon_spark']) {
         const current = () => game.answer?.resources?.find((row) => row.field === field) ?? { value: null };
         content.push({ type: 'status', key: `progression-${field}`, label: current().label ??
           (field === 'dragon_power' ? 'Dragon Power' : 'Dragon Spark'),

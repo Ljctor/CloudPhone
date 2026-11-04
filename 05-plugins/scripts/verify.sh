@@ -180,7 +180,11 @@ assert not {"top_menu", "top_ranking", "top_settings", "top_mail"} & {screen["sc
 assert not any(row["field"] in expected for screen in state["screens"] for row in screen["fields"])
 screens = {screen["screen"]: screen for screen in state["screens"]}
 assert screens["skill"]["label"] == "Skill"
-assert not any(name.startswith(("quest", "adventure", "dungeon", "mine"))
+# Only these two dated progression records feed Overview; the UI does not
+# expose an Adventure section or a current dungeon selection.
+assert {name for name in screens if name.startswith("dungeon")} == {
+    "dungeon_forest", "dungeon_training"}
+assert not any(name.startswith(("quest", "adventure", "mine"))
                or name == "quit_dialog" for name in screens)
 assert {name for name in screens if name.startswith("shop")} == {
     "shop_summon", "shop_summon_equipment", "shop_summon_relic"}

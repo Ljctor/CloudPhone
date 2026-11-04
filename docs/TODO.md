@@ -19,13 +19,29 @@ separate milestones. Historical checked items below do not close a new regressio
 
 ### Configuration comparison and visual inventories
 
+The account-history section is named **Progression** in both languages.
+**Game state** means the current screen, selected stage and selected/equipped
+Soul Weapon; keep that transient state separate from account progression.
+Options and plugin dialogs must render above every toolbar placement, keep
+their close control reachable, and use narrow outer margins and left padding.
+Overlay precedes Resources in the root menu. Progression menu symbols use
+clean base sprites: Growing Knowledge for Enhance, the yellow Awaken Latent Power
+entry symbol for Growth, Common Grade 4 for Accessories,
+and the black weapon on parchment from the Soul Weapon entry button.
+Stars, element badges, awakening, selection and counters are data-driven
+layers on item visuals, never baked into their base sprites or menu symbols.
+
 - [ ] Verify account progression presentation end to end: flat Overview,
-  Enhance, Growth, Companions, Beasts, Weapons, Soul Weapons, Accessories,
+  Enhance - Growing Knowledge, Growth - Latent Power, Companions, Beasts, Weapons, Soul Weapons, Accessories,
   Classes, Black Orb, Spirit, Familiars, Skills, Constellations, Memory Tree,
-  Relics, Summon and Latent Power. Overview contains level, promotion and
+  Relics and Summon. Overview contains level, promotion and
   observed lower bounds for stage, Forest of Circulation and Training Cave.
   Current selections, equipped loadouts, menu paths and full screenshot
   previews stay out of this view; object art and dated evidence remain.
+  Growing Knowledge needs its own calibrated progression reading inside Enhance;
+  an unread row does not establish knowledge of its current grade or bonuses.
+  Audit Superhuman, Training Diary and Sealed Shrine / Statue of Dragon against
+  current account evidence; lack of a reader does not mean a feature is locked.
 - [ ] Verify narrow-phone usability: root plugin sections aligned, Options and
   configuration dialogs use available viewport width, no horizontal scrolling
   for three-, four- or six-item rows, and Overlay has no menu icon.
@@ -55,6 +71,19 @@ separate milestones. Historical checked items below do not close a new regressio
   historical transcription does not imply a working continuous reader.
 
 ### Navigation review and resource coverage acceptance
+
+- [ ] Voice feedback starts microphone recording directly in the browser, with
+  visible recording state, stop, playback, send and cancel. Do not route the
+  primary action through a file picker or another app. Preserve the screenshot
+  and overlay version from recording start; offer the existing secure review
+  origin when browser microphone APIs are unavailable on plain HTTP.
+- [ ] Check the annotation editor exposes distinct Action (orange, already
+  implemented) and Forbidden action (red) choices without duplicating Action
+  or granting gameplay authority to a feedback proposal.
+- [ ] Replace the generic scannable-element annotation with three explicit
+  rectangular tools: Mark a progression value, Mark a resource value and
+  Mark a screen identifier. Persist their distinct roles in feedback and use
+  the same definitions in live and archived overlays.
 
 - [ ] Replace the navigation review dashboard with an inert full-screen phone
   simulator: no screen search or picker in the normal view, screenshot navigation
