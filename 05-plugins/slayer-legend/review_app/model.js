@@ -1,7 +1,8 @@
 export const COLOURS = { navigation: '#ffe100', tap: '#ffe100', action: '#ff9a23', forbidden: '#ff5353',
-  detection: '#2dd4bf', scannable: '#2dd4bf', vertical: '#168bff', horizontal: '#bb50ff', draggable: '#ff65bd' };
+  detection: '#2dd4bf', scannable: '#2dd4bf', progression_value: '#7dd3fc', resource_value: '#a3e635', screen_identifier: '#2dd4bf', vertical: '#168bff', horizontal: '#bb50ff', draggable: '#ff65bd' };
 export const inside = (point, rect) => Array.isArray(rect) && rect.length === 4
   && point.x >= rect[0] && point.y >= rect[1] && point.x <= rect[2] && point.y <= rect[3];
+const NON_NAVIGATION = ['forbidden', 'action', 'scannable', 'detection', 'progression_value', 'resource_value', 'screen_identifier'];
 const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const valid = (point) => point && Number.isFinite(point.x) && Number.isFinite(point.y)
   && point.x >= 0 && point.x <= 1 && point.y >= 0 && point.y <= 1;
@@ -18,7 +19,7 @@ export function matchGesture(edges, gesture, regions = []) {
   const isDrag = gesture.end && distance(gesture.start, gesture.end) >= .035;
   const matches = [];
   for (const edge of edges) {
-    if (!valid(edge.start) || ['forbidden', 'action'].includes(edge.annotationKind)) continue;
+    if (!valid(edge.start) || NON_NAVIGATION.includes(edge.annotationKind)) continue;
     const edgeDrag = ['swipe', 'drag', 'draggable', 'vertical', 'horizontal'].includes(edge.kind);
     if (Boolean(isDrag) !== edgeDrag) continue;
     let score = distance(gesture.start, edge.start);
@@ -82,7 +83,7 @@ export function reviewGesture(edges, gesture, regions = []) {
   if (hit.some((region) => region.kind === 'action') || near.some((edge) => edge.annotationKind === 'action'))
     return { kind: 'action', matches: [] };
   const dragging = gesture.end && distance(gesture.start, gesture.end) >= .035;
-  const navigation = edges.filter((edge) => !['action', 'forbidden'].includes(edge.annotationKind));
+  const navigation = edges.filter((edge) => !NON_NAVIGATION.includes(edge.annotationKind));
   let matches = matchGesture(navigation, gesture, []).matches;
   if (!dragging) {
     const boxes = hit.filter((region) => ['navigation', 'tap'].includes(region.kind));

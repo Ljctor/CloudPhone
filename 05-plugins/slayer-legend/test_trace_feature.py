@@ -217,9 +217,9 @@ class Annotations(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(before.stat().st_mode & 0o777, 0o600)
             self.assertEqual((await self.call("GET", "/trace"))[0]["armed"]["kind"], kind)
             tap = {"x": .2, "y": .3, "kind": "tap"}
-            if kind in ("vertical", "horizontal", "scannable", "action", "draggable"):
+            if kind in ("vertical", "horizontal", *feature.RECTANGLE_KINDS):
                 tap.update(kind="swipe", end={"x": .2 if kind == "vertical" else .7,
-                                              "y": .8 if kind in ("vertical", "scannable", "action", "draggable") else .3})
+                                              "y": .8 if kind in ("vertical", *feature.RECTANGLE_KINDS) else .3})
             self.assertEqual((await self.call("POST", "/trace", tap))[1], 202)
             await self.advance()
             metadata = root / (armed["id"] + ".json")
@@ -228,10 +228,11 @@ class Annotations(unittest.IsolatedAsyncioTestCase):
             await self.advance()
             record = json.loads(metadata.read_text())
             self.assertEqual(record["kind"], kind)
+            self.assertIs(record["gestureAuthority"], False)
             self.assertEqual(record["tap"], tap)
             self.assertEqual(record["before_scan"], {"screen": "battle", "overlays": [], "plain": True})
             self.assertEqual(record["after_scan"], record["before_scan"])
-            if kind in ("scannable", "action", "draggable"):
+            if kind in feature.RECTANGLE_KINDS:
                 self.assertEqual(record["rect"], [.2, .3, .7, .8])
             self.assertEqual(record["capture_status"], "complete")
         self.assertEqual(sum(edge["count"] for edge in (await self.call("GET", "/trace/graph"))[0]["edges"]), 1)
@@ -326,6 +327,29 @@ class Annotations(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("after_url", item)
         for body in ({}, [], {"id": "bad"}):
             self.assertEqual((await self.call("POST", "/trace/cancel", body))[1], 400)
+
+    async def test_value_and_identifier_roles_require_rectangles_without_navigation(self):
+        for kind in ("progression_value", "resource_value", "screen_identifier"):
+            self.release.clear()
+            armed, status = await self.call("POST", "/trace/arm", {"kind": kind})
+            self.assertEqual(status, 200)
+            for invalid in ({"x": .8, "y": .8},
+                            {"x": .8, "y": .8, "kind": "swipe", "end": {"x": .2, "y": .8}}):
+                self.assertEqual((await self.call("POST", "/trace", invalid))[1], 400)
+            tap = {"x": .8, "y": .8, "kind": "swipe", "end": {"x": .2, "y": .2}}
+            self.assertEqual((await self.call("POST", "/trace", tap))[1], 202)
+            await self.advance()
+            self.release.set()
+            await self.advance()
+            records = (await self.call("GET", "/trace/manual"))[0]["clicks"]
+            item = next(item for item in records if item["id"] == armed["id"])
+            self.assertEqual(item["kind"], kind)
+            self.assertEqual(item["rect"], [.2, .2, .8, .8])
+            self.assertIs(item["gestureAuthority"], False)
+        self.assertEqual((await self.call("GET", "/trace/graph"))[0]["edges"], [])
+        self.restart()
+        self.assertEqual({item["kind"] for item in (await self.call("GET", "/trace/manual"))[0]["clicks"]},
+                         {"progression_value", "resource_value", "screen_identifier"})
 
     async def test_scannable_requires_area_and_normalises_reverse_corners(self):
         armed, _ = await self.call("POST", "/trace/arm", {"kind": "scannable"})

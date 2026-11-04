@@ -3,7 +3,8 @@ screen before and after each, as a graph (trace.py). Nothing is ever
 replayed.
 
 POST /trace/capture {expected_screen?}; save the current screen, optionally report its correct identity
-POST /trace/arm     {kind: navigation|forbidden|scannable|vertical|horizontal|action|draggable}; captures before the next annotation
+POST /trace/arm     {kind: navigation|forbidden|progression_value|resource_value|screen_identifier|vertical|horizontal|action|draggable}; captures before the next annotation
+Legacy scannable annotations remain readable/accepted. Value/identifier roles require rectangles.
 POST /trace/cancel  {id}; cancels only that armed or pending annotation
 POST /trace         {x, y, kind[, end: {x, y}]}: a tap the user just made; 202 at once
 GET  /trace         {enabled, nodes, edges, taps, last}
@@ -28,8 +29,8 @@ AFTER_SECONDS = 0.15
 AFTER_INTERVAL = 0.15
 AFTER_LIMIT = 2.0
 ARM_SECONDS = 30.0
-ANNOTATION_KINDS = ("navigation", "forbidden", "scannable", "vertical", "horizontal", "action", "draggable")
-RECTANGLE_KINDS = ("scannable", "action", "draggable")
+ANNOTATION_KINDS = ("navigation", "forbidden", "scannable", "progression_value", "resource_value", "screen_identifier", "vertical", "horizontal", "action", "draggable")
+RECTANGLE_KINDS = ("scannable", "progression_value", "resource_value", "screen_identifier", "action", "draggable")
 
 
 def before_frame(body):
@@ -368,7 +369,7 @@ def trace(ports, screens, graphs, images=None, scan_visible=None, on_spend=None)
                 return ports.respond({"error": "game not visible"}, status=409)
             capture_id = uuid.uuid4().hex
             entry = {"id": capture_id, "kind": kind, "at": ports.clock.wall(),
-                     "before": before[0][0], "capture_status": "armed"}
+                     "before": before[0][0], "capture_status": "armed", "gestureAuthority": False}
             if isinstance(before[2], dict):
                 entry["before_scan"] = {key: before[2][key] for key in ("screen", "overlays", "plain", "quest_tab", "battle_viewport") if key in before[2]}
             try:

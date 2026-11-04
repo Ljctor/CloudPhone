@@ -37,3 +37,10 @@ assert.equal(reviewGesture([{...tap,annotationKind:'action'}],{start:tap.start,d
 assert.equal(reviewGesture([swipe],{start:swipe.start,end:swipe.end,duration:800},[]).matches[0],swipe);
 assert.equal(reviewGesture([drag],{start:drag.start,end:drag.end,duration:800},[]).matches[0],drag);
 console.log('Inert phone: forbidden/action priority, whole navigation hotspots and recorded slides/drags: OK');
+
+for (const kind of ['progression_value', 'resource_value', 'screen_identifier']) {
+  const roleEdge = { ...tap, annotationKind: kind };
+  assert.equal(matchGesture([roleEdge], { start: tap.start, duration: 80 }).matches.length, 0);
+  assert.equal(reviewGesture([roleEdge], { start: tap.start, duration: 80 }, [{ kind, rect: [.4,.4,.6,.6] }]).matches.length, 0);
+}
+console.log('Value and identifier annotations never become navigation edges: OK');

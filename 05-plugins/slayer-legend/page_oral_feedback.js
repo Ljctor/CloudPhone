@@ -139,97 +139,149 @@ export function liveOralTransport(api) {
     attach: async (context, blob) => (await choose()).attach(context, blob) };
 }
 
-export default function oralFeedback({ capture, transport, tr = (value) => value }) {
+// The HTTP review port cannot request a microphone. Its HTTPS proxy is the
+// same interface; never substitute a file picker or another recording app.
+export function secureRecordingUrl(configuredUrl, location = globalThis.location) {
+  if (typeof configuredUrl !== 'string') return null;
+  try {
+    const url = new URL(configuredUrl);
+    if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash
+        || url.pathname !== '/navigation-review/') return null;
+    url.hash = location?.hash ?? new URL(location.href).hash;
+    return url.href;
+  } catch { return null; }
+}
+
+async function configuredRecordingUrl() {
+  try {
+    // The live plugin imports this shared module from the review service too.
+    // Resolve its configuration alongside the module, preserving HTTPS proxy prefixes.
+    const source = new URL(import.meta.url);
+    if (!['http:', 'https:'].includes(source.protocol)) return null;
+    const response = await fetch(new URL('api/recording-config', source), { cache: 'no-store' });
+    return response.ok ? (await response.json()).secure_review_url ?? null : null;
+  } catch { return null; }
+}
+
+export default function oralFeedback({ capture, transport, secureReviewUrl = undefined, tr = (value) => value }) {
   const panel = document.createElement('div'); panel.setAttribute('data-oral-feedback', '');
   panel.style.cssText = 'display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;align-items:center;pointer-events:auto';
   const button = document.createElement('button'); button.type = 'button'; button.setAttribute('data-oral-control', 'record');
-  const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = tr('Annuler'); cancel.hidden = true;
-  cancel.setAttribute('data-oral-control', 'cancel');
+  const send = document.createElement('button'); send.type = 'button'; send.textContent = tr('Envoyer'); send.setAttribute('data-oral-control', 'send');
+  const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = tr('Annuler'); cancel.setAttribute('data-oral-control', 'cancel');
+  const audio = document.createElement('audio'); audio.controls = true; audio.hidden = true;
+  audio.setAttribute('data-oral-preview', ''); audio.style.cssText = 'width:100%;max-width:100%;height:38px';
   const status = document.createElement('span'); status.setAttribute('role', 'status'); status.style.cssText = 'font-size:11px;flex-basis:100%';
-  const file = document.createElement('input'); file.type = 'file'; file.accept = 'audio/*'; file.setAttribute('capture', 'microphone'); file.hidden = true;
-  panel.append(button, cancel, status, file);
+  const secure = document.createElement('a'); secure.textContent = tr('Ouvrir l’enregistrement sécurisé');
+  secure.style.cssText = 'font-size:12px;color:#9bcaff'; secure.hidden = true;
+  panel.append(button, send, cancel, audio, status, secure);
   const microphone = Boolean(globalThis.isSecureContext && navigator.mediaDevices?.getUserMedia && globalThis.MediaRecorder);
   let phase = 'idle', generation = 0, disposed = false, recorder = null, stream = null, timer = null;
-  let snapshot = null, saved = null, blob = null, started = 0, contextPromise = null;
+  let snapshot = null, saved = null, blob = null, started = 0, previewUrl = null;
   const stopTracks = () => { stream?.getTracks().forEach((track) => track.stop()); stream = null; clearInterval(timer); timer = null; };
+  const clearPreview = () => { audio.pause?.(); audio.removeAttribute('src'); audio.load?.(); audio.hidden = true;
+    if (previewUrl) URL.revokeObjectURL(previewUrl); previewUrl = null; };
   function paint(message = '') {
-    button.textContent = tr(phase === 'recording' ? 'Terminer et envoyer' : phase === 'error' && blob ? 'Réessayer l’envoi'
-      : microphone ? 'Enregistrer un retour vocal' : 'Joindre un retour vocal');
-    button.disabled = ['saving', 'permission', 'uploading', 'choosing'].includes(phase);
-    cancel.hidden = !['recording', 'permission', 'error', 'choosing'].includes(phase);
+    button.textContent = tr(phase === 'recording' ? 'Arrêter' : 'Enregistrer un retour vocal');
+    button.disabled = !microphone || ['permission', 'stopping', 'uploading', 'preview'].includes(phase) || Boolean(blob);
+    send.hidden = !blob || !['preview', 'error'].includes(phase);
+    send.textContent = tr(phase === 'error' ? 'Réessayer l’envoi' : 'Envoyer');
+    cancel.hidden = phase === 'idle'; cancel.disabled = phase === 'uploading';
     button.style.color = phase === 'recording' ? '#ff5353' : '';
     if (message) status.textContent = tr(message);
   }
-  async function upload(ticket) {
+  function reset(message = 'Enregistrement annulé.') {
+    generation++;
+    if (recorder) { recorder.onstop = recorder.onerror = recorder.ondataavailable = null;
+      if (recorder.state !== 'inactive') recorder.stop(); recorder = null; }
+    stopTracks(); clearPreview(); phase = 'idle'; blob = null; snapshot = null; saved = null; paint(message);
+  }
+  function stopRecording() {
+    if (phase !== 'recording' || recorder?.state !== 'recording') return;
+    phase = 'stopping'; paint('Préparation de l’aperçu audio…'); recorder.stop();
+  }
+  async function begin() {
+    const ticket = ++generation; saved = null; blob = null; snapshot = null; clearPreview();
+    phase = 'permission'; paint('Autorisation du microphone…');
     try {
-      if (!blob?.size || blob.size > MAX_AUDIO) { blob = null; throw Error('Le message vocal est vide ou dépasse 12 Mo.'); }
-      phase = 'uploading'; paint('Envoi du retour vocal…');
-      saved = saved ?? await contextPromise;
+      const media = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (ticket !== generation || disposed) { media.getTracks().forEach((track) => track.stop()); return; }
+      stream = media;
+      // Freeze exactly what is displayed as recording begins, after permission.
+      // No developer write occurs until the user explicitly presses Send.
+      snapshot = JSON.parse(JSON.stringify(capture()));
+      const mimeType = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4']
+        .find((mime) => MediaRecorder.isTypeSupported?.(mime));
+      const active = new MediaRecorder(media, mimeType ? { mimeType, audioBitsPerSecond: 64000 } : undefined);
+      recorder = active; const pieces = []; let size = 0;
+      active.ondataavailable = (event) => {
+        if (ticket !== generation || disposed) return;
+        if (event.data.size) { pieces.push(event.data); size += event.data.size; }
+        if (size > MAX_AUDIO) stopRecording();
+      };
+      active.onstop = () => {
+        if (ticket !== generation || disposed) return;
+        stopTracks(); recorder = null;
+        blob = new Blob(pieces, { type: active.mimeType || mimeType || 'audio/webm' });
+        if (!blob.size || blob.size > MAX_AUDIO) { blob = null; phase = 'error'; paint('Le message vocal est vide ou dépasse 12 Mo.'); return; }
+        previewUrl = URL.createObjectURL(blob); audio.src = previewUrl; audio.hidden = false;
+        phase = 'preview'; paint('Écouter le message, puis Envoyer ou Annuler.');
+      };
+      active.onerror = () => {
+        if (ticket !== generation || disposed) return;
+        generation++; active.onstop = active.ondataavailable = active.onerror = null;
+        if (active.state !== 'inactive') active.stop();
+        stopTracks(); recorder = null; phase = 'error'; paint('L’enregistrement audio a échoué.');
+      };
+      active.start(1000); started = performance.now(); phase = 'recording'; paint(); status.textContent = `REC · 0:00 · ${tr('Capture et overlay figés')}`;
+      timer = setInterval(() => {
+        const seconds = Math.floor((performance.now() - started) / 1000);
+        status.textContent = `${tr('REC')} · ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')} · ${tr('Capture et overlay figés')}`;
+        if (seconds >= MAX_SECONDS) stopRecording();
+      }, 250);
+    } catch (error) {
       if (ticket !== generation || disposed) return;
+      stopTracks(); recorder = null; phase = 'error';
+      paint(error.name === 'NotAllowedError' ? 'Accès au microphone refusé.' : error.message || 'Microphone indisponible.');
+    }
+  }
+  async function upload() {
+    if (!blob || !['preview', 'error'].includes(phase)) return;
+    const ticket = generation;
+    try {
+      phase = 'uploading'; paint('Envoi du retour vocal…');
+      if (!saved) {
+        const created = await transport.create(snapshot);
+        if (ticket !== generation || disposed) return;
+        saved = created;
+      }
       await transport.attach(saved, blob);
       if (ticket !== generation || disposed) return;
-      phase = 'idle'; blob = null; paint('Retour vocal enregistré avec sa capture et son overlay.');
+      reset('Retour vocal enregistré avec sa capture et son overlay.');
     } catch (error) {
       if (ticket !== generation || disposed) return;
       phase = 'error'; paint(tr(error.message) + (error.status ? ` (${error.status})` : ''));
     }
   }
-  function reset() {
-    generation++;
-    if (recorder) {
-      recorder.onstop = recorder.onerror = recorder.ondataavailable = null;
-      if (recorder.state !== 'inactive') recorder.stop();
-      recorder = null;
-    }
-    stopTracks(); phase = 'idle'; blob = null; snapshot = null; saved = null; contextPromise = null; file.value = '';
-    paint('Enregistrement annulé.');
-  }
-  function begin() {
-    const ticket = ++generation;
-    try { snapshot = capture(); } catch (error) { phase = 'idle'; paint(error.message); return; }
-    saved = null; blob = null;
-    contextPromise = transport.create(snapshot); contextPromise.catch(() => {});
-    if (!microphone) {
-      phase = 'choosing'; paint('Capture et overlay figés pour ce message vocal.'); file.value = ''; file.click(); return;
-    }
-    phase = 'permission'; paint('Autorisation du microphone…');
-    navigator.mediaDevices.getUserMedia({ audio: true }).then(async (media) => {
-      if (ticket !== generation || disposed) { media.getTracks().forEach((track) => track.stop()); return; }
-      stream = media;
-      const mimeType = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4'].find((mime) => MediaRecorder.isTypeSupported(mime));
-      recorder = new MediaRecorder(stream, mimeType ? { mimeType, audioBitsPerSecond: 64000 } : undefined);
-      const pieces = []; let size = 0;
-      recorder.ondataavailable = (event) => { if (event.data.size) { pieces.push(event.data); size += event.data.size; }
-        if (size > MAX_AUDIO && recorder.state === 'recording') recorder.stop(); };
-      recorder.onstop = () => {
-        const mime = recorder?.mimeType ?? mimeType ?? 'audio/webm'; stopTracks();
-        if (ticket !== generation || disposed) return;
-        blob = new Blob(pieces, { type: mime }); upload(ticket);
-      };
-      recorder.onerror = () => {
-        if (ticket !== generation) return;
-        generation++; recorder.onstop = recorder.ondataavailable = null;
-        if (recorder.state !== 'inactive') recorder.stop();
-        stopTracks(); phase = 'error'; paint('L’enregistrement audio a échoué.');
-      };
-      recorder.start(1000); started = performance.now(); phase = 'recording'; paint('Enregistrement en cours…');
-      timer = setInterval(() => {
-        const seconds = Math.floor((performance.now() - started) / 1000);
-        status.textContent = `${tr('Enregistrement en cours…')} ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')} · ${tr('Capture et overlay figés')}`;
-        if (seconds >= MAX_SECONDS && recorder.state === 'recording') recorder.stop();
-      }, 250);
-    }).catch((error) => { stopTracks(); if (ticket === generation) { phase = 'error'; paint(error.name === 'NotAllowedError' ? 'Accès au microphone refusé.' : 'Microphone indisponible.'); } });
-  }
-  button.onclick = (event) => {
-    event.preventDefault(); event.stopPropagation();
-    if (phase === 'recording') { phase = 'uploading'; paint('Envoi du retour vocal…'); recorder.stop(); }
-    else if (phase === 'error' && blob) { if (!saved) contextPromise = transport.create(snapshot); upload(generation); }
-    else begin();
-  };
-  cancel.onclick = (event) => { event.preventDefault(); event.stopPropagation(); reset(); };
-  file.onchange = () => { blob = file.files?.[0] ?? null; if (blob) upload(generation); else reset(); };
-  file.addEventListener?.('cancel', reset);
+  button.onclick = (event) => { event.preventDefault(); event.stopPropagation();
+    if (!microphone || disposed) return;
+    if (phase === 'recording') stopRecording(); else if (['idle', 'error'].includes(phase) && !blob) begin(); };
+  send.onclick = (event) => { event.preventDefault(); event.stopPropagation(); upload(); };
+  cancel.onclick = (event) => { event.preventDefault(); event.stopPropagation(); if (phase !== 'uploading') reset(); };
   panel.onpointerdown = panel.onpointerup = (event) => event.stopPropagation();
-  paint();
+  if (!microphone) {
+    paint(globalThis.isSecureContext ? 'L’enregistrement direct n’est pas disponible dans ce navigateur.'
+      : 'Recherche de l’interface HTTPS configurée…');
+    if (!globalThis.isSecureContext) {
+      Promise.resolve(secureReviewUrl === undefined ? configuredRecordingUrl() : secureReviewUrl).then((configured) => {
+        if (disposed) return;
+        const url = secureRecordingUrl(configured);
+        secure.hidden = !url;
+        if (url) secure.href = url;
+        paint(url ? 'L’enregistrement direct nécessite la version HTTPS.'
+          : 'Enregistrement sécurisé indisponible : aucune origine HTTPS configurée.');
+      }).catch(() => { if (!disposed) paint('Enregistrement sécurisé indisponible : aucune origine HTTPS configurée.'); });
+    }
+  } else paint();
   return { element: panel, cancel: reset, get busy() { return phase !== 'idle'; }, dispose() { disposed = true; reset(); } };
 }

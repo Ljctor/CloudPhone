@@ -11,7 +11,7 @@ import tempfile
 import time
 import uuid
 
-KINDS = {"navigation", "action", "forbidden", "detection", "vertical", "horizontal", "draggable"}
+KINDS = {"navigation", "action", "forbidden", "detection", "progression_value", "resource_value", "screen_identifier", "vertical", "horizontal", "draggable"}
 UNKNOWN = {"unknown", "other", "menu", "", "None"}
 _identity_spec = importlib.util.spec_from_file_location("shared_evidence_identity", Path(__file__).with_name("evidence_review.py"))
 _identity_module = importlib.util.module_from_spec(_identity_spec)
@@ -176,6 +176,8 @@ class ZoneFeedback:
             tap = entry.get("tap", {})
             rect = entry.get("rect")
             trajectory = None
+            if kind in {"progression_value", "resource_value", "screen_identifier"} and rect is None:
+                continue  # Value/identity declarations require an explicit rectangle.
             try:
                 if kind in {"vertical", "horizontal", "draggable"} and isinstance(tap.get("end"), dict):
                     trajectory = [{"x": float(tap["x"]), "y": float(tap["y"])},

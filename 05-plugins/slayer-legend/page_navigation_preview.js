@@ -60,20 +60,22 @@ export default function capturePreview({ layer, record, side, zones = [], drawZo
   frame.append(image);
   for (const zone of zones) drawZone?.(zone, frame);
   const tap = record.tap;
-  const rectangle = ['scannable', 'action', 'draggable', 'vertical', 'horizontal'].includes(record.kind) || record.kind === 'forbidden' && record.rect;
+  const rectangle = ['scannable', 'detection', 'progression_value', 'resource_value', 'screen_identifier', 'action', 'draggable', 'vertical', 'horizontal'].includes(record.kind) || record.kind === 'forbidden' && record.rect;
   const area = record.rect ?? (rectangle && tap?.end
     ? [Math.min(tap.x, tap.end.x), Math.min(tap.y, tap.end.y), Math.max(tap.x, tap.end.x), Math.max(tap.y, tap.end.y)] : null);
   if (area?.length === 4 && area.every(Number.isFinite)) {
     const forbidden = record.forbidden || record.kind === 'forbidden';
     const colour = forbidden ? '#ff5353' : record.kind === 'action' ? '#ff9a23' : record.kind === 'draggable' ? '#ff65bd'
+      : record.kind === 'progression_value' ? '#7dd3fc' : record.kind === 'resource_value' ? '#a3e635'
       : record.kind === 'vertical' ? '#168bff' : record.kind === 'horizontal' ? '#bb50ff' : '#2dd4bf';
     const zone = { id: record.kind, kind: record.kind, forbidden, user: true,
-      proposal: record.proposal, detection: record.kind === 'scannable', rect: area,
+      proposal: record.proposal, detection: ['scannable', 'detection', 'screen_identifier'].includes(record.kind), rect: area,
       trajectory: tap?.end ? [{ x: tap.x, y: tap.y }, tap.end] : null };
     const visual = zoneStyle(zone);
     const drawn = drawZone?.(zone, frame);
     const box = drawn ?? document.createElement('div');
     box.setAttribute('data-recorded-rect', '');
+    box.setAttribute('data-zone-kind', record.kind);
     if (!drawn) {
       box.style.cssText = `position:absolute;left:${area[0] * 100}%;top:${area[1] * 100}%;width:${(area[2] - area[0]) * 100}%;height:${(area[3] - area[1]) * 100}%;border:0;background:${colour}33;border-radius:0;opacity:${visual.opacity};box-sizing:border-box;pointer-events:none`;
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');

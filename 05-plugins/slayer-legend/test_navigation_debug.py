@@ -57,6 +57,36 @@ class Geometry(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(len(result['body']['items']), 1)
                 self.assertEqual(json.dumps(navigation.SCREENS, sort_keys=True), policy)
 
+    async def test_value_role_proposals_are_persisted_without_policy_changes(self):
+        feature = load("value_role_feature", "features/navigation_debug.py")
+        screens = load("value_role_screens", "screens.py")
+        navigation = load("value_role_nav", "nav.py")
+        policy = json.dumps(navigation.SCREENS, sort_keys=True)
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.dict('os.environ', {'CLOUDPHONE_REVIEW_FEEDBACK_DIR': directory}):
+                ports = NS(respond=lambda body, status=200: {'status': status, 'body': body},
+                           data_path=lambda name: str(Path(directory) / name))
+                built = feature.navigation_debug(ports, navigation, HERE, screens)
+                routes = {(method, path): handler for method, path, handler in built['routes']}
+                for kind in ('progression_value', 'resource_value', 'screen_identifier'):
+                    body = {'screen': 'battle', 'nodeId': 'screen:battle', 'operation': 'add',
+                            'kind': kind, 'rect': [.1, .2, .3, .4]}
+                    async def proposal():
+                        return body
+                    saved = await routes['POST', '/navigation/zone-feedback'](NS(json=proposal))
+                    self.assertEqual(saved['status'], 201)
+                    self.assertEqual(saved['body']['item']['kind'], kind)
+                    self.assertIs(saved['body']['gestureAuthority'], False)
+                    for rect in (None, [.3, .2, .1, .4], [True, .2, .3, .4]):
+                        body['rect'] = rect
+                        self.assertEqual((await routes['POST', '/navigation/zone-feedback'](NS(json=proposal)))['status'], 400)
+                rebuilt = feature.navigation_debug(ports, navigation, HERE, screens)
+                read = next(handler for method, path, handler in rebuilt['routes'] if path == '/navigation/zone-feedback' and method == 'GET')
+                items = (await read(None))['body']['items']
+                self.assertEqual({item['kind'] for item in items}, {'progression_value', 'resource_value', 'screen_identifier'})
+                self.assertTrue(all(item['gestureAuthority'] is False for item in items))
+        self.assertEqual(json.dumps(navigation.SCREENS, sort_keys=True), policy)
+
     async def test_detector_geometry_is_separate_from_allowed_moves(self):
         feature = load("navigation_debug_test", "features/navigation_debug.py")
         screens = load("debug_screens_test", "screens.py")

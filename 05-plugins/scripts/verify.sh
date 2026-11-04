@@ -96,6 +96,8 @@ python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_zone_
 # Passive phone simulation: full navigation hotspots, action/forbidden priority, inert slides/drags.
 node "$(dirname "$0")/../slayer-legend/review_app/test_model.mjs"
 node "$(dirname "$0")/../slayer-legend/test_page_navigation_debug.mjs"
+# Direct microphone recording keeps its start frame through replay/cancel/retry.
+node "$(dirname "$0")/../slayer-legend/test_page_oral_feedback.mjs"
 curl -fsS "${base%/}/api/v1/plugins/slayer-legend/game" | python3 -c '
 import json, math, re, sys
 state = json.load(sys.stdin)
@@ -365,7 +367,7 @@ print("Fast screen recognition: OK")
 curl -fsS "${base%/}/plugins/slayer-legend/page_navigation_debug.js" | python3 -c '
 import sys
 script = sys.stdin.read()
-for token in ("getScreen(api)", "Ajouter un bouton de navigation", "Déclarer un bouton de navigation interdit", "Marquer un élément scannable", "Marquer un slider vertical", "Marquer un slider horizontal", "❮", "❯"):
+for token in ("getScreen(api)", "Ajouter un bouton de navigation", "Déclarer un bouton de navigation interdit", "Marquer une valeur de progression", "Marquer une valeur de ressource", "Marquer un identifiant d\u2019écran", "Marquer un slider vertical", "Marquer un slider horizontal", "❮", "❯"):
     assert token in script, token
 print("Navigation annotation controls: OK")
 '

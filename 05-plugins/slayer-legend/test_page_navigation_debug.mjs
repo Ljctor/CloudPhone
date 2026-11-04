@@ -175,7 +175,7 @@ const api = {
     throw Error(path);
   },
 };
-assert.deepEqual(ANNOTATIONS.map((action) => action.kind), ['navigation', 'forbidden', 'scannable', 'vertical', 'horizontal', 'action', 'draggable']);
+assert.deepEqual(ANNOTATIONS.map((action) => action.kind), ['navigation', 'forbidden', 'progression_value', 'resource_value', 'screen_identifier', 'vertical', 'horizontal', 'action', 'draggable']);
 assert.deepEqual(annotationPoint(event(200, -20), root.getBoundingClientRect()), { x: 1, y: 0 });
 graph.screens.battle.moves.push(
   { id: 'ordinary_action_test', semantic_kind: 'action', area: [.1, .2, .2, .3] },
@@ -246,7 +246,7 @@ await poll();
 assert.match(status(), /Déclaration enregistrée/, 'completion remains visible');
 // Drawing a slider sends its extent, and ordinary polling preserves the
 // pointer surface so a long drag cannot be interrupted by a refresh.
-buttons()[3].onclick(event()); await flush(); armedReply(); await flush();
+buttons()[ANNOTATIONS.findIndex((item) => item.kind === 'vertical')].onclick(event()); await flush(); armedReply(); await flush();
 surface = all(root).find((item) => 'data-annotation-surface' in item.attrs);
 surface.onpointerdown(event(20, 40));
 await poll();
@@ -426,7 +426,7 @@ surface.onpointerdown(event(80, 160)); surface.onpointerup(event(80, 160));
 assert.equal(posts.length, beforeRectangle, 'a click cannot declare a scannable rectangle');
 const rectangleDown = event(80, 160); surface.onpointerdown(rectangleDown);
 const rectangleMove = event(20, 40); surface.onpointermove(rectangleMove);
-assert.ok(all(surface).some((item) => item.style.cssText?.includes('#2dd4bf')), 'turquoise drag preview');
+assert.ok(all(surface).some((item) => item.style.cssText?.includes('#7dd3fc')), 'progression value drag preview');
 const rectangleUp = event(20, 40); surface.onpointerup(rectangleUp);
 for (const pointer of [rectangleDown, rectangleMove, rectangleUp]) assert.ok(pointer.prevented && pointer.stopped);
 assert.deepEqual(posts.at(-1).body, { x: .8, y: .8, kind: 'swipe', end: { x: .2, y: .2 } });
@@ -573,3 +573,10 @@ ui.dispose();
 
 Date.now = realDateNow;
 console.log('Navigation annotations, floating panel gestures and archived previews: OK');
+
+for (const kind of ['progression_value', 'resource_value', 'screen_identifier']) {
+  const zone = { id: `user:${kind}`, user: true, screen: 'battle', kind, rect: [.2,.2,.8,.8] };
+  assert.equal(zoneRemovalProposal(zone).kind, kind);
+  assert.equal(feedbackZones('battle', [], [zone])[0].kind, kind);
+}
+console.log('Distinct value/identifier roles survive feedback and removal proposals: OK');

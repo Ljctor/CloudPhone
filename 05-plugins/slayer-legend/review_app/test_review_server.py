@@ -43,6 +43,19 @@ class ReviewAPI(AioHTTPTestCase):
         await super().asyncTearDown()
         self.temporary.cleanup()
 
+    async def test_recording_url_comes_only_from_explicit_https_frontend_origins(self):
+        response = await self.client.get("/api/recording-config")
+        self.assertIsNone((await response.json())["secure_review_url"])
+        self.evidence.frontend_origins = ("http://private.example:8100", "https://configured.example")
+        response = await self.client.get("/api/recording-config", headers={"Origin": "http://private.example:8100"})
+        self.assertEqual(response.headers["Access-Control-Allow-Origin"], "http://private.example:8100")
+        self.assertEqual((await response.json())["secure_review_url"], "https://configured.example/navigation-review/")
+        response = await self.client.get("/api/recording-config", headers={"Host": "untrusted.example"})
+        self.assertEqual((await response.json())["secure_review_url"], "https://configured.example/navigation-review/")
+        self.assertEqual((await self.client.get("/api/recording-config", headers={"Origin": "https://untrusted.example"})).status, 403)
+        self.evidence.frontend_origins = ("http://private.example:8100",)
+        self.assertIsNone((await (await self.client.get("/api/recording-config")).json())["secure_review_url"])
+
     async def test_graph_preserves_actual_edges_and_distinguishes_missing_full_images(self):
         response = await self.client.get("/api/graph")
         self.assertEqual(response.status, 200)
@@ -109,13 +122,33 @@ class ReviewAPI(AioHTTPTestCase):
         self.assertFalse(any(edge["from"] == node["id"] or edge["to"] == node["id"] for edge in graph["edges"]))
 
     async def test_annotation_types_never_promote_actions_or_unknown_evidence_to_navigation(self):
-        for kind in ("action", "forbidden", "scannable", "not-a-supported-type"):
+        for kind in ("action", "forbidden", "scannable", "progression_value", "resource_value", "screen_identifier", "not-a-supported-type"):
             with self.subTest(kind=kind):
                 (self.manual / f"{CAPTURE}.json").write_text(json.dumps({**self.entry, "kind": kind}))
                 graph = await (await self.client.get("/api/graph")).json()
                 self.assertFalse(any(edge["source"] == "manual" for edge in graph["edges"]))
                 node = next(node for node in graph["nodes"] if node["id"] == NODE)
                 self.assertEqual(node["annotation"], kind if kind != "not-a-supported-type" else "unknown")
+
+    async def test_value_role_proposals_reload_without_navigation_authority(self):
+        initial = await (await self.client.get("/api/graph")).json()
+        node = next(node for node in initial["nodes"] if node["id"] == NODE)
+        roles = ("progression_value", "resource_value", "screen_identifier")
+        for kind in roles:
+            body = {"nodeId": NODE, "screen": node["screen"], "operation": "add",
+                    "kind": kind, "rect": [.1, .2, .3, .4]}
+            response = await self.client.post("/api/zone-feedback", json=body)
+            self.assertEqual(response.status, 201)
+            self.assertIs((await response.json())["gestureAuthority"], False)
+            for rect in (None, [.3, .2, .1, .4], [.1, .2, .1, .4], [True, .2, .3, .4]):
+                self.assertEqual((await self.client.post("/api/zone-feedback", json={**body, "rect": rect})).status, 400)
+        self.evidence.zones = server.zone_feedback.ZoneFeedback(self.feedback.parent)
+        restored = await (await self.client.get("/api/graph")).json()
+        node = next(node for node in restored["nodes"] if node["id"] == NODE)
+        added = [region for region in node["regions"] if region.get("proposal") == "add"]
+        self.assertEqual({region["kind"] for region in added}, set(roles))
+        self.assertTrue(all(region["gestureAuthority"] is False for region in added))
+        self.assertEqual(restored["edges"], initial["edges"])
 
     async def test_declared_graph_is_separate_and_only_explicit_safe_routes_are_added(self):
         plugin = self.root / "plugin"

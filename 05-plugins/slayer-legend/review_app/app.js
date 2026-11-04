@@ -91,24 +91,27 @@ function renderOverlay() {
   }
   regions.sort((a, b) => Number(Boolean(a.forbidden || a.kind === 'forbidden')) - Number(Boolean(b.forbidden || b.kind === 'forbidden')));
   for (const region of regions) {
-    const landmark = ['detection', 'scannable'].includes(region.kind);
+    const landmark = ['detection', 'scannable', 'screen_identifier'].includes(region.kind);
     if (landmark ? !state.landmarks : !state.overlay) continue;
     if (!Array.isArray(region.rect) || region.rect.length !== 4 || region.rect.some((v) => !Number.isFinite(v))) continue;
     const [l, t, r, b] = region.rect, forbidden = region.forbidden || region.kind === 'forbidden';
     const style = zoneStyle(region);
     const kind = forbidden ? 'forbidden' : region.kind, colour = COLOURS[kind] ?? '#94a3b8';
     const box = svg('rect', { x: l * 480, y: t * 1040, width: (r - l) * 480, height: (b - t) * 1040,
-      rx: 0, fill: `${colour}12`, stroke: colour, 'stroke-width': style.width, opacity: style.opacity,
+      'data-zone-kind': kind, rx: 0, fill: `${colour}12`, stroke: colour, 'stroke-width': style.width, opacity: style.opacity,
       'stroke-dasharray': style.dash, 'stroke-linecap': style.linecap });
     if (style.double && (r-l)*480 > 8 && (b-t)*1040 > 8) layer.append(svg('rect', { x:l*480+3, y:t*1040+3, width:(r-l)*480-6, height:(b-t)*1040-6, fill:'none', stroke:colour, 'stroke-width':1 }));
     box.append(svg('title', {}, `${region.label ?? region.id ?? kind}${region.source ? ` · ${region.source}` : ''}`)); layer.append(box);
-    if (['detection', 'scannable'].includes(kind)) {
+    if (['detection', 'scannable', 'screen_identifier'].includes(kind)) {
       layer.append(svg('text', { x: Math.max(3, l * 480), y: Math.max(13, t * 1040 - 5), fill: colour, class: 'zone-label' }, region.label ?? region.id ?? 'Reconnaissance'));
     }
   }
 }
 
-const oral = oralFeedback({ transport: oralTransport('/api/oral-feedback'), capture: () => {
+const secureReviewUrl = fetch(new URL('api/recording-config', import.meta.url), { cache: 'no-store' })
+  .then((response) => response.ok ? response.json() : null)
+  .then((config) => config?.secure_review_url ?? null).catch(() => null);
+const oral = oralFeedback({ secureReviewUrl, transport: oralTransport('/api/oral-feedback'), capture: () => {
   const node = current(); if (!node) throw Error('Aucune capture');
   return freezeOralContext({ image: $('screen-image'), layer: $('phone'), svgElement: $('overlay'),
     source: 'review', nodeId: node.id, screen: node.screen, displayName: screenLabel(node),

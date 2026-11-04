@@ -18,6 +18,13 @@ review = load('evidence_review', HERE / 'evidence_review.py')
 archive = load('archive_png', HERE / 'features/screenshot_archive.py')
 
 class EvidenceReview(unittest.TestCase):
+    def test_value_and_identity_annotations_never_invent_point_rectangles(self):
+        for kind in ('progression_value', 'resource_value', 'screen_identifier'):
+            entry = {'kind': kind, 'tap': {'x': .3, 'y': .4}}
+            self.assertIsNone(review.geometry(entry))
+            self.assertEqual(review.geometry({**entry, 'rect': [.2, .3, .4, .5]}), [.2, .3, .4, .5])
+            self.assertIsNone(review.geometry({**entry, 'rect': [.4, .3, .2, .5]}))
+
     def test_nested_overlay_identity_uses_ancestry_not_detector_order(self):
         tree=json.loads((HERE/'screen_registry.json').read_text())['tree']
         # The Soul title and its Equipment parent both match on a real card.

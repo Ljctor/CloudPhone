@@ -5,9 +5,14 @@ import visualTracker from './page_navigation_tracking.js';
 import { getScreen } from './page_screen_scan.js';
 import capturePreview, { archivedScreen } from './page_navigation_preview.js';
 import { zoneStyle } from './page_zone_style.js';
-export const COLOURS = { tap: '#ffe100', navigation: '#ffe100', action: '#ff9a23', forbidden: '#ff5353', detection: '#2dd4bf', scannable: '#2dd4bf', draggable: '#ff65bd',
+export const COLOURS = { tap: '#ffe100', navigation: '#ffe100', action: '#ff9a23', forbidden: '#ff5353', detection: '#2dd4bf', scannable: '#2dd4bf', progression_value: '#7dd3fc', resource_value: '#a3e635', screen_identifier: '#2dd4bf', draggable: '#ff65bd',
   vertical: '#168bff', horizontal: '#bb50ff' };
-const RECTANGLE_ANNOTATIONS = ['scannable', 'action', 'draggable'];
+const VALUE_ROLES = ['progression_value', 'resource_value'];
+const RECTANGLE_ROLES = [...VALUE_ROLES, 'screen_identifier'];
+const recognition = (zone) => !VALUE_ROLES.includes(zone.kind)
+  && (zone.kind === 'screen_identifier' || zone.detection || ['scannable', 'detection'].includes(zone.kind));
+const ROLE_LABELS = { progression_value: 'Valeur de progression', resource_value: 'Valeur de ressource', screen_identifier: 'Identifiant d’écran' };
+const RECTANGLE_ANNOTATIONS = ['scannable', ...RECTANGLE_ROLES, 'action', 'draggable'];
 let trajectorySerial = 0;
 
 function covers(move, x, y, tolerance) {
@@ -137,6 +142,7 @@ export function landmarksFor(screen, registry) {
 
 export function zoneRemovalProposal(target) {
   const kind = target.forbidden || target.kind === 'forbidden' ? 'forbidden'
+    : RECTANGLE_ROLES.includes(target.kind) ? target.kind
     : target.detection || target.kind === 'scannable' ? 'detection'
       : target.kind === 'tap' ? 'navigation' : target.kind;
   let zoneId = target.zoneId ?? target.id;
@@ -161,6 +167,7 @@ export function feedbackZones(screen, configured, annotations, scan = null) {
   const canonical = (id) => typeof id === 'string' ? id
     .replace(/^edge:configured:[^:]+:/, '').replace(new RegExp(`^policy:${screen}:`), '').replace(/^policy:/, '') : null;
   const kind = (zone) => zone.forbidden || zone.kind === 'forbidden' ? 'forbidden'
+    : RECTANGLE_ROLES.includes(zone.kind) ? zone.kind
     : zone.detection || ['scannable', 'detection'].includes(zone.kind) ? 'detection'
     : zone.kind === 'tap' ? 'navigation' : zone.kind;
   const idMatches = (item, zone) => {
@@ -183,7 +190,9 @@ export function feedbackZones(screen, configured, annotations, scan = null) {
 export const ANNOTATIONS = [
   { kind: 'navigation', label: 'Ajouter un bouton de navigation' },
   { kind: 'forbidden', label: 'Déclarer un bouton de navigation interdit' },
-  { kind: 'scannable', label: 'Marquer un élément scannable' },
+  { kind: 'progression_value', label: 'Marquer une valeur de progression' },
+  { kind: 'resource_value', label: 'Marquer une valeur de ressource' },
+  { kind: 'screen_identifier', label: 'Marquer un identifiant d’écran' },
   { kind: 'vertical', label: 'Marquer un slider vertical' },
   { kind: 'horizontal', label: 'Marquer un slider horizontal' },
   { kind: 'action', label: 'Marquer un bouton d’action' },
@@ -384,7 +393,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
     const [left, top, right, bottom] = zone.rect.map((part) => Math.max(0, Math.min(1, part)));
     const box = document.createElement('div');
     const forbidden = zone.forbidden || zone.kind === 'forbidden';
-    const detection = zone.detection || ['scannable', 'detection'].includes(zone.kind);
+    const detection = recognition(zone);
     const colour = forbidden ? COLOURS.forbidden : COLOURS[zone.kind];
     const slider = !forbidden && (zone.kind === 'vertical' || zone.kind === 'horizontal');
     const visual = zoneStyle(zone);
@@ -436,12 +445,14 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
     }
     box.setAttribute('data-zone-source', zone.user ? 'user' : 'configured');
     box.setAttribute('data-zone-origin', zone.source ?? (zone.user ? 'user_feedback' : 'navigation_guard'));
-    box.setAttribute('data-zone-kind', forbidden ? 'forbidden' : detection ? 'detection' : ['action', 'draggable'].includes(zone.kind) ? zone.kind : 'navigation');
+    box.setAttribute('data-zone-kind', forbidden ? 'forbidden' : RECTANGLE_ROLES.includes(zone.kind) ? zone.kind
+      : detection ? 'detection' : zone.kind === 'tap' ? 'navigation' : zone.kind);
+    const roleLabel = ROLE_LABELS[zone.kind];
     const label = forbidden ? `${zone.id} · ${api.tr('Action interdite')}` : zone.id;
-    box.title = detection && !forbidden ? `${api.tr('Repère de détection')} · ${zone.id}` : zone.conditional ? `${label} · ${api.tr('condition à vérifier')}` : label;
-    if (detection && !forbidden) {
+    box.title = roleLabel && !forbidden ? `${api.tr(roleLabel)} · ${zone.id}` : detection && !forbidden ? `${api.tr('Repère de détection')} · ${zone.id}` : zone.conditional ? `${label} · ${api.tr('condition à vérifier')}` : label;
+    if ((detection || roleLabel) && !forbidden) {
       const caption = document.createElement('span');
-      caption.textContent = `${api.tr('Repère de détection')} · ${zone.id}`;
+      caption.textContent = `${api.tr(roleLabel ?? 'Repère de détection')} · ${zone.id}`;
       caption.style.cssText = `position:absolute;left:0;top:0;max-width:100%;overflow:hidden;white-space:nowrap;background:#000c;color:${colour};font:10px sans-serif;line-height:12px`;
       box.append(caption);
     }

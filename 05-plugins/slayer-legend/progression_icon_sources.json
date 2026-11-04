@@ -46,35 +46,53 @@
   },
   "growth": {
     "status": "original_asset",
-    "description": "Exact yellow Awaken Latent Power entrance symbol; actual Dragon Emblem button sprite",
+    "description": "Original yellow Awaken Latent Power entrance symbol observed on the actual Latent Power screen; runtime rune variant 5",
     "source_kind": "apk_sprite",
-    "sprite": "rune_Icon_0",
+    "sprite": "rune_Icon_5",
     "asset": "fe0592695a78b744d99ed2d42b8e9f22",
-    "path_id": 18,
+    "path_id": 9,
     "size": [
       73,
       73
     ],
-    "image_sha256": "5a0b2088f71a58b524d76a99153677a8491b55817aff41024dc333e379816e54",
+    "image_sha256": "41f0709d0de1b424f3e0aba96633f68ba245c570fbc9567dab68fdf970dfa76a",
     "transform": "none",
     "dynamic_overlays": false,
     "owned_state": false,
     "proof": {
-      "scene": "level1",
-      "parent": "Panel_DragonForce/OBJ_DragonEmblem/Panel_DragonEmblem",
-      "button_game_object": 3723,
-      "button_name": "btn_DragonEmblem",
-      "callback_component": 138202,
-      "callback": "StatManager.ShowDragonEmblemPopup",
-      "icon_child_game_object": 5158,
-      "icon_image_component": 140312,
-      "image_sprite_pointer": {
-        "offset": 88,
-        "external": 276,
-        "path_id": 18,
-        "file": "fe0592695a78b744d99ed2d42b8e9f22"
+      "prefab_button": {
+        "scene": "level1",
+        "parent": "Panel_DragonForce/OBJ_DragonEmblem/Panel_DragonEmblem",
+        "button_game_object": 3723,
+        "button_name": "btn_DragonEmblem",
+        "callback_component": 138202,
+        "callback": "StatManager.ShowDragonEmblemPopup",
+        "icon_child_game_object": 5158,
+        "icon_image_component": 140312,
+        "image_sprite_pointer": {
+          "offset": 88,
+          "external": 276,
+          "path_id": 18,
+          "file": "fe0592695a78b744d99ed2d42b8e9f22"
+        },
+        "extraction": "UnityPy Sprite.image, original RGBA; no background/effects/DragonStat_ring overlays"
       },
-      "extraction": "UnityPy Sprite.image, original RGBA; no background/effects/DragonStat_ring overlays"
+      "observed_runtime_sprite": {
+        "sprite": "rune_Icon_5",
+        "asset": "fe0592695a78b744d99ed2d42b8e9f22",
+        "path_id": 9,
+        "capture": "latent-power-live-reference.png",
+        "capture_sha256": "6ef5252b7b74ee17c59873a53f3e5ee84c8e3ba42ef8a0b7b055ee85b4e59c52",
+        "source_box": [
+          209,
+          865,
+          61,
+          54
+        ],
+        "match": "Identical outlined slanted leaf/rhombus center and dotted circular rim; original Sprite.image matches the live button center.",
+        "runtime_note": "Prefab initially references rune_Icon_0; actual live entry displays rune_Icon_5. This static menu symbol represents the observed entrance, not a claim about current rune state.",
+        "excluded_layers": "DragonStat_ring 1, Magic1 and particle effects remain separate and are not baked into the base symbol."
+      }
     }
   },
   "companions": {

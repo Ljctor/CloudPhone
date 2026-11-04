@@ -18,6 +18,23 @@ def append_worker(directory, index):
 
 
 class SharedZoneFeedback(unittest.TestCase):
+    def test_value_roles_persist_independently_and_require_valid_rectangles(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = shared.ZoneFeedback(directory)
+            roles = ("progression_value", "resource_value", "screen_identifier")
+            for kind in roles:
+                body = {"screen": "battle", "nodeId": "screen:battle", "operation": "add",
+                        "kind": kind, "rect": [.1, .2, .3, .4]}
+                item = store.append(body, {"battle"})
+                self.assertEqual(item["kind"], kind)
+                self.assertIs(item["gestureAuthority"], False)
+                for rect in (None, [.3, .2, .1, .4], [.1, .2, .1, .4], [True, .2, .3, .4], [.1, .2, float("nan"), .4]):
+                    with self.assertRaises(ValueError):
+                        store.append({**body, "rect": rect}, {"battle"})
+            restored = shared.ZoneFeedback(directory).read_annotations(directory, {"battle"})
+            self.assertEqual({item["kind"] for item in restored}, set(roles))
+            self.assertTrue(all(item["gestureAuthority"] is False for item in restored))
+
     def test_fresh_nested_annotation_uses_deepest_identity_not_overlay_order(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

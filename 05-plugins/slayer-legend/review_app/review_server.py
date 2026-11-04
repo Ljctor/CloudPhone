@@ -34,7 +34,7 @@ _oral_spec.loader.exec_module(oral_feedback)
 CAPTURE = re.compile(r"[0-9a-f]{32}")
 THUMB = re.compile(r"[0-9a-f]{312}")
 KINDS = {"tap", "long", "swipe"}
-ANNOTATIONS = {"navigation", "action", "forbidden", "scannable", "vertical", "horizontal", "draggable", "screen", "screen_correction"}
+ANNOTATIONS = {"navigation", "action", "forbidden", "scannable", "detection", "progression_value", "resource_value", "screen_identifier", "vertical", "horizontal", "draggable", "screen", "screen_correction"}
 STEM = re.compile(r"[A-Za-z0-9_-]{1,100}")
 
 
@@ -242,7 +242,8 @@ class Evidence:
                     if a and b and a["x"] < b["x"] and a["y"] < b["y"]:
                         node["regions"].append({"id": f"region:{capture_id}", "kind": "detection" if annotation == "scannable" else annotation,
                                                 "rect": [a["x"], a["y"], b["x"], b["y"]],
-                                                "label": annotation, "source": "recorded"})
+                                                "label": annotation, "source": "recorded", "gestureAuthority": False,
+                                                "detection": annotation in {"scannable", "detection", "screen_identifier"}})
                 nodes.append(node)
                 known.add(node_id)
                 sides[side] = node_id
@@ -502,13 +503,14 @@ class Evidence:
             if node is None or not isinstance(rect, list) or len(rect) != 4:
                 continue
             a, b = point(*rect[:2]), point(*rect[2:])
-            if not a or not b:
+            if not a or not b or a["x"] >= b["x"] or a["y"] >= b["y"]:
                 continue
             kind = annotation.get("kind", "detection")
             kind = "detection" if kind == "scannable" else kind
             region = {"id": text(annotation.get("id", "review")), "kind": kind,
                       "rect": [a["x"], a["y"], b["x"], b["y"]], "label": text(kind),
-                      "source": "reviewed_user_evidence", "readerCalibrated": False}
+                      "source": "reviewed_user_evidence", "readerCalibrated": False, "gestureAuthority": False,
+                      "detection": kind in {"detection", "screen_identifier"}}
             if not any(r["rect"] == region["rect"] and r["kind"] == kind for r in node["regions"]):
                 node["regions"].append(region)
         registry = read_json(self.plugin_dir / "screen_registry.json", {})
@@ -624,6 +626,25 @@ def make_app(evidence):
     for method, path, handler in oral_feedback.routes(evidence.oral, "/api/oral-feedback", evidence.frontend_origins):
         app.router.add_route(method, path, handler)
 
+    async def recording_config(request):
+        origin = request.headers.get("Origin")
+        if origin and origin not in evidence.frontend_origins and origin != f"{request.scheme}://{request.host}":
+            raise web.HTTPForbidden(text="Untrusted feedback frontend")
+        trusted = []
+        for configured in evidence.frontend_origins:
+            try:
+                parsed = urllib.parse.urlsplit(configured)
+                parsed.port  # Reject malformed port syntax too.
+            except ValueError:
+                continue
+            if (parsed.scheme == "https" and parsed.hostname and not parsed.username and not parsed.password
+                    and not parsed.path and not parsed.query and not parsed.fragment):
+                trusted.append(configured)
+        selected = origin if origin in trusted else next(iter(trusted), None)
+        headers = {"Access-Control-Allow-Origin": origin, "Vary": "Origin"} if origin in evidence.frontend_origins else {}
+        return web.json_response({"version": 1,
+                                  "secure_review_url": selected + "/navigation-review/" if selected else None}, headers=headers)
+
     async def graph(request):
         async with evidence.lock:
             return web.json_response(await asyncio.to_thread(evidence.graph))
@@ -727,6 +748,7 @@ def make_app(evidence):
                 headers = {"Access-Control-Allow-Origin": origin, "Vary": "Origin"}
         return web.FileResponse(path, headers=headers)
 
+    app.router.add_get("/api/recording-config", recording_config)
     app.router.add_get("/api/graph", graph)
     app.router.add_get("/api/image/{node_id}", image)
     app.router.add_get("/api/overlays/{node_id}", overlays)

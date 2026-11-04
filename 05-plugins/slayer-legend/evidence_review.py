@@ -125,6 +125,8 @@ def geometry(entry):
         if not isinstance(rect, list) or len(rect) != 4 or not all(normal(v) for v in rect) or rect[0] >= rect[2] or rect[1] >= rect[3]:
             return None
         return rect
+    if kind in ('progression_value', 'resource_value', 'screen_identifier'):
+        return None  # These annotations are rectangles, never inferred point marks.
     if not all(normal(tap.get(k)) for k in ('x', 'y')):
         return None
     end = tap.get('end')
