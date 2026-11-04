@@ -280,10 +280,17 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
                               verified=True, seen=seen)
         elif step[0] == "scroll":
             rows = view["rows"]
-            # The top whole row can start above the calibrated scroll lane.
-            # Use whole-cell upper points nearest the navigation's .62/.86
-            # anchors; the normal guard still checks both ends and orange tags.
-            points = [reader.select_point(row) for row in rows]
+            # Both endpoints must be upper points of fresh whole cells,
+            # inside the existing scroll lane and outside every orange tag.
+            # The normal swipe guard separately validates the start only.
+            contains = getattr(ports, "move_contains", None)
+            points = list(dict.fromkeys(
+                point for point in (reader.select_point(row) for row in rows)
+                if callable(contains) and contains("soul_weapon", "scroll", point)
+                and not any(box[0] <= point[0] <= box[2] and box[1] <= point[1] <= box[3]
+                            for box in seen["tags"])))
+            if len(points) < 2:
+                raise Stop("liste des armes illisible")
             first = min(points, key=lambda point: abs(point[1] - .62))
             last = min(points, key=lambda point: abs(point[1] - .86))
             if first == last:

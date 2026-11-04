@@ -38,6 +38,7 @@ python3 "$(dirname "$0")/../slayer-legend/test_soul_weapon.py" Tag ActualNativeC
   Sequence.test_after_a_relaunch_no_detached_repair_or_notification \
   Sequence.test_slow_readback_confirms_select_and_equip_without_repeating_gestures \
   Sequence.test_select_without_effect_stops_with_bounded_observation \
+  Sequence.test_scroll_filters_live_top_point_outside_lane_for_both_endpoints \
   Sequence.test_input_during_select_readback_stops_before_second_observation
 python3 "$(dirname "$0")/../slayer-legend/test_soul_weapon.py" \
   Engraving.test_opening_can_outlast_the_card_polling_deadline \

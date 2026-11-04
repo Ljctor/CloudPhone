@@ -497,6 +497,12 @@ layers on item visuals, never baked into their base sprites or menu symbols.
   Keep the first attempt recorded as failed. Recheck the local preview-drag
   response correction in-game; a successful recovery alone is not first-pass
   acceptance, nor proof of lower-level placed-card replacement.
+  The first trial of the landing correction stopped before Equip because
+  the list chose a whole-cell scroll point outside its calibrated lane.
+  Full original Soul setup was restored. Filter both scroll endpoints
+  against the existing navigation geometry and visible tags, then repeat
+  the complete Relax/Gold Farming acceptance; the early refusal did not
+  exercise the landing correction.
 - [x] Obtain real Equip/Unequip calibration evidence: owned, unequipped
   Relax supplies Equip; equipped Ambition supplies Unequip. Read-only
   navigation produced the evidence; no Equip or engraving action was run.

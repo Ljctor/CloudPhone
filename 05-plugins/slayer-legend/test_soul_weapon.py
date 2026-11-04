@@ -812,6 +812,34 @@ class Sequence(unittest.TestCase):
         moves = [m for m in game.moves if m[0] == "soul_weapon" and m[1] in ("select", "scroll", "equip")]
         self.assertLessEqual(len(moves), rules.MOST_MOVES)
 
+    def test_scroll_filters_live_top_point_outside_lane_for_both_endpoints(self):
+        class OffsetGame(Game):
+            FIRST = .5898076923076923 - reader.SELECT_DEPTH * .054
+
+            def ports(self):
+                ports = super().ports()
+                original = ports.swipe
+
+                async def swipe(shot, screen, move, start, end, milliseconds, **kwargs):
+                    if screen == 'soul_weapon' and move == 'scroll':
+                        for point in (start, end):
+                            self_test.assertTrue(nav.move_contains(screen, move, point))
+                            self_test.assertNotAlmostEqual(point[1], .5898076923076923)
+                            self_test.assertFalse(any(box[0] <= point[0] <= box[2]
+                                and box[1] <= point[1] <= box[3] for box in kwargs['seen']['tags']))
+                        endpoints.append((start, end))
+                    await original(shot, screen, move, start, end, milliseconds, **kwargs)
+
+                ports.swipe = swipe
+                return ports
+
+        self_test, endpoints = self, []
+        game = OffsetGame(selected=GRAND, equipped=GRAND, owned={GRAND, 30})
+        loadouts = {'mpw18': {'stage': 920, 'preset': None, 'soul_weapon': {'id': 30, 'variant': 'Atk'}}}
+        _, api = build(game, loadouts)
+        self.assertEqual(asyncio.run(api['soul_weapon']('mpw18'))['result'], 'done')
+        self.assertTrue(endpoints)
+
     def test_ascending_list(self):
         game = Game(selected=GRAND, equipped=GRAND, owned={GRAND, GRAND + 2}, descending=False, first_id=GRAND - 2)
         loadouts = {"mpw18": {"stage": 920, "preset": None, "soul_weapon": {"id": GRAND + 2, "variant": "Atk"}}}
