@@ -509,16 +509,14 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
                     if current is None:
                         step = ("cancel", ports.t("aperçu pas situé"))
                         break
-                    visible = set(current) - under
-                    pickup = min(visible, key=lambda cell: (-cell[0], cell[1]))
-                    anchor = min(current)
-                    grab = tuple(pickup[i] - anchor[i] for i in range(2))
-                    key = (tuple(rules.normalised(current)), grab)
-                    response = responses.get(key)
-                    if responses and response is None:
+                    chosen_pickup = rules.preview_pickup(current, under, now, responses)
+                    if chosen_pickup is None:
                         motion_error = "preview drag pickup changed; learned response cannot be reused"
                         step = ("cancel", ports.t("Erreur : {error}", error=motion_error))
                         break
+                    pickup, key = chosen_pickup
+                    grab = key[1]
+                    response = responses.get(key)
                     endpoint = (rules.landing_endpoint(cells, response) if response is not None
                                 else grid_endpoint(screen.hold_point(cells)))
                     if endpoint is None:

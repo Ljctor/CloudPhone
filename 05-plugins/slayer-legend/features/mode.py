@@ -395,25 +395,13 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
                         if status["hold"] and status["hold"]["owner"] is me:
                             end_hold("timeout")
                         message = farming_text(name, number, preset)
-                        accepted = setup.complete_attempt(
-                            attempt, mode=status["mode"], completed=True,
-                            state="farming", message=message)
-                        receipt = setup.current_result(name, mines["state"]().get("enabled"))
-                        if not accepted or not receipt or receipt["result"] != "done":
+                        receipt = publish_setup(attempt, name, message)
+                        if receipt is None:
                             # Input or launch invalidated the readback. Keep
                             # normal pause/retry semantics, never a false READY.
                             # An explicit Resume cannot survive new input.
                             force = False
                             raise ports.Busy("Configuration demandée non vérifiée")
-                        # One synchronous publication boundary: observers see
-                        # the same current receipt and ready state before any
-                        # notification can yield to user input or a relaunch.
-                        report("farming", message)
-                        for listener in setup_listeners:
-                            try:
-                                listener(copy.deepcopy(receipt))
-                            except Exception as exc:
-                                ports.log("warning", f"Setup observer failed: {type(exc).__name__}")
                         alert = switched(answer, since, waited, applied)
                         await ports.notify(rules.ready_text(name, ports.clock.monotonic() - since, applied, alert, held))
                         return True
@@ -470,6 +458,27 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
             return t("{name} au stage {number}, preset {preset}", name=rules.mode_name(name), number=number, preset=preset)
         return t("{name} au stage {number}", name=rules.mode_name(name), number=number)
 
+    def publish_setup(attempt, name, message):
+        """Commit current full proof, ready state and its event without yielding.
+
+        Callers first establish full executor proof and their own authority.
+        Evidence rejection publishes neither readiness nor an event; observers
+        receive detached receipts and cannot fail an accepted transaction.
+        """
+        if not setup.complete_attempt(attempt, mode=status["mode"], completed=True,
+                                      state="farming", message=message):
+            return None
+        receipt = setup.current_result(name, mines["state"]().get("enabled"))
+        if not receipt or receipt["result"] != "done":
+            return None
+        report("farming", message)
+        for listener in setup_listeners:
+            try:
+                listener(copy.deepcopy(receipt))
+            except Exception as exc:
+                ports.log("warning", f"Setup observer failed: {type(exc).__name__}")
+        return receipt
+
     def begin_verification(name):
         """Snapshot an external full repair before its first awaited step."""
         if (status["mode"] != name or status["state"] not in ("idle", "failed", "farming")
@@ -487,14 +496,10 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
                 or not ports.enabled() or setup.blocker(name)):
             return None
         message = farming_text(name, loadouts["stage"](name), loadouts["loadout"](name).get("preset"))
-        if not setup.complete_attempt(attempt[1], mode=name, completed=True,
-                                      state="farming", message=message):
-            return None
-        receipt = setup.current_result(name)
-        if not receipt or receipt["result"] != "done":
+        receipt = publish_setup(attempt[1], name, message)
+        if receipt is None:
             return None
         ports.log("normal", f"Mode {name}: complete setup verified")
-        report("farming", message)
         return receipt
 
     def replace_change(start):

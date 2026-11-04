@@ -65,11 +65,15 @@ class History(unittest.TestCase):
         self.readers.append(callback)
         return lambda: self.readers.remove(callback)
 
-    def proof(self, source='mode', **changes):
+    def test_complete_setup_has_one_authoritative_subscription(self):
+        self.assertEqual(len(self.proofs), 1)
+        self.assertEqual(self.repairs, [], 'watchdog forwards mode proof; do not subscribe twice')
+
+    def proof(self, **changes):
         mode = self.state['mode']
         receipt = {'result': 'done', 'mode': mode, 'at': self.now,
                    'target': copy.deepcopy(self.parts[mode]), 'revision': engraving.revision(self.parts[mode])}
-        (self.proofs if source == 'mode' else self.repairs)[0]({**receipt, **changes})
+        self.proofs[0]({**receipt, **changes})
 
     def event(self, reader, values, at=None, epoch=None):
         at = self.now if at is None else at
@@ -142,7 +146,7 @@ class History(unittest.TestCase):
                     self.epoch += 1
                     self.sample('cubes', 110, 1002)
                 self.now = 1010
-                self.proof(source='watchdog')
+                self.proof()
                 self.sample('cubes', 200, 1011)
                 self.assertIsNone(self.row('cubes')['rate_per_hour'])
                 self.event('cubes', {'cubes': 10000}, at=999)
@@ -163,7 +167,7 @@ class History(unittest.TestCase):
         self.state['tone'] = 'ok'
         self.watch.update(symptom=None, repairing=None)
         self.now = 1300
-        self.proof(source='watchdog')
+        self.proof()
         self.event('cubes', {'cubes': 9000}, at=1291)  # Delayed checking-phase OCR stays excluded.
         for field in ('cubes', 'weapon_l3'):
             self.sample(field, 110, 1301)

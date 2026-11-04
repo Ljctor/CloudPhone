@@ -1093,7 +1093,10 @@ class GoldTrigger(unittest.TestCase):
             confirmed.append(name)
             if verified_setup and attempt:
                 verified.append(name)
-                return dict(attempt, result="done", at=Ports.clock.wall())
+                receipt = dict(attempt, result="done", at=Ports.clock.wall())
+                for callback in self.setup_callbacks:
+                    callback(copy.deepcopy(receipt))
+                return receipt
 
         def begin_verification(name):
             accepted = target(looked[0]) if callable(target) else target or {

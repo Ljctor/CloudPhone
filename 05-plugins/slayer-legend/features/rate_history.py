@@ -149,7 +149,6 @@ def rate_history(ports, rules, modes, loadouts, game, watchdog, table):
                   'windows': {field: rules.empty() for field in fields_for(target)}, 'last': {}}
 
     modes['on_setup_verified'](verified)
-    watchdog['on_setup_verified'](verified)
 
     def stage_matches(episode, captured):
         fact = game['facts']().get('stage')

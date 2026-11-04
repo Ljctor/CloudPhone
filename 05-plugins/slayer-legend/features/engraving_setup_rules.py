@@ -309,6 +309,34 @@ def landing_endpoint(target, response):
     return tuple(anchor[i] + response["endpoint_offset"][i] for i in range(2))
 
 
+def preview_pickup(cells, under, observed, learned=()):
+    """(visible pickup, response key), preserving an observed relative grab.
+
+    Occlusion can change which cube is lowest and visible after a drag. A
+    response may only be reused by grabbing its SAME relative cube, freshly
+    observed outside placed pieces. No compatible visible cube means unknown;
+    never borrow another grab's response or pick an inferred offscreen cube.
+    """
+    cells = set(map(tuple, cells))
+    if not cells:
+        return None
+    visible = cells.intersection(observed).difference(under)
+    if not visible:
+        return None
+    anchor = min(cells)
+    shape = tuple(normalised(cells))
+    if learned:
+        for key in learned:
+            if key[0] != shape:
+                continue
+            point = tuple(anchor[i] + key[1][i] for i in range(2))
+            if point in visible:
+                return point, key
+        return None
+    point = min(visible, key=lambda cell: (-cell[0], cell[1]))
+    return point, (shape, tuple(point[i] - anchor[i] for i in range(2)))
+
+
 def preview_step(before, now, valid, base, turns, target):
     """The next preview move: ("rotate",), ("move", from_cell, to_cell),
     ("confirm",) or ("cancel", why). before: the cubes before the drag

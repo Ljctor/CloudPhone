@@ -56,6 +56,14 @@ visibles. Certains lecteurs historiques chargent encore eux-mêmes leurs modules
 utilitaires : ce cache ne garantit donc pas une instance unique de tous les
 modules du plugin. Leur injection explicite reste à terminer.
 
+La publication d’un setup complet a un seul point de validation dans le mode :
+`publish_setup` accepte le reçu, publie l’état puis notifie les observateurs,
+sans attente entre ces étapes. L’entrée de mode et la confirmation d’une reprise
+utilisent ce même chemin. Le watchdog relaie cet événement pour ses abonnés ;
+l’historique des taux écoute uniquement le mode. Une preuve refusée ne publie
+ni état prêt ni événement de réussite. Cette extraction ne centralise pas encore
+la planification ni les gestes.
+
 ## Invariants
 
 Chaque résultat reste lié à sa capture et à la génération de la session de jeu.

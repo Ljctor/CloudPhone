@@ -55,7 +55,7 @@ python3 "$(dirname "$0")/../slayer-legend/test_soul_weapon.py" \
   Engraving.test_user_unlock_during_return_from_engraving_leaves_no_fresh_setup_proof \
   Engraving.test_relaunch_during_final_readback_cannot_publish_fresh_equipment_proof
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_screen.py -q
-# Reviewed failed and recovered L previews retain distinct landing geometry.
+# Reviewed L previews retain landing geometry and the same observed relative pickup.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_geometry.py -q
 # Existing-weapon repairs persist intent; one removal drag waits for its observed
 # postcondition twice before relocking, including stale/unknown animation frames and input revocation.
@@ -69,7 +69,8 @@ python3 "$(dirname "$0")/../slayer-legend/test_capture_time.py" CaptureTime.test
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_agent_soul_weapon.py -q
 # Repair ownership survives bounded child tasks; revoked mode/input cannot navigate or publish proof.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_watchdog_repair_ownership.py -q
-# Full repairs commit the current Mode receipt before their event.
+# Mode entry and full repairs share one receipt/state/event publication;
+# stale proof publishes nothing and rate history observes each success once.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_watchdog_current_receipt.py -q
 python3 "$(dirname "$0")/../slayer-legend/test_stage_change.py" \
   Sequence.test_discordant_badges_read_settings_instead_of_freezing_a_false_blocker \

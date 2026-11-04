@@ -555,9 +555,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         elif answer["result"] == "done" and answer.get("verified_setup") is True:
             if mode_now() == name and policy_context(name) == attempt_context:
                 receipt = modes["confirm"](name, verified_setup=True, attempt=attempt)
-                if receipt:
-                    setup_verified(receipt)
-                else:
+                if receipt is None:
                     memory = rules.not_run(memory, kind)
         elif answer["result"] == "plan":
             memory = rules.not_run(memory, kind)

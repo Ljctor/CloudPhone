@@ -140,6 +140,34 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(result['ok'])
             self.assert_complete(game)
 
+    def test_real_relax_overlap_preserves_the_learned_relative_pickup(self):
+        base = [(0, 0), (1, 0), (2, 0), (2, 1)]
+        under = {(1, 1), (2, 0), (2, 1), (3, 1),
+                 (1, 2), (2, 2), (3, 2), (4, 2), (1, 3), (2, 3), (3, 3), (4, 3)}
+        # Current prepare frame031: only this upper-left cube is exposed;
+        # its other three cells overlap the already placed T and two I.
+        initial = ((1, 0), (1, 1), (1, 2), (2, 0))
+        pickup, key = sw.setup_rules.preview_pickup(initial, under, under | {(1, 0)})
+        self.assertEqual((pickup, key[1]), ((1, 0), (0, 0)))
+        # Reviewed real crop: same one-column-left landing as current frame032.
+        observed = sw.es.cubes(sw.fixtures.screen('eg_relax_preview_l-left-after-move'))
+        landed = sw.setup_rules.unique_preview_cells(under, observed, base, 1)
+        self.assertEqual(landed, ((0, -1), (0, 0), (0, 1), (1, -1)))
+        learned = {key: sw.setup_rules.landing_response(landed, (1.7, 0))}
+        picked, reused = sw.setup_rules.preview_pickup(landed, under, observed, learned)
+        self.assertEqual(picked, (0, -1), 'keep relative(0,0), not newly exposed bottom cube(1,-1)')
+        self.assertEqual(reused, key)
+        target = [(0, 0), (0, 1), (0, 2), (1, 0)]
+        endpoint = sw.setup_rules.landing_endpoint(target, learned[reused])
+        self.assertEqual(endpoint, (1.7, 1))
+        self.assertTrue(sw.nav.move_contains('soul_weapon_engraving_preview', 'move', sw.es.cell_centre(*endpoint)))
+        self.assertIsNone(sw.setup_rules.preview_pickup(landed, under | {picked}, observed, learned))
+        self.assertIsNone(sw.setup_rules.preview_pickup(landed, under, set(observed) - {picked}, learned),
+                          'an inferred but unread cube cannot be picked')
+        self.assertIsNone(sw.setup_rules.preview_pickup(landed, under, observed,
+                          {(tuple(sw.setup_rules.normalised(base)), (0, 0)): learned[reused]}),
+                          'another orientation cannot lend its response')
+
     async def test_removal_waits_for_postcondition_instead_of_stable_animation(self):
         for transition in ('old_frame', 'unknown_E', 'preview'):
             with self.subTest(transition=transition):
