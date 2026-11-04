@@ -70,6 +70,8 @@ def _needs(screen, move, x, y, seen):
             return f"{where} needs a fresh reduced battle with uncovered central combat"
     if "active_tab" in needs and seen.get("active_tab") != needs["active_tab"]:
         return f"{where} needs the freshly active bottom tab {needs['active_tab']!r}"
+    if needs.get("required_overlay") and needs["required_overlay"] not in (seen.get("look") or {}).get("overlays", ()):
+        return f"{where} needs the freshly recognised overlay {needs['required_overlay']!r}"
     if "tag" in needs and seen.get("tag") != needs["tag"]:
         return f"{where} needs the tag read {needs['tag']!r}, not {seen.get('tag')!r}"
     if needs.get("selected_is_target") and (not seen.get("selected") or seen.get("selected") != seen.get("target")):
@@ -174,7 +176,8 @@ def check():
                     "active_tab": needs.get("active_tab"),
                     "tag_box": [point[0] - 0.01, point[1] - 0.01, point[0] + 0.01, point[1] + 0.01]} if point else None
             if point and needs.get("reduced_battle"):
-                seen.update(look={"screen": "battle", "plain": False, "overlays": ["panel"]}, combat_visible=True)
+                overlays = ["panel"] + ([needs["required_overlay"]] if needs.get("required_overlay") else [])
+                seen.update(look={"screen": "battle", "plain": False, "overlays": overlays}, combat_visible=True)
             why = point and validate(name, move["id"], point[0], point[1], kind, verified=True, seen=seen)
             if why:
                 problems.append(f"{name}/{move['id']}: {why}")

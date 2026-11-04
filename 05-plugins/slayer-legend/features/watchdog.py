@@ -44,8 +44,10 @@ symptom progress_stalled: an error alert, no repair, no tap. Not counted
 while paused (free play, a mode's entry, a user input), in the mine, on
 another screen (a menu: its own symptom) or within rules.BAR_SETTLE of a
 relaunch: the count starts over. The way
-back to battle from a game menu stays an alert (its close buttons differ
-per panel); the soul weapon and its engraving wait for phase 3.
+back to battle from a game menu is available only through the farming
+feature's calibrated menu-recovery capability. It recognises Promotion,
+closes its lit Character tab, confirms plain battle, then parks. Other
+panels stay blocked; no relaunch or guessed close is substituted.
 
 Parking (rules.park_wanted): while mpw18 or mpw4 farms, its idle place
 is the Soul Weapon screen, the battle going on above it. The screen read
@@ -211,6 +213,8 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
 
     parking = bool(farming) and "park" in farming
     available = AVAILABLE + (tuple(FARMING) + ("loadout",) if farming else ()) + (("park",) if parking else ())
+    if farming and callable(farming.get("back_to_battle")):
+        available += ("back_to_battle",)
     ports.store.register("watchdog", lambda: rules.persisted(memory))
     ports.store.register("watchdog_policy_block", lambda: copy.deepcopy(status["policy_block"]))
 
@@ -399,7 +403,8 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         show(ports.t("Vers {destination} : {purpose}", destination=status["intention"]["destination_t"],
                      purpose=status["intention"]["purpose_t"]))
         try:
-            answer = await (farming["park"](name) if kind == "park" else
+            answer = await (farming["back_to_battle"](name) if kind == "back_to_battle" else
+                            farming["park"](name) if kind == "park" else
                             farming["farm"](part["stage"], part["preset"], name, modes["state"]().get("highest")))
         except ports.Busy as e:
             memory = rules.not_run(memory, kind)
@@ -687,7 +692,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                 ports.store.save()
                 await relaunch(action[1])
                 repaired = True
-            elif action[0] == "repair" and (action[1] in FARMING or action[1] in ("park", "loadout")):
+            elif action[0] == "repair" and (action[1] in FARMING or action[1] in ("park", "loadout", "back_to_battle")):
                 await announce_redirect()
                 if (mode_now() != name or status["symptom"] != symptom
                         or modes["state"]().get("state") == "moving"):

@@ -701,7 +701,7 @@ class GoldTrigger(unittest.TestCase):
               failed_setup=False, recovery=None, setup_real=True, policy_allowed=lambda look: False,
               target=None, saved=None, relaunch_at=None, preset=lambda look: 1, verification_debt=None,
               farming_switches=None, notify_result=lambda look: None, on_notice=None, repair_pause=None,
-              launch_pause=None, on_repair=None, process_running=True, yield_clock=False):
+              launch_pause=None, on_repair=None, process_running=True, yield_clock=False, menu_recovery=False):
         """count looks, AUTO read as auto, viewers(look) connected, the
         stage progress bar read as bar(look) (None: unreadable; by default
         it moves) on screen(look); park: the soul weapon's switch when the
@@ -853,6 +853,12 @@ class GoldTrigger(unittest.TestCase):
 
         farming = {"read_controls": read_controls, "battle_stage": lambda shot, shade=1.0: stage,
                    "farm": farm, "switches": lambda: {"stage_change": "real", "preset": "plan"}}
+        self.menu_recoveries = []
+        if menu_recovery:
+            async def recover_menu(name):
+                self.menu_recoveries.append((looked[0], name))
+                return {"result": "done", "text_t": None}
+            farming['back_to_battle'] = recover_menu
         if recovery is not None or failed_setup or verification_debt is not None:
             farming.update(soul_weapon_state=lambda: {"recovery": recovery(looked[0]) if callable(recovery) else recovery},
                            soul_weapon_switch=lambda: "real", engraving_switch=lambda: "real" if setup_real else "off",
@@ -908,6 +914,13 @@ class GoldTrigger(unittest.TestCase):
         self.saved = copy.deepcopy(stored)
         self.retry = lambda body: asyncio.run(built["routes"][1][2](types.SimpleNamespace(json=lambda: body())))
         return read, alerts, other
+
+    def test_calibrated_menu_recovery_is_available_and_dispatched_without_loadout_work(self):
+        self.looks(30, "on", screen=lambda look: "menu", menu_recovery=True)
+        self.assertTrue(self.menu_recoveries, 'the advertised back_to_battle repair must have a real runtime handler')
+        self.assertLess(len(self.menu_recoveries), 6, 'a recovery not observed as successful backs off')
+        self.assertEqual(self.farmed, [], 'closing a menu is not a full stage/preset/loadout transaction')
+        self.assertEqual(self.verified, [])
 
     def test_persisted_incomplete_grid_is_repaired_with_backoff_even_when_parked(self):
         self.looks(80, "on", park="real", screen=lambda look: "parked", recovery={"required": True},

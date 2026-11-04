@@ -469,6 +469,24 @@ def battle_panel(shot):
 _CHARACTER_TABS = ((26, 550, 88, 566), (121, 550, 171, 566), (204, 550, 274, 566))
 _CHARACTER_PAID = ((353, 704, 454, 753), (353, 807, 454, 856), (353, 909, 454, 958))
 _character_patches = None
+_promotion_patch = None
+CHARACTER_PROMOTION_CALIBRATED = True
+
+
+def character_promotion(shot):
+    """Selected Promotion header and the lit Character tab, on real crops.
+
+    Neither a lit Character icon alone nor another Character sub-tab grants
+    the close-tab gesture. This reader never touches Promotion actions.
+    """
+    global _promotion_patch
+    if not CHARACTER_PROMOTION_CALIBRATED:
+        return False
+    if _promotion_patch is None:
+        _promotion_patch = Patch("character_promotion_header_live_480", limit=.45)
+    return (open_tab(shot) == (.073, "character_enhance")
+            and share(shot, MANA_BAR, blue) <= .5
+            and _promotion_patch.margin(shot) >= MARGIN)
 
 
 def _character_templates():

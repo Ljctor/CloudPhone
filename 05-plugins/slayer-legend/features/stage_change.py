@@ -61,6 +61,8 @@ during it stops it at the next tap.
   complete setup. No detached navigation survives a mode change.
 
 api: farm(stage, preset, mode) runs the three and parks; change_stage, set_preset,
+back_to_battle(mode) closes only calibrated Character Promotion and parks,
+under one lease and a fixed overall deadline; it changes no loadout settings.
 ensure_soul_weapon(mode, loadout=None) alone (the last for a
 loadout change of the active mode); each answers {result: "done", "plan"
 or "failed", text_t: why or the plan, a status text, or None}. read_controls() for the watchdog: {preset, auto} read
@@ -90,6 +92,7 @@ SETTINGS_CLOSE = (0.09, 0.965)
 BATTLE_RETURN = (0.5, 0.18)
 QUEST_CLOSE = (0.895, 0.183)
 LEASE_SECONDS = 240
+MENU_RECOVERY_SECONDS = 45
 HOLDER = "stage_change"
 SWITCHES = ("stage_change", "preset")
 # The modes that park on the Soul Weapon screen.
@@ -205,6 +208,8 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
             return "quest"
         if controls.settings_open(shot) and "battle_settings" in screens.look(shot)["overlays"]:
             return "settings"
+        if getattr(screens, "character_promotion", lambda image: False)(shot):
+            return (.073, "character_promotion")
         if screens.plain_battle(shot):
             return "plain"
         if screens.classify(shot) == "saver":
@@ -214,6 +219,20 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         if souls and soul.get("engraving") and soul["engraving"]["screen"].title(shot):
             return "engraving"
         return screens.open_tab(shot)
+
+    async def close_promotion(shot):
+        """One guarded close-tab, only on the calibrated Promotion panel."""
+        seen = await ports.analyse(screens.look, shot)
+        if ("character_promotion" not in seen.get("overlays", ())
+                or not await ports.analyse(getattr(screens, "character_promotion", lambda image: False), shot)):
+            raise Stop("Character Promotion non reconnu : panneau laissé ouvert")
+        await tap(shot, "character_promotion", "close_tab", (.073, screens.TAB_TAP_Y), verified=True,
+                  seen={"look": seen, "combat_visible": seen["screen"] == "battle",
+                        "active_tab": "character_promotion"})
+        fresh, plain = await settle(screens.plain_battle, timeout=10.0)
+        if not plain:
+            raise Stop("fermeture de Character Promotion non confirmée")
+        return fresh
 
     async def to_battle(may_tap=True, recovery_target=None):
         """A fresh look at the battle screen with nothing over it, waiting
@@ -263,6 +282,8 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
                        screen=await ports.analyse(screens.classify, shot))
         if not may_tap:
             raise Plan("fermer le panneau ({panel})", panel=tab[1])
+        if tab[1] == "character_promotion":
+            return await close_promotion(shot)
         reduced = await ports.analyse(screens.look, shot)
         # The Equipment tab toggles its panel; tapping visible combat can
         # leave this panel unchanged. Only use the tab the fresh reader lit.
@@ -537,6 +558,32 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         except Stop as e:
             raise Stop("Soul Weapon : {why}", why=e.t) from None
 
+    async def back_to_battle(mode):
+        """Bounded menu recovery; no guessed panels and no loadout changes."""
+        if mode not in FARMED or not parks(mode):
+            return {"result": "failed", "text_t": t("retour au combat indisponible hors farming avec parking actif")}
+
+        async def leave_menu():
+            shot = await look()
+            if not parked(shot) and not await ports.analyse(screens.plain_battle, shot):
+                await close_promotion(shot)
+
+        async def finish_parking():
+            if not parks(mode):
+                raise Stop("retour Soul Weapon interrompu : parking désactivé")
+            await park(mode)
+            if not parked(await look()):
+                raise Stop("retour à l’écran Soul Weapon non confirmé")
+
+        try:
+            return await asyncio.wait_for(run(mode, [("menu", leave_menu), ("park", finish_parking)]),
+                                          timeout=MENU_RECOVERY_SECONDS)
+        except asyncio.TimeoutError:
+            answer = {"result": "failed", "text_t": t("retour au combat interrompu après {seconds} s",
+                                                       seconds=MENU_RECOVERY_SECONDS)}
+            status["last"] = {**answer, "mode": mode}
+            return answer
+
     def soul_steps(mode, loadout=None):
         steps = [("soul_weapon", lambda: equip_soul_weapon(mode, loadout))]
         return steps + ([("park", lambda: park(mode))] if souls else [])
@@ -700,6 +747,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
            "read_controls": read_controls, "switches": lambda: dict(switches),
            "relaunched": relaunched, "ensure_soul_weapon": ensure_soul_weapon,
            "park": lambda mode: run(mode, [("park", lambda: park(mode))]), "parked": parked, "unpark": unpark,
+           "back_to_battle": back_to_battle,
            "soul_weapon_switch": lambda: souls["switch"]() if souls else "off",
            "soul_weapon_state": lambda: souls["state"]() if souls else None,
            "soul_verification_needed": soul_verification_needed,
