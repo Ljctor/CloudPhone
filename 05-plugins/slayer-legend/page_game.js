@@ -6,6 +6,7 @@
 // the plugin's options list at index at, once the gateway answered.
 import { RESOURCE_ICONS } from './page_resources.js';
 import { SCREEN_ICONS } from './page_screen_icons.js';
+import { OVERLAY } from './page_icons.js';
 import { shortNumber } from './page_numbers.js';
 import { freshnessColour } from './page_freshness.js';
 const PIECE = '#d9a441';
@@ -247,9 +248,8 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
   });
   const sections = () => {
     const rows = [...resourceRows(),
-      { type: 'section', key: 'analysis', label: 'Analyse', depth: 1, folded: true },
+      { type: 'section', key: 'overlay', label: 'Overlay', icon: OVERLAY, depth: 1, folded: true },
       ...resourceOptions,
-      { type: 'section', key: 'display', label: 'Affichage', depth: 1, folded: true },
       ...displayOptions.map((option) => option.type === 'section' ? { ...option, depth: 2 } : option),
       { type: 'section', key: 'game-state', label: 'État du jeu', depth: 1, folded: true }];
     const root = { children: new Map(), screens: [] };

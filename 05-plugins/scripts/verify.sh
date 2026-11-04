@@ -65,6 +65,7 @@ python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_soul_
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_equipment_l3.py -q
 # Optional resource visits yield to failed or incomplete farming setup.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_resource_refresh.py -q
+# Overlay groups hourly analysis and display settings; rate icons stay distinct.
 node "$(dirname "$0")/../slayer-legend/test_page_gold.mjs"
 node "$(dirname "$0")/../slayer-legend/test_page_engraving.mjs"
 node "$(dirname "$0")/../slayer-legend/test_page_trace.mjs"

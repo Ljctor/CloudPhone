@@ -160,8 +160,10 @@ separate milestones. Historical checked items below do not close a new regressio
   an interrupted removal must resume from the on-disk journal after restart.
 - [ ] Confirm the strengthened direct-repair persistence path during the next
   authorised live setup. Offline journal/interruption replay is not live acceptance.
-- [ ] Verify the new pre-Equip durability path on an actual weapon switch,
-  followed immediately by full placement and eight verified locks.
+- [x] Verify the new pre-Equip durability path on an actual weapon switch,
+  followed immediately by full placement and eight verified locks. The
+  observed automatic Ambition Gold-maxed setup placed four I pieces and
+  verified eight locks before completing the farming transaction.
 - [x] Separate the lower-left release anchor from the rotation pivot. Reviewed
   native captures calibrate T and L pivots at (1, 0), I at (2, 0), in each
   normalized base shape. Compute the initial drop before rotating; verify the
@@ -173,8 +175,12 @@ separate milestones. Historical checked items below do not close a new regressio
 - [x] Exercise interrupted Ambition Gold-maxed through the plugin's Agent
   entry point: fill the four I columns, select the highest-level eligible
   cards, verify the completion bonus and all eight locks.
-- [ ] Verify the entire farming setup after engraving recovery, including
+- [x] Verify the entire farming setup after engraving recovery, including
   stage and preset; clear failure only after all requested conditions pass.
+  Acceptance includes a complete placement followed by stage 970/preset IV,
+  then a fresh full check after a gateway restart with a new grid/lock receipt
+  and return to farming. This does not close interruption or live loadout-edit
+  acceptance above.
 - [x] Retry transient unreadable weapon names within a bounded observation
   window, without permitting gestures on unknown or mismatched identities.
 - [x] Reuse matching engraving recovery within the same setup call, retaining

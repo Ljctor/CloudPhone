@@ -5,6 +5,7 @@ import { freshnessColour } from './page_freshness.js';
 import { shortNumber } from './page_numbers.js';
 import { RESOURCE_ICONS } from './page_resources.js';
 import { SCREEN_ICONS } from './page_screen_icons.js';
+import { OVERLAY, RATES } from './page_icons.js';
 import { readFile } from 'node:fs/promises';
 
 assert.equal(freshnessColour(0), 'rgb(255, 255, 255)');
@@ -46,14 +47,23 @@ const answer = {
 const options = [];
 const game = gameFeature({ get: async () => answer, refresh() {}, tr: (text) => text }, {
   resourceOptions: [{ type: 'status', label: 'Gold par seconde', value: () => '1/s' }],
+  displayOptions: [{ type: 'section', key: 'display-rates', label: 'Débits', icon: RATES },
+    { type: 'choice', key: 'goldOverlay', label: 'Gold/h' },
+    { type: 'choice', key: 'stonesOverlay', label: 'Autres débits/h' }],
 });
 game.rows(options, 0);
 await new Promise((resolve) => setImmediate(resolve));
 assert.equal(options[0].key, 'resources');
 assert.equal(options.filter((row) => row.type === 'status').length, 25);
-assert.equal(options[options.findIndex((row) => row.label === 'Gold par seconde') - 1].label, 'Analyse');
+assert.equal(options[options.findIndex((row) => row.label === 'Gold par seconde') - 1].label, 'Overlay');
 assert.equal(options.find((row) => row.key === 'game-soul_weapon').label, 'Soul Weapon');
 assert.equal(options.find((row) => row.key === 'game-state').depth, 1);
+assert.equal(options.filter((row) => row.key === 'overlay').length, 1);
+assert.equal(options.find((row) => row.key === 'overlay').icon, OVERLAY);
+assert.ok(!options.some((row) => ['analysis', 'display'].includes(row.key)));
+assert.equal(options.find((row) => row.key === 'display-rates').depth, 2);
+assert.ok(options.some((row) => row.key === 'goldOverlay'));
+assert.ok(options.some((row) => row.key === 'stonesOverlay'));
 assert.equal(options.find((row) => row.key === 'game-path-Equipment').depth, 2);
 assert.equal(options.find((row) => row.key === 'game-path-Equipment').icon, SCREEN_ICONS.equipment);
 assert.equal(options.find((row) => row.key === 'game-path-Equipment/Weapon').depth, 3);

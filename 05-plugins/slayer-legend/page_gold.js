@@ -6,7 +6,7 @@ import { drawText } from './gold_text.js';
 import { GOLD_COUNTER_FONT } from './page_gold_counter_font.js';
 import { freshnessColour, observeResponse, responseTime } from './page_freshness.js';
 import { getScreen, screenObservationAge } from './page_screen_scan.js';
-import { GOLD, SOULS } from './page_icons.js';
+import { GOLD, SOULS, RATES } from './page_icons.js';
 import { RESOURCE_ICONS } from './page_resources.js';
 import { EQUIPMENT_L3_ICONS } from './page_equipment_icons.js';
 import { shortNumber } from './page_numbers.js';
@@ -318,7 +318,7 @@ export default function goldFeature(api, { overlay, enabled = () => true, screen
         ? '#8a919c' : rateColour(rateSource(field)),
     })),
     displayOptions: [
-      { type: 'section', key: 'display-rates', label: 'Débits', folded: true, icon: GOLD },
+      { type: 'section', key: 'display-rates', label: 'Débits', folded: true, icon: RATES },
       {
         type: 'choice', key: 'goldOverlay', label: 'Gold/h',
         choices: [{ value: 'on', label: 'Affiché' }, { value: 'off', label: 'Masqué' }],

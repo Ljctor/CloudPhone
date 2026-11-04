@@ -20,6 +20,12 @@ function sprite(rows, palette) {
 
 const png = (data) => `data:image/png;base64,${data}`;
 
+// Section symbols are interface icons, not balances from a game capture.
+const sectionIcon = (paths) => `data:image/svg+xml,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#d9e2ef" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`)}`;
+export const RATES = sectionIcon('<path d="M4 20V14M9 20V10M14 20V6M3 21H21"/><circle cx="18" cy="6" r="4"/><path d="M18 4V6L20 7"/>');
+export const OVERLAY = sectionIcon('<path d="M3 8L12 3L21 8L12 13Z M3 12L12 17L21 12 M3 16L12 21L21 16"/>');
+
 // The game's gold coin, 18x18.
 export const GOLD = png('iVBORw0KGgoAAAANSUhEUgAAABIAAAASCAYAAABWzo5XAAACXklEQVR42p2Uy0tUURjAf+fcxzyc0cYcx2jUpIaSLIoW4aoiiB6b3Lht717oPwgicButg6AWRdAqCGqtQSUIKj0U0RmdSVPHuY9zT4sz3TQfSAcO33e/890f3/keR7D/0vvYxWGNmsMtcRBIA6hnZwCQl72m1bjV3itWK784ef/nrv/FXpHoTwWjuLaRtmNktQ5tPYj+8X1BGkC/HjBfvRLOj7L+YAQAhQXAkVsd0NYDtTVm5z1KQ5MxJwYVCgWWXjlQLBKlHhJ8GEHWrGZECSM3F+F2nqi+jpU7xfGBt1RqIYCQf6JZetS8TnGMrScmEifp4CQdwuQ6zr2jcB14ukyidA7tTfNyrDfOhgC0/+6sSW7kEXxxkOk0bg7QCgD/agYIkRurQB/4y0AVsZSg6840K/UICeA0t1VQqIplIMCmHxAMFQm8BQKvjN1dwu7OoqZMXawumBzJmyAAWElCwUe5EUp4hEGAjhQtg50Ei2XcLUUydxptS7StsRoKbA3CJulkt4EAkipWpRQEgSLoSGGlW7d1iLuz6VIurlv/BzSRAwTZgkLOKtySxpZr2NV5SGWxMhlT4w0fW1jYCMTzBfoeq78gMTwR86KbEdwFWjqJfiwj83mc7n5zNl2FDQ+upWL/crkcgwRA+/AEYb2NsN6Gd6KP8NsmYTJNPdFOo9Gg0WggF6uIVgnlGbYWbMRoeVdDxt0dzF3BrswRXupEvqkQZcAOmm6DWRgHfI248XnHdOw9ax8vwMVjhDNThI6FEwTmar5JqTvw/cCh3Q18UWwqplpi+Ouhn5H/fo9+AxPI2vGtxsonAAAAAElFTkSuQmCC');
 

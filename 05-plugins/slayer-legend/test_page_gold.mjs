@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import goldFeature, { combatCountersVisible, equipmentRateVisible, hourlyRate, measureResourceRate, estimatedCubes } from './page_gold.js';
+import { RATES, GOLD, OVERLAY } from './page_icons.js';
 import { GOLD_COUNTER_FONT as font, GOLD_COUNTER_SOURCES as sources } from './page_gold_counter_font.js';
 import { freshnessColour, observeResponse, responseTime } from './page_freshness.js';
 import { drawText } from './gold_text.js';
@@ -188,6 +189,12 @@ answer.read = lastGoldRead;
 assert.equal(feature.resourceOptions[0].value(), '.../h',
   'one real reading without a slope remains unmeasured');
 assert.equal(feature.resourceOptions.length, 7, 'all requested hourly resources have their own analysis row');
+assert.equal(feature.displayOptions[0].icon, RATES);
+assert.notEqual(RATES, GOLD);
+assert.notEqual(RATES, OVERLAY);
+assert.match(decodeURIComponent(RATES), /<circle/);
+assert.deepEqual(feature.displayOptions.filter((row) => row.type === 'choice').map((row) => row.key),
+  ['goldOverlay', 'stonesOverlay']);
 assert.equal(feature.resourceOptions.find((row) => row.key === 'hourly-weapon_l3').value(), '1.80A/h');
 assert.equal(feature.resourceOptions.find((row) => row.key === 'hourly-soul_red').value(), 'never read');
 assert.ok(feature.resourceOptions.every((row) => row.compact && row.icon && typeof row.timestamp === 'function'),

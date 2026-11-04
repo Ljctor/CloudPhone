@@ -147,6 +147,7 @@ const ENGLISH = {
   'Agent mode': 'Agent mode',
   'Affichage': 'Display',
   'Analyse': 'Analysis',
+  'Overlay': 'Overlay',
   'Capture': 'Capture',
   'Capture enregistrée': 'Saved capture',
   'Relevé historique': 'Historical reading',
