@@ -10,6 +10,16 @@ spec.loader.exec_module(ports_module)
 
 
 class CaptureTime(unittest.IsolatedAsyncioTestCase):
+    async def test_move_geometry_port_is_wired_and_missing_provider_fails_closed(self):
+        context = NS(id="test", screenshot=None, adb=None, analyse=None, notify=None,
+                     json=None, log=lambda *args: None)
+        seen = []
+        nav = NS(move_contains=lambda *args: seen.append(args) or True)
+        ports = ports_module.build(context, nav)
+        self.assertTrue(ports.move_contains('preview', 'move', (.5, .4)))
+        self.assertEqual(seen, [('preview', 'move', (.5, .4))])
+        self.assertFalse(ports_module.build(context, None).move_contains('preview', 'move', (.5, .4)))
+
     async def test_fallback_uses_request_start_and_preserves_cache_age(self):
         now = [100.0]
         shot = (1, 1, b"rgb")

@@ -1,6 +1,7 @@
 """Interrupted engraving resumes its durable recipe before leaving the grid."""
 import asyncio
 import copy
+import inspect
 import os
 import tempfile
 from types import SimpleNamespace
@@ -10,11 +11,11 @@ import test_soul_weapon as sw
 
 
 class Recovery(unittest.IsolatedAsyncioTestCase):
-    def setup_for(self, game, saved=None, rules=None, view=None):
+    def setup_for(self, game, saved=None, rules=None, view=None, front=None):
         ports = game.ports()
         ports.store.saved['engraving_recovery'] = copy.deepcopy(saved or {})
 
-        async def front():
+        async def unchecked_front():
             pass
 
         async def poll(test, most=3):
@@ -28,7 +29,8 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
 
         setup = sw.engraving_setup.engraving_setup(
             ports, view or sw.fake_engraving_screen(game), rules or sw.setup_rules,
-            SimpleNamespace(look=ports.capture, tap=ports.tap, front=front, Stop=sw.stage_change.Stop),
+            SimpleNamespace(look=ports.capture, tap=ports.tap, front=front or unchecked_front,
+                            Stop=sw.stage_change.Stop),
             poll, lambda shot: shot[2]['screen'] == 'soul', lambda: 'real',
             source_weapon=sw.fake_reader(game).name)
         return setup, ports
@@ -44,6 +46,57 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sorted(game.state['engraving']['pieces'].values()), want)
         self.assertTrue(all(card['locked'] for card in game.state['engraving']['cards']))
         self.assertEqual(game.state['screen'], 'soul')
+
+    async def test_revocation_during_identity_analysis_prevents_each_drag_kind(self):
+        for move in ('remove_piece', 'drag_piece', 'move'):
+            with self.subTest(move=move):
+                game = sw.vision_game(screen='engraving', **({} if move == 'remove_piece' else {'pieces': {}}))
+                owner = {'mode': 'agent'}
+                revoked = []
+
+                async def front():
+                    if owner['mode'] != 'agent':
+                        raise ports.Busy('mode Agent indisponible')
+
+                setup, ports = self.setup_for(game, front=front)
+                analyse = ports.analyse
+                if move == 'move':
+                    apply = game.apply
+
+                    def shifted_preview(screen, action, point, end=None):
+                        apply(screen, action, point, end)
+                        if action == 'drag_piece':
+                            preview = game.state['engraving']['preview']
+                            preview['cells'] = [(r, c + 1) for r, c in preview['cells']]
+                            row, col = preview['pivot']
+                            preview['pivot'] = (row, col + 1)
+
+                    game.apply = shifted_preview
+
+                async def revoke_after_identity(fn, *args):
+                    # Fault injection at the actual awaited identity boundary,
+                    # after the caller's old guard and before Android input.
+                    caller = inspect.currentframe().f_back
+                    gesture = caller.f_locals.get('args', ())
+                    is_target = (caller.f_code.co_name == 'swipe' and len(gesture) > 1
+                                 and gesture[1] == move and fn.__name__ == 'identity')
+                    del caller
+                    result = await analyse(fn, *args)
+                    if is_target:
+                        owner['mode'] = 'free'
+                        revoked.append(list(game.moves))
+                    return result
+
+                ports.analyse = revoke_after_identity
+                with self.assertRaises(ports.Busy):
+                    await self.apply(setup, game)
+                self.assertEqual(len(revoked), 1, 'the real drag identity analysis must be reached')
+                self.assertEqual(game.moves, revoked[0], 'no gesture may follow ownership revocation')
+                self.assertNotIn(move, sw.engraving_moves(game))
+                self.assertTrue(setup.state()['required'])
+                self.assertFalse(setup.state()['verified'])
+                self.assertFalse(setup.state()['completion_verified'])
+                self.assertEqual(setup.state()['recipe']['name'], 'Gold-balanced')
 
     async def test_already_equipped_repair_refuses_unwritable_recovery_journal(self):
         game = sw.vision_game(screen='engraving')

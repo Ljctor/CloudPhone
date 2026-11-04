@@ -201,6 +201,11 @@ Rules:
       cells and the check reads valid (bright green), else the red X
       cancels it; afterwards the cells must form that piece, the card
       read E and its padlock closed.
+      A preview drag may correct its endpoint from a complete, uniquely
+      located landing observed twice. The response stays local to that
+      card, orientation and relative pickup; it is never shared with an
+      inventory drop. Never repeat the same gesture from the same position
+      after no progress. Ambiguous geometry permits no learned correction.
     - At most 24 moves per setup, 8 preview moves per piece.
     - Never Change, the gear or %.
   - Resource refresh (Soul Farming, mpw18 and mpw4): a bounded read-only visit every five

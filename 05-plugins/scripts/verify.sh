@@ -51,6 +51,7 @@ python3 "$(dirname "$0")/../slayer-legend/test_soul_weapon.py" \
   Engraving.test_user_unlock_during_return_from_engraving_leaves_no_fresh_setup_proof \
   Engraving.test_relaunch_during_final_readback_cannot_publish_fresh_equipment_proof
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_screen.py -q
+# Reviewed failed and recovered L previews retain distinct landing geometry.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_geometry.py -q
 # Existing-weapon repairs require durable intent before their first gesture.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_recovery.py -q
@@ -58,7 +59,8 @@ python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engra
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_coverage.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_equip_engraving.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_detection.py -q
-python3 "$(dirname "$0")/../slayer-legend/test_nav.py" Graph.test_low_preview_bar_stays_within_its_calibrated_reader_area Graph.test_consistent
+python3 "$(dirname "$0")/../slayer-legend/test_nav.py" Graph.test_low_preview_bar_stays_within_its_calibrated_reader_area Graph.test_preview_endpoint_uses_catalogue_move_area_without_clamping Graph.test_consistent
+python3 "$(dirname "$0")/../slayer-legend/test_capture_time.py" CaptureTime.test_move_geometry_port_is_wired_and_missing_provider_fails_closed
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_agent_soul_weapon.py -q
 # Repair ownership survives bounded child tasks; revoked mode/input cannot navigate or publish proof.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_watchdog_repair_ownership.py -q

@@ -571,7 +571,7 @@ class Game:
         store = SimpleNamespace(saved={}, sections={}, save=lambda *, required=False: None)
         store.register = lambda name, snapshot: store.sections.__setitem__(name, snapshot)
         return SimpleNamespace(capture=capture, analyse=analyse, tap=tap, taps=None, swipe=swipe, focused=focused,
-                               action_allowed=nav.action_allowed,
+                               action_allowed=nav.action_allowed, move_contains=nav.move_contains,
                                notify=notify, clock=SimpleNamespace(sleep=sleep, wall=lambda: 1e9 + game.now,
                                                                      monotonic=lambda: game.now),
                                leased=leased, Busy=Busy, store=store, last_input=lambda: None, spawn=spawn,

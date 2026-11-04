@@ -108,6 +108,29 @@ class PreviewGeometry(unittest.TestCase):
         for shape in ['O', 'J', 'S', 'Z']:
             self.assertIsNone(rules.ROTATION_PIVOTS.get(shape))
 
+    def test_real_l_preview_drag_lands_left_of_inventory_anchor(self):
+        # A complete T and two I pieces were already placed. The preview
+        # drag repeatedly landed one column left of the requested L cells.
+        # Its measured response must be local to this preview gesture, not
+        # a global change to the calibrated inventory drop or rotation pivot.
+        base = [(0, 0), (1, 0), (2, 0), (2, 1)]
+        under = {(1, 1), (2, 0), (2, 1), (3, 1),
+                 (1, 2), (2, 2), (3, 2), (4, 2),
+                 (1, 3), (2, 3), (3, 3), (4, 3)}
+        wrong = fixtures.screen('eg_relax_preview_l-left-after-move')
+        right = fixtures.screen('eg_relax_preview_l-target')
+        observed = rules.unique_preview_cells(under, es.cubes(wrong), base, 1)
+        target = rules.unique_preview_cells(under, es.cubes(right), base, 1)
+        self.assertEqual(observed, ((0, -1), (0, 0), (0, 1), (1, -1)))
+        self.assertEqual(target, ((0, 0), (0, 1), (0, 2), (1, 0)))
+        self.assertFalse(es.bar(wrong)['valid'])
+        self.assertTrue(es.bar(right)['valid'])
+        endpoint = (1 + es.HOLD_ROWS, 0)
+        response = rules.landing_response(observed, endpoint)
+        corrected = rules.landing_endpoint(target, response)
+        self.assertAlmostEqual(corrected[0], endpoint[0])
+        self.assertEqual(corrected[1], 1)
+
     def test_real_i_rotation_pivot_with_overlap(self):
         under = {(0, 0), (0, 1), (0, 2), (1, 0), (1, 1), (2, 0), (2, 1), (3, 1)}
         base = [(0, 0), (1, 0), (2, 0), (3, 0)]

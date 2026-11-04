@@ -45,6 +45,18 @@ def connections(screen):
     return SCREENS.get(screen, {}).get("moves", [])
 
 
+def move_contains(screen, move_id, point):
+    """Pure geometry from navigation.json; grants no permission or lease.
+
+    Used for a preview drag's endpoint as well as its separately guarded
+    start. Missing geometry fails closed; no clamping or tolerance added.
+    """
+    move = next((item for item in connections(screen) if item["id"] == move_id), None)
+    return bool(move and not move.get("forbidden") and _covers(move, *point)
+                and not any(other.get("forbidden") and _covers(other, *point)
+                            for other in connections(screen)))
+
+
 def _inside(box, x, y):
     return bool(box) and box[0] <= x <= box[2] and box[1] <= y <= box[3]
 

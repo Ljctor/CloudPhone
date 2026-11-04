@@ -780,6 +780,7 @@ def build(context, nav):
     return SimpleNamespace(
         capture=capture, capture_time=capture_time, analyse=context.analyse,
         action_allowed=getattr(nav, "action_allowed", lambda screen, move: False),
+        move_contains=getattr(nav, "move_contains", lambda screen, move, point: False),
         detect=getattr(context, "detect", context.analyse), on_capture=capture_listeners.append,
         on_relaunch=relaunch_listeners.append, relaunched=relaunched, on_action=action_listeners.append,
         tap=tap, taps=taps, hold=hold, swipe=swipe, lease=lease, leased=leased, Busy=Busy, Refused=Refused,

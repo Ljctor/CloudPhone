@@ -40,6 +40,16 @@ class Graph(unittest.TestCase):
         self.assertIsNotNone(nav.guard('soul_weapon_engraving_preview', 'move', .5,
                                       found['cancel'][1], kind='swipe', verified=True))
 
+    def test_preview_endpoint_uses_catalogue_move_area_without_clamping(self):
+        move = next(m for m in nav.connections('soul_weapon_engraving_preview') if m['id'] == 'move')
+        left, top, right, bottom = move['area']
+        for point in [(left, top), (right, bottom), (.5, .4)]:
+            self.assertTrue(nav.move_contains('soul_weapon_engraving_preview', 'move', point))
+        for point in [(.5, .676), (left - .001, top), (right, bottom + .001)]:
+            self.assertFalse(nav.move_contains('soul_weapon_engraving_preview', 'move', point))
+        self.assertFalse(nav.move_contains('missing', 'move', (.5, .4)))
+        self.assertFalse(nav.move_contains('soul_weapon_engraving_preview', 'missing', (.5, .4)))
+
     def test_consistent(self):
         self.assertEqual(nav.check(), [])
 

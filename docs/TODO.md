@@ -490,6 +490,13 @@ layers on item visuals, never baked into their base sprites or menu symbols.
   show a lower L placed beside a higher free L. Neither is current acceptance:
   possession and all eight cards must be reread; a new Equip clears the grid,
   so an old lower-piece conflict cannot be assumed to survive a weapon switch.
+  A later accepted-target Relax trial selected the highest current T/I/I/L
+  cards correctly, but its first placement failed: the L preview remained
+  one column left while the same endpoint was repeated. Recovery completed
+  Relax, then restored the full original Soul target with eight locked cards.
+  Keep the first attempt recorded as failed. Recheck the local preview-drag
+  response correction in-game; a successful recovery alone is not first-pass
+  acceptance, nor proof of lower-level placed-card replacement.
 - [x] Obtain real Equip/Unequip calibration evidence: owned, unequipped
   Relax supplies Equip; equipped Ambition supplies Unequip. Read-only
   navigation produced the evidence; no Equip or engraving action was run.

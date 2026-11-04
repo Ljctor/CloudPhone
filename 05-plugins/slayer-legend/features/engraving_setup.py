@@ -238,6 +238,9 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
 
         async def swipe(shot, *args, **kwargs):
             await ports.analyse(identity, shot)
+            # Identity analysis yields to mode/config/input changes. Check
+            # ownership again afterwards, immediately before the gesture.
+            await helpers.front()
             require_enabled()
             gestures[0] += 1
             await ports.swipe(shot, *args, **kwargs)
@@ -332,7 +335,6 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
                 problems.append(ports.t("la pièce à retirer a bougé"))
                 return False
             start = screen.cell_centre(*cells[0])
-            await helpers.front()
             await swipe(shot, "soul_weapon_engraving", "remove_piece", start, screen.INVENTORY_DROP,
                               REMOVE_MS, verified=True)
             shot, after = await steady(size, shapes)
@@ -366,10 +368,22 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
             if initial is None:
                 raise Stop("gravure : pivot non calibré pour {shape}", shape=card["shape"])
             target = screen.hold_point(initial)
-            await helpers.front()
             await swipe(shot, "soul_weapon_engraving", "drag_piece", screen.drag_point(index), target,
                               DRAG_MS, verified=True)
             turns = 0
+            # Only this card's preview drags may teach this placement. Never
+            # mix an inventory drop with a preview drag, another orientation,
+            # or a different cube picked up relative to the piece's anchor.
+            responses, sent_moves = {}, set()
+            pending_move = None
+            motion_error = None
+            origin = screen.cell_centre(0, 0)
+            diagonal = screen.cell_centre(1, 1)
+
+            def grid_endpoint(point):
+                return ((point[1] - origin[1]) / (diagonal[1] - origin[1]),
+                        (point[0] - origin[0]) / (diagonal[0] - origin[0]))
+
             for preview_moves in range(1, rules.MOST_PREVIEW + 1):
                 last, latest = [None], [None]
                 preview_counts = {"observations": 0, "complete_observations": 0, "complete_signatures": []}
@@ -398,13 +412,21 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
                         "step": candidate[0],
                     })
                     del preview_counts["complete_signatures"][:-8]
-                    # A complete piece can translate or pulse while its
-                    # orientation is unchanged. Rotate/move use this capture's
-                    # geometry; confirmation alone needs two fresh exact,
-                    # valid target observations.
-                    signature = ((candidate[0], tuple(map(tuple, rules.turned(base, turns))))
-                                 if candidate[0] in ("rotate", "move") else
-                                 (candidate[0], tuple(sorted(now)), found["valid"]))
+                    # Rotation needs a complete expected orientation. Moving,
+                    # learning a response and confirming also require an exact
+                    # position across two complete observations.
+                    if pending_move is not None or candidate[0] == "move":
+                        # A displacement response needs two identical complete,
+                        # uniquely located positions, not just an orientation.
+                        current = rules.unique_preview_cells(under, now, base, turns)
+                        if current is None:
+                            last[0] = None
+                            return False
+                        signature = (candidate[0], current, found["valid"])
+                    else:
+                        signature = ((candidate[0], tuple(map(tuple, rules.turned(base, turns))))
+                                     if candidate[0] == "rotate" else
+                                     (candidate[0], tuple(sorted(now)), found["valid"]))
                     stable = last[0] == signature
                     last[0] = signature
                     return stable
@@ -420,6 +442,24 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
                     return False
                 step = (rules.preview_step(under, set(now), found["valid"], base, turns, cells) if stable
                         else ("cancel", ports.t("aperçu pas situé")))
+                # Exact valid target geometry is authoritative. Only learn
+                # (or reject) a motion model when another move is required;
+                # a successful landing need not match an earlier prediction.
+                if pending_move is not None and step[0] == "move":
+                    current = rules.unique_preview_cells(under, now, base, turns) if stable else None
+                    key, endpoint = pending_move
+                    response = rules.landing_response(current, endpoint) if current is not None else None
+                    known_response = responses.get(key)
+                    compatible = (response is not None and response["shape"] == key[0]
+                                  and (known_response is None or all(
+                                      abs(a - b) < 1e-6 for a, b in zip(
+                                          known_response["endpoint_offset"], response["endpoint_offset"]))))
+                    if not compatible:
+                        motion_error = "preview drag response incompatible or position not stable"
+                        step = ("cancel", ports.t("Erreur : {error}", error=motion_error))
+                        break
+                    responses[key] = response
+                    pending_move = None
                 if step[0] == "rotate":
                     await tap(shot, "soul_weapon_engraving_preview", "rotate", found["rotate"], verified=True)
                     turns += 1
@@ -429,14 +469,45 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
                     if current is None:
                         step = ("cancel", ports.t("aperçu pas situé"))
                         break
-                    # Dragging any cube reanchors the piece at release. A
-                    # finger delta is not a piece delta. Aim its lower-left
-                    # bounding anchor directly at the requested final cells.
                     visible = set(current) - under
                     pickup = min(visible, key=lambda cell: (-cell[0], cell[1]))
-                    await helpers.front()
+                    anchor = min(current)
+                    grab = tuple(pickup[i] - anchor[i] for i in range(2))
+                    key = (tuple(rules.normalised(current)), grab)
+                    response = responses.get(key)
+                    if responses and response is None:
+                        motion_error = "preview drag pickup changed; learned response cannot be reused"
+                        step = ("cancel", ports.t("Erreur : {error}", error=motion_error))
+                        break
+                    endpoint = (rules.landing_endpoint(cells, response) if response is not None
+                                else grid_endpoint(screen.hold_point(cells)))
+                    if endpoint is None:
+                        motion_error = "preview drag target incompatible with learned response"
+                        step = ("cancel", ports.t("Erreur : {error}", error=motion_error))
+                        break
+                    destination = screen.cell_centre(*endpoint)
+                    signature = (current, pickup, tuple(round(v, 9) for v in endpoint))
+                    contains = getattr(ports, "move_contains", None)
+                    if (signature in sent_moves or not callable(contains)
+                            or not contains("soul_weapon_engraving_preview", "move", destination)):
+                        motion_error = "preview drag made no progress or endpoint is outside the calibrated move area"
+                        step = ("cancel", ports.t("Erreur : {error}", error=motion_error))
+                        break
+                    sent_moves.add(signature)
+                    if response is not None:
+                        # At most MOST_PREVIEW records, no notification or
+                        # extra capture. Distinguishes a learned correction
+                        # from an initial drop that happened to land correctly.
+                        ports.log("normal", "Engraving preview correction: " + json.dumps({
+                            "weapon_id": entry["id"], "card": index + 1,
+                            "orientation": key[0], "grab": grab,
+                            "observed": current, "endpoint": endpoint,
+                            "destination": destination,
+                            "endpoint_offset": response["endpoint_offset"],
+                        }, sort_keys=True, separators=(",", ":")))
                     await swipe(shot, "soul_weapon_engraving_preview", "move", screen.cell_centre(*pickup),
-                                      screen.hold_point(cells), MOVE_MS, verified=True)
+                                      destination, MOVE_MS, verified=True)
+                    pending_move = (key, endpoint)
                     await ports.clock.sleep(0.3)
                 elif step[0] == "confirm":
                     await tap(shot, "soul_weapon_engraving_preview", "confirm", found["confirm"],
@@ -464,7 +535,7 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
                 "now": [{"cell": list(cell), "kind": kind} for cell, kind in sorted(now.items())],
                 "base": [list(cell) for cell in base], "target": [list(cell) for cell in cells],
                 "rotation": turns, "valid": found["valid"], "preview_moves": preview_moves,
-                "last_step": step[0],
+                "last_step": step[0], "motion_error": motion_error,
                 **preview_counts,
             }, sort_keys=True, separators=(",", ":")))
             await tap(shot, "soul_weapon_engraving_preview", "cancel", found["cancel"], verified=True)
