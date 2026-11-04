@@ -81,8 +81,21 @@ class EngravingDetection(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await api["soul_weapon"]("mpw18"))["result"], "done")
         self.assertFalse(api["soul_verification_needed"]("mpw18"))
         game.now += 1
-        api["relaunched"]("soul").close()
+        self.assertIsNone(api["relaunched"]("soul"))
         self.assertTrue(api["soul_verification_needed"]("soul"))
+
+    async def test_relaunch_retains_durable_pending_recipe_without_background_navigation(self):
+        pending = {"engraving_recovery": {
+            "weapon_id": sw.VISION_ID, "variant": "Gold-balanced", "verified": False,
+            "required": True, "locks_verified": False, "completion_verified": False,
+            "recipe": {"weapon_id": sw.VISION_ID, "name": "Gold-balanced",
+                       "variant": copy.deepcopy(sw.VISION_VARIANTS["Gold-balanced"])}}}
+        game, _, api, _ = self.build(saved=pending)
+        before = copy.deepcopy(api["soul_weapon_state"]()["recovery"])
+        self.assertIsNone(api["relaunched"]("soul"))
+        self.assertEqual(api["soul_weapon_state"]()["recovery"], before)
+        self.assertTrue(before["required"])
+        self.assertEqual(game.moves, [])
 
 
 if __name__ == "__main__":

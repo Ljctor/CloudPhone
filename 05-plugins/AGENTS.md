@@ -29,7 +29,10 @@ Rules:
 - What Slayer Legend's plugin taps by itself: this list is exhaustive.
   Every move goes through the navigation guard (`navigation.json`) under
   the shared lease, on a fresh capture showing that screen; anything else
-  stops the sequence with one alert. Nothing outside it is ever tapped.
+  stops the sequence with an initial alert. While a farming failure remains
+  unresolved, read-only monitoring repeats its alert every 120 seconds;
+  this reminder never authorises another gesture. Nothing outside the
+  list below is ever tapped.
   - Launch:
     - "TAP TO START": on the title screen, at most every 8 s.
     - Confirm on the save notice: only when the notice shows (never Exit).
@@ -47,7 +50,18 @@ Rules:
       badge and AUTO (AUTO only read, for the alerts): at most every 5
       minutes, whoever watches (only a user's input pauses it, 5 s),
       only while the preset switch is real.
-    - Nothing for a stalled stage progress bar: an error alert only.
+    - Nothing for a stalled stage progress bar: an error alert only,
+      repeated every 120 seconds while the stall remains unresolved.
+      On battle or Soul Weapon parking, a bar unreadable for 120 seconds
+      raises a recurring progress-unverified alert, never a claim of a
+      stall and never an input. Other screens and user pauses reset this
+      missing-reading timer.
+    - During a mode entry, an independent read-only observer may check
+      whether the process runs and repeat an unresolved critical alert
+      every 120 seconds, even while a repair waits. It never takes the
+      lease, launches the game, or performs an input; the entry sequence
+      remains the only owner of its authorised moves. Free play and Agent
+      mode keep automatic monitoring and reminders suspended.
   - Stage change and preset (mode changes, a change of the running
     mode's loadout, and the watchdog's repairs,
     each only while its switch is real):
@@ -82,7 +96,7 @@ Rules:
     - The Soul Weapon icon: only once the Weapon tab reads active; then its
       title must read "Soul Weapon". Closed with its red X, then the panel
       with its own tab. If an ordinary weapon's card opened instead (its
-      button reads Enhance MAX), its red X only, then one alert; never its
+      button reads Enhance MAX), its red X only, then an alert; never its
       Enhance MAX or Equip.
     - Selecting a weapon in the left list: a whole cell, in its upper part,
       never on an orange tag the fresh capture shows.
@@ -96,7 +110,8 @@ Rules:
       (`fixtures/sw_tag_equip`, `sw_tag_unequip`); until then no Equip tap,
       an error alert « Equip tag not calibrated, not equipped ».
     - At most 10 list moves (selects, scrolls and Equip together); a move
-      that changes nothing stops it, with one alert naming the step.
+      that changes nothing stops it, with an alert naming the step; an
+      unresolved farming blocker is then reported every 120 seconds.
     - Never the « Better Soul Weapon / Equip » toast (below).
     - Never Unequip (any tap on a tag read Unequip is refused by the
       guard), Craft, Harvest or Breakdown.
@@ -117,7 +132,8 @@ Rules:
   - Soul weapon engraving (right after the equip, the card's big icon;
     the step is done, the weapon « prête », only once the grid is the
     loadout's variant with the highest-level cards and all 8 cards read
-    locked; otherwise one alert naming what is left). Only while its
+    locked; otherwise an alert naming what is left, repeated every
+    120 seconds while farming remains blocked). Only while its
     switch `engraving` is "real", set only with the user present for the
     first supervised run; "off" by default: not one engraving gesture, an
     error alert "engraving not set up: first supervised run pending", the
@@ -181,7 +197,8 @@ Rules:
   - Never tapped: a screen the classifier calls "other" (a pop-up, an
     event, an offer, maintenance, an update, another device, a choice of
     saves). The watchdog names it by its text, as read
-    (`screens.other_name`), in one error-level alert: « Unknown screen:
+    (`screens.other_name`), in an error-level alert repeated every
+    120 seconds while farming remains blocked: « Unknown screen:
     "<title>" [<button>]; farming blocked », a bug report for the plugin.
     `navigation.json` refuses any move there by default. A screen enters
     `other_screens.json` only once seen for real, with a fixture cropped

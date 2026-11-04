@@ -28,7 +28,11 @@ class Geometry(unittest.IsolatedAsyncioTestCase):
                                              (x + 300) / sw, (y + 30) / sh])
         self.assertIn({"id": "TOP_EMERALD", "rect": list(screens.TOP_EMERALD)}, tree["battle"]["landmarks"])
         self.assertNotIn("landmarks", graph["screens"]["soul_weapon_engraving"])
-        self.assertNotIn("title", tree, "unverified Title has no fake detection rectangle")
+        title = tree["title"]["landmarks"][0]
+        sw, sh, x, y, width, height, _ = screens.fixture("title_logo_480")
+        self.assertEqual(title["rect"], [x / sw, y / sh, (x + width) / sw, (y + height) / sh])
+        self.assertNotEqual(title["rect"], list(screens.START_TEXT))
+        self.assertNotIn("landmarks", graph["screens"]["title"])
 
 
 if __name__ == "__main__":

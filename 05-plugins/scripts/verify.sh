@@ -5,7 +5,10 @@ base=${1:?Usage: verify.sh http://LISTEN_ADDRESS:WEB_PORT}
 # Real reviewed crops distinguish red drag ghosts from actionable controls;
 # this check stays deterministic and never gestures on the installed game.
 python3 "$(dirname "$0")/../slayer-legend/test_screen_model.py" EngravingPreview
-python3 "$(dirname "$0")/../slayer-legend/test_soul_weapon.py" Tag ActualNativeCaptures Readers NativeReaders
+python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_title_logo.py -q
+python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_launch.py -q
+python3 "$(dirname "$0")/../slayer-legend/test_soul_weapon.py" Tag ActualNativeCaptures Readers NativeReaders \
+  Sequence.test_after_a_relaunch_no_detached_repair_or_notification
 python3 "$(dirname "$0")/../slayer-legend/test_soul_weapon.py" \
   Engraving.test_opening_can_outlast_the_card_polling_deadline \
   Engraving.test_timed_out_opening_is_recovered_before_the_next_stage_navigation \
@@ -24,14 +27,7 @@ python3 "$(dirname "$0")/../slayer-legend/test_stage_change.py" \
   Sequence.test_accessible_preset_mismatch_stops_before_stage_navigation \
   Sequence.test_correct_visible_preset_does_not_block_stage_change \
   Sequence.test_unread_preset_is_not_treated_as_a_known_mismatch_before_stage
-python3 "$(dirname "$0")/../slayer-legend/test_watchdog.py" \
-  GoldTrigger.test_persisted_incomplete_grid_is_repaired_with_backoff_even_when_parked \
-  GoldTrigger.test_failed_setup_only_clears_after_full_verified_transaction \
-  GoldTrigger.test_an_open_interrupted_engraving_can_be_repaired_but_unknown_popup_cannot \
-  GoldTrigger.test_pending_engraving_respects_switch_and_free_play \
-  GoldTrigger.test_missing_current_engraving_proof_repairs_healthy_parking_without_pending_marker \
-  GoldTrigger.test_engraving_verification_debt_respects_free_play_and_disabled_switch \
-  PresetPolicyBlocks
+python3 "$(dirname "$0")/../slayer-legend/test_watchdog.py"
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_hourly_resources.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_rate_completions.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_gold_native.py -q

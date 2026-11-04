@@ -1,4 +1,7 @@
 {
+  "Configuration du mode non vérifiée après {seconds} s": "Mode setup not verified after {seconds} s",
+  "gravure interrompue : la cible de récupération est une autre arme": "Engraving interrupted: recovery targets another weapon",
+  "Dernière observation : {observation} ; reprise non vérifiée": "Last observed: {observation}; recovery not yet verified",
   "Soul Farming : choisis d’abord son stage": "Soul Farming: choose its stage first",
   "gravure interrompue : écran non reconnu, récupération suspendue": "Engraving interrupted: screen not recognised, recovery paused",
   "Action désactivée à la demande de l’utilisateur": "Action disabled at your request",

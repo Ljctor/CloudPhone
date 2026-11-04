@@ -30,7 +30,7 @@ SAVER_TRIES = 3
 # opened again after this long (seconds).
 CRASH_TRIES = 2
 AFTER_CRASH = 2
-# Loading and logging-in screens are "other" for a while; one that stays
+# Uncalibrated startup transitions are "other" for a while; one that stays
 # longer than this (seconds; longer once the save was confirmed) stops it.
 OTHER_LIMIT = 45
 OTHER_LIMIT_CONFIRMED = 60
@@ -53,6 +53,11 @@ def step(screen, memory, now):
     blocked_saver, blocked_sign_in, blocked_chooser, blocked_other. The battle
     screen (done) is the caller's, which also checks the game is in front;
     the caller sets last_tap once a press is done."""
+    if screen == "loading":
+        # Independently calibrated dragon-gate loading scene: no input.
+        # The caller's fixed overall DEADLINE bounds this wait. Do not
+        # carry an earlier unknown-screen timer across recognised progress.
+        return "wait", {**memory, "seen_other": None}
     if screen == "crash":
         if memory["crashes"] >= CRASH_TRIES:
             return "blocked_crash", memory

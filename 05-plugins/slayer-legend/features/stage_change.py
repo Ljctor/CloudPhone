@@ -56,8 +56,9 @@ during it stops it at the next tap.
   this step before stage/preset gates, including after a gateway restart
   and at five-minute intervals; a saved success alone is insufficient.
   A preset policy refusal returns to Soul Weapon parking and remains a
-  failed mode. After a watchdog relaunch (relaunched(mode)) it
-  runs alone, with one alert if it fails.
+  failed mode. After a watchdog relaunch (relaunched(mode)) its proof is
+  invalidated; the next mode-checked watchdog transaction verifies the
+  complete setup. No detached navigation survives a mode change.
 
 api: farm(stage, preset, mode) runs the three and parks; change_stage, set_preset,
 ensure_soul_weapon(mode, loadout=None) alone (the last for a
@@ -89,10 +90,6 @@ SETTINGS_CLOSE = (0.09, 0.965)
 BATTLE_RETURN = (0.5, 0.18)
 QUEST_CLOSE = (0.895, 0.183)
 LEASE_SECONDS = 240
-# After a relaunch, the soul weapon's check waits for the lease this often,
-# this long at most (seconds).
-RELAUNCH_RETRY = 10
-RELAUNCH_WAIT = 300
 HOLDER = "stage_change"
 SWITCHES = ("stage_change", "preset")
 # The modes that park on the Soul Weapon screen.
@@ -601,31 +598,14 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
                  and recovery.get("variant") == chosen.get("variant")))
         return answer
 
-    async def after_relaunch(mode):
-        """The soul weapon read again once the game is back: the lease
-        waited for (every RELAUNCH_RETRY, at most RELAUNCH_WAIT), one alert
-        on a failure."""
-        since = ports.clock.monotonic()
-        while True:
-            try:
-                answer = await run(mode, soul_steps(mode), preflight=lambda: preflight_soul(mode))
-                break
-            except ports.Busy:
-                if ports.clock.monotonic() - since >= RELAUNCH_WAIT:
-                    ports.log("normal", "Soul weapon after a relaunch: lease still taken, dropped")
-                    return
-                await ports.clock.sleep(RELAUNCH_RETRY)
-        if answer["result"] == "failed":
-            await ports.notify(f"After the game's relaunch ({mode}): {ports.english(answer['text_t'])}")
-
     def relaunched(mode):
-        """For the watchdog, once its relaunch brought the game back."""
+        """Invalidate proof after launch; the next mode-checked watchdog
+        transaction verifies stage, preset, weapon and engraving together.
+        Never leave a background navigation task alive after a mode change.
+        The durable pending engraving recipe is retained by relaunched()."""
         if not souls or mode not in ("mpw18", "mpw4", "soul"):
             return None
         souls["relaunched"]()
-        if not (soul["loadout"](mode) or {}).get("soul_weapon") or souls["switch"]() != "real":
-            return None
-        return ports.spawn(after_relaunch(mode))
 
     async def read_controls():
         """{preset} read on one guarded unfold, or None when unavailable."""

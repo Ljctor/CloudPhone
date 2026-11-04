@@ -138,13 +138,103 @@ class Timing(unittest.TestCase):
         self.assertEqual(w.kinds(), ["relaunch"])
 
 
+class ProgressObservation(unittest.TestCase):
+    def test_missing_bar_alerts_after_two_minutes_without_claiming_stall(self):
+        kept = rules.bar_fresh()
+        for now in range(0, 121, 15):
+            kept, stalled = rules.bar_look(kept, None, now)
+            self.assertIsNone(stalled)
+            self.assertEqual(rules.bar_unverified(kept, now), now >= 120)
+        for screen, park in (("battle", False), ("parked", True)):
+            seen = {**BATTLE, "screen": screen, "progress_unverified": True}
+            profile = {**PROFILE, "park": park}
+            symptom, text, _, _ = rules.judge(seen, profile, NUMERALS.get, None, False, rules.fresh(), 120)
+            self.assertEqual(symptom, "progress_unverified")
+            self.assertNotIn("stalled", text.lower())
+            self.assertIsNone(rules.REPAIRS[symptom])
+        kept, _ = rules.bar_look(kept, 0.3, 121)
+        self.assertFalse(rules.bar_unverified(kept, 999))
+        self.assertFalse(rules.bar_unverified(rules.bar_fresh(), 999))
+
+    def test_missing_bar_reminders_repeat_without_any_repair(self):
+        w = Watch()
+        w.looks({**BATTLE, "progress_unverified": True}, 26)
+        times = [at for at, _, _, _, notify in w.records if notify]
+        self.assertEqual(times, [15, 135, 255, 375])
+        self.assertEqual(w.repairs, [])
+
+    def test_missing_bar_does_not_apply_outside_combat(self):
+        w = Watch(available=())
+        w.looks({**SAVER, "progress_unverified": True}, 20)
+        self.assertEqual(w.alerts(), [])
+        for mode in ("free", "agent"):
+            w.mode = mode
+            w.looks({**BATTLE, "progress_unverified": True}, 20)
+            self.assertEqual(w.alerts(), [])
+
+
+class AlertReminders(unittest.TestCase):
+    def test_failed_delivery_retries_bounded_without_erasing_other_incidents(self):
+        w = Watch(available=())
+        w.looks(GONE, 2)
+        first = w.wall()
+        before = rules.notification_failed(w.memory, "adb_missing", first)
+        self.assertEqual(before, w.memory)
+        w.memory = rules.notification_failed(w.memory, "relaunch", first)
+        w.look(GONE)
+        self.assertEqual(len(w.alerts()), 1)
+        w.look(GONE)
+        self.assertEqual(len(w.alerts()), 2)
+        self.assertEqual(w.memory["alerts"], 2)
+
+    def test_twelve_hours_repeat_every_two_minutes_without_repairs(self):
+        for seen in (GONE, OTHER, NO_ADB, {**BATTLE, "stalled": 90}):
+            with self.subTest(seen=seen):
+                w = Watch(available=())
+                w.looks(seen, 12 * 60 * 60 // E)
+                times = [at for at, _, _, _, notify in w.records if notify]
+                self.assertGreater(len(times), 350)
+                self.assertEqual(set(b - a for a, b in zip(times, times[1:])), {120})
+                self.assertEqual(w.repairs, [])
+
+    def test_changed_failure_family_is_announced_independently(self):
+        w = Watch(available=())
+        w.looks(OTHER, 4)
+        w.looks(NO_ADB, 2)
+        self.assertEqual(len(w.alerts()), 2)
+        self.assertIn("adb does not answer", w.alerts()[-1][1])
+        w.looks(NO_ADB, 7)
+        self.assertEqual(len(w.alerts()), 2)
+        w.look(NO_ADB)
+        self.assertEqual(len(w.alerts()), 3)
+
+    def test_unavailable_observations_are_bounded_and_never_repaired(self):
+        for seen in (NO_CAPTURE, {**BATTLE, "focused": None}):
+            w = Watch()
+            w.looks(seen, 8)
+            self.assertEqual(w.alerts(), [])
+            w.looks(seen, 18)
+            times = [at for at, _, _, _, notify in w.records if notify]
+            self.assertEqual(times, [150, 270, 390])
+            self.assertEqual(w.repairs, [])
+
+    def test_free_play_stops_reminders_and_keeps_gateway_alert_total(self):
+        w = Watch(available=())
+        w.looks(GONE, 10)
+        total = w.memory["alerts"]
+        w.mode = "free"
+        w.looks(GONE, 100)
+        self.assertEqual(w.memory["alerts"], total)
+        self.assertEqual(len(w.alerts()), total)
+
+
 class Alerts(unittest.TestCase):
     def test_one_alert_after_two_looks_then_one_back(self):
         w = Watch(available=())
         w.looks(BATTLE, 4)
         w.look(GONE)
         self.assertEqual(w.alerts(), [])
-        w.looks(GONE, 10)
+        w.looks(GONE, 8)
         self.assertEqual(w.alerts(), [("warning", "Farming mpw18: the game is not running")])
         w.looks(BATTLE, 3)
         self.assertEqual(len(w.alerts()), 1, "well for less than a minute: not back yet")
@@ -154,7 +244,7 @@ class Alerts(unittest.TestCase):
 
     def test_adb_missing_is_an_error_and_never_repaired(self):
         w = Watch()
-        w.looks(NO_ADB, 10)
+        w.looks(NO_ADB, 8)
         self.assertEqual(w.alerts(), [("error", "Farming mpw18: adb does not answer: the emulator or adb is missing")])
         self.assertEqual(w.repairs, [])
 
@@ -306,7 +396,7 @@ class Repairs(unittest.TestCase):
         w.looks(GONE, 7)
         self.assertEqual(len(w.repairs), 1, "no relaunch during the passive watch")
         self.assertEqual(rules.counters(w.memory, w.wall())["bad_in_a_row"], 11, "a repair does not reset it")
-        self.assertEqual(len(w.alerts()), 2, "the problem's alert and its first failure's")
+        self.assertEqual(len(w.alerts()), 3, "initial alert, first failure and two-minute reminder")
         without = [r for r in w.records if str(r[2]).startswith("Action incomplete")]
         self.assertEqual([(r[1], r[4]) for r in without], [("warning", True)], "the first failure: a phone alert")
         self.assertEqual(without[0][3], {"repair": TEXTS["t"]("relance du jeu"), "minutes": 1})
@@ -355,7 +445,7 @@ class Repairs(unittest.TestCase):
         w.looks(BATTLE, 4)
         w.looks(OTHER_STAGE, 10)
         self.assertEqual(w.repairs, [])
-        self.assertEqual(len(w.alerts()), 1)
+        self.assertEqual(len(w.alerts()), 2)
 
 
 class Backoff(unittest.TestCase):
@@ -389,8 +479,7 @@ class Backoff(unittest.TestCase):
     def test_the_alerts_first_failure_8_min_30_min_then_silence(self):
         w = Watch()
         self.gone_for(w, 3 * 3600)
-        self.assertEqual(w.notifications(), [
-            "Farming mpw18: the game is not running",
+        self.assertEqual([n for n in w.notifications() if "the game is not running" not in n], [
             "Action incomplete: game relaunch; verification failed, next attempt in 1 min",
             "Farming mpw18: game relaunch still failing, next attempt in 8 min",
             "Farming mpw18: game relaunch still failing, next attempt in 30 min"])
@@ -610,7 +699,9 @@ class GoldTrigger(unittest.TestCase):
               game=True, launched=False, bar=lambda look: look * 0.27 % 1, screen=lambda look: "battle",
               park=None, hold=None, intention=None, user_input=lambda look: None,
               failed_setup=False, recovery=None, setup_real=True, policy_allowed=lambda look: False,
-              target=None, saved=None, relaunch_at=None, preset=lambda look: 1, verification_debt=None):
+              target=None, saved=None, relaunch_at=None, preset=lambda look: 1, verification_debt=None,
+              farming_switches=None, notify_result=lambda look: None, on_notice=None, repair_pause=None,
+              launch_pause=None, on_repair=None, process_running=True, yield_clock=False):
         """count looks, AUTO read as auto, viewers(look) connected, the
         stage progress bar read as bar(look) (None: unreadable; by default
         it moves) on screen(look); park: the soul weapon's switch when the
@@ -625,6 +716,9 @@ class GoldTrigger(unittest.TestCase):
         if isinstance(answer, dict) and answer.get('failure_code') == 'preset_action_paused' and target is None:
             target = {'stage': 920, 'preset': 'IV'}
         coroutines, looked, read, alerts, other = [], [0], [], [], []
+        self.alert_looks = []
+        self.alert_times, self.notice_during_repair = [], []
+        repairing = [False]
         registered, relaunch_callbacks = {}, []
         stored = copy.deepcopy(saved or {})
         def save():
@@ -650,6 +744,9 @@ class GoldTrigger(unittest.TestCase):
 
                 @staticmethod
                 async def sleep(seconds):
+                    if asyncio.current_task().get_name() == "slayer-watchdog-reminders":
+                        await asyncio.sleep(0)
+                        return
                     if looked[0] == count:
                         raise asyncio.CancelledError
                     looked[0] += 1
@@ -657,6 +754,8 @@ class GoldTrigger(unittest.TestCase):
                     if looked[0] == relaunch_at:
                         for callback in relaunch_callbacks:
                             callback('test relaunch')
+                    if yield_clock:
+                        await asyncio.sleep(0)
 
             @staticmethod
             def spawn(coroutine):
@@ -671,7 +770,7 @@ class GoldTrigger(unittest.TestCase):
 
             @staticmethod
             async def running():
-                return True
+                return process_running(looked[0]) if callable(process_running) else process_running
 
             @staticmethod
             async def dialog():
@@ -694,6 +793,14 @@ class GoldTrigger(unittest.TestCase):
             @staticmethod
             async def notify(text):
                 alerts.append(text)
+                self.alert_looks.append(looked[0])
+                self.alert_times.append(Ports.clock.now)
+                self.notice_during_repair.append(repairing[0])
+                if on_notice:
+                    result = on_notice(looked[0])
+                    if asyncio.iscoroutine(result):
+                        await result
+                return notify_result(looked[0])
 
         async def read_controls():
             read.append(looked[0])
@@ -709,6 +816,15 @@ class GoldTrigger(unittest.TestCase):
 
         async def launch():
             launches_made.append(looked[0])
+            if on_repair:
+                on_repair()
+            if launch_pause:
+                repairing[0] = True
+                for seconds in launch_pause:
+                    Ports.clock.now += seconds
+                    for _ in range(4):
+                        await asyncio.sleep(0)
+                repairing[0] = False
 
         def start(*args):
             return launch() if launched else None
@@ -721,6 +837,15 @@ class GoldTrigger(unittest.TestCase):
             intentions.append(built["api"]["look"]()["intention"])
             farmed.append(args)
             farm_looks.append(looked[0])
+            if on_repair:
+                on_repair()
+            if repair_pause:
+                repairing[0] = True
+                for seconds in repair_pause:
+                    Ports.clock.now += seconds
+                    for _ in range(4):
+                        await asyncio.sleep(0)
+                repairing[0] = False
             result = answer(looked[0]) if callable(answer) else answer
             if asyncio.iscoroutine(result):
                 result = await result
@@ -735,6 +860,8 @@ class GoldTrigger(unittest.TestCase):
         if verification_debt is not None:
             farming["soul_verification_needed"] = lambda name: (
                 verification_debt(looked[0]) if callable(verification_debt) else verification_debt)
+        if farming_switches is not None:
+            farming["switches"] = lambda: farming_switches
         self.parks = parks = []
         if park:
             async def parking(name):
@@ -751,7 +878,7 @@ class GoldTrigger(unittest.TestCase):
 
         built = feature.watchdog(
             Ports, None, None, rules, NUMERALS.get,
-            {"state": lambda: {"mode": mode(looked[0]) if callable(mode) else mode, "highest": 925, "state": "moving" if entering else "failed" if (failed_setup(looked[0]) if callable(failed_setup) else failed_setup) else "farming",
+            {"state": lambda: {"mode": mode(looked[0]) if callable(mode) else mode, "highest": 925, "state": "moving" if (entering(looked[0]) if callable(entering) else entering) else "failed" if (failed_setup(looked[0]) if callable(failed_setup) else failed_setup) else "farming",
                                "hold": hold, "intention": intention},
              "confirm": confirm},
             {"state": lambda: {"enabled": mode == "mine"}, "reenter": reenter},
@@ -759,11 +886,19 @@ class GoldTrigger(unittest.TestCase):
             lambda name: target(looked[0]) if callable(target) else target or
                          {"mpw18": {"stage": 920, "preset": 1}, "mpw4": {"stage": 915, "preset": "II"}}[name],
             farming, gold)
+        # Inspect closure-owned state only in this unit harness so a suspended
+        # notification can model a simultaneous change of observed incident.
+        cells = dict(zip(built["api"]["look"].__code__.co_freevars, built["api"]["look"].__closure__))
+        self.runtime_status = cells["status"].cell_contents
+        self.runtime_memory = lambda: cells["memory"].cell_contents
 
         async def run():
             await built["startup"][0](None)
             with self.assertRaises(asyncio.CancelledError):
                 await coroutines[0]
+            self.assertFalse(any(task.get_name() == "slayer-watchdog-reminders"
+                                 for task in asyncio.all_tasks() if task is not asyncio.current_task()),
+                             "watchdog shutdown must cancel and drain its passive reminder")
 
         with self.assertLogs("cloudphone.slayer-legend", "INFO"):
             logging.getLogger("cloudphone.slayer-legend").info("GoldTrigger: %d looks", count)
@@ -814,6 +949,17 @@ class GoldTrigger(unittest.TestCase):
             self.looks(8, "on", park="real", screen=lambda look: "parked",
                        verification_debt=True, **options)
             self.assertEqual(self.farmed, [])
+
+    def test_engraving_recovery_precedes_unrelated_stage_and_preset_plan_switches(self):
+        for debt in ({"recovery": {"required": True}}, {"verification_debt": True}):
+            for switch in ("stage_change", "preset"):
+                with self.subTest(debt=debt, switch=switch):
+                    self.looks(8, "on", mode="soul", park="real", screen=lambda look: "parked",
+                               target={"stage": 920, "preset": 1},
+                               farming_switches={"stage_change": "real", "preset": "real", switch: "plan"},
+                               **debt)
+                    self.assertTrue(self.farmed, "the transaction must reach engraving before unrelated plans")
+                    self.assertEqual(self.verified, [], "a plan cannot certify the full farming setup")
 
     def test_a_stopped_stage_change_is_one_failure_and_retry_clears_it(self):
         _, alerts, _ = self.looks(8, "on", stage=940, answer={"result": "failed", "text_t": TEXTS["t"]("écran inattendu")})
@@ -915,8 +1061,9 @@ class ModesOnTheFeature(GoldTrigger):
     def test_the_mine_never_reads_the_controls_and_alerts_once_the_game_is_away(self):
         read, alerts, other = self.looks(14, "off", mode="mine", game=False)
         self.assertEqual((read, other, self.farmed), ([], [], []))
-        self.assertEqual(len(alerts), 1)
+        self.assertEqual(len(alerts), 2)
         self.assertEqual(alerts[0], "Game is no longer in front; restarting and returning to the mine.")
+        self.assertGreaterEqual((self.alert_looks[1] - self.alert_looks[0]) * E, rules.REMIND_EVERY)
 
     def test_the_mine_relaunches_the_game_then_goes_back_in(self):
         self.looks(14, "off", mode="mine", game=False, launched=True)
@@ -936,6 +1083,96 @@ class ModesOnTheFeature(GoldTrigger):
         self.assertEqual(self.state["line"]["template"], "Jeu libre : rien n’est surveillé")
 
 
+class RuntimeRecovery(unittest.TestCase):
+    looks = GoldTrigger.looks
+
+    def test_delivery_cannot_acknowledge_a_family_or_mode_changed_during_await(self):
+        for change_mode in (False, True):
+            with self.subTest(change_mode=change_mode):
+                selected = ["mpw18"]
+                async def notice(look):
+                    if look == 2:
+                        self.runtime_status["symptom"] = "progress_stalled"
+                        if change_mode:
+                            selected[0] = "free"
+                        await asyncio.sleep(0)
+                self.looks(2, "on", stage=940, mode=lambda look: selected[0], on_notice=notice)
+                self.assertIsNone(self.runtime_status["notice_wall"],
+                                  "a delivered message cannot acknowledge the replacement incident")
+                self.assertIsNone(self.runtime_status["notice_mode"])
+                self.assertNotIn("progress_stalled", self.runtime_memory()["incidents"])
+
+    def test_long_running_repair_keeps_passive_two_minute_reminders_alive(self):
+        _, alerts, _ = self.looks(3, "on", stage=940, repair_pause=[120, 120, 120])
+        times = [at for at, active in zip(self.alert_times, self.notice_during_repair) if active]
+        self.assertEqual(len(times), 3, alerts)
+        self.assertTrue(all(b - a == 120 for a, b in zip(times, times[1:])))
+
+    def test_long_running_launch_keeps_passive_two_minute_reminders_alive(self):
+        _, alerts, _ = self.looks(8, "on", game=False, launched=True, launch_pause=[120, 120, 120])
+        times = [at for at, active in zip(self.alert_times, self.notice_during_repair) if active]
+        self.assertGreaterEqual(len(times), 3, alerts)
+        self.assertTrue(all(b - a == 120 for a, b in zip(times, times[1:])))
+
+    def test_known_game_absence_keeps_reminders_during_long_mode_entry(self):
+        moving = [False]
+        _, alerts, _ = self.looks(8, "on", game=False, launched=True, launch_pause=[120, 120, 120],
+                                 entering=lambda look: moving[0], on_repair=lambda: moving.__setitem__(0, True))
+        times = [at for at, active in zip(self.alert_times, self.notice_during_repair) if active]
+        self.assertEqual(len(times), 3, alerts)
+        self.assertTrue(all(b - a == 120 for a, b in zip(times, times[1:])))
+
+    def test_entry_independently_detects_game_process_loss_and_reminds(self):
+        _, alerts, _ = self.looks(28, "on", entering=True, process_running=False, yield_clock=True)
+        self.assertGreaterEqual(len(alerts), 3)
+        self.assertTrue(all(b - a == 120 for a, b in zip(self.alert_times, self.alert_times[1:])))
+        self.assertEqual(self.farmed, [])
+        self.assertEqual(self.launches, [], "the passive monitor cannot launch during mode entry")
+
+    def test_alive_game_with_unverified_entry_gets_bounded_passive_reminders(self):
+        _, alerts, _ = self.looks(28, "on", entering=True, process_running=True, yield_clock=True)
+        self.assertGreaterEqual(len(alerts), 3)
+        self.assertGreaterEqual(self.alert_times[0], 120)
+        self.assertLessEqual(self.alert_times[0], 135)
+        self.assertTrue(all(b - a == 120 for a, b in zip(self.alert_times, self.alert_times[1:])))
+        self.assertFalse(any("game is not running" in text.lower() for text in alerts))
+        self.assertEqual(self.farmed, [])
+        self.assertEqual(self.launches, [])
+
+    def test_long_running_repair_reminders_stop_after_free_play_selection(self):
+        selected = ["mpw18"]
+        def notice(look):
+            if self.notice_during_repair[-1]:
+                selected[0] = "free"
+        self.looks(4, "on", stage=940, mode=lambda look: selected[0],
+                   repair_pause=[120, 120, 120], on_notice=notice)
+        self.assertEqual(sum(self.notice_during_repair), 1)
+
+    def test_existing_redirect_does_not_suppress_two_minute_incident_reminders(self):
+        _, alerts, _ = self.looks(24, "on", stage=940)
+        notices = [look for look, alert in zip(self.alert_looks, alerts)
+                   if "wrong stage" in alert or "Redirecting" in alert]
+        self.assertGreaterEqual(len(notices), 3)
+        self.assertTrue(all((b - a) * E >= rules.REMIND_EVERY for a, b in zip(notices, notices[1:])))
+
+    def test_failed_delivery_retries_after_thirty_seconds_without_acknowledging_incident(self):
+        _, alerts, _ = self.looks(10, "on", stage=940,
+                                 farming_switches={"stage_change": "plan", "preset": "plan"},
+                                 notify_result=lambda look: False)
+        notices = [look for look, alert in zip(self.alert_looks, alerts) if "wrong stage" in alert]
+        self.assertGreater(len(notices), 2)
+        self.assertTrue(all((b - a) * E == 30 for a, b in zip(notices, notices[1:])))
+        self.assertEqual(self.farmed, [])
+
+    def test_mode_change_during_redirect_notification_cancels_stale_repair(self):
+        selected = ["mpw18"]
+        self.looks(8, "on", stage=940, mode=lambda look: selected[0],
+                   on_notice=lambda look: selected.__setitem__(0, "free"))
+        self.assertEqual(self.farmed, [])
+        self.assertEqual(self.launches, [])
+        self.assertEqual(self.state["mode"], "free")
+
+
 class PresetPolicyBlocks(unittest.TestCase):
     """Typed refusals wait for changed evidence while engraving still repairs."""
     looks = GoldTrigger.looks
@@ -945,7 +1182,20 @@ class PresetPolicyBlocks(unittest.TestCase):
                 'text_t': TEXTS['t']('Préréglage {wanted} demandé, {seen} lu : changement bloqué, actions en pause',
                                     wanted='IV', seen='I')}
 
-    def test_typed_preset_policy_failure_stays_blocked_without_timed_retry_or_spam(self):
+    def test_failed_policy_notice_retries_without_new_gameplay_attempt(self):
+        answer = self.policy_block()
+        _, alerts, _ = self.looks(24, 'on', failed_setup=True, answer=answer,
+                                 notify_result=lambda look: look >= 6)
+        blocked = [look for look, alert in zip(self.alert_looks, alerts)
+                   if TEXTS['english'](answer['text_t']) in alert]
+        self.assertGreater(len(blocked), 3)
+        self.assertEqual((blocked[1] - blocked[0]) * E, 30)
+        delivered = next(look for look in blocked if look >= 6)
+        self.assertTrue(all((look - delivered) * E >= rules.REMIND_EVERY
+                            for look in blocked if look > delivered))
+        self.assertEqual(len(self.farmed), 1)
+
+    def test_typed_preset_policy_failure_stays_blocked_with_bounded_reminders(self):
         answer = self.policy_block()
         _, alerts, _ = self.looks(100, 'on', failed_setup=True, answer=answer)
         self.assertEqual(len(self.farmed), 1)
@@ -953,7 +1203,10 @@ class PresetPolicyBlocks(unittest.TestCase):
         self.assertEqual(self.state['execution_blocker_t'], answer['text_t'])
         self.assertEqual(self.state['waiting'], [])
         self.assertNotIn('loadout', self.state['counters']['next_attempt'])
-        self.assertEqual(sum(TEXTS['english'](answer['text_t']) in alert for alert in alerts), 1)
+        blocked = [look for look, alert in zip(self.alert_looks, alerts)
+                   if TEXTS['english'](answer['text_t']) in alert]
+        self.assertGreater(len(blocked), 1)
+        self.assertTrue(all((b - a) * E >= rules.REMIND_EVERY for a, b in zip(blocked, blocked[1:])))
         observed = self.last_look()
         self.assertTrue(observed['blocked'])
         self.assertEqual(observed['level'], 'error')
@@ -1071,7 +1324,7 @@ class StageProgressBar(GoldTrigger):
         self.assertTrue(rules.bar_moved(0.2, 0.2 + 11 * self.PX))
         self.assertTrue(rules.bar_moved(1.0, 0.0))
         kept, stalled = rules.bar_look(kept, None, 5 * E)
-        self.assertEqual((kept["still"], stalled), (3, 4 * E), "unread: neither a move nor a still look")
+        self.assertEqual((kept["still"], stalled), (3, None), "unread is not fresh proof of a stall")
         self.assertIn("progress_stalled", rules.ERRORS)
         self.assertIsNone(rules.REPAIRS["progress_stalled"])
 
@@ -1127,14 +1380,13 @@ class StageProgressBar(GoldTrigger):
             _, alerts, _ = self.looks(12, "on", bar=lambda look: 0.4, mode=mode)
             self.assertEqual(self.stalled(alerts), [], mode)
 
-    def test_said_again_at_8_and_30_minutes_then_recovered(self):
+    def test_said_again_every_two_minutes_then_recovered(self):
         w = Watch()
         for look in range(1, 130):
             w.look({**BATTLE, "stalled": look * E, "auto": None})
-        self.assertEqual([a for a in w.alerts() if "stalled" in a[1]],
-                         [("error", "Farming mpw18: Stage progress bar stalled for 15 s"),
-                          ("error", "Farming mpw18: Stage progress bar stalled for 480 s"),
-                          ("error", "Farming mpw18: Stage progress bar stalled for 1800 s")])
+        times = [at for at, _, text, params, notify in w.records
+                 if notify and "stalled" in said(text, params)]
+        self.assertEqual(times, list(range(15, 130 * E, 120)))
         w.looks(BATTLE, rules.RECOVERED_AFTER)
         self.assertEqual(w.alerts()[-1], ("normal", "Farming mpw18: monitoring is stable again"))
 
@@ -1293,7 +1545,8 @@ class Focus(unittest.TestCase):
         w.looks(BATTLE, 4)
         w.looks({**AWAY, "focused": None}, 10)
         self.assertEqual(set(w.symptoms[4:]), {"unknown"})
-        self.assertEqual((w.kinds(), w.alerts()), ([], []))
+        self.assertEqual(w.kinds(), [])
+        self.assertEqual(len(w.alerts()), 1, "persistent ambiguity alerts without touching the game")
 
 
 class SignInScreen(unittest.TestCase):
@@ -1424,7 +1677,7 @@ class AfterMode(unittest.TestCase):
         self.assertIn("unknown screen after the mode ended: no text read; farming blocked", w.alerts()[0][1])
         w.looks(OTHER, 10)
         self.assertEqual(w.repairs, [])
-        self.assertEqual(len(w.alerts()), 1, "said once")
+        self.assertEqual(len(w.alerts()), 2, "initial alert and two-minute reminder")
 
     def test_the_save_notice_and_the_title_are_relaunched(self):
         for seen in (TITLE, {**TITLE, "screen": "save"}):
@@ -1493,7 +1746,7 @@ class Flapping(unittest.TestCase):
         for _ in range(12):
             w.looks(MENU, 6)
             w.look(BATTLE)
-        self.assertLessEqual(len(w.notifications()), 3, w.notifications())
+        self.assertLessEqual(len(w.notifications()), 6, w.notifications())
         # Each way back worked: no failure, no backoff, a way back each time.
         self.assertEqual(w.memory["backoff"], {})
         self.assertEqual(w.kinds(), ["back_to_battle"] * 12)
@@ -1519,17 +1772,17 @@ class Flapping(unittest.TestCase):
 
     def test_b1_a_pop_up_back_after_one_good_look_for_22_minutes(self):
         per_hour, repairs, shown = self.pop_ups(0, 22)
-        self.assertLessEqual(per_hour, 4)
+        self.assertLessEqual(per_hour, 30)
         self.assertEqual(repairs, shown, "one way back per pop-up, no cap")
 
     def test_b2_a_pop_up_every_2_minutes_for_85_minutes(self):
         per_hour, repairs, shown = self.pop_ups(120, 85)
-        self.assertLessEqual(per_hour, 4)
+        self.assertLessEqual(per_hour, 30)
         self.assertEqual(repairs, shown)
 
     def test_b3_a_pop_up_every_6_minutes_for_an_hour(self):
         per_hour, repairs, shown = self.pop_ups(360, 60)
-        self.assertLessEqual(per_hour, 4)
+        self.assertLessEqual(per_hour, 30)
         self.assertEqual(repairs, shown)
 
     def test_a_relaunch_then_a_pop_up_on_return(self):
@@ -1541,7 +1794,7 @@ class Flapping(unittest.TestCase):
         self.assertNotIn("Farming mpw18: monitoring is stable again", w.notifications(), "repaired: 5 minutes of battle first")
         w.looks(BATTLE, rules.RECOVERY_FLOOR // E)
         self.assertEqual(w.kinds(), ["relaunch", "back_to_battle"])
-        self.assertLessEqual(len(w.notifications()), 2, w.notifications())
+        self.assertLessEqual(len(w.notifications()), 3, w.notifications())
         self.assertEqual(w.notifications()[-1], "Farming mpw18: monitoring is stable again")
 
     def test_c_a_missed_capture_keeps_the_menu_grace(self):
@@ -1610,7 +1863,7 @@ class Modes(unittest.TestCase):
         self.assertGreaterEqual(times[1] - times[0], rules.DELAYS[1] * (1 - rules.JITTER))
         w.looks(GONE, 5)
         w.looks(CRASH, 5)
-        self.assertEqual(len([a for a in w.alerts() if "in front" in a[1]]), 1, "one absence, one alert")
+        self.assertEqual(len([a for a in w.alerts() if "in front" in a[1]]), 4, "unresolved absence repeats every two minutes")
 
     def test_the_mine_relaunches_a_game_back_on_its_title_screen(self):
         w = Watch(profile=rules.profile(None, None, "mine"), available=ALL + ("mine_relaunch",))

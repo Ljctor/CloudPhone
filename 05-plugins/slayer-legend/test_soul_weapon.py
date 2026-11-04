@@ -746,7 +746,9 @@ class Sequence(unittest.TestCase):
         self.assertEqual((len(game.moves), game.captures), (before, captures + 1))
         # After a relaunch (the game back on the battle) it reads again.
         game.state["screen"] = "battle"
-        asyncio.run(api["relaunched"]("mpw18"))
+        self.assertIsNone(api["relaunched"]("mpw18"))
+        self.assertEqual(len(game.moves), before, "relaunch invalidates proof without detached navigation")
+        asyncio.run(api["soul_weapon"]("mpw18"))
         self.assertGreater(len(game.moves), before)
         self.assertEqual(game.alerts, [])
 
@@ -867,13 +869,12 @@ class Sequence(unittest.TestCase):
         asyncio.run(part["api"]["soul_weapon"]("mpw18"))
         self.assertEqual(game.moves, [])
 
-    def test_after_a_relaunch_one_alert_on_failure(self):
+    def test_after_a_relaunch_no_detached_repair_or_notification(self):
         game = Game(owned={AMBITION})
         ports, api = build(game)
-        task = api["relaunched"]("mpw4")
-        asyncio.run(task)
-        self.assertEqual(len(game.alerts), 1)
-        self.assertIn("After the game's relaunch", game.alerts[0])
+        self.assertIsNone(api["relaunched"]("mpw4"))
+        self.assertEqual(game.moves, [])
+        self.assertEqual(game.alerts, [])
         self.assertIsNone(api["relaunched"]("mine"))
 
 
@@ -949,7 +950,9 @@ class Parking(unittest.TestCase):
         _, api = build(game)
         asyncio.run(api["soul_weapon"]("mpw18"))
         game.state.update(screen="battle", panel=None)  # the relaunch
-        asyncio.run(api["relaunched"]("mpw18"))
+        self.assertIsNone(api["relaunched"]("mpw18"))
+        self.assertEqual(game.state["screen"], "battle")
+        asyncio.run(api["soul_weapon"]("mpw18"))
         self.assertEqual(game.state["screen"], "soul")
         self.assertEqual(game.alerts, [])
 
@@ -1600,10 +1603,10 @@ class Engraving(unittest.TestCase):
         self.assertEqual(asyncio.run(api["soul_weapon"]("mpw18"))["result"], "failed")
         self.assertEqual(engraving_moves(game), [])
         self.assertNotIn("ready", " ".join(game.alerts))
-        # The watchdog's relaunch: one alert, in English.
-        asyncio.run(api["relaunched"]("mpw18"))
-        self.assertEqual(len(game.alerts), 1)
-        self.assertIn("engraving not set up: first supervised run pending", game.alerts[0])
+        # Relaunch only invalidates proof. Its next mode-checked watchdog
+        # transaction owns both the recovery attempt and its failure alert.
+        self.assertIsNone(api["relaunched"]("mpw18"))
+        self.assertEqual(game.alerts, [])
         self.assertEqual(engraving_moves(game), [])
 
     def test_engraving_off_the_setup_itself_makes_no_gesture(self):

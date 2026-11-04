@@ -73,14 +73,12 @@ Android crash window, the title, sign-in and save screens, a game menu, the batt
 screen (Power Saving Mode needs none).
 
 - A symptom ALERT_AFTER looks in a row (ALERT_AFTER_OTHER for another
-  screen) is one warning alert (an error one for adb), never repeated
-  until the game has been well RECOVERED_AFTER looks in a row, or
-  RECOVERY_FLOOR seconds when a repair was made since the problem began;
-  then one normal "recovered". A new alert of the same family (its repair,
-  or the symptom without one) within QUIET_AFTER_ALERT of the last one
-  notified is a warning record without phone alert, and no "recovered"
-  follows it; the backoff's escalations are always notified. A game menu inside its grace, or a look with no
-  capture, changes nothing.
+  screen) announces its family, then repeats every REMIND_EVERY seconds
+  while unresolved. Different families are independent. Short healthy
+  interruptions do not reset the interval; durable recovery clears it and
+  announces recovery once. Missing captures or uncertain focus become an
+  alert-only monitoring incident after REMIND_EVERY seconds. No reminder
+  authorises any gesture or shortens a repair's backoff.
 - A repair needs its symptom REPAIR_AFTER looks in a row (the same look
   as the alert), the repair learned (available) and, at the gateway's
   start, OBSERVE_FIRST looks seen first: a restored state never resumes a
@@ -207,6 +205,8 @@ REPAIRS = {
     "unexpected": None,
     # The relaunch, then the mine's own way back in (features/mine.py reenter).
     "mine_away": "mine_relaunch",
+    "monitoring_unavailable": None,
+    "progress_unverified": None,
 }
 REPAIR_NAMES = {"relaunch": t("relance du jeu"), "mine_relaunch": t("relance du jeu et retour dans la mine"),
                 "back_to_battle": t("retour au combat"),
@@ -225,9 +225,11 @@ ESCALATE = (480, 1800)
 KINDS = tuple(REPAIR_NAMES)
 # Error level: adb gone, the ANR, a stalled bar, and another screen (the
 # plugin does not know it: a bug report).
-ERRORS = ("adb_missing", "anr", "after_mode_screen", "progress_stalled", "unexpected", "wrong_loadout")
+ERRORS = ("adb_missing", "anr", "after_mode_screen", "progress_stalled", "unexpected", "wrong_loadout", "monitoring_unavailable", "progress_unverified")
 # Alert-only symptoms said again when they last this long (seconds).
 TIERED = ("progress_stalled",)
+# Repeated unresolved incidents are reported on wall time, never per frame.
+REMIND_EVERY = 120
 # Repairs that are never plan-only.
 ALWAYS_REAL = ("relaunch", "mine_relaunch", "back_to_battle", "park")
 # Looks off the parking screen before its alert (a park that did not take).
@@ -294,6 +296,19 @@ def park_wanted(mode, switch, state=None, hold=None):
     return mode in ("mpw18", "mpw4", "soul") and switch == "real" and state not in ("moving", "waiting") and hold is None
 
 
+def notification_failed(memory, family, wall):
+    """A rejected delivery retries after 30 seconds, without per-look spam.
+
+    Only undo this attempt's timestamp: another family or newer notice is
+    unaffected. This does not erase incident history or permit a game action.
+    """
+    if memory.get("incidents", {}).get(family) != wall:
+        return memory
+    retry_stamp = wall - REMIND_EVERY + 30
+    return {**memory, "incidents": {**memory["incidents"], family: retry_stamp},
+            "notified": {**memory["notified"], family: retry_stamp}}
+
+
 def kept_backoff(saved):
     """The backoff kept in state.json, checked: {kind: {failures, next
     (Unix time of the next attempt allowed), delay (the last one, seconds),
@@ -318,7 +333,7 @@ def fresh(kept=None):
             "alerts": 0, "backoff": kept_backoff(kept.get("backoff")), "good_since": None, "watch": {},
             "repaired": False, "notified": {}, "alert_notified": False,
             "verifying": None, "menu_since": None, "planned": None, "deferred": None,
-            "away": 0, "tiers": []}
+            "away": 0, "tiers": [], "incidents": {}, "uncertain_since": None}
 
 
 def persisted(memory):
@@ -327,8 +342,8 @@ def persisted(memory):
 
 
 def suspended(memory):
-    """A mode suspended the watchdog: it starts over, with its backoff."""
-    return {**fresh(persisted(memory)), "looks": memory["looks"]}
+    """Clear incidents on suspension, retaining gateway-lifetime counts/backoff."""
+    return {**fresh(persisted(memory)), "looks": memory["looks"], "alerts": memory["alerts"]}
 
 
 def level(symptom):
@@ -460,6 +475,8 @@ def judge(seen, profile, numeral_of, last_input, resumed, memory, now, after_mod
             return "wrong_battle_settings", SYMPTOMS["wrong_battle_settings"], {"preset": preset}, memory
         if seen.get("loadout"):
             return "wrong_loadout", SYMPTOMS["wrong_loadout"], {"what": seen["loadout"]}, memory
+        if seen.get("progress_unverified"):
+            return "progress_unverified", "Progress bar unreadable for at least 120 s; farming progress unverified", {}, memory
         if seen.get("stalled") is not None:
             return "progress_stalled", SYMPTOMS["progress_stalled"], {
                 "seconds": round(seen["stalled"])}, memory
@@ -597,13 +614,21 @@ def decide(memory, symptom, text, params, context, wall):
     warning or error; notify: also a phone alert), ("repair", kind),
     ("plan", kind).
 
-    The problem's alert is said once until the game has been well
-    RECOVERED_AFTER looks in a row (battle or Power Saving Mode); then
-    once "recovered". A good look in between (the battle screen between two
+    Each unresolved family alerts at most once per REMIND_EVERY seconds.
+    Confirmed recovery clears its incidents and says "recovered" once. A good look in between (the battle screen between two
     pop-ups) resets the bad looks in a row, nothing else."""
     actions = []
-    if symptom in ("unknown", "pending"):
-        return memory, actions
+    if symptom == "pending":
+        return {**memory, "uncertain_since": None}, actions
+    memory = dict(memory)
+    if symptom == "unknown":
+        since = memory.get("uncertain_since")
+        memory["uncertain_since"] = wall if since is None else since
+        if wall - memory["uncertain_since"] < REMIND_EVERY:
+            return memory, actions
+        symptom, text, params = "monitoring_unavailable", "Monitoring unavailable: no reliable game observation; farming unverified", {}
+    else:
+        memory["uncertain_since"] = None
     mode = context.get("mode", "mpw18")
     named = MODE_NAMES.get(mode, mode)
     memory = dict(memory)
@@ -621,7 +646,7 @@ def decide(memory, symptom, text, params, context, wall):
             if memory["alerted"] and memory["alert_notified"]:
                 actions.append(record("normal", "{mode}: monitoring is stable again", {"mode": named}, notify=True))
             memory.update(alerted=False, alert_notified=False, repaired=False, watch={}, planned=None,
-                          deferred=None, tiers=[])
+                          deferred=None, tiers=[], incidents={})
         return memory, actions
     memory["good"] = 0
     memory["good_since"] = None
@@ -641,24 +666,17 @@ def decide(memory, symptom, text, params, context, wall):
     memory["since_repair"] = memory["since_repair"] + 1 if same else 1
     memory["symptom"] = symptom
     alert_after = {"unexpected": ALERT_AFTER_OTHER, "mine_away": MINE_AWAY_LOOKS,
-                   "progress_stalled": 1, "unparked": PARK_ALERT_AFTER}.get(symptom, ALERT_AFTER)
-    if memory["streak"] >= alert_after and not memory["alerted"]:
+                   "progress_stalled": 1, "progress_unverified": 1, "unparked": PARK_ALERT_AFTER}.get(symptom, ALERT_AFTER)
+    family = repair or symptom
+    last_notice = memory.get("incidents", {}).get(family)
+    due = last_notice is None or wall - last_notice >= REMIND_EVERY
+    if memory["streak"] >= alert_after and due:
         memory["alerted"] = True
         memory["alerts"] += 1
-        family = repair or symptom
-        quiet = wall - memory["notified"].get(family, -QUIET_AFTER_ALERT) < QUIET_AFTER_ALERT
-        memory["alert_notified"] = not quiet
-        if not quiet:
-            memory["notified"] = {**memory["notified"], family: wall}
-        actions.append(record("error" if symptom in ERRORS else "warning", status(text, params, mode),
-                              notify=not quiet))
-    elif symptom in TIERED and memory["alerted"]:
-        # Still there: said again once it lasts each ESCALATE (8, 30 min).
-        tier = next((d for d in ESCALATE if params.get("seconds", 0) >= d and d not in memory.get("tiers", [])),
-                    None)
-        if tier is not None:
-            memory["tiers"] = [*memory.get("tiers", []), tier]
-            actions.append(record("error", status(text, params, mode), notify=True))
+        memory["alert_notified"] = True
+        memory["incidents"] = {**memory.get("incidents", {}), family: wall}
+        memory["notified"] = {**memory["notified"], family: wall}
+        actions.append(record("error" if symptom in ERRORS else "warning", status(text, params, mode), notify=True))
     if (repair is None or memory["since_repair"] < REPAIR_AFTER or memory["looks"] <= OBSERVE_FIRST
             or repair not in context.get("available", ())
             or memory["watch"].get(repair, 0) > wall
@@ -748,7 +766,7 @@ BAR_SETTLE = 60
 def bar_fresh():
     """Nothing counted: the bar's value at its last move, that move's time
     and the readable looks since without a move."""
-    return {"value": None, "since": None, "still": 0}
+    return {"value": None, "since": None, "still": 0, "unreadable_since": None}
 
 
 def bar_moved(before, value):
@@ -762,13 +780,21 @@ def bar_look(kept, value, now):
     else None. A look that is not the plain battle screen, a paused
     watchdog, the mine or free play: bar_fresh() instead (the count starts
     over)."""
-    if value is not None:
-        if kept["value"] is None or bar_moved(kept["value"], value):
-            kept = {"value": value, "since": now, "still": 0}
-        else:
-            kept = {**kept, "still": kept["still"] + 1}
+    if value is None:
+        since = kept.get("unreadable_since")
+        return {**kept, "unreadable_since": now if since is None else since}, None
+    if kept["value"] is None or bar_moved(kept["value"], value):
+        kept = {"value": value, "since": now, "still": 0, "unreadable_since": None}
+    else:
+        kept = {**kept, "still": kept["still"] + 1, "unreadable_since": None}
     stalled = now - kept["since"] if kept["still"] >= STALL_LOOKS else None
     return kept, stalled
+
+
+def bar_unverified(kept, now):
+    """Missing readings are uncertainty, never proof that progress stalled."""
+    since = kept.get("unreadable_since")
+    return since is not None and now - since >= REMIND_EVERY
 
 
 def counters(memory, wall):
@@ -776,6 +802,7 @@ def counters(memory, wall):
     {repair (its name, a status text), failures, next (Unix time of its next
     attempt allowed)}."""
     return {"looks": memory["looks"], "bad_in_a_row": memory["streak"], "alerts": memory["alerts"],
+            "active_incidents": len(memory.get("incidents", {})),
             "next_attempt": {kind: {"repair": REPAIR_NAMES[kind], "failures": state["failures"],
                                     "next": state["next"]} for kind, state in memory["backoff"].items()}}
 

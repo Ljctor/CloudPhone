@@ -40,6 +40,15 @@ def steps(screens_seen, every=rules.LOOK_EVERY):
 
 
 class SignInSteps(unittest.TestCase):
+    def test_calibrated_loading_waits_past_unknown_limit_without_input(self):
+        self.assertEqual(steps(["loading"] * 30), ["wait"] * 30)
+        memory = {**rules.fresh(), "seen_other": 1.0}
+        move, memory = rules.step("loading", memory, 90.0)
+        self.assertEqual((move, memory["seen_other"]), ("wait", None))
+
+    def test_unknown_popup_still_blocks(self):
+        self.assertEqual(steps(["other"] * 30)[-1], "blocked_other")
+
     def test_google_once_then_its_chooser_then_the_save(self):
         self.assertEqual(steps(["sign_in", "sign_in", "chooser_one", "other", "save"]),
                          ["sign_in", "wait", "choose_account", "wait", "confirm"])
@@ -202,6 +211,15 @@ for name, value in ports_module.text_ports().items():
 
 
 class SignInLaunch(unittest.TestCase):
+    def test_real_loading_state_can_last_over_a_minute_then_reach_battle(self):
+        taps, alerts, state = launched(["save"] + ["loading"] * 25 + ["battle"])
+        self.assertEqual(taps, [("save_notice", "confirm")])
+        self.assertEqual((alerts, state["state"]), ([], "done"))
+
+    def test_loading_wait_is_bounded_by_launch_deadline(self):
+        taps, alerts, state = launched(["loading"] * 100)
+        self.assertEqual((taps, alerts, state["state"]), ([], [], "blocked"))
+
     def test_google_then_the_one_account_then_confirm_then_battle(self):
         taps, alerts, state = launched(["sign_in", "chooser:1", "other", "save", "battle"])
         self.assertEqual(taps, [("sign_in", "google"), ("account_chooser", "account"), ("save_notice", "confirm")])

@@ -75,6 +75,7 @@ FARMING = {"stage_change": "stage_change", "select_preset": "preset"}
 CONTROLS_EVERY = 300
 # The farming modes (their own stage and preset).
 FARMED = ("mpw18", "mpw4", "soul")
+CRITICAL = ("not_running", "away", "crash", "anr", "progress_stalled", "progress_unverified", "adb_missing", "monitoring_unavailable")
 
 
 def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, loadout, farming=None, gold=None):
@@ -99,7 +100,115 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
               "mode": None, "ended_at": None, "resumed": False, "anr_waited": False, "controls": None,
               "intention": None, "redirect_episode": None, "failure_notices": {}, "gold": rules.gold_fresh(),
               "bar": rules.bar_fresh(), "relaunched_at": None,
-              "policy_block": copy.deepcopy(saved_block), "last_input": None}
+              "policy_block": copy.deepcopy(saved_block), "last_input": None,
+              "notice_wall": None, "notice_attempt": None, "notice_mode": None, "observed": None,
+              "critical_observation": None, "entry_mode": None, "entry_since": None}
+    notice_lock = asyncio.Lock()
+
+    def notice_context():
+        name = mode_now()
+        return {"mode": name, "symptom": status["symptom"],
+                "critical": copy.deepcopy(status["critical_observation"]),
+                "target": policy_context(name) if name in FARMED else None,
+                "block": copy.deepcopy(active_policy_block())}
+
+    async def send_notice(text, *, periodic=False):
+        """Serialize transport and acknowledge only successful delivery.
+        The passive reminder runs even while a repair awaits game work."""
+        async with notice_lock:
+            now, name = ports.clock.wall(), mode_now()
+            context = notice_context()
+            family = rules.REPAIRS.get(context["symptom"]) or context["symptom"]
+            block = active_policy_block() if periodic else None
+            block_context = copy.deepcopy(block) if block else None
+            if periodic:
+                if not reminder_wanted():
+                    return False
+                last = status["notice_wall"] if status["notice_mode"] == name else None
+                attempt = status["notice_attempt"] if status["notice_mode"] == name else None
+                if ((last is not None and now - last < rules.REMIND_EVERY)
+                        or attempt is not None and now - attempt < 30):
+                    return False
+            status["notice_mode"], status["notice_attempt"] = name, now
+            # Real ports return bool. Older embedding adapters return None
+            # after delivery; only explicit False reports transport failure.
+            delivered = await ports.notify(text) is not False
+            unchanged = notice_context() == context
+            if not unchanged:
+                # The delivered message belongs to an older observation.
+                # It cannot acknowledge or delay a newer fault or target.
+                status["notice_mode"], status["notice_attempt"] = None, None
+                return False
+            if delivered:
+                status["notice_wall"] = ports.clock.wall()
+                if family and periodic:
+                    memory["incidents"] = {**memory.get("incidents", {}), family: status["notice_wall"]}
+                if block and active_policy_block() is block and block == block_context:
+                    block["notified_at"] = status["notice_wall"]
+                    block.pop("notice_retry_at", None)
+                    ports.store.save()
+            return delivered
+
+    def entry_elapsed(state=None):
+        name = mode_now()
+        state = state if state is not None else modes["state"]()
+        if name not in FARMED or state.get("state") != "moving":
+            status["entry_mode"], status["entry_since"] = None, None
+            return None
+        if status["entry_mode"] != name or status["entry_since"] is None:
+            status["entry_mode"], status["entry_since"] = name, ports.clock.monotonic()
+        return ports.clock.monotonic() - status["entry_since"]
+
+    def reminder_wanted():
+        name = mode_now()
+        state = modes["state"]()
+        elapsed = entry_elapsed(state)
+        entry_overdue = elapsed is not None and elapsed >= rules.REMIND_EVERY
+        last = ports.last_input() if callable(getattr(ports, "last_input", None)) else status["last_input"]
+        return bool(name in rules.MODE_NAMES and name == status["mode"] and ports.enabled()
+                    and not state.get("hold")
+                    and not rules.paused(name, last.get("monotonic") if last else None,
+                                         ports.clock.monotonic(), False)
+                    and (state.get("state") != "moving" or status["critical_observation"] or entry_overdue)
+                    and (status["repairing"] or active_policy_block()
+                         or entry_overdue
+                         or state.get("state") == "moving" and status["critical_observation"]
+                         or memory["alerted"] and status["symptom"] not in (None, "unknown", "pending")))
+
+    async def reminders():
+        while True:
+            delay = rules.EVERY
+            if status["notice_mode"] == mode_now():
+                wall = ports.clock.wall()
+                due = max((status["notice_wall"] or wall) + rules.REMIND_EVERY,
+                          (status["notice_attempt"] or wall) + 30)
+                if due > wall:
+                    delay = min(delay, due - wall)
+            await ports.clock.sleep(delay)
+            try:
+                name = mode_now()
+                # Entry can itself wait for a long operation. Read-only
+                # process checks remain independent of its lease and gestures.
+                if (name in FARMED and name == status["mode"] and ports.enabled()
+                        and modes["state"]().get("state") == "moving"
+                        and not status["critical_observation"]):
+                    running = await ports.running()
+                    if running is not True:
+                        symptom = "not_running" if running is False else "adb_missing"
+                        status["critical_observation"] = ports.t(rules.SYMPTOMS[symptom])
+                if reminder_wanted():
+                    observation = ((active_policy_block() or {}).get("text_t") or status["critical_observation"]
+                                   or status["observed"] or status["text"])
+                    elapsed = entry_elapsed()
+                    if elapsed is not None and elapsed >= rules.REMIND_EVERY and not status["critical_observation"]:
+                        observation = ports.t("Configuration du mode non vérifiée après {seconds} s", seconds=int(elapsed))
+                    reason = ports.t("Dernière observation : {observation} ; reprise non vérifiée", observation=observation)
+                    await send_notice(ports.english(rules.blocked_notice(mode_now(), reason)), periodic=True)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                ports.exception("Watchdog reminder failed")
+
     parking = bool(farming) and "park" in farming
     available = AVAILABLE + (tuple(FARMING) + ("loadout",) if farming else ()) + (("park",) if parking else ())
     ports.store.register("watchdog", lambda: rules.persisted(memory))
@@ -253,7 +362,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             if trigger:
                 status["gold"], alert = rules.gold_alert(status["gold"])
                 if alert:
-                    await ports.notify(say("warning", rules.GOLD_ALERT, {}, notify=True))
+                    await send_notice(say("warning", rules.GOLD_ALERT, {}, notify=True))
         kept = status["controls"]
         if kept is None or now - kept[1] >= CONTROLS_EVERY:
             reading = await farming["read_controls"]()
@@ -273,7 +382,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         for _, level, text, values, notify in actions:
             said = say(level, text, values, notify)
             if notify:
-                await ports.notify(said)
+                await send_notice(said)
 
     async def farm_repair(kind):
         """A stage change repair: farm() for the stage and the preset, park()
@@ -321,7 +430,10 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             if previous != block:
                 say("warning", "Action stopped: {repair}; {why}",
                     {"repair": rules.REPAIR_NAMES[kind], "why": answer["text_t"]})
-                await ports.notify(ports.english(rules.blocked_notice(name, answer["text_t"])))
+                if await send_notice(ports.english(rules.blocked_notice(name, answer["text_t"]))) is not False:
+                    block["notified_at"] = ports.clock.wall()
+                else:
+                    block["notice_retry_at"] = ports.clock.wall() + 30
             ports.store.save()
             return
         if answer["result"] == "failed":
@@ -333,7 +445,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             say("warning", "Action stopped: {repair}; {why}",
                 {"repair": rules.REPAIR_NAMES[kind], "why": answer["text_t"]})
             if notify:
-                await ports.notify(ports.english(rules.blocked_notice(name, answer["text_t"])))
+                await send_notice(ports.english(rules.blocked_notice(name, answer["text_t"])))
                 status["failure_notices"][kind] = failure_key
             await notify_all([(*action[:4], False) for action in actions])
         elif answer["result"] == "done" and answer.get("verified_setup"):
@@ -387,7 +499,8 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         ended = launches["state"]()
         status["relaunched_at"] = ports.clock.monotonic()
         if ended["state"] == "done" and farming and "relaunched" in farming:
-            # The game is back: its soul weapon read again (features/soul_weapon.py).
+            # Opening the game is not proof of farming readiness. Invalidate
+            # its proof now; the next mode-checked full transaction verifies it.
             farming["relaunched"](mode_now())
         if ended["state"] == "deferred":
             memory = rules.not_run(memory, kind)
@@ -419,6 +532,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             status["controls"] = None
             status["last_input"] = copy.deepcopy(last)
         if name != status["mode"]:
+            status["critical_observation"] = None
             status["redirect_episode"] = None
             status["failure_notices"] = {}
             if status["mode"] is not None:
@@ -431,6 +545,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                               ended_at=now if status["mode"] == "free" else status["ended_at"])
             status["mode"] = name
         mode_state = modes["state"]()
+        entry_elapsed(mode_state)
         moving = mode_state.get("state") == "moving"
         why = rules.paused(name, last["monotonic"] if last else None, now, moving)
         if not why and (mode_state.get("intention") or {}).get("kind") == "resource_refresh":
@@ -466,6 +581,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         settled = status["relaunched_at"] is None or now - status["relaunched_at"] >= rules.BAR_SETTLE
         if name in FARMED and seen["screen"] in ("battle", "parked") and settled:
             status["bar"], seen["stalled"] = rules.bar_look(status["bar"], seen["bar"], now)
+            seen["progress_unverified"] = rules.bar_unverified(status["bar"], now)
         else:
             status["bar"] = rules.bar_fresh()
         after_mode = status["ended_at"] is not None and now - status["ended_at"] < rules.AFTER_MODE
@@ -474,6 +590,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             after_mode)
         status["resumed"] = False
         status["symptom"] = symptom
+        status["critical_observation"] = ports.t(text, **params) if symptom in CRITICAL else None
         held = ports.lease.state()
         context = {"input_wall": last["wall"] if last else None,
                    "lease": held["holder"] if held and held["holder"] != "watchdog" else None,
@@ -482,9 +599,10 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                    "mode": name}
         if farming:
             context["act"]["loadout"] = (farming.get("soul_weapon_switch", lambda: "off")() == "real"
-                                             and farming.get("engraving_switch", lambda: "off")() == "real"
-                                             and all(farming["switches"]().get(switch) == "real"
-                                                     for switch in FARMING.values()))
+                                             and farming.get("engraving_switch", lambda: "off")() == "real")
+            # The full transaction checks each stage/preset switch itself.
+            # Those unrelated plan switches must not suppress its first step:
+            # recovering an interrupted engraving or refreshing its proof.
         block = status["policy_block"]
         if block and (name not in FARMED or block["context"] != policy_context(name)):
             release_policy_block()
@@ -493,11 +611,22 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             # Do not generate another repair, countdown, redirect notice or
             # failure counter for the exact same immutable policy obstacle.
             show(block["text_t"])
+            if (wall >= block.get("notice_retry_at", 0)
+                    and wall - block.get("notified_at", float("-inf")) >= rules.REMIND_EVERY):
+                if await send_notice(ports.english(rules.blocked_notice(name, block["text_t"]))) is not False:
+                    block["notified_at"] = ports.clock.wall()
+                    block.pop("notice_retry_at", None)
+                else:
+                    block["notice_retry_at"] = ports.clock.wall() + 30
             ports.store.save()
             return False
         if symptom in (None, "unparked") and name in FARMED:
             modes["confirm"](name)
         memory, actions = rules.decide(memory, symptom, text, params, context, wall)
+        if symptom == "unknown" and memory.get("symptom") == "monitoring_unavailable":
+            symptom = status["symptom"] = "monitoring_unavailable"
+            text, params = "Monitoring unavailable: no reliable game observation; farming unverified", {}
+            status["critical_observation"] = ports.t(text)
         if symptom is None and memory["good"] >= rules.RECOVERED_AFTER:
             # One transient healthy frame or another input is not a new
             # redirect episode; a confirmed healthy return is.
@@ -509,21 +638,30 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             show(ports.t("{what} ; prochain essai dans {minutes} min", what=ports.t(text, **params), minutes=minutes))
         else:
             show(ports.t(text, **params))
-        observed = ports.t(text, **params)
+        observed = status["observed"] = ports.t(text, **params)
         redirect = next((action[1] for action in actions if action[0] == "repair"), None)
         intention = rules.redirect_intention(redirect, profile()) if redirect else None
         redirect_key = json.dumps(intention, sort_keys=True) if intention else None
         new_redirect = bool(redirect and status["redirect_episode"] != redirect_key)
         redirect_notified = False
 
+        async def deliver(text):
+            nonlocal memory
+            context = notice_context()
+            delivered = await send_notice(text) is not False
+            if not delivered and symptom and notice_context() == context:
+                memory = rules.notification_failed(memory, rules.REPAIRS.get(symptom) or symptom, wall)
+            return delivered
+
         async def announce_redirect():
             nonlocal redirect_notified
             if new_redirect and not redirect_notified:
                 notice = rules.redirect_notice(intention, observed)
                 say("normal", rules.redirect_details(intention, observed))
-                await ports.notify(ports.english(notice))
-                status["redirect_episode"] = redirect_key
-                memory["notified"] = {**memory["notified"], redirect: wall}
+                if await deliver(ports.english(notice)):
+                    status["redirect_episode"] = redirect_key
+                    memory["notified"] = {**memory["notified"], redirect: wall}
+                    memory["incidents"] = {**memory.get("incidents", {}), redirect: wall}
                 redirect_notified = True
 
         repaired = False
@@ -532,22 +670,29 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                 _, level, text, values, notify = action
                 if notify and new_redirect and not redirect_notified:
                     say("normal", rules.redirect_details(intention, observed))
-                    await ports.notify(ports.english(rules.redirect_notice(intention, observed)))
+                    delivered = await deliver(ports.english(rules.redirect_notice(intention, observed)))
                     notify = False
                     redirect_notified = True
-                    status["redirect_episode"] = redirect_key
-                elif notify and redirect and not new_redirect:
-                    notify = False
+                    if delivered:
+                        status["redirect_episode"] = redirect_key
                 said = say(level, text, values, notify)
                 if notify:
-                    await ports.notify(said)
+                    await deliver(said)
             elif action[0] == "repair" and action[1] in ("relaunch", "mine_relaunch"):
                 await announce_redirect()
+                if (mode_now() != name or status["symptom"] != symptom
+                        or modes["state"]().get("state") == "moving"):
+                    memory = rules.not_run(memory, action[1])
+                    return False
                 ports.store.save()
                 await relaunch(action[1])
                 repaired = True
             elif action[0] == "repair" and (action[1] in FARMING or action[1] in ("park", "loadout")):
                 await announce_redirect()
+                if (mode_now() != name or status["symptom"] != symptom
+                        or modes["state"]().get("state") == "moving"):
+                    memory = rules.not_run(memory, action[1])
+                    return False
                 ports.store.save()
                 await farm_repair(action[1])
                 ports.store.save()
@@ -556,7 +701,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                 say("normal", "Plan only (switch on plan): {repair}", {"repair": rules.REPAIR_NAMES[action[1]]})
         return repaired
 
-    async def watch():
+    async def watch_steps():
         # Poll only the input timestamp between regular looks. A fresh input
         # is reflected at once, then the first look after the 5 s pause is
         # scheduled at its expiry. Full game checks keep their 15 s cadence.
@@ -594,6 +739,14 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             except Exception as e:
                 ports.exception("Watchdog failed")
                 show(ports.t("Erreur : {error}", error=f"{e!r}"[:200]))
+
+    async def watch():
+        reminder = asyncio.create_task(reminders(), name="slayer-watchdog-reminders")
+        try:
+            await watch_steps()
+        finally:
+            reminder.cancel()
+            await asyncio.gather(reminder, return_exceptions=True)
 
     async def start(app):
         ports.spawn(watch())

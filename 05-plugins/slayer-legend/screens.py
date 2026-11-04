@@ -43,6 +43,12 @@ _spec.loader.exec_module(font)
 # Sparse white text here does not establish the Title screen.
 START_TEXT = (0.30, 0.80, 0.70, 0.87)
 START_TAP = (0.50, 0.836)
+# Static artwork identifies the title independently of its blinking prompt.
+# Shared sign-in artwork, dimmed save notices and loading/login/version
+# transitions must not grant the title's Start move.
+TITLE_LOGO = (72 / 720, 303 / 1560, 638 / 720, 489 / 1560)
+TITLE_PROGRESS = (0, 1002 / 1040, 1, 1018 / 1040)
+TITLE_STATUS = (0, .935, .7, .96)
 CONFIRM_BUTTON = (0.26, 0.735, 0.37, 0.755)  # orange
 EXIT_BUTTON = (0.62, 0.735, 0.73, 0.755)     # grey
 CONFIRM_TAP = (0.314, 0.745)
@@ -418,6 +424,33 @@ _soul_weapon = None
 _shares = ContextVar("screen_capture_shares", default=None)
 _seen_lock = RLock()
 _quest_patches = None
+_title_logo_patch = None
+
+
+def title_logo(shot):
+    """Static SLAYER LEGEND artwork, independent of the blinking prompt.
+
+    Calibrated from a real sign-in capture: that screen shares the logo.
+    This landmark alone neither establishes the post-login Title screen
+    nor authorizes its Start gesture; title_ready excludes shared screens
+    and transitions independently of the prompt's brightness.
+    """
+    global _title_logo_patch
+    if _title_logo_patch is None:
+        _title_logo_patch = Patch("title_logo_720", limit=.45)
+    return _title_logo_patch.margin(shot) >= MARGIN
+
+
+def title_ready(shot):
+    """Ready title artwork: no account buttons, dimming or load status.
+
+    Real launch captures show the same logo throughout loading, sign-in,
+    login and version checks. None of those states permits Start. The
+    prompt area is deliberately never read here.
+    """
+    return (share(shot, TITLE_LOGO, white) > .1 and not sign_in(shot)
+            and share(shot, TITLE_PROGRESS, lambda r, g, b: orange(r, g, b) or grey(r, g, b)) < .1
+            and share(shot, TITLE_STATUS, light) < .01)
 
 
 def battle_panel(shot):

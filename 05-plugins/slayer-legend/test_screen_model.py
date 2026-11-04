@@ -415,7 +415,7 @@ class Unknown(unittest.TestCase):
         for width, height in ((480, 1040), (360, 780), (720, 1560)):
             shot = scaled(screen("not_title_beast_mount"), width, height)
             self.assertNotEqual(screens.look(shot)["screen"], "title")
-            self.assertIn("title", screens.pending())
+            self.assertNotIn("title", screens.pending())
 
     def test_no_registered_screen_on_stripes(self):
         # Generic stripes cannot establish a registered screen.

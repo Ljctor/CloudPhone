@@ -1,5 +1,13 @@
 {
   "about": "Every game screen screens.look() recognises, by navigation.json id. A screen is the base (one at a time); an overlay shows over the bases it lists. Each anchor is a patch (a fixture's crop, or its box [x, y, w, h] in the crop's pixels, compared as a downscaled grey signature after its brightness and contrast are evened out: distance under limit), a share (the share of an area of screens.py passing a colour test, above or below a level) or a reader (a function returning true). An anchor's margin runs from 1 (sure) through 0 (its limit) to -1; a screen's margin is its anchors' lowest. status: registered (its fixtures are real crops and test_screen_model proves them) or measured (recognised from areas measured on a real capture that is not in fixtures yet: matched only when no registered screen is). Every other navigation.json screen is pending capture: never matched, and named in docs/TODO.md's calibration list. fixtures: the crops that, pasted back on an empty screen of background, make the screen; an overlay's include its base's. tree: every screen of the game known so far, recognised or not, with its parent, the navigation.json screen the game is on there (screen), the move that reaches it from the parent (via, screen/move; point when the move is an area), the move back to the parent (back), what look() says there (look: panel, screen, or a registered id), whether the capture tour visits it (visit, else why) and its scroll areas (scroll: rect, direction, content, the move that scrolls it when measured, how start and end are told). A tree screen with no anchors is pending capture.",
+  "landmarks": {
+    "title_logo": {
+      "status": "registered", "reader": "title_logo",
+      "fixtures": ["title_logo_720", "title_logo_480"],
+      "negative_fixtures": ["not_title_logo_beast_mount"],
+      "meaning": "Static SLAYER LEGEND artwork shared by Title, sign-in and launch transitions. Identification landmark only; Start additionally requires the ready-title screen."
+    }
+  },
   "outside": {
     "account_chooser": "Android's window, told by dumpsys",
     "crash_dialog": "Android's window, told by dumpsys",
@@ -7,6 +15,23 @@
     "unknown": "the name of any screen not recognised"
   },
   "screens": {
+    "loading": {
+      "kind": "screen", "status": "registered", "legacy": "loading",
+      "anchors": [
+        {"patch": "loading_center_text_480", "limit": 0.95},
+        {"patch": "loading_dragon_gate_480", "limit": 0.45},
+        {"share": "SAVER_TOP", "test": "black", "above": 0.95, "step": 8}
+      ],
+      "fixtures": ["loading_center_text_480", "loading_dragon_gate_480"], "background": [0, 0, 0]
+    },
+    "title": {
+      "kind": "screen", "status": "registered", "legacy": "title",
+      "anchors": [
+        {"patch": "title_logo_480", "limit": 0.45},
+        {"reader": "title_ready"}
+      ],
+      "fixtures": ["title_logo_480", "title_logo_720", "title_prompt_visible_480", "title_prompt_hidden_480"], "background": [0, 0, 0]
+    },
     "sign_in": {
       "kind": "screen", "status": "registered", "legacy": "sign_in",
       "anchors": [
