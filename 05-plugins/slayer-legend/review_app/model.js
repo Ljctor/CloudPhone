@@ -96,3 +96,13 @@ export function reviewGesture(edges, gesture, regions = []) {
   matches = matches.filter((edge) => !destinations.has(edge.to) && destinations.add(edge.to));
   return { kind: matches.length ? 'navigation' : 'unknown', matches };
 }
+
+// Resolve service URLs from the module mount, never from the domain root.
+// The same frontend works at / and behind the HTTPS /navigation-review/ proxy.
+export function servicePath(path, moduleUrl) {
+  const base = new URL('./', moduleUrl);
+  const target = new URL(path.replace(/^\//, ''), base);
+  if (target.origin !== base.origin || !target.pathname.startsWith(base.pathname))
+    throw Error('Service path escapes its configured mount');
+  return target.pathname + target.search;
+}

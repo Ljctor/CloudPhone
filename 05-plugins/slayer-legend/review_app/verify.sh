@@ -21,6 +21,7 @@ def request(path, expected=200, **kwargs):
 
 html = request('/')
 assert b'<!doctype html' in html.lower()
+assert b'href="./style.css"' in html and b'src="./app.js"' in html
 assert b'id="toolbar"' in html and b'id="options-panel"' in html
 assert b'id="search"' not in html and b'id="capture-select"' not in html
 assert b'id="screen-list"' not in html

@@ -44,3 +44,12 @@ for (const kind of ['progression_value', 'resource_value', 'screen_identifier'])
   assert.equal(reviewGesture([roleEdge], { start: tap.start, duration: 80 }, [{ kind, rect: [.4,.4,.6,.6] }]).matches.length, 0);
 }
 console.log('Value and identifier annotations never become navigation edges: OK');
+
+const {servicePath} = await import('./model.js');
+for (const prefix of ['/', '/navigation-review/']) {
+  const moduleUrl = `https://review.example${prefix}app.js`;
+  for (const path of ['/api/graph', '/api/image/example:battle', '/api/recording-config', '/api/oral-feedback', '/api/zone-feedback'])
+    assert.equal(servicePath(path, moduleUrl), prefix + path.slice(1));
+}
+assert.throws(() => servicePath('/api/../../outside', 'https://review.example/navigation-review/app.js'));
+console.log('Review service API, image and recording URLs preserve the HTTPS proxy mount: OK');

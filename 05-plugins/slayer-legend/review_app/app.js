@@ -1,8 +1,9 @@
-import { COLOURS, reviewGesture, gestureLabel, screenLabel, inside } from './model.js';
-import oralFeedback, { freezeOralContext, oralTransport } from '../page_oral_feedback.js';
-import { zoneStyle } from '../page_zone_style.js';
+import { COLOURS, reviewGesture, gestureLabel, screenLabel, inside, servicePath } from './model.js';
+import oralFeedback, { freezeOralContext, oralTransport } from './page_oral_feedback.js';
+import { zoneStyle } from './page_zone_style.js';
 const $ = (id) => document.getElementById(id);
 const NS = 'http://www.w3.org/2000/svg';
+const serviceUrl = (path) => servicePath(path, import.meta.url);
 const state = { nodes: new Map(), outgoing: new Map(), current: null, history: [], position: -1,
   overlay: true, landmarks: true, gesture: null, loading: false, revision: null, visit: 0 };
 const svg = (tag, attributes = {}, text) => {
@@ -13,7 +14,7 @@ const svg = (tag, attributes = {}, text) => {
 };
 const current = () => state.nodes.get(state.current);
 const outgoing = () => state.outgoing.get(state.current) ?? [];
-const safeImage = (url) => typeof url === 'string' && url.startsWith('/api/image/') && !url.startsWith('//') ? url : null;
+const safeImage = (url) => typeof url === 'string' && url.startsWith('/api/image/') && !url.startsWith('//') ? serviceUrl(url) : null;
 let noticeTimer;
 function notice(text, error = false) {
   clearTimeout(noticeTimer); const box = $('notice');
@@ -50,7 +51,7 @@ async function visit(id, { remember = true } = {}) {
 async function load() {
   if (state.loading) return; state.loading = true;
   try {
-    const response = await fetch('/api/graph', { cache: 'no-store' });
+    const response = await fetch(serviceUrl('/api/graph'), { cache: 'no-store' });
     if (!response.ok) throw Error('Captures indisponibles');
     const data = await response.json();
     state.nodes = new Map((data.nodes ?? []).map((node) => [node.id, node])); state.outgoing.clear();
@@ -108,10 +109,10 @@ function renderOverlay() {
   }
 }
 
-const secureReviewUrl = fetch(new URL('api/recording-config', import.meta.url), { cache: 'no-store' })
+const secureReviewUrl = fetch(serviceUrl('/api/recording-config'), { cache: 'no-store' })
   .then((response) => response.ok ? response.json() : null)
   .then((config) => config?.secure_review_url ?? null).catch(() => null);
-const oral = oralFeedback({ secureReviewUrl, transport: oralTransport('/api/oral-feedback'), capture: () => {
+const oral = oralFeedback({ secureReviewUrl, transport: oralTransport(serviceUrl('/api/oral-feedback')), capture: () => {
   const node = current(); if (!node) throw Error('Aucune capture');
   return freezeOralContext({ image: $('screen-image'), layer: $('phone'), svgElement: $('overlay'),
     source: 'review', nodeId: node.id, screen: node.screen, displayName: screenLabel(node),
@@ -121,7 +122,7 @@ $('feedback-panel').append(oral.element);
 async function proposeZone(operation, zone, nodeId) {
   const node = state.nodes.get(nodeId); if (!node) return;
   try {
-    const response = await fetch('/api/zone-feedback', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    const response = await fetch(serviceUrl('/api/zone-feedback'), { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ nodeId, ...(operation === 'remove' ? { zoneId: zone.id } : {}), screen: node.screen, operation, kind: zone.kind, rect: zone.rect, label: zone.label ?? zone.kind }) });
     if (!response.ok) throw Error('Proposition non enregistrée');
     const saved = await response.json();
@@ -207,8 +208,8 @@ $('toolbar-grip').addEventListener('pointerup',()=>{barDrag=null;});
 $('toolbar-grip').addEventListener('pointercancel',()=>{barDrag=null;});
 $('feedback-form').addEventListener('submit',async(event)=>{event.preventDefault();const text=$('feedback-text').value.trim();if(!text||!current())return;
   const body={nodeId:state.current,text};if($('correct-screen').value.trim())body.correctScreen=$('correct-screen').value.trim();
-  try{const response=await fetch('/api/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!response.ok)throw Error('Retour non enregistré');$('feedback-result').textContent='Retour enregistré';$('feedback-text').value='';}
+  try{const response=await fetch(serviceUrl('/api/feedback'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!response.ok)throw Error('Retour non enregistré');$('feedback-result').textContent='Retour enregistré';$('feedback-text').value='';}
   catch(error){$('feedback-result').textContent=error.message;}});
 window.addEventListener('hashchange',()=>{const id=new URLSearchParams(location.hash.slice(1)).get('node');if(id&&id!==state.current)visit(id);});
 load();
-setInterval(async()=>{if(document.hidden||state.loading||state.gesture)return;try{const response=await fetch('/api/revision',{cache:'no-store'});if(!response.ok)return;const value=await response.json();if(value.revision==null)return;const changed=state.revision!==null&&state.revision!==value.revision;state.revision=value.revision;if(changed)await load();}catch{/* Keep the recorded frame when offline. */}},3000);
+setInterval(async()=>{if(document.hidden||state.loading||state.gesture)return;try{const response=await fetch(serviceUrl('/api/revision'),{cache:'no-store'});if(!response.ok)return;const value=await response.json();if(value.revision==null)return;const changed=state.revision!==null&&state.revision!==value.revision;state.revision=value.revision;if(changed)await load();}catch{/* Keep the recorded frame when offline. */}},3000);

@@ -6,7 +6,8 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from aiohttp.test_utils import AioHTTPTestCase
+from aiohttp import web
+from aiohttp.test_utils import AioHTTPTestCase, TestClient, TestServer
 
 SPEC = importlib.util.spec_from_file_location("review_server", Path(__file__).with_name("review_server.py"))
 server = importlib.util.module_from_spec(SPEC)
@@ -55,6 +56,24 @@ class ReviewAPI(AioHTTPTestCase):
         self.assertEqual((await self.client.get("/api/recording-config", headers={"Origin": "https://untrusted.example"})).status, 403)
         self.evidence.frontend_origins = ("http://private.example:8100",)
         self.assertIsNone((await (await self.client.get("/api/recording-config")).json())["secure_review_url"])
+
+    async def test_frontend_assets_and_api_are_available_under_https_proxy_prefix(self):
+        source = Path(__file__).parent
+        for filename in ("index.html", "app.js", "model.js", "style.css"):
+            (self.static / filename).write_bytes((source / filename).read_bytes())
+        parent = web.Application()
+        parent.add_subapp("/navigation-review", server.make_app(self.evidence))
+        async with TestClient(TestServer(parent)) as client:
+            response = await client.get("/navigation-review/")
+            html = await response.text()
+            self.assertIn('href="./style.css"', html)
+            self.assertIn('src="./app.js"', html)
+            for asset in ("app.js", "style.css", "model.js", "page_oral_feedback.js", "page_zone_style.js"):
+                self.assertEqual((await client.get("/navigation-review/" + asset)).status, 200, asset)
+            graph = await (await client.get("/navigation-review/api/graph")).json()
+            battle = next(node for node in graph["nodes"] if node["id"] == "example:battle")
+            self.assertEqual((await client.get("/navigation-review" + battle["image"])).status, 200)
+            self.assertEqual((await client.get("/navigation-review/api/recording-config")).status, 200)
 
     async def test_graph_preserves_actual_edges_and_distinguishes_missing_full_images(self):
         response = await self.client.get("/api/graph")

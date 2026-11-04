@@ -94,6 +94,7 @@ python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_trace
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_evidence_review.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_zone_feedback.py -q
 # Passive phone simulation: full navigation hotspots, action/forbidden priority, inert slides/drags.
+# Review URLs keep their service mount both at / and /navigation-review/.
 node "$(dirname "$0")/../slayer-legend/review_app/test_model.mjs"
 node "$(dirname "$0")/../slayer-legend/test_page_navigation_debug.mjs"
 # Direct microphone recording keeps its start frame through replay/cancel/retry.
