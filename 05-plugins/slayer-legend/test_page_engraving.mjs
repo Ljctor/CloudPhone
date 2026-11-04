@@ -48,6 +48,8 @@ assert.equal(posts.length, 0, 'opening the dialog does not write or apply a stor
 assert.equal(ui.stage('mpw18'), 940);
 assert.equal(byLabel('Soul Weapon').value(), '32');
 assert.match(status(), /Cible acceptée/);
+assert.equal(byLabel('Cible').visible(), false);
+assert.equal(byLabel('Placement automatique').visible(), false);
 // Changes made in one event turn produce one complete target, never an
 // intermediate weapon paired with its previous variant.
 edit('stage18', '941'); edit('mpw18Preset', 'IV'); edit('mpw18Weapon', '36');
@@ -56,12 +58,15 @@ assert.equal(byLabel('Gravure').value(), '');
 assert.match(status(), /Choisir une gravure valide/);
 assert.equal(posts.length, 0, 'incomplete choices cannot overwrite the accepted target');
 assert.match(summary(), /940.*III.*Ambition/);
+assert.equal(byLabel('Cible').visible(), true, 'incomplete draft keeps the accepted target visible');
 edit('mpw18Variant', 'Balanced'); await settle();
 assert.equal(posts.length, 1, 'a complete choice saves without an Apply click');
 assert.match(status(), /Enregistrement/);
+assert.equal(byLabel('Cible').visible(), true, 'saving keeps accepted target visible');
 assert.deepEqual(posts[0].body, { mode: 'mpw18', stage: 941, preset: 'IV', soul_weapon: { id: 36, variant: 'Balanced' } });
 posts[0].resolve({ ok: false, status: 400, body: { error_t: { template: 'Cible invalide' } } }); await settle();
 assert.match(status(), /Application non confirmée.*Cible invalide/);
+assert.equal(byLabel('Cible').visible(), true, 'rejection keeps accepted target visible');
 assert.match(summary(), /940.*Ambition/);
 assert.equal(posts.length, 1, 'a rejection cannot cause an automatic write loop');
 assert.equal(byLabel('État').button().label, 'Réessayer l’enregistrement');
@@ -70,6 +75,7 @@ await confirm(1, { weapon: 'Vision' });
 assert.match(summary(), /941.*IV.*Vision/);
 assert.equal(ui.stage('mpw18'), 941);
 assert.equal(applied, 1);
+assert.equal(byLabel('Cible').visible(), false, 'confirmed matching choices hide summary');
 // Edits arriving during a write survive its response and are saved in
 // order using the newly accepted revision; intermediate edits coalesce.
 edit('mpw18Preset', 'V'); await settle();
@@ -111,6 +117,7 @@ holdReads = true;
 edit('mpw18Preset', 'II'); await settle();
 await expire(); await expire();
 assert.match(status(), /Délai dépassé.*non confirmé/);
+assert.equal(byLabel('Cible').visible(), true, 'ambiguous write keeps accepted target visible');
 assert.equal(posts.length, 8);
 accepted.mpw18 = { ...accepted.mpw18, preset: 'II', revision: 'revision-8' };
 posts[7].resolve({ ok: true, body: { loadouts: structuredClone(accepted) } }); await settle();
@@ -130,6 +137,7 @@ heldReads[2].resolve({ loadouts: structuredClone(accepted) }); await settle();
 assert.equal(byLabel('Préréglage de combat').value(), 'IV');
 assert.match(summary(), /V/);
 assert.match(status(), /Configuration modifiée ailleurs/);
+assert.equal(byLabel('Cible').visible(), true, 'revision conflict keeps accepted target visible');
 assert.equal(posts.length, 9);
 const reloadTarget = byLabel('État').button();
 assert.equal(reloadTarget.label, 'Recharger et réessayer');
@@ -188,6 +196,13 @@ await farmingPoll();
 assert.match(proof(), /autre arme ou gravure.*à vérifier/);
 farmingSnapshot.soul_weapon.recovery.required = true;
 await farmingPoll();
+assert.match(proof(), /Réparation d’une autre configuration en attente.*cette cible reste à vérifier/);
+farmingSnapshot.soul_weapon.recovery.weapon_id = accepted.mpw18.soul_weapon.id;
+farmingSnapshot.soul_weapon.recovery.variant = 'different-variant';
+await farmingPoll();
+assert.match(proof(), /Réparation d’une autre configuration en attente.*cette cible reste à vérifier/);
+farmingSnapshot.soul_weapon.recovery.variant = accepted.mpw18.soul_weapon.variant;
+await farmingPoll();
 assert.match(proof(), /Gravure à reprendre.*configuration demandée non vérifiée/);
 farmingSnapshot.soul_weapon.engraving = 'off';
 farmingSnapshot.soul_weapon.recovery = {};
@@ -228,6 +243,8 @@ assert.equal(proofRow.button(), null);
 executionSnapshot.setup_result.result = 'done';
 executionSnapshot.setup_result.at = Date.now() / 1000;
 assert.match(proof(), /Soul Weapon et gravure vérifiées.*huit cartes verrouillées/);
+assert.equal(evidenceOptions.find((row) => row.label === 'Placement automatique').visible(), false,
+  'a verified receipt is not contradicted by a repeated static support row');
 accepted.mpw18.automation.engraving_required = false;
 await farmingPoll();
 // Reload current accepted applicability, preserving the draft.

@@ -33,11 +33,21 @@ for (const variant of variants) for (const history of [null, { recovery: { weapo
   const row = (name) => options.find((o) => o.label === name);
   await new Promise(setImmediate); row('Gravure').choices(); await new Promise(setImmediate);
   const requirements = row('Pièces nécessaires').value();
-  assert.match(requirements, /Disponibilité à vérifier en jeu/);
+  assert.doesNotMatch(requirements, /Disponibilité|vérifi/);
+  assert.equal(requirements, Object.entries(variant.needed).sort(([a], [b]) => a.localeCompare(b))
+    .map(([shape, count]) => `${count} × ${shape}`).join(' · '));
   for (const [shape, count] of Object.entries(variant.needed)) assert.ok(requirements.includes(`${count} × ${shape}`));
   const capability = row('Placement automatique').value();
-  if (variant.automation.supported) assert.match(capability, /inventaire et équipement non vérifiés/);
-  else assert.match(capability, /placement non calibré pour [JO]/);
+  assert.equal(row('Placement automatique').visible(), !variant.automation.supported);
+  if (!variant.automation.supported) assert.match(capability, /placement non calibré pour [JO]/);
+  assert.equal(row('Cible').visible(), false, 'matching accepted choices need no repeated summary');
+  if (variant.name === 'Gold-maxed') {
+    const known = variant.automation;
+    delete variant.automation;
+    assert.equal(row('Placement automatique').visible(), true, 'unknown support remains visible');
+    assert.equal(row('Placement automatique').value(), 'Compatibilité non vérifiée');
+    variant.automation = known;
+  }
   const equivalent = options.filter((o) => o.label === 'Attention').find((o) => o.visible());
   assert.equal(Boolean(equivalent), variant.name === 'Gold-balanced');
   if (equivalent) assert.equal(equivalent.value(), 'Même disposition que Gold-maxed');

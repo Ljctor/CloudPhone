@@ -533,6 +533,12 @@ layers on item visuals, never baked into their base sprites or menu symbols.
 - [ ] Confirm an expected overlay failure is visible in the web app and ntfy.
 - [ ] Distinguish local draft, server-accepted target and observed result;
   handle rejected writes, deadlines and concurrent viewers without false success.
+  The mobile configuration preview now hides the duplicate accepted-target
+  summary after a confirmed save, keeps it during edits or save uncertainty,
+  and shows automatic-placement capability only when unknown or unsupported.
+  Required pieces remain visible as counts. Pending recovery messages identify
+  whether the weapon and variant match this tab. Published acceptance remains
+  pending; browser preview uses read-only production data with the local module.
 
 ### Exhaustive screen and resource coverage
 

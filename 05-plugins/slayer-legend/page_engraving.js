@@ -39,6 +39,7 @@ const ENGLISH = {
   "Gravure automatique désactivée · premier passage soumis à supervision": "Automatic engraving disabled · first execution requires supervision",
   "Gravure et verrouillage des huit cartes vérifiés le {time} · contrôle actuel à refaire": "Grid and locks verified at {time} \u00b7 historical evidence, current equipment unconfirmed",
   "Gravure à reprendre : configuration demandée non vérifiée": "Engraving recovery required \u00b7 requested setup unverified",
+  "Réparation d’une autre configuration en attente · cette cible reste à vérifier": "Recovery pending for another configuration · this target remains unverified",
   "Changement automatique de Soul Weapon désactivé": "Automatic Soul Weapon changes disabled",
   "Tentative enregistrée le {time} · arme et gravure à vérifier": "Attempt recorded at {time} \u00b7 target unverified",
   "Huit cartes revérifiées verrouillées le {time} · gravure demandée non vérifiée": "Locks rechecked at {time} \u00b7 complete grid unverified",
@@ -209,7 +210,7 @@ export default function loadoutFeature(api, { onApplied = () => {}, execution = 
     }, {});
     const pieces = Object.entries(needed).sort(([a], [b]) => a.localeCompare(b))
       .map(([shape, count]) => `${count} × ${shape}`).join(' · ');
-    return `${pieces || '—'} · ${api.tr('Disponibilité à vérifier en jeu')}`;
+    return pieces || '—';
   };
   // Names, sheet colours and objective labels do not make two layouts different.
   const layoutKey = (entry) => {
@@ -272,7 +273,9 @@ export default function loadoutFeature(api, { onApplied = () => {}, execution = 
       : soul.engraving === 'off' ? api.tr('Gravure automatique désactivée · premier passage soumis à supervision') : '';
     const recovery = soul.recovery;
     let proof;
-    if (recovery?.required) proof = api.tr('Gravure à reprendre : configuration demandée non vérifiée');
+    if (recovery?.required) proof = api.tr(recovery.weapon_id === target.id && recovery.variant === target.variant
+      ? 'Gravure à reprendre : configuration demandée non vérifiée'
+      : 'Réparation d’une autre configuration en attente · cette cible reste à vérifier');
     else if (recovery && recovery.weapon_id === target.id && recovery.variant === target.variant
         && Number.isFinite(recovery.at) && recovery.at > 0) {
       const time = new Date(recovery.at * 1000).toLocaleString();
@@ -456,14 +459,18 @@ export default function loadoutFeature(api, { onApplied = () => {}, execution = 
       },
       { type: 'grid', label: 'Grille', visible: () => Boolean(variant(mode)), rows: () => gridRows(mode) },
       { type: 'status', label: 'Pièces nécessaires', visible: () => Boolean(variant(mode)), value: () => requirements(mode) },
-      { type: 'status', label: 'Placement automatique', visible: () => Boolean(variant(mode)), value: () => applicabilityText(mode) },
+      { type: 'status', label: 'Placement automatique',
+        visible: () => Boolean(variant(mode)) && applicability(mode)?.supported !== true, value: () => applicabilityText(mode) },
       { type: 'status', label: 'Attention', visible: () => Boolean(equivalentVariant(mode)),
         value: () => api.tr('Même disposition que {variant}', { variant: equivalentVariant(mode)?.name ?? '' }) },
       {
         type: 'status', label: 'Attention', visible: () => warned(mode),
         value: () => api.tr('Grille à vérifier en jeu avant la pose'),
       },
-      { type: 'status', label: 'Cible', value: () => `${api.tr('Acceptée')} : ${accepted(mode)}` },
+      { type: 'status', label: 'Cible',
+        visible: () => Boolean(state[mode].busy || state[mode].error || state[mode].conflict || state[mode].uncertain
+          || !same(data.saved?.[mode], target(mode))),
+        value: () => `${api.tr('Acceptée')} : ${accepted(mode)}` },
       { type: 'status', label: 'État', value: () => {
         if (state[mode].busy) return api.tr('Enregistrement de la cible…');
         if (state[mode].executing) return api.tr('Application demandée…');

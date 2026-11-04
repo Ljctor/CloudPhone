@@ -94,6 +94,8 @@ python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_resou
 node "$(dirname "$0")/../slayer-legend/test_page_gold.mjs"
 # Autosave/revisions and fixed history slots reject rates for another visible target.
 node "$(dirname "$0")/../slayer-legend/test_page_mode.mjs"
+# Recovery messages stay bound to their weapon/variant; accepted fields and
+# supported placement do not repeat an unverified capability status.
 node "$(dirname "$0")/../slayer-legend/test_page_engraving.mjs"
 # Placement capability comes from executor calibration; inventory remains unverified.
 python3 "$(dirname "$0")/../slayer-legend/test_engraving.py" Routes.test_installed_applicability_uses_executor_calibration_not_inventory_history
