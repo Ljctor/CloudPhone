@@ -135,6 +135,48 @@ class SetupStatus(unittest.IsolatedAsyncioTestCase):
         self.callbacks[0]('mpw18', before, dict(self.parts['mpw18']))
         for _ in range(100): await asyncio.sleep(0)
 
+    async def test_complete_setup_receipt_confirms_restored_farming_idle(self):
+        self.engraving = 'real'
+        self.assertEqual(self.part['api']['state']()['state'], 'idle')
+        self.part['api']['confirm']('mpw18', verified_setup=True)
+        state = self.part['api']['state']()
+        self.assertEqual(state['state'], 'farming')
+        self.assertEqual(state['message_t']['params'],
+                         {'name': 'mpw18', 'number': 970, 'preset': 'III'})
+        self.assertEqual(self.farm_calls, [])
+
+    async def test_health_and_other_target_receipts_do_not_confirm_startup_idle(self):
+        self.engraving = 'real'
+        for name, verified in (('mpw18', False), ('mpw4', True), ('soul', True)):
+            with self.subTest(name=name, verified=verified):
+                self.part['api']['confirm'](name, verified_setup=verified)
+                self.assertEqual(self.part['api']['state']()['state'], 'idle')
+
+    async def test_receipt_cannot_acknowledge_unconfigured_or_missing_farming_target(self):
+        self.engraving = 'real'
+        for mode, configured, stage in (('mpw18', False, 970), ('mpw18', True, None),
+                                        ('free', True, 970), ('agent', True, 970)):
+            with self.subTest(mode=mode, configured=configured, stage=stage):
+                self.ports.store.saved['mode'] = {'mode': mode, 'default': mode, 'configured': configured}
+                self.parts['mpw18']['stage'] = stage
+                part = feature.mode(
+                    self.ports, rules, timer_rules,
+                    NS(time_or_none=lambda value: value, number_or_none=lambda value, top: value),
+                    self.mines, None, NS(fresh=lambda: {'gold': None}), self.loadouts,
+                    self.farming, setup_feature.mode_setup)
+                previous = part['api']['state']()['state']
+                part['api']['confirm'](mode, verified_setup=True)
+                self.assertEqual(part['api']['state']()['state'], previous)
+                self.assertNotEqual(part['api']['state']()['state'], 'farming')
+
+    async def test_complete_receipt_does_not_override_an_active_entry(self):
+        self.engraving = 'real'
+        self.block = asyncio.Event()
+        await self.attempt()
+        self.assertEqual(self.part['api']['state']()['state'], 'moving')
+        self.part['api']['confirm']('mpw18', verified_setup=True)
+        self.assertEqual(self.part['api']['state']()['state'], 'moving')
+
     async def test_off_gate_is_visible_without_an_attempt_and_idle_is_red(self):
         state = self.part['api']['state']()
         self.assertEqual(state['state'], 'idle')

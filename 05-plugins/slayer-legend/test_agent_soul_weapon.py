@@ -74,12 +74,11 @@ class AgentSoulWeapon(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.calls, [])
             self.assertEqual(self.game.leases, [])
 
-    async def test_agent_exit_target_revision_or_input_change_interrupts(self):
+    async def test_agent_exit_or_target_revision_change_interrupts(self):
         for interrupt, reason in (
                 (lambda: setattr(self, "agent", False), "mode Agent indisponible"),
                 (lambda: self.target["soul_weapon"].update(id=45), "configuration modifiée"),
-                (lambda: setattr(self, "revision", "changed"), "configuration modifiée"),
-                (lambda: setattr(self, "input", {"wall": 123, "monotonic": 10}), "vous avez repris la main")):
+                (lambda: setattr(self, "revision", "changed"), "configuration modifiée")):
             self.build()
             self.interrupt = interrupt
             status, answer = await self.request()
@@ -88,6 +87,21 @@ class AgentSoulWeapon(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(answer["verified_weapon"])
             self.assertNotIn("verified_setup", answer)
             self.assertIn(reason, answer["text_t"]["template"])
+
+    async def test_user_input_defers_agent_execution_without_verified_result(self):
+        self.build()
+        before = copy.deepcopy(self.target)
+        self.interrupt = lambda: setattr(self, "input", {"wall": 123, "monotonic": 10})
+        status, answer = await self.request()
+        self.assertEqual(status, 409)
+        self.assertEqual(answer["error_t"]["template"], "l’utilisateur joue")
+        self.assertNotIn("verified_weapon", answer)
+        self.assertNotIn("verified_setup", answer)
+        self.assertNotIn("result", answer)
+        self.assertEqual(self.calls, [(32, "Gold-maxed", True)])
+        self.assertEqual(self.game.moves, [])
+        self.assertEqual(self.game.alerts, [])
+        self.assertEqual(self.target, before)
 
     async def test_shared_lease_is_respected(self):
         self.build()

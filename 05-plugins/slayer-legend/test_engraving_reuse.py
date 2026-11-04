@@ -69,28 +69,52 @@ class RecoveryReuse(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(game.state["equipped"], sw.AMBITION)
         self.assertIn("configuration normale", sw.french(answer["text_t"]))
 
-    async def test_user_input_after_recovery_prevents_reuse(self):
+    async def test_user_input_after_recovery_defers_before_any_normal_setup(self):
         input_mark = [None]
-        game, ports, api, calls = self.build(after_recovery=lambda: input_mark.__setitem__(0, {"wall": 123}))
+        moves_at_input = []
+
+        def interrupted():
+            moves_at_input.append(len(game.moves))
+            input_mark[0] = {"wall": 123}
+
+        game, ports, api, calls = self.build(after_recovery=interrupted)
         ports.last_input = lambda: input_mark[0]
-        await api["soul_weapon"]("mpw18")
-        self.assertEqual(calls, [(sw.VISION_ID, True), (sw.VISION_ID, False)])
+        notes = []
+        ports.game = {"note": lambda *args: notes.append(args)}
+        with self.assertRaises(ports.Busy):
+            await api["soul_weapon"]("mpw18")
+        self.assertEqual(calls, [(sw.VISION_ID, True)])
+        self.assertEqual(game.moves[moves_at_input[0]:], [])
+        self.assertIsNone(api["soul_weapon_state"]()["cached"])
+        self.assertTrue(api["soul_verification_needed"]("mpw18"))
+        self.assertEqual(notes, [])
+        self.assertFalse(any(" ready:" in alert for alert in game.alerts))
 
     async def test_user_input_during_final_check_cannot_publish_reused_recovery(self):
-        _, ports, api, calls = self.build()
+        game, ports, api, calls = self.build()
         input_mark = [None]
+        moves_at_input = []
         ports.last_input = lambda: input_mark[0]
+        notes = []
+        ports.game = {"note": lambda *args: notes.append(args)}
         analyse = ports.analyse
+
         async def interrupted(reader, *args):
             result = await analyse(reader, *args)
             if reader.__name__ == "final_view":
+                moves_at_input.append(len(game.moves))
                 input_mark[0] = {"wall": 123}
             return result
+
         ports.analyse = interrupted
-        answer = await api["soul_weapon"]("mpw18")
-        self.assertEqual(answer["result"], "failed")
+        with self.assertRaises(ports.Busy):
+            await api["soul_weapon"]("mpw18")
         self.assertEqual(calls, [(sw.VISION_ID, True)])
+        self.assertEqual(game.moves[moves_at_input[0]:], [])
         self.assertIsNone(api["soul_weapon_state"]()["cached"])
+        self.assertTrue(api["soul_verification_needed"]("mpw18"))
+        self.assertEqual(notes, [])
+        self.assertFalse(any(" ready:" in alert for alert in game.alerts))
 
 
 if __name__ == "__main__":

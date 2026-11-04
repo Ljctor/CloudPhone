@@ -497,6 +497,13 @@ scroll positions and all five Companion Advancement tiers. The `example`
 paths in `screen_registry.json` identify those captures. A screen below may
 still be listed as pending because its classifier crop has not been calibrated;
 the full-screen image can already exist.
+Classifier calibration inventory (a full-screen example may already exist;
+this list grants no permission to enter a forbidden screen).
+
+Screens pending capture: `character_growth`, `skill`, `skill_refinement_grounds`, `skill_rave_mantra`, `familiar`, `equipment_relic`, `spirit`, `companion`, `companion_advancement`, `beast`, `beast_mount`, `beast_scouting`, `beast_scouting_info`, `adventure_map`, `adventure_quest`, `adventure_story_main`, `adventure_story_easy`, `adventure_story_sub`, `adventure_story_ellie`, `dungeon_map`, `dungeon_shelter`, `dungeon_rift`, `dungeon_forest`, `dungeon_kingdom`, `dungeon_training`, `raid_camp`, `mine_list`, `mine_area`, `mine_feathers`, `mine_fight`, `top_menu`, `shop_summon`, `shop_package`, `shop_goods`, `shop_golden_key`, `shop_event`, `guild`, `guild_divine_beast`, `guild_shop_normal`, `guild_shop_appearance`, `airfield`, `airfield_recipes_appetizer`, `airfield_recipes_main`, `airfield_recipes_dessert`, `airfield_boarding_status`, `guild_request`, `guild_info_basic`, `guild_info_members`, `promotion_bonus`, `quit_dialog`, `black_orb`, `black_orb_accessory`, `top_ranking`, `top_settings`, `top_mail`, `character_growth_icon_1`, `character_growth_icon_2`, `character_class`, `equipment_weapon_icon`, `black_orb_obtain`, `equipment_relic_icon_1`, `equipment_relic_icon_2`, `raid_ranking`, `raid_bag`, `shop_summon_equipment`, `shop_summon_relic`, `quest_daily`, `quest_repeat`, `quest_achievement`, `scroll`, `event`, `top_achievements`, `top_collection`, `top_events`, `top_guild_entry`, `event_popup`, `daily_reward`, `offer_popup`, `maintenance`, `update_required`, `another_device`, `save_choice`.
+
+Screens recognised without a fixture: `save_notice`, `panel`.
+
 The Dungeon map's Dragon Valley label was checked twice on 2026-10-26: it
 opens Airfield, whose red back arrow goes to Guild Hall. The old Raid camp
 route is historical and remains unvisited until a current entry is found.

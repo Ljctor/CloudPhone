@@ -408,6 +408,7 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
         result, moves = "equipped", 0
         while True:
             require_enabled()
+            require_current_observation()
             if moves == 0 and equipment_proof_current(view):
                 break
             memory = rules.observe(memory, view, order)

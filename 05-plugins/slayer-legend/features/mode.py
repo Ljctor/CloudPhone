@@ -402,11 +402,14 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
         return t("Farming {name} au stage {number}", name=name, number=number)
 
     def confirm(name, *, verified_setup=False):
-        """Health alone cannot clear a failed loadout setup. Only a caller
-        that verified the complete requested setup may resolve that failure."""
-        if verified_setup and status["mode"] == name and status["state"] == "failed":
-            # A successful full repair supersedes the failed attempt displayed
-            # by the options. A healthy frame alone never enters this branch.
+        """Only a complete setup receipt acknowledges failure or startup idle.
+        Health alone and observations from another mode cannot change state."""
+        if (verified_setup and name in ("mpw18", "mpw4", "soul")
+                and status["configured"] and status["mode"] == name
+                and status["state"] in ("idle", "failed") and loadouts["stage"](name)):
+            # A full repair also verifies a restored mode that has no entry
+            # transaction after startup. Active entry/waiting stays owned by
+            # its coordinator; a healthy frame never enters this branch.
             setup.clear_result()
             ports.log("normal", f"Mode {name}: complete setup verified")
             report("farming", farming_text(name, loadouts["stage"](name), loadouts["loadout"](name).get("preset")))

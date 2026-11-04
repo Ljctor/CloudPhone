@@ -63,6 +63,7 @@ python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_resou
 node "$(dirname "$0")/../slayer-legend/test_page_gold.mjs"
 node "$(dirname "$0")/../slayer-legend/test_page_engraving.mjs"
 node "$(dirname "$0")/../slayer-legend/test_page_trace.mjs"
+# Startup idle requires a complete current setup receipt, never a healthy frame.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_mode_setup_status.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_mode_rules.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_transaction_ownership.py -q
