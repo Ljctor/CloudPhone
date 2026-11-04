@@ -1,0 +1,296 @@
+{
+  "overview": {
+    "status": "no_icon_for_aggregate",
+    "reason": "Aggregate overview has no game menu symbol"
+  },
+  "enhance": {
+    "status": "original_asset",
+    "description": "Exact Growing Knowledge entrance symbol, resolved through the actual Knowledge button prefab",
+    "image_sha256": "13996db1911fca7808cf77ab4fa4b493021f18cd66033f0b1721ea3cbbb1b2d9",
+    "size": [
+      56,
+      56
+    ],
+    "transform": "none",
+    "dynamic_overlays": false,
+    "owned_state": false,
+    "source_kind": "apk_sprite",
+    "sprite": "int_book",
+    "asset": "56f9ad5ddb0d8744f81615f3178be12f",
+    "path_id": 2,
+    "proof": [
+      {
+        "scene": "level1",
+        "game_object": 7020,
+        "object_name": "Btn_Knowledge",
+        "callback_component": 143054,
+        "callback": "KnowledgeManager.Button_Panel_Knowledge_Open",
+        "icon_child_game_object": 6124,
+        "icon_image_component": 141735,
+        "image_sprite_pointer": {
+          "offset": 88,
+          "external": 241,
+          "path_id": 2,
+          "file": "56f9ad5ddb0d8744f81615f3178be12f"
+        },
+        "sprite": "int_book",
+        "size": [
+          56,
+          56
+        ],
+        "png_sha256": "13996db1911fca7808cf77ab4fa4b493021f18cd66033f0b1721ea3cbbb1b2d9",
+        "source_asset_sha256": "0eee5b5d95321f88d710b9832f7e6de78f868e128814db7f6fe42e5b1ca1dedd",
+        "extraction": "UnityPy Sprite.image, original RGBA, no screenshot crop/tint/reconstruction"
+      }
+    ]
+  },
+  "growth": {
+    "status": "original_asset",
+    "description": "Exact yellow Awaken Latent Power entrance symbol; actual Dragon Emblem button sprite",
+    "source_kind": "apk_sprite",
+    "sprite": "rune_Icon_0",
+    "asset": "fe0592695a78b744d99ed2d42b8e9f22",
+    "path_id": 18,
+    "size": [
+      73,
+      73
+    ],
+    "image_sha256": "5a0b2088f71a58b524d76a99153677a8491b55817aff41024dc333e379816e54",
+    "transform": "none",
+    "dynamic_overlays": false,
+    "owned_state": false,
+    "proof": {
+      "scene": "level1",
+      "parent": "Panel_DragonForce/OBJ_DragonEmblem/Panel_DragonEmblem",
+      "button_game_object": 3723,
+      "button_name": "btn_DragonEmblem",
+      "callback_component": 138202,
+      "callback": "StatManager.ShowDragonEmblemPopup",
+      "icon_child_game_object": 5158,
+      "icon_image_component": 140312,
+      "image_sprite_pointer": {
+        "offset": 88,
+        "external": 276,
+        "path_id": 18,
+        "file": "fe0592695a78b744d99ed2d42b8e9f22"
+      },
+      "extraction": "UnityPy Sprite.image, original RGBA; no background/effects/DragonStat_ring overlays"
+    }
+  },
+  "companions": {
+    "status": "original_asset",
+    "description": "Original Companion menu portrait",
+    "image_sha256": "5878a610deaa11f07ba58bf9070018fd4663d647a02353198af15a03d36429de",
+    "size": [
+      128,
+      128
+    ],
+    "transform": "none",
+    "dynamic_overlays": false,
+    "owned_state": false,
+    "source_kind": "apk_sprite",
+    "sprite": "MainIcon04",
+    "asset": "sharedassets0.assets",
+    "path_id": 616
+  },
+  "beasts": {
+    "status": "identity_pending",
+    "reason": "White Beast menu wolf symbol not matched with certainty to an original asset"
+  },
+  "weapons": {
+    "status": "original_asset",
+    "description": "Bare Common Grade 4 weapon illustration",
+    "image_sha256": "e662bc237137bfa0366a4229eba590a0b25afe534c527438c0fdceb3eb454346",
+    "size": [
+      128,
+      128
+    ],
+    "transform": "none",
+    "dynamic_overlays": false,
+    "owned_state": false,
+    "source_kind": "original_sprite_cdn",
+    "url": "https://raw.githubusercontent.com/BenDol/SlayerLegendCDN/main/game-assets/images/equipment/weapons/sword_00.png"
+  },
+  "soul-weapons": {
+    "status": "original_asset",
+    "description": "Exact menu symbol: black weapon on parchment",
+    "image_sha256": "4ebd701fd895ddaeb438be18709fa64a4790d045efdc7ce065dd9c8347cbd78c",
+    "size": [
+      62,
+      64
+    ],
+    "transform": "none",
+    "dynamic_overlays": false,
+    "owned_state": false,
+    "source_kind": "apk_sprite",
+    "sprite": "ui_symbol_soulweapon",
+    "asset": "sharedassets0.assets",
+    "path_id": 583
+  },
+  "accessories": {
+    "status": "original_asset",
+    "description": "Exact Common Grade 4 accessory: grey ring, matched to first grey card",
+    "image_sha256": "d8c0ae921e6b0ad6e0fc65eb549fbd7631d84bc8227649c578308029230f4cb8",
+    "size": [
+      64,
+      64
+    ],
+    "transform": "none",
+    "dynamic_overlays": false,
+    "owned_state": false,
+    "source_kind": "apk_sprite",
+    "sprite": "Acc_000",
+    "asset": "sharedassets0.assets",
+    "path_id": 621
+  },
+  "classes": {
+    "status": "original_asset",
+    "description": "Original class summon-card symbol",
+    "image_sha256": "fdef9c4c939f2839504005c16591d9e9828fd1aa48b6ec03d31ed1a1e1e37abc",
+    "size": [
+      64,
+      64
+    ],
+    "transform": "none",
+    "dynamic_overlays": false,
+    "owned_state": false,
+    "source_kind": "original_sprite_cdn",
+    "url": "https://raw.githubusercontent.com/BenDol/SlayerLegendCDN/main/game-assets/images/goods/Goods_SummonSlayerClass.png"
+  },
+  "black-orb": {
+    "status": "original_asset",
+    "description": "Original bare Black Orb UI sprite",
+    "image_sha256": "c6b88f09b65bf10f0f4903979886deb44d463985228cc5c8c8d78b20225e5b1c",
+    "size": [
+      100,
+      98
+    ],
+    "transform": "none",
+    "dynamic_overlays": false,
+    "owned_state": false,
+    "source_kind": "original_sprite_cdn",
+    "url": "https://raw.githubusercontent.com/BenDol/SlayerLegendCDN/main/game-assets/images/ui/icon_BlackOrb.png"
+  },
+  "spirit": {
+    "status": "original_asset",
+    "description": "Original base spirit animation frame, representative art only",
+    "image_sha256": "fe797f7c5e0f35d179ca3c9aeb989da5601f00a0ac8363691331d0ff258f8b8f",
+    "size": [
+      128,
+      128
+    ],
+    "transform": "none",
+    "dynamic_overlays": false,
+    "owned_state": false,
+    "source_kind": "original_sprite_cdn",
+    "url": "https://raw.githubusercontent.com/BenDol/SlayerLegendCDN/main/game-assets/images/spirits/Spirit_001_1_6.png"
+  },
+  "familiars": {
+    "status": "original_asset",
+    "description": "Original base familiar display sprite, representative art only",
+    "image_sha256": "8f18f321153172116f9bf7157dec8664063828589f07742c5af2c1898edeb7b6",
+    "size": [
+      128,
+      128
+    ],
+    "transform": "none",
+    "dynamic_overlays": false,
+    "owned_state": false,
+    "source_kind": "apk_sprite",
+    "sprite": "Demon_Attribute_Display_01_0",
+    "asset": "contents.bundle",
+    "path_id": -437535120913981781
+  },
+  "skills": {
+    "status": "original_asset",
+    "description": "Original Skill menu book",
+    "image_sha256": "fa755fcefe18f09377b361f2ea9927cfb9005f3aa2c536b7e95226c561f6570f",
+    "size": [
+      128,
+      128
+    ],
+    "transform": "none",
+    "dynamic_overlays": false,
+    "owned_state": false,
+    "source_kind": "apk_sprite",
+    "sprite": "MainIcon02",
+    "asset": "sharedassets0.assets",
+    "path_id": 442
+  },
+  "constellations": {
+    "status": "original_asset",
+    "description": "Original constellation entrance sprite",
+    "image_sha256": "0cd70ca4daa4866ccacd3f2b5343877c96424c7f8396014b3bde9d3422b32674",
+    "size": [
+      228,
+      228
+    ],
+    "transform": "none",
+    "dynamic_overlays": false,
+    "owned_state": false,
+    "source_kind": "original_sprite_cdn",
+    "url": "https://raw.githubusercontent.com/BenDol/SlayerLegendCDN/main/game-assets/images/stars/Star_Icon_Entrance.png"
+  },
+  "memory-tree": {
+    "status": "original_asset",
+    "description": "Original Memory Tree symbol; no screenshot crop",
+    "image_sha256": "fe9fa6e0d8f4e7ff75caa04d5887d6cbc2078171b24699a910972485dc2bde39",
+    "size": [
+      128,
+      128
+    ],
+    "transform": "none",
+    "dynamic_overlays": false,
+    "owned_state": false,
+    "source_kind": "apk_sprite",
+    "sprite": "Icon_ImmortalTree_06",
+    "asset": "sharedassets1.assets",
+    "path_id": 1459
+  },
+  "relics": {
+    "status": "original_asset",
+    "description": "Original relic artwork; no grade, count or enhancement overlays",
+    "image_sha256": "58ea3e939f59a2fa7b9421401621f4f7888d9dc8366fe388e9b846f7f720d472",
+    "size": [
+      64,
+      64
+    ],
+    "transform": "none",
+    "dynamic_overlays": false,
+    "owned_state": false,
+    "source_kind": "original_sprite_cdn",
+    "url": "https://raw.githubusercontent.com/BenDol/SlayerLegendCDN/main/game-assets/images/relics/icon_artifact_01.png"
+  },
+  "summon": {
+    "status": "original_asset",
+    "description": "Original Shop access symbol for the summon section",
+    "image_sha256": "61d0c876f6e5179593c08c0ed41ecee95997b3a90f6883d651c0065685481e7d",
+    "size": [
+      128,
+      128
+    ],
+    "transform": "none",
+    "dynamic_overlays": false,
+    "owned_state": false,
+    "source_kind": "apk_sprite",
+    "sprite": "MainIcon07",
+    "asset": "sharedassets0.assets",
+    "path_id": 485
+  },
+  "latent-power": {
+    "status": "original_asset",
+    "description": "Original blue latent-power entrance orb; optional separate key, not the newly requested yellow awaken entry",
+    "image_sha256": "6a7637516a807bb4086ab54b2b55333d534df24a3a7488843029b20379f86a3d",
+    "size": [
+      54,
+      54
+    ],
+    "transform": "none",
+    "dynamic_overlays": false,
+    "owned_state": false,
+    "source_kind": "apk_sprite",
+    "sprite": "ui_item_DragonForce",
+    "asset": "sharedassets0.assets",
+    "path_id": 609
+  }
+}

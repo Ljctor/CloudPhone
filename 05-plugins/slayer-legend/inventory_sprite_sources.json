@@ -1,0 +1,90 @@
+{
+  "extraction": "UnityPy Sprite.image export of native RGBA asset; no screenshot crop, tint, resizing or badge compositing",
+  "base_apk_sha256": "f770e7444812ee27339e816760b039a3dbd501adba73d14a8246ad863f58b889",
+  "contents_apk_sha256": "3499bfda92fbd78b9941e993350e3f111190325622163b85388a48d12dbf5665",
+  "contents_bundle_sha256": "55ec304559887336e867d427a44f3b89f7c090f84c465b0be2767bf48f1d352b",
+  "sprites": [
+    {
+      "asset": "BlackAcc_105",
+      "size": [
+        64,
+        64
+      ],
+      "png_sha256": "29209ac02c68800b869bc799131a552298e20d3f6f7be26dbb9d9c9125b41cf2",
+      "container": "contents.bundle"
+    },
+    {
+      "asset": "BlackAcc_205",
+      "size": [
+        64,
+        64
+      ],
+      "png_sha256": "405ec8da1a013f43c93de766714ff77a0821d9011893ecfb705459c64a3a72bc",
+      "container": "contents.bundle"
+    },
+    {
+      "asset": "BlackAcc_305",
+      "size": [
+        64,
+        64
+      ],
+      "png_sha256": "b26786bd27b1904dcc84978c2a983f6de671f25a2e974abb1e3bbe619e73e961",
+      "container": "contents.bundle"
+    },
+    {
+      "asset": "BlackAcc_405",
+      "size": [
+        64,
+        64
+      ],
+      "png_sha256": "99e909d603b145942af5128d6612d8da68263c41ff1746ce3eba76b1e0f6198c",
+      "container": "contents.bundle"
+    },
+    {
+      "asset": "typeicon_earth s",
+      "size": [
+        64,
+        64
+      ],
+      "png_sha256": "21c7b1fe7037bef9757b3b5de14fd8683f1a0163501d6313757c7cc25d64c440",
+      "container": "base.apk Unity assets"
+    },
+    {
+      "asset": "typeicon_water",
+      "size": [
+        64,
+        64
+      ],
+      "png_sha256": "2efd799c670157b06c3f1be47aeccc91756095d90f9b744fe1a21be18ff5bc81",
+      "container": "base.apk Unity assets"
+    },
+    {
+      "asset": "typeicon_fire",
+      "size": [
+        64,
+        64
+      ],
+      "png_sha256": "58e4b61dbc525b372dc89ebafc173d0657724f03a1b3c53e1f97b44c34494b26",
+      "container": "base.apk Unity assets"
+    },
+    {
+      "asset": "typeicon_wind",
+      "size": [
+        60,
+        60
+      ],
+      "png_sha256": "b6b09be089cf3fda70c096fd111ad8a76edcfa81872f02e0aca0077ad28429c7",
+      "container": "base.apk Unity assets"
+    },
+    {
+      "asset": "Star",
+      "size": [
+        64,
+        64
+      ],
+      "png_sha256": "16bd0d027cc58b2214f90c16eca13abbf469172bbfd7bf735770ee2306e19e73",
+      "container": "base.apk Unity assets"
+    }
+  ],
+  "element_color_sampling": "Most frequent near-opaque saturated source pixel (alpha>=220, max RGB>=150, max-min>=100), no recoloring."
+}

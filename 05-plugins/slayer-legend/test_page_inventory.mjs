@@ -51,7 +51,12 @@ const orb = { screen: 'black_orb_accessory', inventory: catalogue.black_orb_acce
   example: { url: '/examples/black_orb_accessory', captured: 100 } };
 const orbCell = inventoryTables(orb)[0].rows()[0].cells[0];
 assert.equal(orbCell.label, 'Bracelet of Freedom');
-assert.equal(orbCell.image.url, '/examples/black_orb_accessory');
+assert.equal(orbCell.image.kind, 'sprite');
+assert.equal(orbCell.image.asset, 'BlackAcc_105');
+assert.ok(orbCell.image.url.startsWith('data:image/png;base64,'));
+assert.equal(orbCell.indicators.element.id, 'wind');
+assert.equal(orbCell.indicators.stars, undefined);
+assert.equal(orbCell.indicators.awakening, undefined);
 assert.equal(orbCell.bonuses[0].display_text, 'Wind Dmg +6,388%');
 assert.equal(orbCell.bonuses.length, 5, 'three distinct attribute effects are not summed');
 console.log('Inventory order, private capture crops, historical provenance, unknowns and exact bonus roles: OK');
@@ -104,3 +109,24 @@ for (const [index, item] of relicCatalogue.items.entries()) {
   ]);
 }
 console.log('Twelve historical relics: exact names, levels, primary/inheritance text, order and private crop references: OK');
+
+// Clean base art is independent from the archived star/element observations.
+let observedOrbs = { screen: 'black_orb', inventory: structuredClone(catalogue.black_orb) };
+const blackTables = inventoryTables(observedOrbs, () => observedOrbs);
+const blackCells = () => blackTables[0].rows()[0].cells;
+assert.deepEqual(blackCells().map((cell) => cell.image.asset),
+  ['BlackAcc_105', 'BlackAcc_205', 'BlackAcc_305', 'BlackAcc_405']);
+assert.deepEqual(blackCells().map((cell) => cell.indicators.element.id), ['wind', 'earth', 'fire', 'water']);
+assert.deepEqual(blackCells().map((cell) => cell.indicators.stars), [undefined, undefined, 2, undefined]);
+assert.ok(blackCells().every((cell) => cell.indicators.awakening === undefined));
+const cleanFireImage = blackCells()[2].image.url;
+observedOrbs.inventory.items[2].stars = 0;
+observedOrbs.inventory.items[2].element = null;
+assert.equal(blackCells()[2].indicators.stars, 0, 'observed zero is distinct from unread');
+assert.equal(blackCells()[2].indicators.element, undefined);
+assert.equal(blackCells()[2].image.url, cleanFireImage, 'badges do not modify the base sprite');
+observedOrbs.inventory.items[2].stars = null;
+observedOrbs.inventory.items[2].sprite.asset = 'unknown-art';
+assert.equal(blackCells()[2].indicators.stars, undefined);
+assert.equal(blackCells()[2].image, null, 'unknown sprite never falls back to a frozen card');
+console.log('Black Orb original sprites and independently observed dynamic badges: OK');

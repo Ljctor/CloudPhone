@@ -87,6 +87,7 @@ for marker in ("inventory-table", "display_text", "inheritance", "#00ffff", "tab
                "calc(100dvh - max(8px, env(safe-area-inset-top)) - max(8px, env(safe-area-inset-bottom)))",
                "aspectRatio"):
     assert marker in bundle, "Missing inventory/dialog renderer: " + marker
+assert all(marker in bundle for marker in ("data-inventory-sprite", "data-inventory-stars", "data-inventory-element")), "Missing independent inventory sprite/badge layers"
 PYCODE
 }
 connection_notice_contract() {

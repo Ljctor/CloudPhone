@@ -6,7 +6,7 @@
 // the plugin's options list at index at, once the gateway answered.
 import { inventoryTables } from './page_inventory.js';
 import { RESOURCE_ICONS } from './page_resources.js';
-import { SCREEN_ICONS } from './page_screen_icons.js';
+import { PROGRESSION_ICONS } from './page_progression_icons.js';
 import { shortNumber } from './page_numbers.js';
 import { freshnessColour } from './page_freshness.js';
 const PIECE = '#d9a441';
@@ -235,7 +235,7 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
       ...resourceRows(),
       { type: 'section', key: 'game-state', label: 'Progression', depth: 1, folded: true }];
     for (const [id, label, icon] of categories) {
-      rows.push({ type: 'section', key: `progression-${id}`, label, depth: 2, folded: true, icon: SCREEN_ICONS[icon] });
+      rows.push({ type: 'section', key: `progression-${id}`, label, depth: 2, folded: true, icon: PROGRESSION_ICONS[id] });
       const content = id === 'overview' ? overviewRows() : [];
       for (const screen of game.answer?.screens ?? []) {
         if (categoryOf(screen) !== id) continue;

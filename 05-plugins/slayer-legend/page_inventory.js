@@ -1,5 +1,7 @@
 // Inventory layout uses observations only. A catalogue crop is a historical
 // example, never evidence of current possession, rarity or awakening.
+import { INVENTORY_SPRITES } from './page_inventory_sprites.js';
+
 const NEVER = 'never read';
 const equipment = new Set(['weapons', 'accessories', 'classes']);
 const rarity = (item) => String(item.rarity ?? '').toLowerCase();
@@ -9,6 +11,11 @@ export function inventoryTables(screen, current = () => screen) {
   const items = () => current().inventory?.items ?? [];
   const examples = () => current().examples?.length ? current().examples : [current().example].filter(Boolean);
   const image = (item) => {
+    if (kind === 'black_orb') {
+      const sprite = INVENTORY_SPRITES[item?.sprite?.asset];
+      return sprite ? { ...sprite, kind: 'sprite', asset: item.sprite.asset,
+        provenance: item.sprite } : null;
+    }
     const source = item?.source;
     const example = examples().find((entry) => entry.url?.split('/').at(-1) === source?.capture?.replace(/\.png$/, ''));
     if (!example || !Array.isArray(source?.box) || source.box.length !== 4) return null;
@@ -20,7 +27,7 @@ export function inventoryTables(screen, current = () => screen) {
     const parts = [];
     if (item?.level != null) parts.push(`Lv.${item.level}`);
     if (item?.enhancement != null) parts.push(`+${item.enhancement}`);
-    if (Number.isFinite(item?.stars)) parts.push(`${item.stars} ★`);
+    if (kind !== 'black_orb' && Number.isFinite(item?.stars)) parts.push(`${item.stars} ★`);
     const fraction = item?.displayed_fraction;
     if (fraction?.numerator != null && fraction?.denominator != null)
       parts.push(`${fraction.numerator}/${fraction.denominator}`);
@@ -29,7 +36,25 @@ export function inventoryTables(screen, current = () => screen) {
       { role: 'inheritance', ...(item?.inheritance_bonus ?? (kind === 'relics' ? { display_text: NEVER } : {}) ) },
       ...(item?.bonuses ?? []),
     ].filter((bonus) => bonus.display_text != null);
-    return { label, image: image(item), value: parts.join(' · ') || NEVER, bonuses };
+    const indicators = {};
+    if (kind === 'black_orb' && item) {
+      for (const field of ['stars', 'awakening', 'count']) {
+        if (Number.isInteger(item[field]) && item[field] >= 0) indicators[field] = item[field];
+      }
+      if (typeof item.equipped === 'boolean') indicators.equipped = item.equipped;
+      if (typeof item.rarity === 'string' && item.rarity) {
+        indicators.rarity = item.rarity;
+        indicators.rarity_color = item.rarity_color;
+      }
+      if (Number.isInteger(indicators.stars)) indicators.star_image = INVENTORY_SPRITES.Star.url;
+      const elementSprite = INVENTORY_SPRITES[item.element?.asset];
+      const labels = { wind: 'Vent', earth: 'Terre', fire: 'Feu', water: 'Eau' };
+      if (elementSprite && labels[item.element.id]) indicators.element = {
+        id: item.element.id, label: labels[item.element.id], color: item.element.color,
+        image: elementSprite.url,
+      };
+    }
+    return { label, image: image(item), value: parts.join(' · ') || NEVER, bonuses, indicators };
   };
   const empty = (label) => cell(null, label);
   const table = (suffix, label, rows, historical = false) => ({

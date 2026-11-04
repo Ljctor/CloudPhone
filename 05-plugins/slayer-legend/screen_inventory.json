@@ -170,7 +170,20 @@
             123,
             633
           ]
-        }
+        },
+        "sprite": {
+          "asset": "BlackAcc_105",
+          "source": "installed_game_sprite",
+          "png_sha256": "29209ac02c68800b869bc799131a552298e20d3f6f7be26dbb9d9c9125b41cf2"
+        },
+        "element": {
+          "id": "wind",
+          "color": "#44eecc",
+          "asset": "typeicon_wind"
+        },
+        "stars": null,
+        "awakening": null,
+        "rarity_color": "#00ffff"
       },
       {
         "id": "black-orb-2",
@@ -185,7 +198,20 @@
             232,
             633
           ]
-        }
+        },
+        "sprite": {
+          "asset": "BlackAcc_205",
+          "source": "installed_game_sprite",
+          "png_sha256": "405ec8da1a013f43c93de766714ff77a0821d9011893ecfb705459c64a3a72bc"
+        },
+        "element": {
+          "id": "earth",
+          "color": "#ffc365",
+          "asset": "typeicon_earth s"
+        },
+        "stars": null,
+        "awakening": null,
+        "rarity_color": "#00ffff"
       },
       {
         "id": "black-orb-3",
@@ -200,7 +226,20 @@
             337,
             647
           ]
-        }
+        },
+        "sprite": {
+          "asset": "BlackAcc_305",
+          "source": "installed_game_sprite",
+          "png_sha256": "b26786bd27b1904dcc84978c2a983f6de671f25a2e974abb1e3bbe619e73e961"
+        },
+        "element": {
+          "id": "fire",
+          "color": "#ffad25",
+          "asset": "typeicon_fire"
+        },
+        "stars": 2,
+        "awakening": null,
+        "rarity_color": "#00ffff"
       },
       {
         "id": "black-orb-4",
@@ -215,7 +254,20 @@
             440,
             633
           ]
-        }
+        },
+        "sprite": {
+          "asset": "BlackAcc_405",
+          "source": "installed_game_sprite",
+          "png_sha256": "99e909d603b145942af5128d6612d8da68263c41ff1746ce3eba76b1e0f6198c"
+        },
+        "element": {
+          "id": "water",
+          "color": "#4455ff",
+          "asset": "typeicon_water"
+        },
+        "stars": null,
+        "awakening": null,
+        "rarity_color": "#00ffff"
       }
     ]
   },
@@ -229,12 +281,26 @@
         "name": "Bracelet of Freedom",
         "rarity": "Mythic",
         "level": 26,
-        "primary_bonus": {"display_text": "Wind Dmg +6,388%"},
+        "primary_bonus": {
+          "display_text": "Wind Dmg +6,388%"
+        },
         "bonuses": [
-          {"display_text": "Amplify All Attributes Dmg by 7%", "color": "#00ffff"},
-          {"display_text": "Amplify All Attributes Dmg by 7%", "color": "#00ffff"},
-          {"display_text": "Amplify All Attributes Dmg by 7%", "color": "#00ffff"},
-          {"display_text": "Amplify Fire Dmg by 3%", "color": "#00ff80"}
+          {
+            "display_text": "Amplify All Attributes Dmg by 7%",
+            "color": "#00ffff"
+          },
+          {
+            "display_text": "Amplify All Attributes Dmg by 7%",
+            "color": "#00ffff"
+          },
+          {
+            "display_text": "Amplify All Attributes Dmg by 7%",
+            "color": "#00ffff"
+          },
+          {
+            "display_text": "Amplify Fire Dmg by 3%",
+            "color": "#00ff80"
+          }
         ],
         "source": {
           "capture": "black_orb_accessory.png",
@@ -244,7 +310,20 @@
             287,
             477
           ]
-        }
+        },
+        "sprite": {
+          "asset": "BlackAcc_105",
+          "source": "installed_game_sprite",
+          "png_sha256": "29209ac02c68800b869bc799131a552298e20d3f6f7be26dbb9d9c9125b41cf2"
+        },
+        "element": {
+          "id": "wind",
+          "color": "#44eecc",
+          "asset": "typeicon_wind"
+        },
+        "stars": null,
+        "awakening": null,
+        "rarity_color": "#00ffff"
       }
     ]
   },
