@@ -5,7 +5,7 @@ import { freshnessColour } from './page_freshness.js';
 import { shortNumber } from './page_numbers.js';
 import { RESOURCE_ICONS } from './page_resources.js';
 import { SCREEN_ICONS } from './page_screen_icons.js';
-import { OVERLAY, RATES } from './page_icons.js';
+import { RATES } from './page_icons.js';
 import { readFile } from 'node:fs/promises';
 
 assert.equal(freshnessColour(0), 'rgb(255, 255, 255)');
@@ -33,196 +33,98 @@ for (const screen of ['quest', 'scroll', 'stage_select', 'weapon', 'black_orb'])
   assert.ok(png.length > 1000 && png.subarray(1, 4).toString() === 'PNG', screen);
   assert.ok(png.readUInt32BE(16) >= 24 && png.readUInt32BE(20) >= 24, screen);
 }
+const inventoryCatalogue = JSON.parse(await readFile(new URL('./screen_inventory.json', import.meta.url)));
+const snapshots = JSON.parse(await readFile(new URL('./screen_snapshots.json', import.meta.url)));
+const world = JSON.parse(await readFile(new URL('./screen_snapshots_world.json', import.meta.url)));
 const answer = {
   resources: catalogue.map((row) => ({ ...row, value: null, verified: false })),
-  screens: [{ screen: 'soul_weapon', path: ['Combat', 'Equipment: Weapon', 'Soul Weapon'],
-    fields: [{ field: 'soul_weapon_equipped', label: 'Weapon', value: 'Vision', seen: 1, verified: true }] },
-  { screen: 'dungeon_forest', path: ['Combat', 'Adventure: Dungeon', 'Forest of Circulation'],
-    fields: [], observed: true, details: [{ label: 'Étages vus', value: '156–165' }],
-    example: { url: '/api/v1/plugins/slayer-legend/examples/dungeon_forest', captured: 1 },
-    examples: [{ url: '/api/v1/plugins/slayer-legend/examples/dungeon_forest', captured: 1,
-      label: 'Début' }, { url: '/api/v1/plugins/slayer-legend/examples/dungeon_forest_scroll',
-      captured: 2, label: 'Après défilement' }] }],
+  screens: Object.entries(snapshots).map(([screen, details]) => ({ screen, label: screen,
+    path: ['A menu path that must not create a group'], fields: [], details,
+    inventory: inventoryCatalogue[screen],
+    example: { url: `/examples/${screen}`, captured: 1 },
+    examples: [{ url: `/examples/${screen}`, captured: 1 }],
+  })),
 };
+answer.screens.push({ screen: 'character_class', fields: [], inventory: inventoryCatalogue.character_class ?? { kind: 'classes', status: 'never_read' } });
+answer.screens.push({ screen: 'battle', fields: [
+  { field: 'stage', label: 'Stage actuel', value: 970, shown: 'number' },
+  { field: 'highest', label: 'Stage le plus haut atteint', value: 990, shown: 'lower_bound', seen: 1 },
+  { field: 'progress', label: 'Progression du stage', value: .4, shown: 'percent' },
+  { field: 'preset', label: 'Préréglage de combat', value: 'IV', shown: 'text' },
+] });
+for (const screen of ['dungeon_forest', 'dungeon_training']) answer.screens.push({ screen,
+  fields: [], details: world[screen], example: { url: `/examples/${screen}`, captured: 1 },
+  examples: [{ url: `/examples/${screen}_scroll_1`, captured: 2 }],
+});
+answer.screens.find((row) => row.screen === 'soul_weapon').fields = [
+  { field: 'soul_weapon_selected', label: 'Arme sélectionnée', value: 'Ambition' },
+  { field: 'soul_weapon_equipped', label: 'Soul Weapon équipée', value: 'Ambition' },
+  { field: 'soul_weapon_variant', label: 'Variante de gravure', value: 'Gold-maxed' },
+];
 const options = [];
 const game = gameFeature({ get: async () => answer, refresh() {}, tr: (text) => text }, {
   resourceOptions: [{ type: 'status', label: 'Gold par seconde', value: () => '1/s' }],
   displayOptions: [{ type: 'section', key: 'display-rates', label: 'Débits', icon: RATES },
-    { type: 'choice', key: 'goldOverlay', label: 'Gold/h' },
-    { type: 'choice', key: 'stonesOverlay', label: 'Autres débits/h' }],
+    { type: 'choice', key: 'goldOverlay', label: 'Gold/h' }],
 });
 game.rows(options, 0);
 await new Promise((resolve) => setImmediate(resolve));
-assert.equal(options[0].key, 'resources');
-assert.equal(options.filter((row) => row.type === 'status').length, 25);
-assert.equal(options[options.findIndex((row) => row.label === 'Gold par seconde') - 1].label, 'Overlay');
-assert.equal(options.find((row) => row.key === 'game-soul_weapon').label, 'Soul Weapon');
-assert.equal(options.find((row) => row.key === 'game-state').depth, 1);
+const categories = options.filter((row) => row.type === 'section' && row.key?.startsWith('progression-'));
+assert.deepEqual(categories.map((row) => row.label), ['Vue d’ensemble', 'Enhance', 'Growth', 'Companions', 'Beasts',
+  'Weapons', 'Soul Weapons', 'Accessories', 'Classes', 'Black Orb', 'Spirit', 'Familiars', 'Skills',
+  'Constellations', 'Memory Tree', 'Relics', 'Summon', 'Latent Power']);
+assert.ok(categories.every((row) => row.depth === 2));
+assert.ok(!options.some((row) => row.type === 'section' && (row.depth > 2 && row.key !== 'display-rates' || /Equipment|Adventure|A menu path/.test(row.label))));
+assert.equal(options.filter((row) => row.key === 'game-state').length, 1);
 assert.equal(options.filter((row) => row.key === 'overlay').length, 1);
-assert.equal(options.find((row) => row.key === 'overlay').icon, OVERLAY);
-assert.ok(!options.some((row) => ['analysis', 'display'].includes(row.key)));
 assert.equal(options.find((row) => row.key === 'display-rates').depth, 2);
-assert.ok(options.some((row) => row.key === 'goldOverlay'));
-assert.ok(options.some((row) => row.key === 'stonesOverlay'));
-assert.equal(options.find((row) => row.key === 'game-path-Equipment').depth, 2);
-assert.equal(options.find((row) => row.key === 'game-path-Equipment').icon, SCREEN_ICONS.equipment);
-assert.equal(options.find((row) => row.key === 'game-path-Equipment/Weapon').depth, 3);
-assert.equal(options.find((row) => row.key === 'game-soul_weapon').depth, 4);
-assert.equal(options.find((row) => row.key === 'game-dungeon_forest').label, 'Forest of Circulation');
-assert.equal(options.find((row) => row.key === 'scan-dungeon_forest-0').value(), '156–165');
-assert.equal(options.find((row) => row.key === 'scan-dungeon_forest-0').timestamp(),
-  new Date(1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-assert.equal(options.find((row) => row.key === 'scan-dungeon_forest-0').color(), freshnessColour(600));
-assert.equal(options.find((row) => row.label === 'Capture d’exemple · relevé historique').value(), new Date(1000).toLocaleString());
-assert.equal(options.find((row) => row.key === 'capture-dungeon_forest').examples().length, 2);
-assert.equal(options.filter((row) => row.label === 'Données').length, 0);
-const gold = options.find((row) => row.label === 'Gold');
-assert.equal(gold.value(), 'never read');
-assert.equal(gold.timestamp(), '');
-assert.equal(gold.color(), '#8a919c');
-Object.assign(answer.resources.find((row) => row.field === 'gold'), { value: 0, seen: 1, verified: true });
+assert.ok(!options.some((row) => row.type === 'capture'), 'progression never offers full-screen capture previews');
+const row = (key) => options.find((option) => option.key === key);
+assert.equal(row('progression-level').value(), '1941');
+assert.equal(row('progression-highest').value(), '> 989');
+assert.equal(row('progression-foc').value(), '> 161');
+assert.equal(row('progression-cave').value(), '> 844');
+assert.equal(row('progression-foc').timestamp(), new Date(2000).toLocaleString([], { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }));
+assert.equal(row('progression-cave').timestamp(), new Date(1000).toLocaleString([], { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }));
+assert.equal(row('progression-promotion').value(), '≥ Blue Abyss');
+answer.screens.find((screen) => screen.screen === 'character_promotion').inventory.selected = 'Infinaut';
+assert.equal(row('progression-promotion').value(), '≥ Blue Abyss', 'a selected promotion never proves completion');
+for (const label of ['Arme sélectionnée', 'Soul Weapon équipée', 'Variante de gravure', 'Stage actuel',
+  'Progression du stage', 'Préréglage de combat', 'Preset sélectionné', 'Onglet', 'Promotion sélectionnée', 'Promotion affichée'])
+  assert.ok(!options.some((option) => option.label === label || option.label?.startsWith(label + ' ·')), label);
+assert.ok(!options.some((option) => option.key?.endsWith('-featured')), 'equipped-item presentation is not account progression');
+assert.equal(row('inventory-equipment_weapon-observed').rows()[0].cells[0].value, '+200 · 0/5', 'observed item data survives without claiming it is currently equipped');
+const weapons = row('inventory-equipment_weapon-rarities');
+assert.deepEqual(weapons.rows().map((entry) => entry.label), ['Mythic', 'Legendary', 'Epic']);
+assert.ok(weapons.caption().includes('historique'));
+assert.equal(row('inventory-character_class-rarities').rows().length, 3);
+assert.equal(row('inventory-character_promotion-Infinaut').value(), 'Défi · Recommended Lv.2400');
+assert.ok(options.some((option) => option.label === 'Collection'), 'dated account collection measurements survive');
+assert.ok(options.some((option) => option.label === 'Relax · Owned'), 'historical weapon details keep their object identity');
+assert.ok(options.find((option) => option.label === 'Relax · Owned').title().includes('historique'));
+assert.ok(!options.some((option) => option.label?.includes('Capture d’exemple')), 'history provenance is in tooltips and dated timestamps');
+const relics = row('inventory-equipment_relic-relics');
+assert.equal(relics.rows().flatMap((entry) => entry.cells).length, 12);
+assert.ok(relics.rows()[0].cells[0].image, 'real item crops remain available after full captures are hidden');
+const gold = options.find((option) => option.label === 'Gold');
+assert.equal(gold.value(), 'never read'); assert.equal(gold.timestamp(), ''); assert.equal(gold.color(), '#8a919c');
+Object.assign(answer.resources.find((entry) => entry.field === 'gold'), { value: 0, seen: 1 });
 assert.equal(gold.value(), '0');
-assert.equal(gold.timestamp(), new Date(1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+assert.equal(gold.timestamp(), new Date(1000).toLocaleString([], { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }));
 assert.equal(gold.color(), freshnessColour(600));
-const originalNow = Date.now;
-Date.now = () => 301000;
-assert.equal(gold.color(), freshnessColour(300));
-Date.now = originalNow;
-const weapon = options.find((row) => row.type === 'status' && row.label === 'Weapon');
-assert.equal(weapon.value(), 'Vision');
-assert.equal(weapon.timestamp(), gold.timestamp());
-assert.equal(weapon.color(), freshnessColour(600));
-Object.assign(answer.resources.find((row) => row.field === 'soul_green'),
-  { value: { text: '02.0C' }, seen: 1, verified: true });
-Object.assign(answer.resources.find((row) => row.field === 'soul_blue'),
-  { value: { text: '0.70C' }, seen: 1, verified: true });
-assert.equal(options.find((row) => row.label === 'Âmes vertes').value(), '2.0C');
-assert.equal(options.find((row) => row.label === 'Âmes bleues').value(), '0.70C');
-Object.assign(answer.resources.find((row) => row.field === 'gold'),
-  { value: { text: '629,033,368,693,144,910,929', value: 6.290333686931449e20 } });
-assert.equal(gold.value(), '629F');
-Object.assign(answer.resources.find((row) => row.field === 'cubes'),
-  { value: { text: '2,876,335,558', value: 2876335558 } });
-assert.equal(options.find((row) => row.label === 'Cubes').value(), '2.88C');
+const originalNow = Date.now; Date.now = () => 301000;
+assert.equal(gold.color(), freshnessColour(300)); Date.now = originalNow;
+Object.assign(answer.resources.find((entry) => entry.field === 'cubes'), { value: { text: '2,876,335,558', value: 2876335558 } });
+assert.equal(options.find((option) => option.label === 'Cubes').value(), '2,876,335,558');
+const forest = answer.screens.find((screen) => screen.screen === 'dungeon_forest');
+forest.details = [{ label: 'Previous Entry History', value: '999' }, { label: 'Niveaux visibles', value: '990 à 999' }];
+assert.equal(row('progression-foc').value(), 'never read', 'visible choices and previous entry never prove CLEAR');
+answer.screens.find((screen) => screen.screen === 'character_promotion').inventory.ranks = [];
+assert.equal(row('progression-promotion').value(), 'never read');
 assert.equal(shortNumber('45.9E'), '45.9E');
 assert.equal(soulsParts({ green: { rate: 12345.6789 } })[0].text, '44.4B/h');
 assert.equal(soulsParts({ white: { rate: 1 } }).length, 0);
-const firstCubes = measureResourceRate(null, { value: { value: 100 }, seen: 1000, verified: true });
-assert.equal(measureResourceRate(firstCubes, { value: { value: 112 }, seen: 1060, verified: true }).hourly, 720);
-assert.equal(measureResourceRate(firstCubes, { value: { value: 95 }, seen: 1060, verified: true }).hourly, null);
-assert.equal(measureResourceRate(firstCubes, { value: { value: 112 }, seen: 1060, verified: false }).hourly, null);
-answer.screens.push({ screen: 'guild_request', path: ['Combat', 'Adventure: Guild', 'Guild Request'],
-  fields: [], observed: true, example: { url: '/api/v1/plugins/slayer-legend/examples/guild_request' } });
-game.rows(options, 0);
-assert.equal(options.filter((row) => row.key === 'game-guild_request').length, 1);
-assert.equal(options.filter((row) => row.label === 'Données').length, 0);
-const inventoryAnswer = { resources: [], screens: [
-  { screen: 'soul_weapon', path: ['Combat', 'Equipment: Weapon', 'Soul Weapon'], fields: [],
-    example: { url: '/examples/soul_weapon' } },
-  { screen: 'equipment_accessories', path: ['Combat', 'Equipment: Accessories'], fields: [],
-    inventory: { kind: 'accessories', items: [
-      { id: 'accessory-grey-4', appearance: 'grey', grade: 4, enhancement: 30,
-        displayed_fraction: { numerator: 4, denominator: 5 }, owned: null, equipped: false },
-    ] }, details: [{ label: 'Accessoires visibles', value: '+30 à +41' },
-      { label: 'Onglet', value: 'Accessories' }] },
-  { screen: 'equipment_weapon', path: ['Combat', 'Equipment: Weapon'], fields: [],
-    example: { url: '/examples/equipment_weapon', captured: 1 },
-    inventory: { kind: 'weapons', items: [
-      { id: 'weapon-grey-4', appearance: 'grey', grade: 4, enhancement: 200,
-        displayed_fraction: { numerator: 1, denominator: 5 }, owned: null, equipped: false },
-      { id: 'weapon-grey-3', appearance: 'grey', grade: 3, enhancement: 200,
-        displayed_fraction: { numerator: 0, denominator: 5 }, owned: null, equipped: false },
-      { id: 'weapon-gold', appearance: 'gold', grade: null, enhancement: 200,
-        displayed_fraction: { numerator: 0, denominator: 5 }, owned: true, equipped: true },
-    ] }, details: [{ label: 'Armes visibles', value: 'Grades 4, 3, 2 et 1' },
-      { label: 'Niveau affiché sur les armes', value: '+200' }] },
-  { screen: 'character_class', path: ['Combat', 'Character: Promotion', 'Class'], fields: [],
-    inventory: { kind: 'classes', status: 'never_read' },
-    details: [{ label: 'Classes', value: 'never read' }] },
-] };
-const inventoryOptions = [];
-gameFeature({ get: async () => inventoryAnswer, refresh() {}, tr: (value) => value })
-  .rows(inventoryOptions, 0);
-await new Promise((resolve) => setImmediate(resolve));
-const atKey = (key) => inventoryOptions.findIndex((row) => row.key === key);
-assert.ok(atKey('game-equipment_weapon') < atKey('game-soul_weapon'));
-assert.ok(atKey('game-soul_weapon') < atKey('game-equipment_accessories'));
-const weaponTable = inventoryOptions.find((row) => row.key === 'inventory-equipment_weapon-rarities');
-assert.deepEqual(weaponTable.rows().map((row) => row.label), ['Mythic', 'Legendary', 'Epic']);
-assert.ok(weaponTable.rows().flatMap((row) => row.cells).every((cell) => cell.value === 'never read'));
-assert.ok(weaponTable.caption().includes('historique'));
-assert.equal(inventoryOptions.find((row) => row.key === 'inventory-equipment_weapon-featured').rows()[0].cells[0].value,
-  '+200 · 0/5');
-assert.equal(inventoryOptions.find((row) => row.key === 'inventory-character_class-rarities').rows().length, 3);
-assert.equal(inventoryOptions.filter((row) => row.label === 'Armes visibles').length, 0);
-assert.equal(inventoryOptions.filter((row) => row.label === 'Accessoires visibles').length, 0);
-const inventoryCatalogue = JSON.parse(await readFile(new URL('./screen_inventory.json', import.meta.url)));
-assert.equal(inventoryCatalogue.equipment_weapon.items.length, 25);
-assert.equal(inventoryCatalogue.equipment_accessories.items.length, 25);
-const catalogueAnswer = { resources: [], screens: ['equipment_weapon', 'equipment_accessories'].map((screen) => ({
-  screen, path: screen === 'equipment_weapon' ? ['Combat', 'Equipment: Weapon'] :
-    ['Combat', 'Equipment: Accessories'], fields: [], inventory: inventoryCatalogue[screen],
-})) };
-catalogueAnswer.screens.push({ screen: 'character_promotion', path: ['Combat', 'Character: Promotion'],
-  fields: [], inventory: inventoryCatalogue.character_promotion,
-  details: [{ label: 'Promotions observées', value: '18 rangs' },
-    { label: 'Infinaut', value: 'Challenge · Recommended Lv.2400' }] });
-const catalogueOptions = [];
-gameFeature({ get: async () => catalogueAnswer, refresh() {}, tr: (value) => value })
-  .rows(catalogueOptions, 0);
-await new Promise((resolve) => setImmediate(resolve));
-assert.equal(catalogueOptions.filter((row) => row.key?.startsWith('inventory-equipment_') &&
-  row.type === 'inventory-table').length, 6);
-assert.equal(catalogueOptions.find((row) => row.key === 'inventory-equipment_accessories-rarities').rows()[1].cells[1].value,
-  '+47 · 24/5');
-assert.equal(catalogueOptions.find((row) => row.key === 'inventory-character_promotion-selected').value(), 'Blue Abyss');
-assert.equal(catalogueOptions.find((row) => row.key === 'inventory-character_promotion-Infinaut').value(),
-  'Défi · Recommended Lv.2400');
-assert.equal(catalogueOptions.filter((row) => row.key?.startsWith('inventory-character_promotion-')).length, 20);
-assert.equal(catalogueOptions.filter((row) => row.label === 'Promotions observées').length, 0);
-assert.equal(catalogueOptions.filter((row) => row.label === 'Infinaut').length, 1);
-const menuAnswer = { resources: [], screens: [
-  { screen: 'skill', path: ['Combat', 'Skill panel'], fields: [], example: { url: '/skill' } },
-  { screen: 'quest_daily', path: ['Combat', 'Quest panel: Daily'], fields: [], example: { url: '/quest' } },
-  { screen: 'stage_select', path: ['Combat', 'Select Region'], fields: [], example: { url: '/region' } },
-  { screen: 'equipment_weapon', path: ['Combat', 'Equipment: Weapon'], fields: [], example: { url: '/weapon' } },
-  { screen: 'equipment_accessories', path: ['Combat', 'Equipment: Accessories'], fields: [], example: { url: '/accessories' } },
-  { screen: 'black_orb', path: ['Combat', 'Equipment: Accessories', 'Black Orb'], fields: [], example: { url: '/orb' } },
-  { screen: 'scroll', label: 'Scroll', path: ['Combat', 'Scroll'], fields: [], inventory: { status: 'never_read' } },
-] };
-const menuOptions = [];
-gameFeature({ get: async () => menuAnswer, refresh() {}, tr: (value) => value }).rows(menuOptions, 0);
-await new Promise((resolve) => setImmediate(resolve));
-for (const [key, label, depth, icon] of [
-  ['game-skill', 'Skill', 2, SCREEN_ICONS.skill],
-  ['game-path-Quest', 'Quest', 2, SCREEN_ICONS.quest],
-  ['game-stage_select', 'Select Region', 2, SCREEN_ICONS.stage_select],
-  ['game-equipment_weapon', 'Weapon', 3, SCREEN_ICONS.weapon],
-  ['game-black_orb', 'Black Orb', 4, SCREEN_ICONS.black_orb],
-  ['game-scroll', 'Scroll', 2, SCREEN_ICONS.scroll],
-]) {
-  const row = menuOptions.find((item) => item.key === key);
-  assert.equal(row?.label, label, key);
-  assert.equal(row.depth, depth, key);
-  assert.equal(row.icon, icon, key);
-}
-assert.equal(menuOptions.find((row) => row.key === 'game-equipment_accessories').depth, 3);
-assert.equal(menuOptions.find((row) => row.key === 'inventory-scroll-unread').value(), 'never read');
-const weaponHistory = { resources: [], screens: [{ screen: 'soul_weapon', path: ['Equipment: Weapon', 'Soul Weapon'],
-  fields: [{ field: 'soul_weapon_selected', label: 'Arme sélectionnée', shown: 'text', value: 'Ambition', seen: 300, verified: true }],
-  details: [{ label: 'Arme sélectionnée', value: 'Relax' }, { label: 'Completion Effect ATK', value: '+39.5%' }],
-  details_provenance: { kind: 'historical_catalogue', verified: false, subject: 'Relax', captured: 1 },
-  example: { url: '/relax', captured: 1 } }] };
-const weaponHistoryRows = [];
-gameFeature({ get: async () => weaponHistory, refresh() {}, tr: (value) => value }).rows(weaponHistoryRows, 0);
-await new Promise((resolve) => setImmediate(resolve));
-assert.equal(weaponHistoryRows.find((row) => row.label === 'Arme sélectionnée').value(), 'Ambition');
-assert.equal(weaponHistoryRows.find((row) => row.label === 'Arme sélectionnée · Capture d’exemple').value(), 'Relax');
-assert.equal(weaponHistoryRows.find((row) => row.label === 'Completion Effect ATK · Capture d’exemple').value(), '+39.5%');
-const historyDate = weaponHistoryRows.find((row) => row.label === 'Capture d’exemple · relevé historique');
-assert.equal(historyDate.value(), `Relax · ${new Date(1000).toLocaleString()}`);
-weaponHistory.screens[0].details_provenance.captured = null;
-weaponHistory.screens[0].example = { url: '/ambition-variant', captured: 200 };
-assert.equal(historyDate.value(), 'Relax · Date de capture inconnue');
-assert.equal(weaponHistoryRows.find((row) => row.key === 'scan-soul_weapon-0').timestamp(), '');
-console.log('Resource icons, nested inventory, example provenance, unknown values and live counter updates: OK');
+const first = measureResourceRate(null, { value: { value: 100 }, seen: 1000, verified: true });
+assert.equal(measureResourceRate(first, { value: { value: 112 }, seen: 1060, verified: true }).hourly, 720);
+assert.equal(measureResourceRate(first, { value: { value: 95 }, seen: 1060, verified: true }).hourly, null);
+console.log('Flat account progression, dated CLEAR bounds, no selection/full captures, preserved inventories and resources: OK');

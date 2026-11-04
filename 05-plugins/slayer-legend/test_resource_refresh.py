@@ -42,7 +42,7 @@ class ResourcePriority(unittest.TestCase):
     def test_unsupported_catalogue_never_authorizes_a_route(self):
         missing = rules.unsupported()
         self.assertEqual(len(missing), 13)
-        self.assertTrue(all(row["reason"] == "reader_not_calibrated" and row["navigation_allowed"] is False
+        self.assertTrue(all(row["reason"] in ("reader_not_calibrated", "route_not_supervised") and row["navigation_allowed"] is False
                             for row in missing))
         self.assertIn("feather_black", {row["field"] for row in missing})
 

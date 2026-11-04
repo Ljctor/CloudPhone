@@ -19,6 +19,20 @@ separate milestones. Historical checked items below do not close a new regressio
 
 ### Configuration comparison and visual inventories
 
+- [ ] Verify account progression presentation end to end: flat Overview,
+  Enhance, Growth, Companions, Beasts, Weapons, Soul Weapons, Accessories,
+  Classes, Black Orb, Spirit, Familiars, Skills, Constellations, Memory Tree,
+  Relics, Summon and Latent Power. Overview contains level, promotion and
+  observed lower bounds for stage, Forest of Circulation and Training Cave.
+  Current selections, equipped loadouts, menu paths and full screenshot
+  previews stay out of this view; object art and dated evidence remain.
+- [ ] Verify narrow-phone usability: root plugin sections aligned, Options and
+  configuration dialogs use available viewport width, no horizontal scrolling
+  for three-, four- or six-item rows, and Overlay has no menu icon.
+- [ ] Replace the four missing resource icons with identified game art:
+  Crystals, Dice, Black Mana and Black Feathers. The first three original sprites
+  are identified; the Black Feather still needs a verified visual. Installing
+  an icon does not validate its balance reader or its automatic visit.
 - [ ] Verify the common Configure dialog with five public-mode tabs, identical
   two-row hourly-rate positions, automatic configuration saving and dated last
   measurements keyed by the exact accepted configuration. Agent mode is an
@@ -42,6 +56,13 @@ separate milestones. Historical checked items below do not close a new regressio
 
 ### Navigation review and resource coverage acceptance
 
+- [ ] Replace the navigation review dashboard with an inert full-screen phone
+  simulator: no screen search or picker in the normal view, screenshot navigation
+  through actual hotspots, slides and recorded drags. Action taps give only a
+  brief fading allowed/forbidden effect and never send inputs to the live game.
+  Keep the Cloud Phone-style toolbar on the right by default, with bottom and
+  floating/full-screen placement, Options and the plugin debug overlay toggle.
+  Preserve developer feedback, screenshots and oral reports behind Options.
 - [x] Deploy the private navigation review application on the requested port;
   verify screenshot navigation, recorded slides, overlay toggle and saved feedback
   from a browser. Keep configured routes distinct from observed transitions.
@@ -104,8 +125,10 @@ separate milestones. Historical checked items below do not close a new regressio
   Historical supervision of the original Cube/L3 tour does not certify this
   expanded eight-resource circuit or its current hourly measurement windows.
 - [ ] Complete all 21 resources. Beyond the baseline eight, integrate the isolated
-  seven passive readers from `6ed9600` for four stones and white/green/purple
-  feathers, preserving `refresh_route: false` until their real routes are proven.
+  seven passive readers for four stones and white/green/purple feathers through
+  ReaderRegistry and timestamped fact publication. Their reviewed 480×1040
+  crops have offline tests; other resolutions remain unread. Preserve
+  `refresh_route: false` until their real routes are proven.
   Keep passive reading, automatic visiting and complete coverage separate. The
   other six balances still need reader evidence: crystals, dice, black feathers,
   Dragon Power, Dragon Spark and Black Mana. All thirteen additional routes

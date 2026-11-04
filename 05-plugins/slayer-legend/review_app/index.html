@@ -2,43 +2,51 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="dark">
-  <title>Atlas · Slayer Legend</title>
+  <title>Simulation · Slayer Legend</title>
   <link rel="stylesheet" href="/style.css">
   <script type="module" src="/app.js"></script>
 </head>
 <body>
-  <header class="topbar">
-    <a class="brand" href="/" aria-label="Accueil Atlas"><span class="brand-icon">⌘</span><span>ATLAS<small>Slayer Legend</small></span></a>
-    <nav class="view-switch" aria-label="Vue"><button id="explore-view" aria-pressed="true">Parcourir</button><button id="graph-view" aria-pressed="false">Graphe</button></nav>
-    <div class="top-actions"><label class="toggle"><input id="overlay-toggle" type="checkbox" checked><span>Overlay</span></label><button id="reload" class="icon-button" title="Actualiser les captures" aria-label="Actualiser">↻</button></div>
-  </header>
-  <div class="workspace">
-    <aside class="sidebar" aria-label="Écrans enregistrés">
-      <div class="sidebar-heading"><h2>Écrans</h2><span class="eyebrow">EXPLORER</span></div>
-      <input id="search" type="search" placeholder="Rechercher un écran…" aria-label="Rechercher un écran">
-      <label class="trace-option"><input id="include-traces" type="checkbox">Inclure les traces sans capture</label>
-      <div id="screen-list" class="screen-list" role="list"></div>
-      <div class="sidebar-note">Les captures et les gestes enregistrés constituent cette carte.</div>
-    </aside>
-    <main class="main">
-      <div class="screen-heading"><div><div id="source-label" class="eyebrow">CARTE DE NAVIGATION</div><h1 id="screen-title">Chargement…</h1></div><button id="feedback-open" class="secondary">Signaler une correction</button></div>
-      <div class="capture-toolbar"><div class="history"><button id="back" class="icon-button" aria-label="Capture précédente" title="Capture précédente">←</button><button id="forward" class="icon-button" aria-label="Capture suivante" title="Capture suivante">→</button></div><label for="capture-select" class="sr-only">Capture</label><select id="capture-select" aria-label="Choisir une capture"></select><span id="capture-date"></span></div>
-      <div class="annotation-toolbar"><label for="annotation-kind">Outil</label><select id="annotation-kind"><option value="">Parcourir les captures</option><option value="navigation">Ajouter une navigation</option><option value="action">Ajouter une action</option><option value="forbidden">Signaler une zone interdite</option><option value="detection">Ajouter un repère de reconnaissance</option><option value="vertical">Déclarer un slide vertical</option><option value="horizontal">Déclarer un slide horizontal</option><option value="draggable">Déclarer un glisser-déposer</option></select><span>Appui long sur une zone : proposer sa suppression.</span></div>
+  <main class="stage" aria-label="Copie inerte du téléphone">
+    <div id="phone" class="phone" aria-label="Capture interactive, sans action sur le jeu">
+      <img id="screen-image" alt="Capture enregistrée" draggable="false">
+      <svg id="overlay" viewBox="0 0 480 1040" preserveAspectRatio="none" aria-hidden="true"></svg>
+      <div id="effects" aria-hidden="true"></div>
       <div id="notice" class="notice" role="status" hidden></div>
-      <section id="explorer" class="explorer" aria-label="Navigation dans les captures">
-        <div class="phone-wrap"><div id="phone" class="phone"><img id="screen-image" alt="Capture de l’écran sélectionné" draggable="false"><div id="image-empty" class="image-empty" hidden><span>◇</span><strong>Capture complète absente</strong><p>Cette trace conserve le geste, mais pas une image assez précise pour revoir l’écran.</p><canvas id="thumbnail" width="12" height="26" aria-label="Aperçu de la trace"></canvas></div><svg id="overlay" viewBox="0 0 480 1040" preserveAspectRatio="none" aria-hidden="true"></svg><div id="gesture-hint" class="gesture-hint" hidden></div></div></div>
-        <div class="explorer-help"><span class="keycap">↗</span> Cliquez sur une zone, glissez une liste ou déplacez un élément pour suivre une transition enregistrée.</div>
-      </section>
-      <section id="map-view" class="map-view" aria-label="Graphe autour de cet écran" hidden><div class="map-intro">L’écran courant et ses transitions enregistrées. Cliquez sur une capture pour poursuivre.</div><div id="map-scroll" class="map-scroll"><svg id="map" role="img" aria-label="Graphe de navigation"></svg></div></section>
-      <footer class="legend" aria-label="Couleurs des zones"><span style="--zone:#ffe100">Navigation</span><span style="--zone:#ff9a23">Action</span><span style="--zone:#ff5353">Interdit</span><span style="--zone:#2dd4bf">Reconnaissance</span><span style="--zone:#168bff">Slide vertical</span><span style="--zone:#bb50ff">Slide horizontal</span><span style="--zone:#ff65bd">Déplacement</span><p>Pointillés : vos modifications · Double bordure : condition · Tirets transparents : suppression proposée</p></footer>
-    </main>
-    <aside class="inspector" aria-label="Transitions et retours">
-      <div class="sidebar-heading"><h2>Depuis cet écran</h2></div><p id="transition-note" class="muted">Les destinations sont issues des gestes enregistrés.</p><div id="transitions" class="transitions"></div>
-      <section id="feedback-panel" class="feedback-panel" hidden><div class="sidebar-heading"><h2>Votre correction</h2><button id="feedback-close" class="icon-button" aria-label="Fermer la correction">×</button></div><form id="feedback-form"><label for="correct-screen">Nom réel de l’écran <span class="muted">facultatif</span></label><input id="correct-screen" type="text" maxlength="120" placeholder="Ex. Soul Weapon → Engraving"><label for="feedback-text">Ce qui ne correspond pas</label><textarea id="feedback-text" rows="5" maxlength="4000" required placeholder="Décrivez la zone, le geste ou la destination attendue…"></textarea><div id="feedback-context" class="muted"></div><button type="submit" class="primary">Enregistrer le retour</button><p id="feedback-result" role="status"></p></form></section>
-      <section class="review-history"><h2>Retours sur cette capture</h2><div id="feedback-list" class="muted">Aucun retour enregistré.</div></section>
-    </aside>
-  </div>
+    </div>
+  </main>
+  <nav id="toolbar" class="toolbar" aria-label="Téléphone simulé">
+    <button id="toolbar-grip" class="control grip" aria-label="Déplacer la barre">⠿</button>
+    <button id="back" class="control" aria-label="Capture précédente" title="Retour">◁</button>
+    <button id="home" class="control" aria-label="Retour à la capture Combat" title="Combat">○</button>
+    <button id="reload" class="control" aria-label="Actualiser les captures" title="Actualiser les captures">↻</button>
+    <button id="fullscreen" class="control" aria-label="Plein écran" title="Plein écran">⛶</button>
+    <button id="options-open" class="control" aria-label="Options" title="Options">⚙</button>
+  </nav>
+  <aside id="options-panel" class="feedback-panel" aria-label="Options de simulation" hidden>
+    <div class="panel-heading"><strong>Simulation</strong><button id="options-close" class="control" aria-label="Fermer les options">×</button></div>
+    <p>Captures enregistrées · aucun contrôle du jeu.</p>
+    <label class="overlay-control"><input id="overlay-toggle" type="checkbox" checked><span>Zones de navigation et d’action</span></label>
+    <label class="overlay-control"><input id="landmarks-toggle" type="checkbox" checked><span>Repères du plugin</span></label>
+    <fieldset><legend>Barre de boutons</legend>
+      <label><input type="radio" name="toolbar-position" value="right" checked>À droite</label>
+      <label><input type="radio" name="toolbar-position" value="bottom">En bas</label>
+      <label><input type="radio" name="toolbar-position" value="floating">Flottante</label>
+    </fieldset>
+    <button id="feedback-open">Signaler une correction · texte ou voix</button>
+  </aside>
+  <aside id="feedback-panel" class="feedback-panel" aria-label="Votre correction" hidden>
+    <div class="panel-heading"><strong>Votre correction</strong><button id="feedback-close" class="control" aria-label="Fermer la correction">×</button></div>
+    <p>Appui long sur une zone : proposer sa suppression.</p>
+    <label for="annotation-kind">Ajouter une zone</label>
+    <select id="annotation-kind"><option value="">Parcourir</option><option value="navigation">Navigation</option><option value="action">Action</option><option value="forbidden">Interdit</option><option value="detection">Reconnaissance</option><option value="vertical">Slide vertical</option><option value="horizontal">Slide horizontal</option><option value="draggable">Glisser-déposer</option></select>
+    <form id="feedback-form">
+      <label for="correct-screen">Nom réel de l’écran · facultatif</label><input id="correct-screen" type="text" maxlength="120">
+      <label for="feedback-text">Ce qui ne correspond pas</label><textarea id="feedback-text" rows="3" maxlength="4000" required></textarea>
+      <button type="submit">Enregistrer le retour</button><p id="feedback-result" role="status"></p>
+    </form>
+  </aside>
 </body>
 </html>

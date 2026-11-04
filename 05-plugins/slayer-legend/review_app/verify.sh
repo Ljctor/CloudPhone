@@ -19,7 +19,11 @@ def request(path, expected=200, **kwargs):
     assert response.headers.get('Cache-Control') == 'private, no-store'
     return response.read()
 
-assert b'<!doctype html' in request('/').lower()
+html = request('/')
+assert b'<!doctype html' in html.lower()
+assert b'id="toolbar"' in html and b'id="options-panel"' in html
+assert b'id="search"' not in html and b'id="capture-select"' not in html
+assert b'id="screen-list"' not in html
 graph = json.loads(request('/api/graph'))
 assert graph['version'] == 1
 nodes = {node['id']: node for node in graph['nodes']}

@@ -70,3 +70,28 @@ export function battlefieldLabel(node) {
   const size = typeof field === 'string' ? field : field.size;
   return ({ mini: 'Mini', compact: 'Compact', small: 'Petit', medium: 'Moyen', big: 'Grand', large: 'Grand', none: 'Absent', unknown: 'Indéterminé' })[size] ?? size;
 }
+
+// Simulator feedback only: even an action with a recorded destination cannot
+// navigate. Whole navigation rectangles are hotspots, independent of drawing.
+export function reviewGesture(edges, gesture, regions = []) {
+  if (!valid(gesture.start)) return { kind: 'unknown', matches: [] };
+  const hit = regions.filter((region) => inside(gesture.start, region.rect));
+  const near = edges.filter((edge) => valid(edge.start) && distance(gesture.start, edge.start) <= .06);
+  if (hit.some((region) => region.forbidden || region.kind === 'forbidden')
+      || near.some((edge) => edge.annotationKind === 'forbidden')) return { kind: 'forbidden', matches: [] };
+  if (hit.some((region) => region.kind === 'action') || near.some((edge) => edge.annotationKind === 'action'))
+    return { kind: 'action', matches: [] };
+  const dragging = gesture.end && distance(gesture.start, gesture.end) >= .035;
+  const navigation = edges.filter((edge) => !['action', 'forbidden'].includes(edge.annotationKind));
+  let matches = matchGesture(navigation, gesture, []).matches;
+  if (!dragging) {
+    const boxes = hit.filter((region) => ['navigation', 'tap'].includes(region.kind));
+    const rectEdges = navigation.filter((edge) => !['swipe', 'drag', 'draggable', 'vertical', 'horizontal'].includes(edge.kind)
+      && valid(edge.start) && boxes.some((region) => inside(edge.start, region.rect))
+      && (edge.kind !== 'long' || gesture.duration >= Math.max(500, edge.holdMs || 0)));
+    if (rectEdges.length) matches = rectEdges;
+  }
+  const destinations = new Set();
+  matches = matches.filter((edge) => !destinations.has(edge.to) && destinations.add(edge.to));
+  return { kind: matches.length ? 'navigation' : 'unknown', matches };
+}

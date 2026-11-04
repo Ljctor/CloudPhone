@@ -1,7 +1,8 @@
-// Only icons cut from real Slayer Legend captures belong here. Unknown
-// icons stay absent until a capture of their actual screen is available.
+// Actual game visuals only: captured pixels or identified original game sprites.
+// Unknown icons stay absent rather than being approximated or recoloured.
 import { GOLD, SOULS } from './page_icons.js';
 import { STONE_ICONS } from './page_stone_icons.js';
+import { EXTRA_RESOURCE_ICONS } from './page_resource_extra_icons.js';
 
 // Emerald icon, 22x20 pixels, from fixtures/battle_emerald.txt. Its dark
 // battle-bar background is made transparent; the shape is unchanged.
@@ -30,7 +31,7 @@ const FEATHER_PURPLE_GAME = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABsAA
 // Enhance Cube icon, cropped from a real 720x1560 Weapon detail capture.
 const CUBES_GAME = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACEAAAAhCAYAAABX5MJvAAAEJElEQVR42tWXz09cVRTHP+f9mkeBoZRqFBBa0LampiZiTJrohhR2jS2EZRMTE1cua+rejcb+A7pz4YoUTLsSjG5MTJqauLRaQAxNbA1CYZiZ9+O+6+I+5s2bGSpQSPAmb3LvzZnv/d5zvvece2VgYID9tjtnl/V2//L9QdkvjsURaM5uDW+f+10DRJEHQMxfXJir88r4slYqro2vPBiWZyZxK3W1pA5//dtGixf4SG7WRp/r6zm4mbEsVNtt4rfWITsS4ZBGYX7da3bw9k95w89kGoAqFQIeAhDh5mxOMljr39BTTYv9MgrvLjR7I0diZmhJj/xgnPPjxYzIx/Id3awBkNBTs3dROTD/+Tz4ymPhU32J6WEznlqAe6OmP1lHpqUmtNY8XA3R2kNE6AZIf+sXjhr+55fDjECpDUiacC2t93Y67owojvU43NCXcvM3ZR6ANjqJCGrzH26O5RYUkZoX9nw6RISePo84NKzn39ti6bbZ5TEv5Loeawk20531S8k6VRuGhrpZXFxLZ4//X5KVk3EqHhdA2IpAP2rn9Pl24hK4Nnw5bHb2wUK29enzG2ys2wC8+KrPympEe1jk0UpIj9cBgfGw48oeNPFWQFjWdAY+KgDLNV/0T8gF2pvMC8UCp69uj2Jeo4sgMvBOIDjVfWTM4nMO5XWFk4AqQxKBjnYGSuJk39F1AGbOmAQ1Mg937/4KQN/Jc8bCTkmEhsSJHq8l0JvvtLGent4oSFh7HOEXBQfBCQQKMD8OY3NZrdmuvA6ArgtTYeMsjoa//QSvF0KlEQXuhjEK0lSwGcBQHYk/i+CrTO99bxSw2hWgiZ+YfPFSZ5Zhw6eFI9YaDWgLEg3aMV9SSJOMJ1hlKHS2OGp1WdwrQqz2WUUDVYsCiQLLTl1cTOcTkKT5j8PDsHoiy5BeqMB1G4SzSxLr5exOUNAeeGCL+QC0Ajqa8f7og7YoE+aqY2GLxq2C55md3P8C+q+lOIneXdoOJCSKPVwLtAZLjP4dMlL1LVQ6l3IcANlHOHq6MvUvrpnFEg1Kg4gh4gpYDXWoXClhqTYTMhFcDWEF7FhRqJj6MvR+x+5IlNazfrdv3L8ZGxJoI9jNlFR9W610oJTR/CtFF98WLNGAg28bbZyaeponMhnkwK0qUASnBE7q1s1tbdiN5R8S26PdBi8VdWVL6PYh8VsUyUTyJLYvGLdGl/X49y2q40zznN1C6V2pX5+km/KBoct5m/+81EwuDMpswwXVEZiYywN9NdtMoORqpq40q/DnuqqvVX7xZyrl6oAvALKbF9g3Ly/rpYumDF79pLAzmJhN3htPx0oz8eCUHAiJ+jZ7pvk9UUuI6XKTe3wSOgfq1/gQw3Fk3qLVrQ0SFR8KCXGsvNR7+/t3JBEG1QMnEKt4L0dUDi0c/wIQXH0eYRiY2AAAAABJRU5ErkJggg==';
 
-export const RESOURCE_ICONS = { gold: GOLD, emerald: EMERALD_GAME, diamond: DIAMOND_GAME, cubes: CUBES_GAME,
+export const RESOURCE_ICONS = { ...EXTRA_RESOURCE_ICONS, gold: GOLD, emerald: EMERALD_GAME, diamond: DIAMOND_GAME, cubes: CUBES_GAME,
   feather_white: FEATHER_WHITE_GAME, feather_green: FEATHER_GREEN_GAME, feather_purple: FEATHER_PURPLE_GAME, dragon_power: DRAGON_POWER_GAME, dragon_spark: DRAGON_SPARK_GAME };
 for (const [colour, icon] of Object.entries(SOULS)) RESOURCE_ICONS[`soul_${colour}`] = icon;
 for (const [colour, icon] of Object.entries(STONE_ICONS)) RESOURCE_ICONS[`stone_${colour}`] = icon;

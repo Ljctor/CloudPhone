@@ -24,14 +24,16 @@ export function usePluginDialog(panel) {
 // context, here and below: { settings, updateSettings, openDialog }.
 function pluginSections(context, plugin) {
   const { settings, updateSettings } = context;
-  const render = ({ section, options, children }) => {
+  const render = ({ section, options, children }, depth = 0) => {
     const items = options.map(([option, index]) => pluginOption(context, plugin, option, index));
-    const nested = children.map(render);
+    const nested = children.map((child) => render(child, section ? depth + 1 : depth));
     if (!section) return <React.Fragment key="top">{items}{nested}</React.Fragment>;
     const id = sectionFoldId(plugin, section);
     const folded = sectionFolded(settings, id, section);
     return (
-      <details key={id} open={!folded} style={styles.pluginSection}
+      <details key={id} open={!folded} style={depth === 0
+        ? { ...styles.pluginSection, marginLeft: 0, paddingLeft: 0, borderLeft: 'none' }
+        : styles.pluginSection}
         onToggle={(event) => {
           const now = !event.currentTarget.open;
           if (now !== folded) updateSettings(foldedChange(settings, 'foldedPlugins', id, now));

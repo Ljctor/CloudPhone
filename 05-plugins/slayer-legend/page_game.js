@@ -1,5 +1,5 @@
-// The game's state and archived examples from GET /game are nested by their
-// path through the game's menus, with resources in their own section.
+// Account progression is grouped by topic, independently of menu paths.
+// Current selection, equipped loadouts and battle state stay outside this view.
 // Values fade from white to light blue with observation age; timestamps
 // stay separate so the settings renderer can keep them grey at the right.
 // Asked at load, then every 10 s while a row shows. rows(options, at): puts the sections into
@@ -7,18 +7,26 @@
 import { inventoryTables } from './page_inventory.js';
 import { RESOURCE_ICONS } from './page_resources.js';
 import { SCREEN_ICONS } from './page_screen_icons.js';
-import { OVERLAY } from './page_icons.js';
 import { shortNumber } from './page_numbers.js';
 import { freshnessColour } from './page_freshness.js';
 const PIECE = '#d9a441';
 const EVERY = 10000;
 
 export default function gameFeature(api, { resourceOptions = [], displayOptions = [] } = {}) {
+  api.addTranslations?.({ 'Vue d’ensemble': 'Overview', 'Niveau': 'Level',
+    'Forest of Circulation · étage le plus haut atteint': 'Highest Forest of Circulation',
+    'Training Cave · étage le plus haut atteint': 'Highest Training Cave' });
   const game = { answer: null, at: 0, busy: false, list: null, start: 0, count: 0 };
-  const time = (seen) => new Date(seen * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const time = (seen) => {
+    const date = new Date(seen * 1000), today = new Date(Date.now());
+    const old = date.toDateString() !== today.toDateString();
+    return date.toLocaleString([], { ...(old ? { day: '2-digit', month: '2-digit',
+      ...(date.getFullYear() !== today.getFullYear() ? { year: '2-digit' } : {}) } : {}),
+      hour: '2-digit', minute: '2-digit' });
+  };
   const shown = (row) => {
     const value = row.value;
-    if (row.shown === 'lower_bound') return `≥ ${value}`;
+    if (row.shown === 'lower_bound') return Number.isInteger(Number(value)) ? `> ${Number(value) - 1}` : `≥ ${value}`;
     if (row.shown === 'percent') return `${Math.round(value * 100)} %`;
     if (row.shown === 'switch') return api.tr(value === 'on' ? 'Activé' : 'Désactivé');
     if (value && typeof value === 'object') return shortNumber(value) ?? '';
@@ -28,8 +36,11 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
     if (row.value === null || row.value === undefined) return 'never read';
     return shown(row);
   };
-  const resourceText = (row) => row.value === null || row.value === undefined ? 'never read' :
-    shortNumber(row.value) ?? 'never read';
+  const resourceText = (row) => {
+    if (row.value == null) return 'never read';
+    if (row.field === 'cubes') return String(typeof row.value === 'object' ? row.value.text ?? row.value.value : row.value);
+    return shortNumber(row.value) ?? 'never read';
+  };
   const observed = (current) => ({
     timestamp: () => current().seen ? time(current().seen) : '',
     color: () => current().value == null ? '#8a919c' :
@@ -63,53 +74,10 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
       };
     }),
   ];
-  const accessPath = (screen) => {
-    const known = {
-      battle: [],
-      skill: ['Skill'],
-      companion: ['Companion'],
-      beast: ['Companion', 'Beasts'],
-      companion_advancement: ['Companion', 'Advancement'],
-      adventure_map: ['Adventure'],
-      dungeon_map: ['Adventure', 'Dungeon'],
-      stage_select: ['Select Region'],
-      scroll: ['Scroll'],
-      quest_panel: ['Quest'],
-      equipment_weapon: ['Equipment', 'Weapon'],
-      equipment_accessories: ['Equipment', 'Accessories'],
-      equipment_relic: ['Equipment', 'Relic'],
-      spirit: ['Equipment', 'Spirit'],
-      black_orb: ['Equipment', 'Accessories', 'Black Orb'],
-      black_orb_accessory: ['Equipment', 'Accessories', 'Black Orb', 'Accessory card'],
-      soul_weapon: ['Equipment', 'Weapon', 'Soul Weapon'],
-      soul_weapon_engraving: ['Equipment', 'Weapon', 'Soul Weapon', 'Engraving'],
-      mine_list: ['Adventure', 'Dungeon', 'Closed Mine'],
-      mine_area: ['Adventure', 'Dungeon', 'Closed Mine', 'Area'],
-      mine_feathers: ['Adventure', 'Dungeon', 'Closed Mine', 'Area', 'Feathers'],
-      mine_fight: ['Adventure', 'Dungeon', 'Closed Mine', 'Area', 'Feathers', 'Fight'],
-      adventure_story_ellie: ['Adventure', 'Slayer Story', 'Sub', 'Ellie episodes'],
-    }[screen.screen];
-    if (known) return known;
-    const aliases = { 'Skill panel': 'Skill', 'Quest panel': 'Quest', Beast: 'Beasts' };
-    const path = [];
-    for (const raw of screen.path ?? [screen.label]) {
-      if (raw === 'Combat') continue;
-      const [prefix, tail] = raw.split(': ', 2);
-      if (tail === undefined) {
-        const label = aliases[prefix] ?? prefix;
-        if (path.at(-1) !== label) path.push(label);
-        continue;
-      }
-      const parent = aliases[prefix] ?? prefix;
-      const seen = path.indexOf(parent);
-      if (seen >= 0) path.length = seen + 1;
-      else path.push(parent);
-      const label = aliases[tail] ?? tail;
-      if (label !== parent && path.at(-1) !== label) path.push(label);
-    }
-    return path;
-  };
-  const fieldRows = (screen) => (screen.fields ?? []).map((field) => (field.shown === 'grid' ? {
+  const transientField = (field) => /selected|equipped|preset|variant|engraving|progress|region|^stage$|^mine_/.test(field);
+  const transientDetail = (detail) => /sélection|selected|équipé|equipped|onglet|\btab\b|actions visibles|boutons visibles|section companion|promotion affichée|défilement observé|emplacement|grille|^arme$/i.test(detail.label)
+    || /sélectionnée|selected|équipés$/i.test(String(detail.value));
+  const fieldRows = (screen) => (screen.fields ?? []).filter((field) => !transientField(field.field)).map((field) => (field.shown === 'grid' ? {
       type: 'grid', label: field.label,
       visible: () => {
         ask();
@@ -132,6 +100,8 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
   const detailRows = (screen) => {
     const provenance = () => (screenOf(screen.screen) ?? screen).details_provenance;
     const capturedAt = () => provenance() ? provenance().captured : (screenOf(screen.screen) ?? screen).example?.captured;
+    const subject = () => provenance()?.subject ??
+      (screenOf(screen.screen) ?? screen).details?.find((row) => ['Arme sélectionnée', 'Arme'].includes(row.label))?.value;
     const summaries = new Set();
     if (screen.inventory?.items?.length) {
       ['Armes visibles', 'Accessoires visibles', 'Grades visibles', 'Niveau affiché sur les armes']
@@ -144,27 +114,25 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
       screen.inventory.ranks?.forEach((rank) => summaries.add(rank.name));
     }
     const details = (screen.details ?? []).flatMap((detail, index) => {
-      if (!detail.label || summaries.has(detail.label) || detail.value === null ||
+      if (!detail.label || transientDetail(detail) || screen.screen === 'character_enhance' && detail.label === 'Niveau' || summaries.has(detail.label) || detail.value === null ||
           detail.value === undefined || !String(detail.value).trim()) return [];
       return [{
-        type: 'status', key: `scan-${screen.screen}-${index}`, label: `${api.tr(detail.label)} · ${api.tr('Capture d’exemple')}`,
+        type: 'status', key: `scan-${screen.screen}-${index}`, label: `${subject() ? `${subject()} · ` : ''}${api.tr(detail.label)}`,
         ...observed(() => ({ value: detail.value, seen: capturedAt() })),
         value: () => screenOf(screen.screen)?.details?.[index]?.value ?? detail.value,
+        title: () => [api.tr('Capture d’exemple · relevé historique'), subject(),
+          capturedAt() ? new Date(capturedAt() * 1000).toLocaleString() : api.tr('Date de capture inconnue')].filter(Boolean).join(' · '),
       }];
     });
-    if (!details.length) return details;
-    if (screen.inventory?.items?.length || screen.inventory?.kind === 'promotion_ranks') return details;
-    return [{ type: 'status', key: `scan-date-${screen.screen}`, label: 'Capture d’exemple · relevé historique',
-      value: () => {
-        const captured = capturedAt();
-        const subject = provenance()?.subject;
-        return [subject, captured ? new Date(captured * 1000).toLocaleString() : api.tr('Date de capture inconnue')]
-          .filter(Boolean).join(' · ');
-      } }, ...details];
+    return details;
   };
+
   const inventoryRows = (screen) => {
     const tables = inventoryTables(screen, () => screenOf(screen.screen) ?? screen);
-    if (tables.length) return tables;
+    if (tables.length) return tables.map((table) => table.key.endsWith('-featured') ? {
+      ...table, key: table.key.replace(/-featured$/, '-observed'), label: 'Objet observé',
+      rows: () => table.rows().map((row) => ({ ...row, label: 'Objet' })),
+    } : table);
     const inventory = screen.inventory;
     if (!inventory) return [];
     if (inventory.status === 'never_read') {
@@ -173,17 +141,7 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
         value: () => 'never read', muted: () => true }];
     }
     if (inventory.kind === 'promotion_ranks' && inventory.ranks?.length) {
-      const rows = [
-        { type: 'status', key: `inventory-${screen.screen}-date`, label: 'Relevé historique',
-          muted: () => true,
-          value: () => {
-            const captured = screenOf(screen.screen)?.example?.captured;
-            return captured ? new Date(captured * 1000).toLocaleString() : 'Capture enregistrée';
-          } },
-        { type: 'status', key: `inventory-${screen.screen}-selected`,
-          label: 'Promotion sélectionnée', ...archived(screen), value: () => screenOf(screen.screen)?.inventory?.selected ??
-            inventory.selected ?? 'never read' },
-      ];
+      const rows = [];
       for (const rank of inventory.ranks) {
         rows.push({ type: 'status', key: `inventory-${screen.screen}-${rank.name}`,
           label: rank.name, compact: true, ...archived(screen),
@@ -201,54 +159,94 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
     }
     return [];
   };
-  const examplesOf = (screen) => {
-    const current = screenOf(screen.screen) ?? screen;
-    return current.examples?.length ? current.examples : current.example?.url ? [current.example] : [];
+  const categories = [
+    ['overview', 'Vue d’ensemble', 'character'], ['enhance', 'Enhance', 'character'],
+    ['growth', 'Growth', 'character'], ['companions', 'Companions', 'companion'],
+    ['beasts', 'Beasts', 'companion'], ['weapons', 'Weapons', 'weapon'],
+    ['soul-weapons', 'Soul Weapons', 'weapon'], ['accessories', 'Accessories', 'equipment'],
+    ['classes', 'Classes', 'character'], ['black-orb', 'Black Orb', 'black_orb'], ['spirit', 'Spirit', 'equipment'],
+    ['familiars', 'Familiars', 'skill'], ['skills', 'Skills', 'skill'],
+    ['constellations', 'Constellations', 'companion'], ['memory-tree', 'Memory Tree', 'companion'],
+    ['relics', 'Relics', 'equipment'], ['summon', 'Summon', 'shop'], ['latent-power', 'Latent Power', 'character'],
+  ];
+  const categoryOf = (screen) => {
+    const id = screen.screen;
+    if (/constell/.test(id)) return 'constellations';
+    if (/memory/.test(id)) return 'memory-tree';
+    if (/latent|dragon_power|dragon_spark/.test(id)) return 'latent-power';
+    if (id === 'character_promotion') return 'overview';
+    if (id === 'character_class') return 'classes';
+    if (id.startsWith('character_enhance')) return 'enhance';
+    if (id.startsWith('character_growth')) return 'growth';
+    if (id.startsWith('beast')) return 'beasts';
+    if (id.startsWith('companion')) return 'companions';
+    if (id.startsWith('soul_weapon')) return 'soul-weapons';
+    if (id === 'equipment_weapon' || id === 'weapon_detail') return 'weapons';
+    if (id.startsWith('equipment_accessor')) return 'accessories';
+    if (id.startsWith('black_orb')) return 'black-orb';
+    if (id.startsWith('spirit')) return 'spirit';
+    if (id.startsWith('familiar')) return 'familiars';
+    if (id.startsWith('skill')) return 'skills';
+    if (id.startsWith('equipment_relic')) return 'relics';
+    if (id.startsWith('shop_summon')) return 'summon';
+    return null;
   };
-  const captureRow = (screen) => ({
-    type: 'capture', key: `capture-${screen.screen}`, label: 'Capture',
-    examples: () => examplesOf(screen),
-    visible: () => { ask(); return examplesOf(screen).length > 0; },
-  });
+  const progression = (fields) => game.answer?.screens?.flatMap((screen) => screen.fields ?? [])
+    .find((row) => fields.includes(row.field) && row.value != null);
+  const overview = (key) => {
+    if (key === 'level') {
+      const fact = progression(['account_level', 'player_level']);
+      if (fact) return fact;
+      const screen = screenOf('character_enhance'), detail = screen?.details?.find((row) => row.label === 'Niveau');
+      return { value: detail?.value ?? null, seen: screen?.example?.captured, historical: true };
+    }
+    if (key === 'promotion') {
+      const fact = progression(['promotion_rank', 'account_promotion']);
+      if (fact) return fact;
+      const screen = screenOf('character_promotion');
+      const rank = screen?.inventory?.ranks?.filter((row) => row.status === 'complete').at(-1);
+      return { value: rank?.name ?? null, shown: 'lower_bound', seen: screen?.example?.captured, historical: true };
+    }
+    if (key === 'foc' || key === 'cave') {
+      const ids = key === 'foc' ? ['highest_foc', 'highest_forest_of_circulation'] : ['highest_training_cave'];
+      const fact = progression(ids); if (fact) return fact;
+      const screen = screenOf(key === 'foc' ? 'dungeon_forest' : 'dungeon_training');
+      const detail = screen?.details?.find((row) => row.label === (key === 'foc' ? 'CLEAR visible' : 'État visible'));
+      const match = key === 'foc' ? /^(?:\d+\s*(?:à|–|-)\s*)?(\d+)$/.exec(String(detail?.value ?? ''))
+        : /Area\s+(\d+)\s+MAX\s+CLEAR/i.exec(String(detail?.value ?? ''));
+      const example = key === 'foc' ? screen?.examples?.find((row) => /dungeon_forest_scroll(?:_1)?$/.test(row.url)) : screen?.example;
+      return { value: match ? Number(match[1]) : null, shown: 'lower_bound', seen: example?.captured, historical: true };
+    }
+    return progression({ highest: ['highest'], foc: ['highest_foc', 'highest_forest_of_circulation'],
+      cave: ['highest_training_cave'] }[key]) ?? { value: null };
+  };
+  const overviewRows = () => [['level', 'Niveau'], ['promotion', 'Promotion'], ['highest', 'Stage le plus haut atteint'],
+    ['foc', 'Forest of Circulation · étage le plus haut atteint'], ['cave', 'Training Cave · étage le plus haut atteint']].map(([key, label]) => ({
+      type: 'status', key: `progression-${key}`, label,
+      value: () => text(overview(key)), ...observed(() => overview(key)),
+      title: () => overview(key).historical ? api.tr('Capture d’exemple · relevé historique') : '',
+      visible: () => { ask(); return true; },
+    }));
   const sections = () => {
     const rows = [...resourceRows(),
-      { type: 'section', key: 'overlay', label: 'Overlay', icon: OVERLAY, depth: 1, folded: true },
-      ...resourceOptions,
+      { type: 'section', key: 'overlay', label: 'Overlay', depth: 1, folded: true }, ...resourceOptions,
       ...displayOptions.map((option) => option.type === 'section' ? { ...option, depth: 2 } : option),
       { type: 'section', key: 'game-state', label: 'État du jeu', depth: 1, folded: true }];
-    const root = { children: new Map(), screens: [] };
-    for (const screen of game.answer?.screens ?? []) {
-      // A scanned example is useful even when its OCR reader is pending.
-      if (!screen.fields?.length && !screen.example?.url && !screen.examples?.length &&
-          !screen.details?.length && !screen.inventory) continue;
-      const path = accessPath(screen);
-      let node = root;
-      for (const label of path) {
-        if (!node.children.has(label)) node.children.set(label, { label, children: new Map(), screens: [] });
-        node = node.children.get(label);
+    for (const [id, label, icon] of categories) {
+      rows.push({ type: 'section', key: `progression-${id}`, label, depth: 2, folded: true, icon: SCREEN_ICONS[icon] });
+      const content = id === 'overview' ? overviewRows() : [];
+      for (const screen of game.answer?.screens ?? []) {
+        if (categoryOf(screen) !== id) continue;
+        content.push(...fieldRows(screen), ...detailRows(screen), ...inventoryRows(screen));
       }
-      node.screens.push(screen);
+      if (id === 'latent-power') for (const field of ['dragon_power', 'dragon_spark']) {
+        const current = () => game.answer?.resources?.find((row) => row.field === field) ?? { value: null };
+        content.push({ type: 'status', key: `progression-${field}`, label: current().label ??
+          (field === 'dragon_power' ? 'Dragon Power' : 'Dragon Spark'),
+          value: () => resourceText(current()), ...observed(current) });
+      }
+      rows.push(...(content.length ? content : [{ type: 'status', label, value: () => 'never read' }]));
     }
-    const showScreen = (screen) => {
-      rows.push(...fieldRows(screen));
-      rows.push(...detailRows(screen));
-      rows.push(...inventoryRows(screen));
-      if (screen.example?.url || screen.examples?.length) rows.push(captureRow(screen));
-    };
-    const showChildren = (node, path = []) => {
-      for (const child of node.children.values()) {
-        const at = [...path, child.label];
-        const iconKey = { Quest: 'quest', Scroll: 'scroll', 'Select Region': 'stage_select',
-          Weapon: 'weapon', 'Black Orb': 'black_orb' }[child.label] ?? child.label.toLowerCase();
-        rows.push({ type: 'section', key: child.screens.length ? `game-${child.screens[0].screen}` :
-          `game-path-${at.join('/')}`, label: child.label, depth: at.length + 1, folded: true,
-          icon: SCREEN_ICONS[iconKey] });
-        child.screens.forEach(showScreen);
-        showChildren(child, at);
-      }
-    };
-    root.screens.forEach(showScreen);
-    showChildren(root);
     return rows;
   };
   // Rebuild when a newly captured screen appears; values keep reading the

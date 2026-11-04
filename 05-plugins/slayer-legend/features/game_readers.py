@@ -33,6 +33,7 @@ def reader_table(
     cubes=None,
     currencies=None,
     equipment=None,
+    resource_balances=None,
 ):
     """{reader id: fn(shot, base, overlays, plain) -> {field: value}}: the
     plugin's existing readers (stage.py, stage_select.py, gold.py,
@@ -154,7 +155,11 @@ def reader_table(
             }
         }
 
+    def owned_resources(shot, base, overlays, plain):
+        return resource_balances.read(shot) if resource_balances else {}
+
     return {
+        "resource_balances": owned_resources,
         "battle_stage": battle_stage,
         "progress": progress,
         "gold": gold,

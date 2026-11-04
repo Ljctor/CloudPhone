@@ -63,43 +63,57 @@
     "field": "stone_green",
     "label": "Pierres vertes",
     "english": "Green stones",
-    "pending": true
+    "pending": false,
+    "reader": "resource_balances",
+    "refresh_route": false
   },
   {
     "field": "stone_blue",
     "label": "Pierres bleues",
     "english": "Blue stones",
-    "pending": true
+    "pending": false,
+    "reader": "resource_balances",
+    "refresh_route": false
   },
   {
     "field": "stone_red",
     "label": "Pierres rouges",
     "english": "Red stones",
-    "pending": true
+    "pending": false,
+    "reader": "resource_balances",
+    "refresh_route": false
   },
   {
     "field": "stone_yellow",
     "label": "Pierres jaunes",
     "english": "Yellow stones",
-    "pending": true
+    "pending": false,
+    "reader": "resource_balances",
+    "refresh_route": false
   },
   {
     "field": "feather_white",
     "label": "Plumes blanches",
     "english": "White feathers",
-    "pending": true
+    "pending": false,
+    "reader": "resource_balances",
+    "refresh_route": false
   },
   {
     "field": "feather_green",
     "label": "Plumes vertes",
     "english": "Green feathers",
-    "pending": true
+    "pending": false,
+    "reader": "resource_balances",
+    "refresh_route": false
   },
   {
     "field": "feather_purple",
     "label": "Plumes violettes",
     "english": "Purple feathers",
-    "pending": true
+    "pending": false,
+    "reader": "resource_balances",
+    "refresh_route": false
   },
   {
     "field": "feather_black",

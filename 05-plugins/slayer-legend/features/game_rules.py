@@ -110,6 +110,10 @@ def forbidden_menu(screen):
 
 def game_state_visible(screen):
     """Presentation only: keep hidden branches readable and persisted."""
+    # Their dated CLEAR observations feed account Overview only. The flat UI
+    # does not expose Adventure navigation or a current dungeon selection.
+    if screen in ("dungeon_forest", "dungeon_training"):
+        return True
     shown_shop = {"shop_summon", "shop_summon_equipment", "shop_summon_relic"}
     hidden = {"quit_dialog", "quest_panel", "quest_daily", "quest_repeat", "quest_achievement",
               "adventure_map", "top_menu"}
@@ -131,6 +135,11 @@ FIELDS = {field: {"persist": True, "pending": False, **spec, "screen": screen}
 # seconds between two of its runs (0: on every look; a slow reader, text
 # naming or the engraving grid, waits so that the looks keep their pace).
 READERS = {
+    # These passively inspect their own calibrated icon/title/number crops.
+    # Unknown menu identities do not gain any navigation authority.
+    "resource_balances": {"on": [("battle", "*"), ("unknown", "*")],
+                          "fields": ("stone_red", "stone_blue", "stone_green", "stone_yellow",
+                                     "feather_white", "feather_green", "feather_purple"), "every": 15},
     "battle_stage": {"on": [("battle", "*")], "fields": ("stage", "stage_numeral"), "every": 15},
     "progress": {"on": [("battle", "plain"), ("battle", "soul_weapon")], "fields": ("progress",), "every": 0},
     "gold": {"on": [("battle", "*"), ("saver", "*")], "fields": ("gold", "gold_reading", "gold_place"),

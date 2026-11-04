@@ -25,3 +25,15 @@ assert.equal(zoneStyle({proposal:'remove',user:true}).dash, '10 7');
 assert.equal(zoneStyle({proposal:'remove',user:true}).opacity, .28);
 assert.equal(matchGesture([tap], {start:tap.start,duration:80}, [{kind:'forbidden',user:true,source:'user_feedback',proposal:'add',rect:[.4,.4,.6,.6]}]).matches.length,1);
 console.log('Shared proposal styling and no gesture policy changes: OK');
+
+const {reviewGesture} = await import('./model.js');
+const wholeButton = {kind:'navigation',rect:[.1,.4,.9,.6]};
+assert.equal(reviewGesture([tap],{start:{x:.11,y:.5},duration:50},[wholeButton]).matches[0],tap,
+  'whole navigation rectangles work beyond the recorded centre');
+assert.equal(reviewGesture([tap],{start:tap.start,duration:50},[wholeButton,{kind:'action',rect:[.4,.4,.6,.6]}]).kind,'action');
+assert.equal(reviewGesture([tap],{start:tap.start,duration:50},[
+  wholeButton,{kind:'action',rect:[.4,.4,.6,.6]},{kind:'forbidden',user:true,rect:[.4,.4,.6,.6]}]).kind,'forbidden');
+assert.equal(reviewGesture([{...tap,annotationKind:'action'}],{start:tap.start,duration:50},[]).kind,'action');
+assert.equal(reviewGesture([swipe],{start:swipe.start,end:swipe.end,duration:800},[]).matches[0],swipe);
+assert.equal(reviewGesture([drag],{start:drag.start,end:drag.end,duration:800},[]).matches[0],drag);
+console.log('Inert phone: forbidden/action priority, whole navigation hotspots and recorded slides/drags: OK');

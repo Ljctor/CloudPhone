@@ -71,6 +71,17 @@ GATES = [
 ]
 
 
+GATES += [
+    ("resource_balances", "STONES_BALANCE_CALIBRATED",
+     ["resource_stones_a", "resource_stones_b", "resource_stones_c",
+      "resource_stones_d", "resource_stones_e", "resource_stones_f"], "test_resource_balances"),
+    ("resource_balances", "FEATHER_BALANCE_CALIBRATED",
+     ["resource_feather_white", "resource_feather_white_title",
+      "resource_feather_green", "resource_feather_green_title",
+      "resource_feather_purple", "resource_feather_purple_title"], "test_resource_balances"),
+]
+
+
 class Gates(unittest.TestCase):
     def test_an_open_gate_has_all_its_fixtures(self):
         for module, flag, fixtures, test in GATES:

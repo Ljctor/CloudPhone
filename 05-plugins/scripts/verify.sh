@@ -9,6 +9,8 @@ assert isinstance(queue["items"], list) and len(queue["items"]) <= 1
 assert all(item.get("gestureAuthority") is False for item in queue["items"])
 print("Private oral developer-review queue: OK")
 '
+# Owned balance crops and identity guards; no gameplay input.
+python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_resource_balances.py -q
 # Real reviewed crops distinguish red drag ghosts from actionable controls;
 # this check stays deterministic and never gestures on the installed game.
 python3 "$(dirname "$0")/../slayer-legend/test_screen_model.py" EngravingPreview Registry
@@ -16,6 +18,8 @@ python3 "$(dirname "$0")/../slayer-legend/test_screen_model.py" EngravingPreview
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_screen_quick.py -q
 # Inventory order, capture provenance and exact bonus text, without gameplay.
 node "$(dirname "$0")/../slayer-legend/test_page_inventory.mjs"
+# Root section declarations keep Overlay free of a menu logo.
+node "$(dirname "$0")/../slayer-legend/test_page_game.mjs"
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_title_logo.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_menu_recovery.py -q
 # Silent process loss, bounded reopen attempts, and the original launch deadline.
@@ -89,6 +93,7 @@ python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_trace
 # Evidence matching: exact registered capture aliases and destination-specific panel tabs.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_evidence_review.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_zone_feedback.py -q
+# Passive phone simulation: full navigation hotspots, action/forbidden priority, inert slides/drags.
 node "$(dirname "$0")/../slayer-legend/review_app/test_model.mjs"
 node "$(dirname "$0")/../slayer-legend/test_page_navigation_debug.mjs"
 curl -fsS "${base%/}/api/v1/plugins/slayer-legend/game" | python3 -c '

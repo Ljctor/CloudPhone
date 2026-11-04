@@ -57,7 +57,7 @@ def missing(screens, navigation, equipment):
 # Extend this catalogue only when an exact reader and its return route have
 # real calibration evidence. Pending entries never become navigation requests.
 CATALOG = json.loads((Path(__file__).resolve().parent.parent / 'resources.json').read_text())
-RESOURCE_FIELDS = tuple(row['field'] for row in CATALOG if not row['pending'])
+RESOURCE_FIELDS = tuple(row['field'] for row in CATALOG if not row['pending'] and row.get('refresh_route', True))
 EXTRA_FIELDS = ('weapon_l3', 'accessory_l3')
 READERS = ('gold', 'currencies', 'cubes', 'equipment_l3', 'souls')
 TOP_FIELDS = ('gold', 'emerald', 'diamond')
@@ -76,5 +76,7 @@ def priority(facts, read):
 
 
 def unsupported():
-    return [{'field': row['field'], 'reason': 'reader_not_calibrated', 'navigation_allowed': False}
-            for row in CATALOG if row['pending']]
+    return [{'field': row['field'],
+             'reason': 'reader_not_calibrated' if row['pending'] else 'route_not_supervised',
+             'navigation_allowed': False}
+            for row in CATALOG if row['pending'] or not row.get('refresh_route', True)]

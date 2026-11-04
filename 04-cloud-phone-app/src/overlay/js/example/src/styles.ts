@@ -50,14 +50,17 @@ export const styles = {
   pluginLayer: { position: 'absolute', inset: 0, zIndex: 3, pointerEvents: 'none' },
   // A plugin's dialog, over the options panel.
   pluginDialog: {
-    position: 'absolute', left: '20px', right: '20px', top: '48px', zIndex: 9,
-    maxHeight: 'calc(100% - 64px)', overflowY: 'auto', touchAction: 'pan-y', boxSizing: 'border-box',
+    position: 'fixed', left: '6px', right: '6px', top: '8px', zIndex: 9,
+    maxHeight: 'calc(100dvh - 16px)', overflowY: 'auto', touchAction: 'pan-y', boxSizing: 'border-box',
     padding: '10px 12px', borderRadius: '10px', background: '#212833',
     border: '1px solid #536174',
     boxShadow: '0 18px 48px rgba(0, 0, 0, 0.55), 0 0 0 100vmax rgba(7, 10, 15, 0.35)',
     fontFamily: 'system-ui, sans-serif', fontSize: '13px', display: 'flex', flexDirection: 'column', gap: '4px',
   },
-  pluginSection: { marginLeft: '8px', paddingLeft: '8px', borderLeft: '1px solid #303946' },
+  // Nested sections retain their border while leaving three inventory columns
+  // enough room on narrow phones. Desktop spacing stays at eight pixels.
+  pluginSection: { marginLeft: 'clamp(2px, calc(2vw - 5px), 8px)',
+    paddingLeft: 'clamp(2px, calc(2vw - 5px), 8px)', borderLeft: '1px solid #303946' },
   pluginGrid: { display: 'grid', gap: '2px' },
   pluginGridCell: { width: '14px', height: '14px', boxSizing: 'border-box', borderRadius: '2px' },
   pluginGridEmpty: { border: '1px solid #8a919c' },
@@ -197,8 +200,8 @@ export const styles = {
   info: {
     // Options and diagnostics remain interactive above a missing-stream cover
     // and every plugin overlay. Their lifetime is independent of the video.
-    position: 'absolute', left: '8px', right: '8px', top: '8px', zIndex: 8,
-    maxHeight: 'calc(100% - 16px)', overflowY: 'auto', touchAction: 'pan-y', boxSizing: 'border-box',
+    position: 'fixed', left: '6px', right: '6px', top: '8px', zIndex: 8,
+    maxHeight: 'calc(100dvh - 16px)', overflowY: 'auto', touchAction: 'pan-y', boxSizing: 'border-box',
     padding: '10px 12px', borderRadius: '10px', background: '#171c24',
     border: '1px solid #465365', boxShadow: '0 12px 36px rgba(0, 0, 0, 0.45)', fontFamily: 'system-ui, sans-serif', fontSize: '13px',
     display: 'flex', flexDirection: 'column', gap: '4px',

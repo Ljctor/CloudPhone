@@ -50,7 +50,7 @@ with open(os.path.join(HERE, "engravings.json"), encoding="utf-8") as f:
 READERS = reader_module.reader_table(screens, load("stage"), load("stage_select"), load("gold"), load("soul_counters"),
                             load("soul_weapon"), load("engraving_screen"), load("battle_controls"),
                             load("features/screen_rules"), TABLE, WEAPONS, load("cube_balance"),
-                            load("top_currencies"))
+                            load("top_currencies"), resource_balances=load("resource_balances"))
 W, H = 480, 1040
 BATTLE = ("battle_emerald", "battle_menu_labels", "battle_mana_bar")
 
@@ -149,7 +149,8 @@ class Mapping(unittest.TestCase):
         unknown = {"screen": "unknown", "overlays": []}
         self.assertIn("battle_stage", rules.readers_for(unknown, "battle"))
         self.assertIn("saver_stage", rules.readers_for(unknown, "saver"))
-        self.assertEqual(rules.readers_for(unknown, "other"), [])
+        self.assertEqual(rules.readers_for(unknown, "other"), ["resource_balances"],
+                         "only the passive reader with its own calibrated pixel identity may inspect an unknown menu")
         self.assertNotIn("progress", rules.readers_for(unknown, "menu"))
 
     def test_selectable_region_rows_do_not_raise_the_highest_cleared_stage(self):
@@ -233,6 +234,7 @@ class Rules(unittest.TestCase):
         self.assertFalse({row['screen'] for row in answer['screens']} &
                          {'top_menu', 'top_ranking', 'top_settings', 'top_mail'})
         presented = {row['screen'] for row in answer['screens']}
+        self.assertTrue({'dungeon_forest', 'dungeon_training'} <= presented)
         self.assertFalse(presented & {'quit_dialog', 'quest_panel', 'quest_daily', 'quest_repeat',
                                      'quest_achievement', 'shop_package', 'shop_goods', 'shop_golden_key',
                                      'shop_event', 'adventure_map', 'adventure_quest', 'dungeon_map', 'mine_list'})

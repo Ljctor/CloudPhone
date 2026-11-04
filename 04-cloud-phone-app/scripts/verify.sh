@@ -81,7 +81,8 @@ page = urllib.request.urlopen(base + "/", timeout=5).read().decode()
 scripts = re.findall(r'<script[^>]+src="([^"]+)"', page)
 bundle = "\n".join(urllib.request.urlopen(base + path, timeout=5).read().decode()
                    for path in scripts if path.startswith("/"))
-for marker in ("inventory-table", "display_text", "inheritance", "#00ffff", "tablist", "tabpanel"):
+for marker in ("inventory-table", "display_text", "inheritance", "#00ffff", "tablist", "tabpanel",
+               "clamp(2px, calc(2vw - 5px), 8px)", "calc(100dvh - 16px)", "aspectRatio"):
     assert marker in bundle, "Missing inventory/dialog renderer: " + marker
 PYCODE
 }
