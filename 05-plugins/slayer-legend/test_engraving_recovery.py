@@ -140,6 +140,101 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(result['ok'])
             self.assert_complete(game)
 
+    async def test_removal_waits_for_postcondition_instead_of_stable_animation(self):
+        for transition in ('old_frame', 'unknown_E', 'preview'):
+            with self.subTest(transition=transition):
+                game = sw.vision_game(screen='engraving')
+                view = sw.fake_engraving_screen(game)
+                original_apply = game.apply
+                before, removed_at, removed_index, locks = [], [], [], []
+
+                def apply(screen, move, point, end=None):
+                    previous = game.snapshot()
+                    original_apply(screen, move, point, end)
+                    if move == 'remove_piece' and not removed_at:
+                        before.append(previous)
+                        removed_at.append(game.now)
+                        removed_index.append(next(i for i, card in enumerate(game.state['engraving']['cards'])
+                            if previous[2]['engraving']['cards'][i]['placed'] and not card['placed']))
+                    elif move == 'lock' and removed_at:
+                        locks.append(game.now)
+
+                game.apply = apply
+                grid, cards, bar = view.grid, view.cards, view.bar
+                pending = lambda: removed_at and game.now < removed_at[0] + 1.5
+                view.grid = lambda shot, size: grid(before[0], size) if pending() and transition == 'old_frame' else grid(shot, size)
+
+                def animated_cards(shot, shapes):
+                    result = cards(before[0] if pending() and transition == 'old_frame' else shot, shapes)
+                    if pending() and transition == 'unknown_E':
+                        result[removed_index[0]]['placed'] = None
+                    return result
+
+                view.cards = animated_cards
+                view.bar = lambda shot: {'valid': False} if pending() and transition == 'preview' else bar(shot)
+                setup, _ = self.setup_for(game, view=view)
+                _, result = await self.apply(setup, game)
+                self.assertTrue(result['ok'], result)
+                self.assert_complete(game)
+                self.assertGreaterEqual(locks[0], removed_at[0] + 1.75,
+                                        'two matching postcondition reads must precede relocking')
+                self.assertEqual(sw.engraving_moves(game).count('remove_piece'), 4,
+                                 'each original piece is removed once; an animation never repeats a drag')
+
+    async def test_removal_timeout_never_repeats_drag_and_still_relocks_visible_card(self):
+        game = sw.vision_game(screen='engraving')
+        removed_at, removed_index = [], []
+        apply = game.apply
+        def record_removal(screen, move, point, end=None):
+            previous = game.snapshot()
+            apply(screen, move, point, end)
+            if move == 'remove_piece':
+                removed_at.append(game.now)
+                removed_index.append(next(i for i, card in enumerate(game.state['engraving']['cards'])
+                    if previous[2]['engraving']['cards'][i]['placed'] and not card['placed']))
+        game.apply = record_removal
+        view = sw.fake_engraving_screen(game)
+        cards = view.cards
+        def unknown_E(shot, shapes):
+            result = cards(shot, shapes)
+            if removed_index:
+                result[removed_index[0]]['placed'] = None
+            return result
+        view.cards = unknown_E
+        setup, _ = self.setup_for(game, view=view)
+        with self.assertLogs(level='WARNING') as logs:
+            with self.assertRaises(sw.stage_change.Stop):
+                await self.apply(setup, game)
+        self.assertEqual(sw.engraving_moves(game).count('remove_piece'), 1)
+        self.assertTrue(all(c['locked'] for c in game.state['engraving']['cards']))
+        self.assertLessEqual(game.now - removed_at[0], 12)
+        self.assertTrue(setup.state()['required'])
+        self.assertTrue(any('removal diagnostic:' in line and '"phase":"timeout"' in line for line in logs.output))
+
+    async def test_input_revocation_while_waiting_for_removal_sends_no_cleanup_gesture(self):
+        game = sw.vision_game(screen='engraving')
+        removed_at = []
+        original_apply = game.apply
+        def apply(screen, move, point, end=None):
+            original_apply(screen, move, point, end)
+            if move == 'remove_piece':
+                removed_at.append(game.now)
+        game.apply = apply
+        setup, ports = self.setup_for(game)
+        capture = ports.capture
+        async def guarded_capture(*args, **kwargs):
+            if removed_at:
+                # Existing port/sequence guard refuses a new frame once the
+                # human's input has revoked this operation's ownership.
+                raise ports.Busy('l’utilisateur joue')
+            return await capture(*args, **kwargs)
+        ports.capture = guarded_capture
+        with self.assertRaises(ports.Busy):
+            await self.apply(setup, game)
+        self.assertEqual(sw.engraving_moves(game), ['remove_piece'])
+        self.assertTrue(setup.state()['required'])
+        self.assertFalse(setup.state()['verified'])
+
     async def test_restart_replays_recipe_after_cancelled_removal(self):
         game = sw.vision_game(screen='engraving')
         setup, ports = self.setup_for(game)
@@ -344,10 +439,10 @@ class Recovery(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(sw.stage_change.Stop):
                 await self.apply(setup, game)
         self.assertEqual(sw.engraving_moves(game), ['remove_piece'])
-        self.assertLessEqual(game.now - removed_at[0], 3.25)
+        self.assertLessEqual(game.now - removed_at[0], 10.25)
         self.assertTrue(setup.state()['required'])
         self.assertFalse(setup.state()['verified'])
-        self.assertTrue(any('steady' in line and 'unread=12' in line and 'matched=False' in line
+        self.assertTrue(any('(wait)' in line and 'unread=40' in line and 'matched=False' in line
                             for line in logs.output))
 
     async def test_readable_wrong_name_after_remove_stops_on_first_capture(self):

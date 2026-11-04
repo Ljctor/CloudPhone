@@ -57,7 +57,8 @@ python3 "$(dirname "$0")/../slayer-legend/test_soul_weapon.py" \
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_screen.py -q
 # Reviewed failed and recovered L previews retain distinct landing geometry.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_geometry.py -q
-# Existing-weapon repairs require durable intent before their first gesture.
+# Existing-weapon repairs persist intent; one removal drag waits for its observed
+# postcondition twice before relocking, including stale/unknown animation frames and input revocation.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_recovery.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_reuse.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_coverage.py -q

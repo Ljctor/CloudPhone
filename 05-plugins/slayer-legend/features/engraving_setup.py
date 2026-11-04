@@ -337,14 +337,54 @@ def engraving_setup(ports, screen, rules, helpers, wait_for, back_on, switch=lam
             start = screen.cell_centre(*cells[0])
             await swipe(shot, "soul_weapon_engraving", "remove_piece", start, screen.INVENTORY_DROP,
                               REMOVE_MS, verified=True)
-            shot, after = await steady(size, shapes)
-            freed = [c["index"] for c, b in zip(after["cards"], before["cards"]) if b["placed"] and not c["placed"]]
-            if after["grid"] is None or any(after["grid"]["cells"].get(cell) != "empty" for cell in cells) \
-                    or len(freed) != 1:
+            # A repeated pre-animation frame is stable but is not a completed
+            # removal. Observe its specific postcondition without another drag.
+            last, latest = [None], [None]
+            removing_since = ports.clock.monotonic()
+            diagnostic = {"captures": 0, "freed": None, "preview": None, "cells": None}
+
+            def removed_reading(s):
+                after = read(s, size, shapes)
+                latest[0] = after
+                cards = after["cards"]
+                diagnostic["captures"] += 1
+                diagnostic["preview"] = bool(screen.bar(s))
+                diagnostic["cells"] = ([{"cell": list(cell), "state": after["grid"]["cells"].get(cell)}
+                                        for cell in cells] if after["grid"] is not None else None)
+                freed = [c["index"] for c, b in zip(cards, before["cards"])
+                         if b["placed"] is True and c["placed"] is False]
+                known_placed = all(c["placed"] is True or c["placed"] is False for c in cards)
+                diagnostic["freed"] = [index + 1 for index in freed] if known_placed else None
+                complete = (after["grid"] is not None and len(cards) == len(before["cards"])
+                            and known_placed
+                            and all(after["grid"]["cells"].get(cell) == "empty" for cell in cells)
+                            and len(freed) == 1 and not diagnostic["preview"] and not screen.popup(s)
+                            and not any(b["placed"] is False and c["placed"] is True
+                                        for c, b in zip(cards, before["cards"])))
+                if not complete:
+                    last[0] = None
+                    return False
+                current = signature(after)
+                stable = last[0] == current
+                last[0] = current
+                return after if stable else False
+
+            shot, after = await wait_for(removed_reading, TRANSITION_WAIT)
+            ports.log("normal" if after else "warning", "Engraving removal diagnostic: " + json.dumps({
+                "weapon_id": entry["id"], "phase": "confirmed" if after else "timeout",
+                "seconds": round(ports.clock.monotonic() - removing_since, 3),
+                "capture_scope": "identity-confirmed post-drag observations",
+                "expected_empty": [list(cell) for cell in cells], **diagnostic,
+            }, sort_keys=True, separators=(",", ":")))
+            if not after:
                 problems.append(ports.t("retirer la pièce en {cell} n’a pas libéré ses cases et une carte", cell=str(cells[0])))
-                for index in [c["index"] for c in after["cards"] if c["locked"] is False]:
+                if latest[0] is None:
+                    raise Stop("gravure : lectures instables ou grille illisible")
+                for index in [c["index"] for c in latest[0]["cards"] if c["locked"] is False]:
                     await lock(index)
                 return False
+            freed = [c["index"] for c, b in zip(after["cards"], before["cards"])
+                     if b["placed"] is True and c["placed"] is False]
             done["removed"].append(freed[0])
             if not await lock(freed[0]):
                 problems.append(ports.t("n°{number} reste déverrouillée après son retrait", number=freed[0] + 1))
