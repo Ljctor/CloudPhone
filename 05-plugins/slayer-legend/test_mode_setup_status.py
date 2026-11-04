@@ -130,6 +130,84 @@ class SetupStatus(unittest.IsolatedAsyncioTestCase):
         for task in self.tasks: task.cancel()
         await asyncio.gather(*self.tasks, return_exceptions=True)
 
+    def restore_mode(self, saved):
+        self.ports.store.saved['mode'] = saved
+        self.part = feature.mode(
+            self.ports, rules, timer_rules,
+            NS(time_or_none=lambda value: value, number_or_none=lambda value, top: value),
+            self.mines, None, NS(fresh=lambda: {'gold': None}), self.loadouts,
+            self.farming, setup_feature.mode_setup)
+
+    async def call_mode(self, body, route='/mode'):
+        async def json_body(): return body
+        previous = self.mines['state']
+        self.mines['state'] = lambda: dict(previous(), floor=1, area=1)
+        try:
+            handler = next(handler for method, path, handler in self.part['routes']
+                           if method == 'POST' and path == route)
+            return await handler(NS(json=json_body))
+        finally:
+            self.mines['state'] = previous
+
+    async def test_agent_default_is_rejected_without_changing_the_accepted_mode(self):
+        before = self.part['api']['state']()
+        answer, code = await self.call_mode({'mode': 'agent', 'default': 'agent', 'until': self.now + 60})
+        self.assertEqual(code, 400)
+        self.assertEqual(answer['error_t']['params']['field'], 'default')
+        self.assertEqual(self.part['api']['state'](), before)
+        self.assertEqual(self.tasks, [])
+
+    async def test_agent_route_accepts_explicit_and_missing_deadlines_with_a_finite_timer(self):
+        for extra, duration in (({'until': 1060}, 60), ({}, 1800), ({'until': None}, 1800)):
+            with self.subTest(extra=extra):
+                self.restore_mode({'mode': 'free', 'default': 'free', 'configured': True})
+                answer, code = await self.call_mode({'mode': 'agent', **extra})
+                self.assertEqual(code, 200)
+                self.assertEqual((answer['mode'], answer['default'], answer['until']),
+                                 ('agent', 'free', self.now + duration))
+        self.assertEqual(self.farm_calls, [])
+
+    async def test_agent_route_preserves_a_running_timer_and_timer_subtraction_expires_it(self):
+        self.restore_mode({'mode': 'agent', 'default': 'free', 'until': self.now + 600})
+        for extra in ({}, {'until': None}):
+            answer, code = await self.call_mode({'mode': 'agent', **extra})
+            self.assertEqual((code, answer['until']), (200, self.now + 600))
+        answer, code = await self.call_mode({'add': -600}, '/mode/timer')
+        self.assertEqual((code, answer['until']), (200, self.now))
+        for _ in range(10): await asyncio.sleep(0)
+        state = self.part['api']['state']()
+        self.assertEqual((state['mode'], state['default'], state['until']), ('free', 'free', None))
+        self.assertEqual(self.farm_calls, [])
+
+    async def test_legacy_agent_default_is_normalized_and_its_missing_timer_recovered(self):
+        for deadline in (None, float('nan'), float('inf')):
+            with self.subTest(deadline=deadline):
+                self.restore_mode({'mode': 'agent', 'default': 'agent', 'until': deadline})
+                state = self.part['api']['state']()
+                self.assertEqual((state['mode'], state['default'], state['until']),
+                                 ('agent', rules.DEFAULT, self.now + 1800))
+        self.assertEqual(self.farm_calls, [])
+
+    async def test_restored_expired_agent_returns_to_default_without_choosing_agent(self):
+        for default in ('free', 'mpw18', 'agent'):
+            with self.subTest(default=default):
+                self.restore_mode({'mode': 'agent', 'default': default, 'until': self.now - 1})
+                state = self.part['api']['state']()
+                expected = 'free' if default == 'free' else rules.DEFAULT
+                self.assertEqual((state['mode'], state['default'], state['until']), (expected, expected, None))
+        self.restore_mode({'mode': 'free', 'default': 'agent'})
+        state = self.part['api']['state']()
+        self.assertEqual((state['mode'], state['default'], state['until']), ('free', rules.DEFAULT, self.now + 1800))
+        self.assertEqual(self.farm_calls, [])
+
+    async def test_restored_agent_timer_watcher_returns_to_free_default(self):
+        self.restore_mode({'mode': 'agent', 'default': 'free', 'until': self.now + 1})
+        await self.part['startup'][0](None)
+        for _ in range(10): await asyncio.sleep(0)
+        state = self.part['api']['state']()
+        self.assertEqual((state['mode'], state['default'], state['until']), ('free', 'free', None))
+        self.assertEqual(self.farm_calls, [])
+
     async def attempt(self):
         before = dict(self.parts['mpw18']); self.parts['mpw18']['preset'] = 'IV'
         self.callbacks[0]('mpw18', before, dict(self.parts['mpw18']))
@@ -193,6 +271,24 @@ class SetupStatus(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(receipts[0], self.part['api']['state']()['setup_result'])
         self.assertEqual(receipts[0]['result'], 'done')
         self.assertEqual(receipts[0]['target'], self.parts['mpw18'])
+
+    async def test_statistics_observer_exception_cannot_turn_full_setup_into_failure(self):
+        self.engraving = 'real'
+
+        def broken(receipt):
+            raise ValueError('statistics failed')
+
+        self.part['api']['on_setup_verified'](broken)
+
+        async def farm(*args, **kwargs):
+            return {'result': 'done', 'verified_setup': True, 'text_t': None, 'timings': {}}
+
+        self.farming['farm'] = farm
+        await self.call_setup(self.part['api']['state']()['setup_request'])
+        await self.settle()
+        state = self.part['api']['state']()
+        self.assertEqual(state['state'], 'farming')
+        self.assertEqual(state['setup_result']['result'], 'done')
 
     async def test_receipt_signal_does_not_acknowledge_input_relaunch_or_revision_invalidated_proof(self):
         self.engraving = 'real'

@@ -10,6 +10,7 @@ let detailFailure = false;
 let holdReads = false;
 const heldReads = [];
 let farmingSnapshot = null;
+let rateHistory = null;
 let executionSnapshot = null;
 const staticSupport = { supported: true, scope: 'static', runtime_verified: false, reason_t: null };
 const details = (id) => ({ id, automation: staticSupport, name: id === 32 ? 'Ambition' : 'Vision', grid: 2, cells: [[0, 0]],
@@ -20,6 +21,7 @@ const api = { addTranslations() {}, tr: (value) => typeof value === 'object' ? v
     if (path === '/loadout' && holdReads) { const request = deferred(); heldReads.push(request); return request.promise; }
     if (path === '/loadout') return { loadouts: structuredClone(accepted) };
     if (path === '/farming') return farmingSnapshot;
+    if (path === '/rate-history') return rateHistory;
     if (path === '/engravings') return { weapons: [details(32), details(36)] };
     if (path.startsWith('/engraving?id=') && detailFailure) return null;
     if (path.startsWith('/engraving?id=')) return details(Number(path.split('=')[1]));
@@ -244,5 +246,39 @@ executionSnapshot.setup_result.at = Date.now() / 1000;
 executionSnapshot.setup_result.target = { ...executionSnapshot.setup_result.target, preset: 'I' };
 assert.doesNotMatch(proof(), /Soul Weapon et gravure vérifiées/);
 evidenceUi.dispose();
+// History belongs to the exact accepted revision, never a draft or a
+// different target. Missing fields retain their places, including true zero.
+settings.stage18 = String(accepted.mpw18.stage);
+settings.mpw18Preset = accepted.mpw18.preset;
+settings.mpw18Weapon = String(accepted.mpw18.soul_weapon.id);
+settings.mpw18Variant = accepted.mpw18.soul_weapon.variant;
+rateHistory = { configs: { mpw18: { revision: accepted.mpw18.revision, fields: [
+  { field: 'gold', rate_per_hour: 1234567, measured_at: 1700000000, source: 'observed_window' },
+  { field: 'cubes', rate_per_hour: 2345678, measured_at: 1700000000, source: 'observed_window' },
+  { field: 'weapon_l3', rate_per_hour: 0, measured_at: 1700000000, source: 'observed_window' },
+] } } };
+const historicalUi = loadout(api);
+await settle();
+historicalUi.options('mpw18').find((row) => row.label === 'État').value();
+await settle();
+const metrics = () => historicalUi.rateOptions('mpw18')[0].items();
+assert.deepEqual(metrics().map((row) => row.key), ['gold', 'cubes', 'weapon_l3', 'soul_green', 'soul_blue', 'soul_red']);
+assert.equal(metrics()[0].value, '1.23B');
+assert.equal(metrics()[1].value, '2.35B', 'cube hourly rate is abbreviated');
+assert.equal(metrics()[2].value, '0', 'a measured zero is different from no measurement');
+assert.ok(metrics()[0].detail.includes('2023'));
+assert.equal(metrics()[3].value, '—');
+assert.equal(metrics()[3].detail, 'Jamais mesuré');
+for (const mode of ['free', 'mine', 'mpw4']) {
+  assert.equal(historicalUi.rateOptions(mode)[0].items().length, 6);
+  assert.ok(historicalUi.rateOptions(mode)[0].items().every((row) => row.value === '—'));
+}
+settings.stage18 = String(accepted.mpw18.stage + 1);
+assert.ok(metrics().every((row) => row.value === '—'), 'a visible unsaved draft cannot borrow accepted target rates');
+settings.stage18 = String(accepted.mpw18.stage);
+assert.equal(metrics()[0].value, '1.23B');
+rateHistory.configs.mpw18.revision = 'different-configuration';
+assert.ok(metrics().every((row) => row.value === '—'), 'another revision cannot supply rates');
+historicalUi.dispose();
 assert.equal(deadlines.size, 0);
 console.log('Automatic complete loadout saving, ordered revisions, rejected/ambiguous writes and current evidence: OK');

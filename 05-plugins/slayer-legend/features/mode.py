@@ -86,7 +86,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
               # ended last ({id, action}), wake: wakes the switch's wait.
               "hold": None, "last_hold": None, "wake": None,
               # watched(): the watchdog's last look ({mode, level}), once wired.
-              "watched": None, "intention": None, "resource_refresh": None}
+              "watched": None, "intention": None, "resource_refresh": None, "mode_epoch": 0}
     ports.store.register("mode", lambda: {key: status[key] for key in (
         "mode", "default", "until", "highest", "configured")})
 
@@ -270,7 +270,10 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
             receipt = setup.current_result(name, mines["state"]().get("enabled"))
             if completed and receipt and receipt["result"] == "done":
                 for listener in setup_listeners:
-                    listener(copy.deepcopy(receipt))
+                    try:
+                        listener(copy.deepcopy(receipt))
+                    except Exception as exc:
+                        ports.log("warning", f"Setup observer failed: {type(exc).__name__}")
             return completed
         finally:
             if status["intention"] and status["intention"]["owner"] is owner:
@@ -483,6 +486,8 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
         runs in the background at once, the one under way is dropped.
         before: the mode it leaves (the switch's log line), its trigger
         now."""
+        if before is not None and before != name:
+            status["mode_epoch"] += 1
         status.update(switch=(before or "?", name), switch_at=ports.clock.monotonic())
         move = rules.entered(name, stages()["stage18"], stages()["stage4"], stages()["stageSoul"])
 
@@ -763,5 +768,6 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
         # For the watchdog: the mode now (it runs only in the default one).
         "api": {"state": state, "confirm": confirm, "watched_by": watched_by,
                 "on_setup_verified": setup_listeners.append,
+                "mode_epoch": lambda: status["mode_epoch"],
                 "resource_refresh_by": resource_refresh_by},
     }

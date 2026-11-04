@@ -73,6 +73,18 @@ assert any("data-plugin-layer" in urllib.request.urlopen(base + path, timeout=5)
            for path in scripts if path.startswith("/"))
 PYCODE
 }
+plugin_inventory_contract() {
+  python3 - "http://$host:$WEB_PORT" <<'PYCODE'
+import re, sys, urllib.request
+base = sys.argv[1]
+page = urllib.request.urlopen(base + "/", timeout=5).read().decode()
+scripts = re.findall(r'<script[^>]+src="([^"]+)"', page)
+bundle = "\n".join(urllib.request.urlopen(base + path, timeout=5).read().decode()
+                   for path in scripts if path.startswith("/"))
+for marker in ("inventory-table", "display_text", "inheritance", "#00ffff", "tablist", "tabpanel"):
+    assert marker in bundle, "Missing inventory/dialog renderer: " + marker
+PYCODE
+}
 connection_notice_contract() {
   python3 - "http://$host:$WEB_PORT" <<'PYCODE'
 import re, sys, urllib.request
@@ -173,6 +185,7 @@ check "cloudphone-gateway is active" systemctl is-active --quiet cloudphone-gate
 check "no separate cloudphone-web service is left" test ! -e /etc/systemd/system/cloudphone-web.service
 check "web page answers on $host:$WEB_PORT" answers "http://$host:$WEB_PORT/"
 check "page serves interactive plugin overlay" interactive_plugin_layer
+check "page renders inventory bonus text and shared tabbed plugin dialogs" plugin_inventory_contract
 check "page distinguishes server reachability from missing video and keeps toolbar controls" connection_notice_contract
 check "installed gateway drains cancelled commands and exposes capture timestamps" gateway_command_lifecycle
 check "gateway answers on $host:$WEB_PORT" answers "http://$host:$WEB_PORT/api/v1/emulator/status"

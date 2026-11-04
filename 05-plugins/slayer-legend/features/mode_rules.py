@@ -22,11 +22,12 @@ def t(template, **params):
 MODES = ("free", "mpw18", "mpw4", "soul", "mine", "agent")
 FARMED = ("mpw18", "mpw4", "soul")
 DEFAULT = "mpw18"
-# What the default mode may be (never the mine: it ends by itself).
-DEFAULTS = ("free", "mpw18", "mpw4", "soul", "agent")
+# Agent mode is an explicit, timed takeover, never an automatic destination.
+# The mine also ends by itself, so neither can be a default.
+DEFAULTS = ("free", "mpw18", "mpw4", "soul")
 # "back to ..." once a timed mode ends, per default mode (its alert).
 BACK_TO = {"mpw18": "back to Gear Farming", "mpw4": "back to Gold Farming",
-           "soul": "back to Soul Farming", "free": "back to free play", "agent": "back to agent mode"}
+           "soul": "back to Soul Farming", "free": "back to free play"}
 # A timed mode chosen without an end time runs this long.
 TIMED_MINUTES = 30
 # Seconds between two checks of a timed mode.

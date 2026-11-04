@@ -107,6 +107,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
               "critical_observation": None, "entry_mode": None, "entry_since": None,
               "setup_failure": None, "verification_since": None}
     notice_lock = asyncio.Lock()
+    setup_listeners = []
 
     def notice_context():
         name = mode_now()
@@ -313,6 +314,11 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             memory["incidents"] = {kind: stamp for kind, stamp in memory.get("incidents", {}).items()
                                    if kind not in setup_kinds}
             show(ports.t("Configuration vérifiée"))
+        for listener in setup_listeners:
+            try:
+                listener(copy.deepcopy(dict(receipt, at=receipt.get("at", ports.clock.wall()))))
+            except Exception as exc:
+                ports.log("warning", f"Setup observer failed: {type(exc).__name__}")
 
     if "on_setup_verified" in modes:
         modes["on_setup_verified"](setup_verified)
@@ -494,8 +500,8 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             await notify_all([(*action[:4], False) for action in actions])
         elif answer["result"] == "done" and answer.get("verified_setup"):
             if mode_now() == name and policy_context(name) == attempt_context:
+                modes["confirm"](name, verified_setup=True)
                 setup_verified({"result": "done", "mode": name, "target": attempt_context["target"]})
-            modes["confirm"](name, verified_setup=True)
         elif answer["result"] == "plan":
             memory = rules.not_run(memory, kind)
             say("normal", "Plan only: {repair}: {plan}", {"repair": rules.REPAIR_NAMES[kind], "plan": answer["text_t"]})
@@ -873,7 +879,8 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         symptom = status["symptom"]
         block = active_policy_block()
         failed = active_setup_failure() if symptom == "setup_check_failed" else None
-        return {"mode": status["mode"], "level": "error" if block or failed else rules.level(symptom),
+        return {"mode": status["mode"], "symptom": symptom,
+                "level": "error" if block or failed else rules.level(symptom),
                 "message_t": copy.deepcopy((block or failed)["text_t"]) if block or failed else status["text"],
                 "repairing": status["repairing"], "intention": status["intention"],
                 "execution_blocker_t": copy.deepcopy(block["text_t"]) if block else None,
@@ -884,4 +891,4 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                                 and not status["repairing"])}
 
     return {"routes": [("GET", "/watchdog", handle_state), ("POST", "/watchdog/retry", handle_retry)],
-            "startup": [start], "api": {"look": last_look}}
+            "startup": [start], "api": {"look": last_look, "on_setup_verified": setup_listeners.append}}

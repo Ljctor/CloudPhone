@@ -59,6 +59,7 @@ class DefaultMode(unittest.TestCase):
         self.assertEqual(rules.default_request({"default": "mpw18"}, {}, "free"), ("mpw18", None))
         self.assertEqual(rules.default_request({"default": "free"}, {}, "mpw18"), ("free", None))
         self.assertIsNotNone(rules.default_request({"default": "mine"}, {}, "mpw18")[1])
+        self.assertIsNotNone(rules.default_request({"default": "agent"}, {}, "mpw18")[1])
         self.assertIsNotNone(rules.default_request({"default": "nope"}, {}, "mpw18")[1])
 
     def test_mpw4_only_once_configured(self):

@@ -2,6 +2,9 @@
 // Accepted configuration and observed in-game equipment are separate facts.
 
 import { withDeadline } from './page_request_deadline.js';
+import { shortNumber } from './page_numbers.js';
+import { RESOURCE_ICONS } from './page_resources.js';
+import { EQUIPMENT_L3_ICONS } from './page_equipment_icons.js';
 const PRESETS = ['I', 'II', 'III', 'IV', 'V'];
 const FIELDS = ['Stage', 'Preset', 'Weapon', 'Variant'];
 const FARMING_MODES = ['mpw18', 'mpw4', 'soul'];
@@ -13,6 +16,14 @@ const TURN = ['#e0453a', '#3b82f6', '#9b5de5', '#3fb950', '#f2c230', '#f08c2e', 
 const DOTS = { green: '🟢', blue: '🔵', red: '🔴' };
 
 const ENGLISH = {
+  'Historique de cette configuration': 'History for this configuration',
+  'Jamais mesuré': 'Never measured',
+  'Équipement L3/h': 'Gear L3/h',
+  'Armes L3/h': 'Weapons L3/h',
+  'Accessoires L3/h': 'Accessories L3/h',
+  'Âmes vertes/h': 'Green souls/h',
+  'Âmes bleues/h': 'Blue souls/h',
+  'Âmes rouges/h': 'Red souls/h',
   'Réessayer cette configuration': 'Retry this configuration',
   'Recharger et réessayer': 'Reload and retry',
   'Soul Weapon et gravure vérifiées · huit cartes verrouillées': 'Soul Weapon and engraving verified · eight cards locked',
@@ -60,7 +71,7 @@ const ENGLISH = {
 
 export default function loadoutFeature(api, { onApplied = () => {}, execution = () => null, onExecute = null } = {}) {
   api.addTranslations(ENGLISH);
-  const data = { list: null, weapons: {}, asking: new Set(), failed: new Set(), saved: null, disposed: false, writes: 0, readAfterWrite: false, farming: null };
+  const data = { list: null, weapons: {}, asking: new Set(), failed: new Set(), saved: null, disposed: false, writes: 0, readAfterWrite: false, farming: null, rateHistory: null };
   const edits = Object.fromEntries(FARMING_MODES.map((mode) => [mode, {}]));
   const state = Object.fromEntries(FARMING_MODES.map((mode) => [mode,
     { busy: false, dirty: false, queued: false, error: null, uncertain: false, submitted: null }]));
@@ -90,8 +101,15 @@ export default function loadoutFeature(api, { onApplied = () => {}, execution = 
     for (const mode of FARMING_MODES) scheduleSave(mode);
     return Boolean(answer?.loadouts);
   };
+  const loadRates = async () => {
+    const answer = await withDeadline(api.get('/rate-history')).catch(() => null);
+    if (data.disposed) return;
+    data.rateHistory = answer;
+    api.refresh();
+  };
   loadList();
   loadSaved();
+  loadRates();
   const loadFarming = async () => {
     const answer = await withDeadline(api.get('/farming')).catch(() => null);
     if (data.disposed) return;
@@ -99,7 +117,7 @@ export default function loadoutFeature(api, { onApplied = () => {}, execution = 
     api.refresh();
   };
   loadFarming();
-  const farmingTimer = globalThis.window?.setInterval?.(loadFarming, 10000);
+  const farmingTimer = globalThis.window?.setInterval?.(() => { loadFarming(); loadRates(); }, 10000);
 
 
   // What a selector shows: the page's option once chosen (null: never
@@ -367,7 +385,31 @@ export default function loadoutFeature(api, { onApplied = () => {}, execution = 
     finally { state[mode].executing = false; api.refresh(); }
   };
 
+  const historyItems = (mode) => {
+    const recorded = data.rateHistory?.configs?.[mode];
+    const accepted = data.saved?.[mode];
+    const matching = FARMING_MODES.includes(mode) && accepted?.revision
+      && recorded?.revision === accepted.revision && same(accepted, target(mode));
+    const fields = matching ? recorded.fields ?? [] : [];
+    const gear = fields.find((row) => ['weapon_l3', 'accessory_l3', 'gear_l3'].includes(row.field));
+    const gearField = gear?.field ?? 'gear_l3';
+    const labels = { gold: 'Gold/h', cubes: 'Cubes/h', weapon_l3: 'Armes L3/h',
+      accessory_l3: 'Accessoires L3/h', gear_l3: 'Équipement L3/h',
+      soul_green: 'Âmes vertes/h', soul_blue: 'Âmes bleues/h', soul_red: 'Âmes rouges/h' };
+    return ['gold', 'cubes', gearField, 'soul_green', 'soul_blue', 'soul_red'].map((field) => {
+      const row = fields.find((entry) => entry.field === field);
+      const measured = row?.source === 'observed_window' && Number.isFinite(row.rate_per_hour)
+        && row.rate_per_hour >= 0 && Number.isFinite(row.measured_at) && row.measured_at > 0;
+      return { key: field, label: labels[field],
+        icon: RESOURCE_ICONS[field] ?? EQUIPMENT_L3_ICONS[field === 'accessory_l3' ? 'accessory' : 'weapon'],
+        value: measured ? shortNumber(row.rate_per_hour) : '—',
+        detail: measured ? new Date(row.measured_at * 1000).toLocaleString() : api.tr('Jamais mesuré'),
+      };
+    });
+  };
+
   return {
+    rateOptions: (mode) => [{ type: 'metrics', label: 'Historique de cette configuration', items: () => historyItems(mode) }],
     // The options of a mode's dialog, in page_mode.js.
     options: (mode, stageChoices = () => []) => [
       { type: 'choice', key: keyOf(mode, 'Stage'), label: { mpw18: 'Stage Gear Farming', mpw4: 'Stage Gold Farming', soul: 'Stage Soul Farming' }[mode],

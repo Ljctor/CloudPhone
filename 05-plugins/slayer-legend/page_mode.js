@@ -55,6 +55,9 @@ const takeOld = (name) => {
 export default function modeFeature(api, { known, watchdog, stage }) {
   api.addTranslations?.({
     'Application demandée…': 'Application requested…',
+    'Configuration des modes': 'Mode configuration',
+    'Durée initiale : {minutes} min': 'Initial duration: {minutes} min',
+    'Minuteur actif': 'Active timer',
     'Application non confirmée · vérification en cours': 'Application unconfirmed · checking status',
   });
   // chosen: when the mode was last chosen here; sending: a POST under way.
@@ -65,7 +68,7 @@ export default function modeFeature(api, { known, watchdog, stage }) {
     onExecute: (request) => applySetup(request) });
   const mode = () => api.setting('mode') || 'mpw18';
   // The mode a timed one goes back to, with no timer itself.
-  const defaultMode = () => api.setting('defaultMode') || 'mpw18';
+  const defaultMode = () => api.setting('defaultMode') === 'agent' ? 'mpw18' : api.setting('defaultMode') || 'mpw18';
   // Only what the page's options have: the gateway keeps its values for the rest.
   const modeOptions = () => Object.fromEntries(Object.entries({
     mode: mode(),
@@ -165,7 +168,7 @@ export default function modeFeature(api, { known, watchdog, stage }) {
       { value: '', label: api.tr('— choisir —') },
       ...(farm.stages?.[mode] ?? []).map((stage) => ({
         value: String(stage.number),
-        label: `${DOTS[stage.colour] ?? '⚪'} ${mode === 'soul' ? stage.name ?? api.tr('Soul Farming') : mode} · ${stage.number}`,
+        label: `${DOTS[stage.colour] ?? '⚪'} ${mode === 'soul' ? stage.name ?? api.tr('Soul Farming') : api.tr(MODE_NAMES[mode])} · ${stage.number}`,
         muted: Boolean(highest && stage.number > highest),
       })),
     ];
@@ -189,6 +192,33 @@ export default function modeFeature(api, { known, watchdog, stage }) {
     soul_weapon: 'Soul Weapon', battle_settings: 'Battle settings', mine_list: 'Mine fermée',
   }[intent.destination] ?? intent.destination);
 
+  // All Configure buttons share the same tabs; opening or switching one is
+  // read-only. The mode radios alone choose the active mode.
+  const configuredModes = ['free', 'mpw18', 'mpw4', 'soul', 'mine'];
+  const modeTabs = configuredModes.map((name) => ({ id: name, label: MODE_NAMES[name], options: [
+    ...loadouts.rateOptions(name),
+    ...(name === 'mine' ? [
+      { type: 'number', key: 'mineFloor', label: 'Étage à farmer', placeholder: '161' },
+      { type: 'choice', key: 'mineArea', label: 'Zone à farmer', choices: [
+        { value: '', label: api.tr('— choisir —') },
+        ...[1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: String(n) })),
+      ] },
+    ] : name === 'free' ? [] : loadouts.options(name, () => stageChoices(name))),
+    { type: 'status', label: 'Temps restant', value: left,
+      visible: () => (farm.answer?.mode ?? mode()) === name && name !== defaultMode() },
+    { type: 'status', label: 'Minuteur actif',
+      visible: () => (farm.answer?.mode ?? mode()) !== name,
+      value: () => api.tr('Durée initiale : {minutes} min', { minutes: TIMED_MINUTES }) },
+    { type: 'buttons', label: 'Ajuster (minutes)',
+      visible: () => (farm.answer?.mode ?? mode()) === name && name !== defaultMode(),
+      buttons: [30, 5, 1, -1, -5, -30].map((minutes) => ({
+        label: minutes > 0 ? `+${minutes}` : `−${-minutes}`, run: () => moveTimer(minutes),
+        disabled: () => (farm.answer?.mode ?? mode()) !== name || name === defaultMode()
+          || (minutes < 0 && !Number.isFinite(farm.answer?.until)),
+      })),
+    },
+  ] }));
+
   return {
     // The selected mode, under the player's level (top left), and below it
     // Only the mode and its timer (or "défaut") on the game.
@@ -206,54 +236,16 @@ export default function modeFeature(api, { known, watchdog, stage }) {
     },
     options: [
       { type: 'section', key: 'mode', label: 'Mode et farming' },
-      // One row per mode: a radio button chooses it, Configurer opens its
-      // settings.
-      {
-        type: 'dialog', label: 'Jeu libre',
-        select: { key: 'mode', value: 'free', default: 'mpw18' },
-        options: [],
-      },
-      {
-        type: 'dialog', label: 'Gear Farming',
-        select: { key: 'mode', value: 'mpw18', default: 'mpw18' },
-        options: [
-          ...loadouts.options('mpw18', () => stageChoices('mpw18')),
-        ],
-      },
-      {
-        type: 'dialog', label: 'Gold Farming',
-        // Only once configured: its stage chosen.
-        select: { key: 'mode', value: 'mpw4', default: 'mpw18', disabled: () => !loadouts.stage('mpw4') },
-        options: [
-          ...loadouts.options('mpw4', () => stageChoices('mpw4')),
-        ],
-      },
-      {
-        type: 'dialog', label: 'Soul Farming',
-        select: { key: 'mode', value: 'soul', default: 'mpw18', disabled: () => !loadouts.stage('soul') },
-        options: loadouts.options('soul', () => stageChoices('soul')),
-      },
-      {
-        type: 'dialog', label: 'Mine fermée',
-        // Only once configured: its floor and area chosen.
-        select: {
-          key: 'mode', value: 'mine', default: 'mpw18',
-          disabled: () => !Number(api.setting('mineFloor')) || !Number(api.setting('mineArea')),
+      ...configuredModes.map((name) => ({
+        type: 'dialog', label: MODE_NAMES[name], title: 'Configuration des modes',
+        tabs: modeTabs, initialTab: name,
+        select: { key: 'mode', value: name, default: 'mpw18',
+          disabled: () => ['mpw4', 'soul'].includes(name) ? !loadouts.stage(name)
+            : name === 'mine' && (!Number(api.setting('mineFloor')) || !Number(api.setting('mineArea'))),
         },
-        options: [
-          { type: 'number', key: 'mineFloor', label: 'Étage à farmer', placeholder: '161' },
-          {
-            type: 'choice', key: 'mineArea', label: 'Zone à farmer',
-            choices: [{ value: '', label: api.tr('— choisir —') },
-              ...[1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: String(n) }))],
-          },
-        ],
-      },
-      {
-        type: 'dialog', label: 'Agent mode',
-        select: { key: 'mode', value: 'agent', default: 'mpw18' },
-        options: [],
-      },
+      })),
+      { type: 'status', label: 'Agent mode', visible: () => (farm.answer?.mode ?? mode()) === 'agent',
+        value: left },
       {
         // Saved on change. mpw4 only once its stage is chosen (as its radio
         // button); never the mine.
@@ -265,7 +257,6 @@ export default function modeFeature(api, { known, watchdog, stage }) {
           ...(loadouts.stage('soul') || defaultMode() === 'soul'
             ? [{ value: 'soul', label: api.tr('Soul Farming') }] : []),
           { value: 'free', label: api.tr('Jeu libre') },
-          { value: 'agent', label: api.tr('Agent mode') },
         ],
       },
       {

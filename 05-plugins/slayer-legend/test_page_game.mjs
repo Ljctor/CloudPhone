@@ -147,21 +147,15 @@ await new Promise((resolve) => setImmediate(resolve));
 const atKey = (key) => inventoryOptions.findIndex((row) => row.key === key);
 assert.ok(atKey('game-equipment_weapon') < atKey('game-soul_weapon'));
 assert.ok(atKey('game-soul_weapon') < atKey('game-equipment_accessories'));
-assert.equal(inventoryOptions.find((row) => row.key === 'inventory-equipment_weapon-grey').depth, 4);
-assert.equal(inventoryOptions.find((row) => row.key === 'inventory-equipment_weapon-weapon-grey-4').value(), '+200 · 1/5');
-assert.equal(inventoryOptions.find((row) => row.key === 'inventory-equipment_weapon-weapon-grey-4').timestamp(),
-  new Date(1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-assert.equal(inventoryOptions.find((row) => row.key === 'inventory-equipment_weapon-weapon-grey-4').color(), freshnessColour(600));
-assert.equal(inventoryOptions.find((row) => row.key === 'inventory-equipment_weapon-weapon-grey-3').value(), '+200 · 0/5');
-assert.equal(inventoryOptions.find((row) => row.key === 'inventory-equipment_weapon-weapon-gold').value(), '+200 · 0/5 · Équipé');
-assert.equal(inventoryOptions.find((row) => row.key === 'inventory-equipment_accessories-accessory-grey-4').value(), '+30 · 4/5');
-assert.equal(inventoryOptions.find((row) => row.key === 'inventory-equipment_weapon-date').value(), new Date(1000).toLocaleString());
-assert.equal(inventoryOptions.find((row) => row.label === 'Classes').value(), 'never read');
-assert.equal(inventoryOptions.find((row) => row.label === 'Classes').muted(), true);
-assert.equal(inventoryOptions.filter((row) => row.label === 'Classes').length, 1);
+const weaponTable = inventoryOptions.find((row) => row.key === 'inventory-equipment_weapon-rarities');
+assert.deepEqual(weaponTable.rows().map((row) => row.label), ['Mythic', 'Legendary', 'Epic']);
+assert.ok(weaponTable.rows().flatMap((row) => row.cells).every((cell) => cell.value === 'never read'));
+assert.ok(weaponTable.caption().includes('historique'));
+assert.equal(inventoryOptions.find((row) => row.key === 'inventory-equipment_weapon-featured').rows()[0].cells[0].value,
+  '+200 · 0/5');
+assert.equal(inventoryOptions.find((row) => row.key === 'inventory-character_class-rarities').rows().length, 3);
 assert.equal(inventoryOptions.filter((row) => row.label === 'Armes visibles').length, 0);
 assert.equal(inventoryOptions.filter((row) => row.label === 'Accessoires visibles').length, 0);
-assert.equal(inventoryOptions.filter((row) => row.type === 'section' && row.key?.startsWith('inventory-')).length, 3);
 const inventoryCatalogue = JSON.parse(await readFile(new URL('./screen_inventory.json', import.meta.url)));
 assert.equal(inventoryCatalogue.equipment_weapon.items.length, 25);
 assert.equal(inventoryCatalogue.equipment_accessories.items.length, 25);
@@ -178,10 +172,9 @@ gameFeature({ get: async () => catalogueAnswer, refresh() {}, tr: (value) => val
   .rows(catalogueOptions, 0);
 await new Promise((resolve) => setImmediate(resolve));
 assert.equal(catalogueOptions.filter((row) => row.key?.startsWith('inventory-equipment_') &&
-  row.type === 'section').length, 14);
-assert.equal(catalogueOptions.filter((row) => row.key?.startsWith('inventory-equipment_') &&
-  row.type === 'status').length, 52);
-assert.equal(catalogueOptions.find((row) => row.key === 'inventory-equipment_accessories-accessory-red-grade-3').value(), '+47 · 24/5');
+  row.type === 'inventory-table').length, 6);
+assert.equal(catalogueOptions.find((row) => row.key === 'inventory-equipment_accessories-rarities').rows()[1].cells[1].value,
+  '+47 · 24/5');
 assert.equal(catalogueOptions.find((row) => row.key === 'inventory-character_promotion-selected').value(), 'Blue Abyss');
 assert.equal(catalogueOptions.find((row) => row.key === 'inventory-character_promotion-Infinaut').value(),
   'Défi · Recommended Lv.2400');

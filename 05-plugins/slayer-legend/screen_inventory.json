@@ -151,5 +151,448 @@
     "kind": "scroll",
     "status": "never_read",
     "reason": "Le bouton Scroll utilise des consommables ; aucun écran Scroll n'a été capturé."
+  },
+  "black_orb": {
+    "kind": "black_orb",
+    "scope": "captured_snapshot",
+    "limitations": "Noms, bonus et état actuel non lus. Les couleurs viennent de la capture originale.",
+    "items": [
+      {
+        "id": "black-orb-1",
+        "name": null,
+        "rarity": "Mythic",
+        "level": 26,
+        "source": {
+          "capture": "black_orb.png",
+          "box": [
+            44,
+            550,
+            123,
+            633
+          ]
+        }
+      },
+      {
+        "id": "black-orb-2",
+        "name": null,
+        "rarity": "Mythic",
+        "level": 24,
+        "source": {
+          "capture": "black_orb.png",
+          "box": [
+            151,
+            550,
+            232,
+            633
+          ]
+        }
+      },
+      {
+        "id": "black-orb-3",
+        "name": null,
+        "rarity": "Mythic",
+        "level": 27,
+        "source": {
+          "capture": "black_orb.png",
+          "box": [
+            257,
+            550,
+            337,
+            647
+          ]
+        }
+      },
+      {
+        "id": "black-orb-4",
+        "name": null,
+        "rarity": "Mythic",
+        "level": 26,
+        "source": {
+          "capture": "black_orb.png",
+          "box": [
+            362,
+            550,
+            440,
+            633
+          ]
+        }
+      }
+    ]
+  },
+  "black_orb_accessory": {
+    "kind": "black_orb",
+    "scope": "captured_snapshot",
+    "limitations": "Bonus de cette fiche historique uniquement ; aucune observation actuelle.",
+    "items": [
+      {
+        "id": "black-orb-bracelet-freedom",
+        "name": "Bracelet of Freedom",
+        "rarity": "Mythic",
+        "level": 26,
+        "primary_bonus": {"display_text": "Wind Dmg +6,388%"},
+        "bonuses": [
+          {"display_text": "Amplify All Attributes Dmg by 7%", "color": "#00ffff"},
+          {"display_text": "Amplify All Attributes Dmg by 7%", "color": "#00ffff"},
+          {"display_text": "Amplify All Attributes Dmg by 7%", "color": "#00ffff"},
+          {"display_text": "Amplify Fire Dmg by 3%", "color": "#00ff80"}
+        ],
+        "source": {
+          "capture": "black_orb_accessory.png",
+          "box": [
+            193,
+            383,
+            287,
+            477
+          ]
+        }
+      }
+    ]
+  },
+  "equipment_relic": {
+    "kind": "relics",
+    "scope": "captured_snapshot",
+    "verified": false,
+    "limitations": "Relevé historique des captures enregistrées ; possession et niveaux actuels non confirmés. Le texte bleu est conservé séparément selon le rôle héritage demandé.",
+    "items": [
+      {
+        "id": "relic-giant-right-hand",
+        "name": "Giant's Right Hand",
+        "level": 100,
+        "max_level": 100,
+        "owned": null,
+        "primary_bonus": {
+          "display_text": "Extra Dmg + 2200%",
+          "raw": "Extra Dmg + 2200%"
+        },
+        "inheritance_bonus": {
+          "display_text": "(+616%)",
+          "raw": "(+616%)"
+        },
+        "raw_bonus_line": "Extra Dmg + 2200% (+616%)",
+        "source": {
+          "capture": "equipment_relic.png",
+          "box": [
+            25,
+            487,
+            87,
+            549
+          ],
+          "width": 480,
+          "height": 1040,
+          "captured": 1793047768.1609726
+        },
+        "layout_key": "Extra Dmg"
+      },
+      {
+        "id": "relic-demon-eye-weakness",
+        "name": "Demon Eye of Weakness",
+        "level": 100,
+        "max_level": 100,
+        "owned": null,
+        "primary_bonus": {
+          "display_text": "CRIT Dmg + 400%",
+          "raw": "CRIT Dmg + 400%"
+        },
+        "inheritance_bonus": {
+          "display_text": "(+112%)",
+          "raw": "(+112%)"
+        },
+        "raw_bonus_line": "CRIT Dmg + 400% (+112%)",
+        "source": {
+          "capture": "equipment_relic.png",
+          "box": [
+            25,
+            591,
+            87,
+            653
+          ],
+          "width": 480,
+          "height": 1040,
+          "captured": 1793047768.1609726
+        },
+        "layout_key": "Crit"
+      },
+      {
+        "id": "relic-oath-immortality",
+        "name": "Oath of Immortality",
+        "level": 100,
+        "max_level": 100,
+        "owned": null,
+        "primary_bonus": {
+          "display_text": "Extra HP + 1400%",
+          "raw": "Extra HP + 1400%"
+        },
+        "inheritance_bonus": {
+          "display_text": "(+294%)",
+          "raw": "(+294%)"
+        },
+        "raw_bonus_line": "Extra HP + 1400% (+294%)",
+        "source": {
+          "capture": "equipment_relic.png",
+          "box": [
+            25,
+            695,
+            87,
+            757
+          ],
+          "width": 480,
+          "height": 1040,
+          "captured": 1793047768.1609726
+        },
+        "layout_key": "HP"
+      },
+      {
+        "id": "relic-sacred-tree-rebirth",
+        "name": "Sacred Tree of Rebirth",
+        "level": 100,
+        "max_level": 100,
+        "owned": null,
+        "primary_bonus": {
+          "display_text": "Extra HP Recovery + 420%",
+          "raw": "Extra HP Recovery + 420%"
+        },
+        "inheritance_bonus": {
+          "display_text": "(+88.2%)",
+          "raw": "(+88.2%)"
+        },
+        "raw_bonus_line": "Extra HP Recovery + 420% (+88.2%)",
+        "source": {
+          "capture": "equipment_relic.png",
+          "box": [
+            25,
+            799,
+            87,
+            861
+          ],
+          "width": 480,
+          "height": 1040,
+          "captured": 1793047768.1609726
+        }
+      },
+      {
+        "id": "relic-ring-lightning",
+        "name": "Ring of Lightning",
+        "level": 50,
+        "max_level": 50,
+        "owned": null,
+        "primary_bonus": {
+          "display_text": "ATK SPD + 35%",
+          "raw": "ATK SPD + 35%"
+        },
+        "inheritance_bonus": {
+          "display_text": "(+5.6%)",
+          "raw": "(+5.6%)"
+        },
+        "raw_bonus_line": "ATK SPD + 35% (+5.6%)",
+        "source": {
+          "capture": "equipment_relic_scroll_1.png",
+          "box": [
+            25,
+            536,
+            87,
+            598
+          ],
+          "width": 480,
+          "height": 1040,
+          "captured": 1793047768.1889725
+        }
+      },
+      {
+        "id": "relic-golden-star",
+        "name": "Golden Star",
+        "level": 100,
+        "max_level": 100,
+        "owned": null,
+        "primary_bonus": {
+          "display_text": "Monster defeat Gold + 500%",
+          "raw": "Monster defeat Gold + 500%"
+        },
+        "inheritance_bonus": {
+          "display_text": "(+90%)",
+          "raw": "(+90%)"
+        },
+        "raw_bonus_line": "Monster defeat Gold + 500% (+90%)",
+        "source": {
+          "capture": "equipment_relic_scroll_1.png",
+          "box": [
+            25,
+            640,
+            87,
+            702
+          ],
+          "width": 480,
+          "height": 1040,
+          "captured": 1793047768.1889725
+        }
+      },
+      {
+        "id": "relic-seal-legendary-archer",
+        "name": "Seal of the Legendary Archer",
+        "level": 100,
+        "max_level": 100,
+        "owned": null,
+        "primary_bonus": {
+          "display_text": "Accuracy rate + 1400",
+          "raw": "Accuracy rate + 1400"
+        },
+        "inheritance_bonus": {
+          "display_text": "(+294)",
+          "raw": "(+294)"
+        },
+        "raw_bonus_line": "Accuracy rate + 1400 (+294)",
+        "source": {
+          "capture": "equipment_relic_scroll_1.png",
+          "box": [
+            25,
+            744,
+            87,
+            806
+          ],
+          "width": 480,
+          "height": 1040,
+          "captured": 1793047768.1889725
+        }
+      },
+      {
+        "id": "relic-veil-night",
+        "name": "Veil of the Night",
+        "level": 100,
+        "max_level": 100,
+        "owned": null,
+        "primary_bonus": {
+          "display_text": "Dodge rate + 700",
+          "raw": "Dodge rate + 700"
+        },
+        "inheritance_bonus": {
+          "display_text": "(+112)",
+          "raw": "(+112)"
+        },
+        "raw_bonus_line": "Dodge rate + 700 (+112)",
+        "source": {
+          "capture": "equipment_relic_scroll_1.png",
+          "box": [
+            25,
+            848,
+            87,
+            910
+          ],
+          "width": 480,
+          "height": 1040,
+          "captured": 1793047768.1889725
+        }
+      },
+      {
+        "id": "relic-spark-eternity",
+        "name": "Spark of Eternity",
+        "level": 100,
+        "max_level": 100,
+        "owned": null,
+        "primary_bonus": {
+          "display_text": "Fire Dmg + 300%",
+          "raw": "Fire Dmg + 300%"
+        },
+        "inheritance_bonus": {
+          "display_text": "(+69%)",
+          "raw": "(+69%)"
+        },
+        "raw_bonus_line": "Fire Dmg + 300% (+69%)",
+        "source": {
+          "capture": "equipment_relic_scroll_2.png",
+          "box": [
+            25,
+            550,
+            87,
+            612
+          ],
+          "width": 480,
+          "height": 1040,
+          "captured": 1793047768.2129724
+        }
+      },
+      {
+        "id": "relic-mermaids-tear",
+        "name": "Mermaid's Tear",
+        "level": 100,
+        "max_level": 100,
+        "owned": null,
+        "primary_bonus": {
+          "display_text": "Water Dmg + 300%",
+          "raw": "Water Dmg + 300%"
+        },
+        "inheritance_bonus": {
+          "display_text": "(+69%)",
+          "raw": "(+69%)"
+        },
+        "raw_bonus_line": "Water Dmg + 300% (+69%)",
+        "source": {
+          "capture": "equipment_relic_scroll_2.png",
+          "box": [
+            25,
+            654,
+            87,
+            716
+          ],
+          "width": 480,
+          "height": 1040,
+          "captured": 1793047768.2129724
+        }
+      },
+      {
+        "id": "relic-eye-sky",
+        "name": "Eye of the Sky",
+        "level": 100,
+        "max_level": 100,
+        "owned": null,
+        "primary_bonus": {
+          "display_text": "Wind Dmg + 300%",
+          "raw": "Wind Dmg + 300%"
+        },
+        "inheritance_bonus": {
+          "display_text": "(+69%)",
+          "raw": "(+69%)"
+        },
+        "raw_bonus_line": "Wind Dmg + 300% (+69%)",
+        "source": {
+          "capture": "equipment_relic_scroll_2.png",
+          "box": [
+            25,
+            758,
+            87,
+            820
+          ],
+          "width": 480,
+          "height": 1040,
+          "captured": 1793047768.2129724
+        }
+      },
+      {
+        "id": "relic-crown-great-mountain",
+        "name": "Crown of the Great Mountain",
+        "level": 100,
+        "max_level": 100,
+        "owned": null,
+        "primary_bonus": {
+          "display_text": "Earth Dmg + 300%",
+          "raw": "Earth Dmg + 300%"
+        },
+        "inheritance_bonus": {
+          "display_text": "(+78%)",
+          "raw": "(+78%)"
+        },
+        "raw_bonus_line": "Earth Dmg + 300% (+78%)",
+        "source": {
+          "capture": "equipment_relic_scroll_2.png",
+          "box": [
+            25,
+            862,
+            87,
+            924
+          ],
+          "width": 480,
+          "height": 1040,
+          "captured": 1793047768.2129724
+        }
+      }
+    ]
   }
 }

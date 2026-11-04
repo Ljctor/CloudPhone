@@ -17,6 +17,29 @@ An unchecked item stays open until its whole user-visible path is verified.
 Implementation, automated tests, deployment and in-game verification are
 separate milestones. Historical checked items below do not close a new regression.
 
+### Configuration comparison and visual inventories
+
+- [ ] Verify the common Configure dialog with five public-mode tabs, identical
+  two-row hourly-rate positions, automatic configuration saving and dated last
+  measurements keyed by the exact accepted configuration. Agent mode is an
+  explicit agent-only control with a finite timer, never an automatic default.
+  Current measured-history implementation covers the three farming modes;
+  Free play and Closed Mine measurement provenance remain to implement.
+- [ ] Complete weapons, accessories and classes: best/Immortal beside cumulative
+  bonuses, then Mythic/Legendary/Epic rows with actual captured art and awakening.
+  Historical Legendary crops do not establish all rarities or current ownership.
+- [ ] Complete spirits: Loar/Sala/Noah, Zappy/Mum/Todd, then
+  Luga/Kart/Radeon/Ark/Herb/Bo; Legendary/Epic reserves below. Show their measured
+  total bonuses and actual awakening visuals. These are spirits, not familiars.
+- [ ] Complete familiars: six Altar members, then reserves sorted by stars.
+  Identify the six from real Altar evidence; do not infer membership from order.
+- [ ] Complete Black Orb visuals and bonuses for every element with current
+  evidence. Historical item details must remain tied to their own capture.
+- [ ] Verify Relics: Extra Dmg/Crit/HP first, remaining relics three per row.
+  Preserve exact game text, signs, units and numeric formatting: primary bonus
+  white, inheritance bonus blue, never combined. Date archived observations;
+  historical transcription does not imply a working continuous reader.
+
 ### Navigation review and resource coverage acceptance
 
 - [x] Deploy the private navigation review application on the requested port;
@@ -747,3 +770,17 @@ preview; nothing more to take there.
 Not in the session (they come when they come): the maintenance and update
 required screens, and the event and offer pop-ups if no relaunch shows
 them; their crops go in on the next sighting, same rule.
+
+- [ ] Validate configuration-specific historical rates in installed farming.
+  The backend keeps the last six measured hourly rates for each exact
+  mode/stage/preset/Soul Weapon/variant target. Each row retains its actual
+  acquisition-window dates; a restored snapshot is history, never current
+  farming proof. Same-target read-only checks retain sparse Cube/L3 samples;
+  input, another mode/session, relaunch or a configuration-changing action
+  starts a new active episode without erasing historical snapshots. Initial
+  attribution supports Gear/Gold/Soul farming only, with a complete verified
+  target. Free play, Mine and incomplete targets remain explicitly unsupported
+  with unknown rows; reliable profiles for those cases are still open. Verify
+  installed persistence/restart, editing and returning to a target, sparse
+  visits, the correct weapon/accessory drop counter, and the date shown for
+  each historical value. Offline tests alone do not close these acceptances.

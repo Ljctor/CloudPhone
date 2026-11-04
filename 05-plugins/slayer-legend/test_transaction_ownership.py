@@ -95,6 +95,22 @@ class Ownership(unittest.IsolatedAsyncioTestCase):
             await self.tap()
         self.assertEqual(len(self.inputs), 1)
 
+    async def test_passive_action_observer_cannot_change_input_authority_or_break_action(self):
+        observed = []
+
+        def broken(event):
+            raise ValueError('statistics failed')
+
+        self.ports.on_action(broken)
+        self.ports.on_action(observed.append)
+        with self.assertRaises(self.ports.Busy):
+            await self.tap()
+        self.assertEqual(observed, [], 'a refused gesture is never announced as executable')
+        async with self.ports.leased('stage_change', 'observer test', 60):
+            await self.tap()
+        self.assertEqual(observed, [{'screen': 'battle', 'move': 'menu_equipment'}])
+        self.assertEqual(len(self.inputs), 1, 'statistics exceptions cannot cancel an authorised action')
+
     async def test_user_input_stops_owner_and_cannot_be_hidden_by_token_renewal(self):
         async with self.ports.leased("stage_change", "running", 60):
             held = self.ports.lease.held

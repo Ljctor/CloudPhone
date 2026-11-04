@@ -123,10 +123,13 @@ def setup(context):
                                             lambda number: screen_rules.name_numeral(table, stage, number),
                                             mode["api"], mine["api"], launch["api"], engraving["api"]["loadout"],
                                             farming["api"], gold["api"])
+    rate_history = feature("rate_history").rate_history(
+        ports, feature("gold_rules"), mode["api"], engraving["api"], game["api"], watchdog["api"], table)
     # The overlay's tone reads the watchdog's last look.
     mode["api"]["watched_by"](watchdog["api"]["look"])
     features = [
         game,
+        rate_history,
         examples,
         feature("power").power(ports),
         feature("lease").lease(ports),

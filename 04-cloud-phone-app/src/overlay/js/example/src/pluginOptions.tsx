@@ -3,6 +3,7 @@
 // dialog, status, grid, log) and the dialog an option opens. What is stored and
 // folded is worked out in pluginSettings.ts.
 import React, { useEffect, useState } from 'react';
+import { InventoryTable } from './InventoryTable';
 import { tr } from './i18n';
 import { infoRow } from './infoRows';
 import { LogFilter, LogList, serverRecords } from './logs';
@@ -86,6 +87,7 @@ function pluginOption(context, plugin, option, index) {
   const setPluginOption = (id, key, value) => updateSettings(pluginOptionChange(settings, id, key, value));
   const key = `${plugin.id}-${index}`;
   if (!(option.visible?.() ?? true)) return null;
+  if (option.type === 'inventory-table') return <InventoryTable key={key} option={option} tr={tr} />;
   if (option.type === 'capture') return <CapturePreview key={key} option={option} />;
   if (option.type === 'toggle') {
     return (
@@ -148,6 +150,21 @@ function pluginOption(context, plugin, option, index) {
       </div>
     );
   }
+  if (option.type === 'metrics') {
+    return <div key={key} role="group" aria-label={tr(option.label)} style={{ display: 'grid',
+      gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '6px', marginBottom: '10px' }}>
+      {(option.items?.() ?? []).map((item, index) => <div key={index} data-metric={item.key}
+        style={{ minWidth: 0, height: '110px', padding: '6px', boxSizing: 'border-box',
+          border: '1px solid #455365', borderRadius: '4px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+        <span style={{ color: '#c4cad3', fontSize: '11px', minHeight: '26px' }}>{tr(item.label)}</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600, fontSize: '12px', minWidth: 0 }}>
+          {item.icon && <img src={item.icon} alt="" style={{ width: '14px', height: '14px', objectFit: 'contain', imageRendering: 'pixelated' }} />}
+          <span>{item.value}</span>
+        </span>
+        <span style={{ color: '#9aa7b7', fontSize: '10px', overflowWrap: 'anywhere', height: '28px' }}>{item.detail}</span>
+      </div>)}
+    </div>;
+  }
   if (option.type === 'dialog') {
     // select: a radio button before the label, one of a group sharing
     // the stored key (the first of the group when nothing is stored).
@@ -165,7 +182,7 @@ function pluginOption(context, plugin, option, index) {
           </label>
         ) : <span style={styles.infoLabel}>{tr(option.label)}</span>}
         {/* No button for a row with nothing to configure (options: []). */}
-        {option.options?.length !== 0 && (
+        {(option.tabs?.length || option.options?.length !== 0) && (
           <button style={styles.panelButton} onClick={() => openDialog({ plugin, option })}>
             {tr(option.button ?? 'Configurer')}
           </button>
@@ -299,13 +316,37 @@ export function PluginList({ plugins, settings, updateSettings, openDialog }) {
 
 export function PluginDialog({ dialog, settings, updateSettings, openDialog }) {
   const context = { settings, updateSettings, openDialog };
+  const tabs = dialog.option.tabs ?? [];
+  const [selected, setSelected] = useState(dialog.option.initialTab ?? tabs[0]?.id);
+  useEffect(() => { setSelected(dialog.option.initialTab ?? tabs[0]?.id); }, [dialog.option]);
+  const active = tabs.find((tab) => tab.id === selected) ?? tabs[0];
+  const activate = (id) => { setSelected(id); };
   return (
     <div style={styles.pluginDialog} role="dialog" aria-label={tr(dialog.option.title ?? dialog.option.label)}>
       <div style={styles.infoHeader}>
         <strong>{tr(dialog.option.title ?? dialog.option.label)}</strong>
         <button style={styles.infoClose} onClick={() => openDialog(null)} aria-label={tr('Fermer')}>✕</button>
       </div>
-      {(dialog.option.options ?? []).map((option, index) => pluginOption(context, dialog.plugin, option, `dialog-${index}`))}
+      {tabs.length > 0 && <div role="tablist" aria-label={tr(dialog.option.title ?? dialog.option.label)}
+        style={{ display: 'grid', gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))`, gap: '4px', flexShrink: 0, paddingBottom: '8px' }}>
+        {tabs.map((tab, index) => <button key={tab.id} id={`plugin-tab-${tab.id}`} role="tab"
+          aria-selected={active?.id === tab.id} aria-controls={`plugin-panel-${tab.id}`}
+          tabIndex={active?.id === tab.id ? 0 : -1}
+          style={{ ...styles.smallButton, minWidth: 0, padding: '4px 2px', fontSize: '11px', minHeight: '44px',
+            borderColor: active?.id === tab.id ? '#5abfff' : '#536174',
+            background: active?.id === tab.id ? '#304f6b' : '#28313e' }}
+          onClick={() => activate(tab.id)} onKeyDown={(event) => {
+            const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length
+              : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length
+                : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : null;
+            if (next !== null) { event.preventDefault(); activate(tabs[next].id);
+              event.currentTarget.parentElement?.querySelectorAll('button')[next]?.focus(); }
+          }}>{tr(tab.label)}</button>)}
+      </div>}
+      <div role={active ? 'tabpanel' : undefined} id={active ? `plugin-panel-${active.id}` : undefined}
+        aria-labelledby={active ? `plugin-tab-${active.id}` : undefined}>
+        {(active?.options ?? dialog.option.options ?? []).map((option, index) => pluginOption(context, dialog.plugin, option, `dialog-${active?.id ?? ''}-${index}`))}
+      </div>
     </div>
   );
 }

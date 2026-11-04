@@ -14,6 +14,8 @@ print("Private oral developer-review queue: OK")
 python3 "$(dirname "$0")/../slayer-legend/test_screen_model.py" EngravingPreview Registry
 # Quick debug scans retain acquisition provenance through slow classification and caching.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_screen_quick.py -q
+# Inventory order, capture provenance and exact bonus text, without gameplay.
+node "$(dirname "$0")/../slayer-legend/test_page_inventory.mjs"
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_title_logo.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_menu_recovery.py -q
 # Silent process loss, bounded reopen attempts, and the original launch deadline.
@@ -58,6 +60,8 @@ python3 "$(dirname "$0")/../slayer-legend/test_stage_change.py" \
 python3 "$(dirname "$0")/../slayer-legend/test_watchdog.py"
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_hourly_resources.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_rate_completions.py -q
+# Six historical rates require exact configuration and verified acquisition episodes.
+python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_rate_history.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_gold_native.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_native_cache.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_cube_native.py -q
@@ -68,6 +72,8 @@ python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_equip
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_resource_refresh.py -q
 # Overlay groups hourly analysis and display settings; rate icons stay distinct.
 node "$(dirname "$0")/../slayer-legend/test_page_gold.mjs"
+# Autosave/revisions and fixed history slots reject rates for another visible target.
+node "$(dirname "$0")/../slayer-legend/test_page_mode.mjs"
 node "$(dirname "$0")/../slayer-legend/test_page_engraving.mjs"
 node "$(dirname "$0")/../slayer-legend/test_page_trace.mjs"
 # Startup idle requires a complete current setup receipt, never a healthy frame.
@@ -424,6 +430,7 @@ curl -fsS "${base%/}/api/v1/plugins/slayer-legend/mode" | python3 -c '
 import json, sys
 state = json.load(sys.stdin)
 import math
+assert state["default"] in ("free", "mpw18", "mpw4", "soul"), "Agent mode cannot be a default"
 assert (state["until"] is None) == (state["mode"] == state["default"])
 if state["until"] is not None:
     assert isinstance(state["until"], (int, float)) and not isinstance(state["until"], bool)
@@ -449,4 +456,27 @@ import sys
 script = sys.stdin.read()
 assert "mode === " + chr(39) + "agent" + chr(39) in script
 print("Agent mode status is not duplicated: OK")
+'
+# Historical rows are finite capture-dated measurements, never copied from another mode.
+curl -fsS "${base%/}/api/v1/plugins/slayer-legend/rate-history" | python3 -c '
+import json, math, sys
+value = json.load(sys.stdin)
+assert value["version"] == 1
+for mode in ("mpw18", "mpw4", "soul", "free", "mine"):
+    config = value["configs"][mode]
+    rows = config["fields"]
+    assert len(rows) == 6
+    assert [row["field"] for row in rows[:2]] == ["gold", "cubes"]
+    assert rows[2]["field"] in ("weapon_l3", "accessory_l3", "gear_l3")
+    assert [row["field"] for row in rows[3:]] == ["soul_green", "soul_blue", "soul_red"]
+    if mode in ("free", "mine"):
+        assert config["supported"] is False
+    for row in rows:
+        rate = row["rate_per_hour"]
+        if rate is None:
+            assert row["measured_at"] is None
+        else:
+            assert type(rate) in (int, float) and math.isfinite(rate) and rate >= 0
+            assert row["source"] == "observed_window"
+            assert row["window_start"] < row["window_end"] == row["measured_at"]
 '

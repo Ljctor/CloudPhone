@@ -31,6 +31,16 @@ const api = { setting: (key) => settings[key] ?? null, addTranslations() {}, ref
 const ui = modeFeature(api, { known: () => null, stage: null,
   watchdog: { line: () => '', retry: () => null, intention: () => watchdogIntent } });
 await flush();
+const modeDialogs = ui.options.filter((option) => option.type === 'dialog');
+assert.deepEqual(modeDialogs.map((option) => option.select.value), ['free', 'mpw18', 'mpw4', 'soul', 'mine']);
+for (const dialog of modeDialogs) {
+  assert.equal(dialog.title, 'Configuration des modes');
+  assert.equal(dialog.tabs, modeDialogs[0].tabs, 'all Configure buttons share the exact same tab definition');
+  assert.equal(dialog.initialTab, dialog.select.value);
+  assert.equal(dialog.tabs.find((tab) => tab.id === dialog.initialTab).options[0].type, 'metrics');
+  assert.equal(dialog.tabs[0].options[0].items().length, 6);
+}
+assert.ok(!ui.options.find((option) => option.key === 'defaultMode').choices().some((choice) => choice.value === 'agent'));
 const intentRow = ui.options.find((option) => option.label === 'Intention');
 assert.equal(intentRow.visible(), false);
 const overlay = ui.overlay();
@@ -81,7 +91,7 @@ let resolveSetup;
 setupResponse = new Promise((resolve) => { resolveSetup = resolve; });
 const beforeSetup = posts.length;
 ui.onSetting('stage18', '970'); // Restore the accepted draft before retrying it.
-const loadoutStatus = ui.options.find((option) => option.label === 'Gear Farming').options
+const loadoutStatus = ui.options.find((option) => option.label === 'Gear Farming').tabs.find((tab) => tab.id === 'mpw18').options
   .find((option) => option.label === 'État');
 assert.equal(loadoutStatus.button().label, 'Réessayer cette configuration');
 const applying = loadoutStatus.button().run();

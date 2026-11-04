@@ -825,6 +825,7 @@ class GoldTrigger(unittest.TestCase):
         self.farm_looks = farm_looks = []
         self.confirmed = confirmed = []
         self.setup_callbacks = []
+        self.setup_receipts = []
         self.verified = verified = []
         self.launches = launches_made = []
         self.reentered = reentered = []
@@ -907,6 +908,7 @@ class GoldTrigger(unittest.TestCase):
             lambda name: target(looked[0]) if callable(target) else target or
                          {"mpw18": {"stage": 920, "preset": 1}, "mpw4": {"stage": 915, "preset": "II"}}[name],
             farming, gold)
+        built["api"]["on_setup_verified"](self.setup_receipts.append)
         # Inspect closure-owned state only in this unit harness so a suspended
         # notification can model a simultaneous change of observed incident.
         cells = dict(zip(built["api"]["look"].__code__.co_freevars, built["api"]["look"].__closure__))
@@ -1005,6 +1007,16 @@ class GoldTrigger(unittest.TestCase):
         self.assertEqual(self.parks, [], "parking cannot complete a grid")
         self.assertEqual(self.verified, [])
         self.assertIn("loadout", self.state["counters"]["next_attempt"])
+
+    def test_watchdog_full_repair_emits_dated_receipt_for_passive_history(self):
+        self.looks(3, "on", failed_setup=True,
+                   answer={"result": "done", "text_t": None, "verified_setup": True})
+        self.assertEqual(len(self.setup_receipts), 1)
+        receipt = self.setup_receipts[0]
+        self.assertEqual(receipt["mode"], "mpw18")
+        self.assertEqual(receipt["result"], "done")
+        self.assertEqual(receipt["target"], {"stage": 920, "preset": 1})
+        self.assertEqual(receipt["at"], EPOCH + 3 * E)
 
     def test_failed_setup_only_clears_after_full_verified_transaction(self):
         for receipt in (False, True):

@@ -4,6 +4,7 @@
 // stay separate so the settings renderer can keep them grey at the right.
 // Asked at load, then every 10 s while a row shows. rows(options, at): puts the sections into
 // the plugin's options list at index at, once the gateway answered.
+import { inventoryTables } from './page_inventory.js';
 import { RESOURCE_ICONS } from './page_resources.js';
 import { SCREEN_ICONS } from './page_screen_icons.js';
 import { OVERLAY } from './page_icons.js';
@@ -162,6 +163,8 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
       } }, ...details];
   };
   const inventoryRows = (screen) => {
+    const tables = inventoryTables(screen, () => screenOf(screen.screen) ?? screen);
+    if (tables.length) return tables;
     const inventory = screen.inventory;
     if (!inventory) return [];
     if (inventory.status === 'never_read') {
@@ -196,46 +199,7 @@ export default function gameFeature(api, { resourceOptions = [], displayOptions 
       }
       return rows;
     }
-    if (!['weapons', 'accessories'].includes(inventory.kind) || !inventory.items?.length) return [];
-    const colours = { grey: 'Gris', green: 'Vert', orange: 'Orange', purple: 'Violet',
-      red: 'Rouge', blue: 'Bleu', gold: 'Or' };
-    const rows = [{ type: 'status', key: `inventory-${screen.screen}-date`, label: 'Relevé historique',
-      muted: () => true,
-      title: () => api.tr('x/5 : progression affichée par le jeu ; possession non confirmée'),
-      value: () => {
-        const captured = screenOf(screen.screen)?.example?.captured;
-        return captured ? new Date(captured * 1000).toLocaleString() : 'Capture enregistrée';
-      } }];
-    const groups = new Map();
-    for (const item of inventory.items) {
-      const appearance = item.appearance ?? 'unknown';
-      if (!groups.has(appearance)) groups.set(appearance, []);
-      groups.get(appearance).push(item);
-    }
-    for (const [appearance, items] of groups) {
-      rows.push({ type: 'section', key: `inventory-${screen.screen}-${appearance}`,
-        label: api.tr(colours[appearance] ?? appearance), depth: accessPath(screen).length + 2,
-        folded: true });
-      for (const item of items) {
-        const current = () => screenOf(screen.screen)?.inventory?.items?.find((row) => row.id === item.id) ?? item;
-        rows.push({ type: 'status', key: `inventory-${screen.screen}-${item.id}`,
-          label: item.name || (item.grade == null ? 'Case équipée' : `Grade ${item.grade}`),
-          compact: true, ...archived(screen),
-          title: () => api.tr('Relevé historique · x/5 : progression affichée, possession non confirmée'),
-          value: () => {
-            const found = current();
-            const progress = found.displayed_fraction;
-            const parts = [];
-            if (found.enhancement != null) parts.push(`+${found.enhancement}`);
-            if (progress?.numerator != null && progress?.denominator != null) {
-              parts.push(`${progress.numerator}/${progress.denominator}`);
-            }
-            if (found.equipped) parts.push(api.tr('Équipé'));
-            return parts.join(' · ') || 'never read';
-          } });
-      }
-    }
-    return rows;
+    return [];
   };
   const examplesOf = (screen) => {
     const current = screenOf(screen.screen) ?? screen;

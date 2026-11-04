@@ -146,6 +146,17 @@ class EntryReadiness(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all('-S' not in command and 'force-stop' not in command for command in self.commands))
         self.assertIsNone(self.ports.lease.state())
 
+    async def test_mode_epoch_distinguishes_return_to_same_config_without_game_input(self):
+        self.process = self.front = True
+        await self.choose('soul')
+        await asyncio.wait_for(self.farmed.wait(), 1)
+        first = self.mode['api']['mode_epoch']()
+        await self.choose('free')
+        await self.turns()
+        await self.choose('soul')
+        await self.turns()
+        self.assertGreater(self.mode['api']['mode_epoch'](), first)
+
     async def test_already_focused_game_needs_no_launch(self):
         self.process = self.front = True
         await self.choose('soul')

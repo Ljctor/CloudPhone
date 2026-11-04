@@ -471,7 +471,7 @@ def build(context, nav):
     # The game's process last seen (its pid), and who hears of a relaunch
     # and of each capture (features/game.py).
     process = {"pid": None}
-    relaunch_listeners, capture_listeners = [], []
+    relaunch_listeners, capture_listeners, action_listeners = [], [], []
     # Older gateways do not say when the user plays.
     last_input = getattr(context, "last_input", None) or (lambda: None)
     power = {"on": True}
@@ -503,9 +503,18 @@ def build(context, nav):
             raise Busy(NO_LEASE)
         lease.check(HOLDER.get(), owner=owned[0])
 
+    def observed_action(screen, move):
+        """Passive bookkeeping after guards, before Android receives input."""
+        for listener in tuple(action_listeners):
+            try:
+                listener({"screen": screen, "move": move})
+            except Exception:
+                exception_log(log)("Action observer failed")
+
     async def tap(shot, screen, move, point, verified=False, seen=None):
         check_lease()
         allowed(screen, move, point, verified=verified, seen=seen)
+        observed_action(screen, move)
         width, height, _ = shot
         await adb("shell", "input", "tap", str(round(point[0] * width)), str(round(point[1] * height)))
 
@@ -515,6 +524,8 @@ def build(context, nav):
         check_lease()
         for move, point in moves:
             allowed(screen, move, point, verified=move in verified)
+        for move, _ in moves:
+            observed_action(screen, move)
         width, height, _ = shot
         script = f"; sleep {gap}; ".join(f"input tap {round(point[0] * width)} {round(point[1] * height)}"
                                          for _, point in moves)
@@ -523,6 +534,7 @@ def build(context, nav):
     async def hold(shot, screen, move, point, milliseconds):
         check_lease()
         allowed(screen, move, point, "hold")
+        observed_action(screen, move)
         width, height, _ = shot
         x, y = str(round(point[0] * width)), str(round(point[1] * height))
         await adb("shell", "input", "swipe", x, y, x, y, str(milliseconds), timeout=milliseconds / 1000 + 10)
@@ -530,6 +542,7 @@ def build(context, nav):
     async def swipe(shot, screen, move, start, end, milliseconds, verified=False, seen=None):
         check_lease()
         allowed(screen, move, start, "swipe", verified, seen)
+        observed_action(screen, move)
         width, height, _ = shot
         await adb("shell", "input", "swipe", str(round(start[0] * width)), str(round(start[1] * height)),
                   str(round(end[0] * width)), str(round(end[1] * height)), str(milliseconds))
@@ -731,6 +744,7 @@ def build(context, nav):
         closing = True
         capture_listeners.clear()
         relaunch_listeners.clear()
+        action_listeners.clear()
         pending = tuple(tasks)
         for task in pending:
             task.cancel()
@@ -767,7 +781,7 @@ def build(context, nav):
         capture=capture, capture_time=capture_time, analyse=context.analyse,
         action_allowed=getattr(nav, "action_allowed", lambda screen, move: False),
         detect=getattr(context, "detect", context.analyse), on_capture=capture_listeners.append,
-        on_relaunch=relaunch_listeners.append, relaunched=relaunched,
+        on_relaunch=relaunch_listeners.append, relaunched=relaunched, on_action=action_listeners.append,
         tap=tap, taps=taps, hold=hold, swipe=swipe, lease=lease, leased=leased, Busy=Busy, Refused=Refused,
         last_input=last_input, user_input=user_input, **text_ports(),
         pause_left=lease.pause_left,
