@@ -35,6 +35,78 @@ class PromotionReader(unittest.TestCase):
                       verified=True, seen={**seen, 'look': {**seen['look'], 'overlays': ['panel']}}))
 
 
+class EnhanceReader(unittest.TestCase):
+    def test_existing_real_header_and_lit_tab_identify_enhance_only(self):
+        shot = model.screen('battle_emerald', 'character_enhance_header', 'character_close_tab_lit_480')
+        for size in ((360, 780), (480, 1040), (720, 1560)):
+            seen = model.scaled(shot, *size)
+            self.assertTrue(screens.character_enhance(seen))
+            overlays = screens.look(seen)['overlays']
+            self.assertIn('character_enhance', overlays)
+            self.assertNotIn('character_growth', overlays)
+            self.assertNotIn('character_promotion', overlays)
+
+    def test_other_headers_unlit_and_incomplete_evidence_refuse(self):
+        for header in ('character_growth_header', 'character_promotion_header_live_480'):
+            self.assertFalse(screens.character_enhance(model.screen(
+                'battle_emerald', header, 'character_close_tab_lit_480')))
+        self.assertFalse(screens.character_enhance(model.screen(
+            'battle_emerald', 'character_enhance_header', 'character_close_tab_unlit_480')))
+        self.assertFalse(screens.character_enhance(model.screen('battle_emerald', 'character_close_tab_lit_480')))
+        for key in model.REGISTERED:
+            if key != 'character_enhance':
+                self.assertFalse(screens.character_enhance(model.made(key)), key)
+
+    def test_close_guard_requires_specific_overlay_lit_tab_and_reduced_battle(self):
+        seen = {'look': {'screen': 'battle', 'plain': False, 'overlays': ['panel', 'character_enhance']},
+                'combat_visible': True, 'active_tab': 'character_enhance'}
+        self.assertIsNone(soul.nav.guard('character_enhance', 'close_tab', .073, .966, verified=True, seen=seen))
+        for bad in (None, dict(seen, active_tab='character_growth'), dict(seen, combat_visible=False),
+                    dict(seen, look={'screen':'battle','plain':False,'overlays':['panel']}),
+                    dict(seen, look={'screen':'battle','plain':False,'overlays':['panel','character_enhance','character_growth']})):
+            self.assertIsNotNone(soul.nav.guard('character_enhance', 'close_tab', .073, .966, verified=True, seen=bad))
+        self.assertIsNotNone(soul.nav.guard('character_enhance', 'close_tab', .073, .966, seen=seen))
+        move = next(m for m in soul.nav.connections('character_enhance') if m['id']=='close_tab')
+        self.assertTrue(move['assumed'], 'First direct Enhance close-tab return awaits supervised gameplay')
+
+
+class EnhanceRecovery(unittest.TestCase):
+    def test_enhance_closes_once_then_parks_without_changing_weapon(self):
+        for mode in ('mpw4', 'mpw18', 'soul'):
+            game = soul.Game(screen='enhance')
+            before = (game.state['equipped'], game.state['selected'])
+            _, api = build(game)
+            answer = asyncio.run(api['back_to_battle'](mode))
+            self.assertEqual(answer['result'], 'done')
+            self.assertEqual(game.moves, [('character_enhance','close_tab'),('battle','menu_equipment'),
+                                          ('equipment_weapon','soul_weapon')])
+            self.assertEqual((game.state['equipped'],game.state['selected']), before)
+            self.assertEqual(game.leases, [('stage_change','farm '+mode)])
+            self.assertNotIn('verified_setup',answer)
+
+    def test_double_character_identity_is_not_a_recoverable_menu_and_never_taps(self):
+        game = soul.Game(screen='enhance', ambiguous_character=True)
+        _, api = build(game)
+        self.assertFalse(api['menu_recoverable'](game.snapshot()))
+        self.assertEqual(asyncio.run(api['back_to_battle']('mpw4'))['result'], 'failed')
+        self.assertEqual(game.moves, [])
+
+    def test_unknown_character_still_sends_no_gesture(self):
+        game = soul.Game(screen='unrecognised_enhance')
+        _, api = build(game)
+        self.assertFalse(api['menu_recoverable'](game.snapshot()))
+        self.assertEqual(asyncio.run(api['back_to_battle']('mpw4'))['result'], 'failed')
+        self.assertEqual(game.moves, [])
+
+    def test_failed_close_is_never_repeated(self):
+        game = soul.Game(screen='enhance')
+        game.apply = lambda *args: None
+        _, api = build(game)
+        self.assertEqual(asyncio.run(api['back_to_battle']('mpw4'))['result'], 'failed')
+        self.assertEqual(game.moves, [('character_enhance','close_tab')])
+        self.assertLessEqual(game.now,10.25)
+
+
 class GrowthReader(unittest.TestCase):
     def test_real_selected_growth_and_lit_character_tab(self):
         shot = model.screen('battle_emerald', 'character_growth_header', 'character_close_tab_lit_480')
@@ -71,11 +143,11 @@ class GrowthReader(unittest.TestCase):
 
 class GrowthRecovery(unittest.TestCase):
     def test_fast_menu_capability_excludes_unrecognised_and_other_screens(self):
-        for name in ('growth', 'promotion', 'latent_power', 'unknown', 'battle', 'equipment', 'soul'):
+        for name in ('enhance', 'growth', 'promotion', 'latent_power', 'unknown', 'battle', 'equipment', 'soul'):
             game = soul.Game(screen=name)
             _, api = build(game)
             self.assertEqual(api['menu_recoverable'](game.snapshot()),
-                             name in ('growth', 'promotion', 'latent_power'))
+                             name in ('enhance', 'growth', 'promotion', 'latent_power'))
 
 
     def test_growth_closes_once_then_parks_without_changing_equipment(self):
@@ -230,10 +302,15 @@ def build(game):
     original = soul.fake_screens()
     original.LATENT_POWER_CLOSE = screens.LATENT_POWER_CLOSE
     original.latent_power = lambda shot: shot[2]["screen"] == "latent_power"
-    original.character_growth = lambda shot: shot[2]["screen"] == "growth"
+    original.character_enhance = lambda shot: shot[2]["screen"] == "enhance" or shot[2].get("ambiguous_character", False)
+    original.character_growth = lambda shot: shot[2]["screen"] == "growth" or shot[2].get("ambiguous_character", False)
     original.character_promotion = lambda shot: shot[2]['screen'] == 'promotion'
     old_look = original.look
-    original.look = lambda shot: ({'screen': 'battle', 'plain': False, 'overlays': ['panel', 'character_promotion']}
+    original.look = lambda shot: ({'screen': 'battle', 'plain': False, 'overlays': ['panel', 'character_enhance', 'character_growth']}
+                                 if shot[2].get('ambiguous_character') else
+                                 {'screen': 'battle', 'plain': False, 'overlays': ['panel', 'character_enhance']}
+                                 if shot[2]['screen'] == 'enhance' else
+                                 {'screen': 'battle', 'plain': False, 'overlays': ['panel', 'character_promotion']}
                                  if shot[2]['screen'] == 'promotion' else
                                  {'screen': 'battle', 'plain': False, 'overlays': ['panel', 'character_growth']}
                                  if shot[2]['screen'] == 'growth' else

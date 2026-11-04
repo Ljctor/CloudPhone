@@ -98,6 +98,11 @@ Rules:
       transition is calibrated by supervised gameplay; every return still
       requires its own fresh plain-Battle confirmation.
     - Closing a bottom panel with its own tab: only when that tab reads lit.
+      For Character Enhance, additionally require its calibrated selected
+      Enhance header and reduced battle. Close through the lit Character
+      tab once, then freshly verify plain Battle; never its gold/stat buttons,
+      LEVEL UP, or another Character sub-tab. Unknown or ambiguous Character
+      headers never default to Promotion.
     - "Press here to finish Power Saving Mode": held 4 s, once per
       sequence, only when the screen reads Power Saving Mode.
     - Opening Select Region (the stage map button on the battle screen).

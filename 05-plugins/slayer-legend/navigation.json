@@ -310,6 +310,7 @@
    "recognise": "panel tabs Enhance/Growth/Promotion at y 0.537, Enhance selected",
    "source": "explored 2026-10-18",
    "moves": [
+    {"id": "close_tab", "semantic_kind": "navigation", "to": "battle", "tap": [0.073, 0.966], "assumed": true, "label": "Close the recognised Enhance panel with its freshly lit Character tab; transition awaits supervised confirmation", "precondition": "fresh capture recognises selected Enhance and the only lit Character bottom tab; one close, then verify plain Battle", "needs": {"reduced_battle": true, "active_tab": "character_enhance", "required_overlay": "character_enhance"}},
     {
      "id": "better_weapon_toast",
      "semantic_kind": "action",

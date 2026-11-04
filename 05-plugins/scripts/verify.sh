@@ -25,7 +25,8 @@ node "$(dirname "$0")/../slayer-legend/test_page_inventory.mjs"
 # Root section declarations keep Overlay free of a menu logo.
 node "$(dirname "$0")/../slayer-legend/test_page_game.mjs"
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_title_logo.py -q
-# Real Latent Power and Growth landmarks; one guarded X/tab, unknown returns refuse further inputs.
+# Real Latent Power and Character landmarks; Enhance/Growth/Promotion use their
+# identified close tab, with ambiguous identities and unknown returns refused.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_menu_recovery.py -q
 # Silent process loss, bounded reopen attempts, and the original launch deadline.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_launch.py -q

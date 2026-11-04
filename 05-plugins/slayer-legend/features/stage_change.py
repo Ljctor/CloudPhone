@@ -61,7 +61,7 @@ during it stops it at the next tap.
   complete setup. No detached navigation survives a mode change.
 
 api: farm(stage, preset, mode) runs the three and parks; change_stage, set_preset,
-back_to_battle(mode) closes calibrated Latent Power or Character Growth/Promotion and parks,
+back_to_battle(mode) closes calibrated Latent Power or Character Enhance/Growth/Promotion and parks,
 under one lease and a fixed overall deadline; it changes no loadout settings.
 ensure_soul_weapon(mode, loadout=None) alone (the last for a
 loadout change of the active mode); each answers {result: "done", "plan"
@@ -73,6 +73,10 @@ import asyncio
 import copy
 from contextvars import ContextVar
 from types import SimpleNamespace
+
+CHARACTER_PANELS = {"character_enhance": "Character Enhance",
+                    "character_growth": "Character Growth",
+                    "character_promotion": "Character Promotion"}
 
 # After a move: a fresh capture every POLL seconds until the screen
 # expected shows, at most SETTLE seconds (MOVE_SETTLE for a stage to load).
@@ -222,6 +226,11 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         for the watchdog too (api parked)."""
         return bool(souls) and bool(soul["reader"].title(shot))
 
+    def character_panel(shot):
+        matches = [name for name in CHARACTER_PANELS
+                   if getattr(screens, name, lambda image: False)(shot)]
+        return matches[0] if len(matches) == 1 else None
+
     def battle_or_panel(shot):
         """"plain", the open panel's tab, "saver", "parked" (the Soul
         Weapon screen), or None (another screen)."""
@@ -231,10 +240,9 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
             return "quest"
         if controls.settings_open(shot) and "battle_settings" in screens.look(shot)["overlays"]:
             return "settings"
-        if getattr(screens, "character_growth", lambda image: False)(shot):
-            return (.073, "character_growth")
-        if getattr(screens, "character_promotion", lambda image: False)(shot):
-            return (.073, "character_promotion")
+        panel = character_panel(shot)
+        if panel:
+            return (.073, panel)
         if screens.plain_battle(shot):
             return "plain"
         if screens.classify(shot) == "saver":
@@ -245,13 +253,13 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
             return "engraving"
         return screens.open_tab(shot)
 
-    async def close_character(shot, panel="character_promotion"):
+    async def close_character(shot, panel):
         """One guarded close-tab, only on the specifically recognised panel."""
-        label = "Character Growth" if panel == "character_growth" else "Character Promotion"
+        label = CHARACTER_PANELS.get(panel, "Character")
         seen = await ports.analyse(screens.look, shot)
-        if (panel not in ("character_growth", "character_promotion")
+        if (panel not in CHARACTER_PANELS
                 or panel not in seen.get("overlays", ())
-                or not await ports.analyse(getattr(screens, panel, lambda image: False), shot)):
+                or await ports.analyse(character_panel, shot) != panel):
             raise Stop("{panel} non reconnu : panneau laissé ouvert", panel=label)
         await tap(shot, panel, "close_tab", (.073, screens.TAB_TAP_Y), verified=True,
                   seen={"look": seen, "combat_visible": seen["screen"] == "battle",
@@ -332,7 +340,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
                        screen=await ports.analyse(screens.classify, shot))
         if not may_tap:
             raise Plan("fermer le panneau ({panel})", panel=tab[1])
-        if tab[1] in ("character_promotion", "character_growth"):
+        if tab[1] in CHARACTER_PANELS:
             return await close_character(shot, tab[1])
         reduced = await ports.analyse(screens.look, shot)
         # The Equipment tab toggles its panel; tapping visible combat can
@@ -636,9 +644,9 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         seen = screens.look(shot)
         if seen.get("screen") == "latent_power":
             return bool(getattr(screens, "latent_power", lambda image: False)(shot))
-        return bool(seen.get("screen") == "battle" and any(
-            panel in seen.get("overlays", ()) and getattr(screens, panel, lambda image: False)(shot)
-            for panel in ("character_growth", "character_promotion")))
+        panel = character_panel(shot)
+        return bool(seen.get("screen") == "battle" and panel
+                    and panel in seen.get("overlays", ()))
 
     async def back_to_battle(mode):
         """Bounded menu recovery; no guessed panels and no loadout changes."""
@@ -651,8 +659,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
                 if await ports.analyse(getattr(screens, "latent_power", lambda image: False), shot):
                     await to_battle()
                 else:
-                    panel = ("character_growth" if await ports.analyse(
-                        getattr(screens, "character_growth", lambda image: False), shot) else "character_promotion")
+                    panel = await ports.analyse(character_panel, shot)
                     await close_character(shot, panel)
 
         async def finish_parking():
