@@ -209,6 +209,19 @@ layers on item visuals, never baked into their base sprites or menu symbols.
 
 ### Engraving completion and motion acceptance
 
+- [x] Verify an unchanged Soul setup retry through the calibrated Character
+  Growth return. Acceptance of source `8248076` completed in 38.5 seconds with
+  the original revision and Ambition 32 / Gold-maxed / stage 970 / preset IV.
+  Two fresh grid captures confirm the exact four I pieces, levels 47/47/49/49
+  and eight closed locks; the current full receipt followed those readings.
+  Soul Weapon parking was observed before and after the separate resource tour.
+  This was an API retry of an already correct engraving, not a new Equip,
+  lower-level replacement or live interruption/fault-injection acceptance.
+- [ ] Reproduce the receipt-publication interruption scenarios in authorised
+  gameplay: input during the last readback, Resume followed by new input, and
+  readiness relaunch. Offline regressions cover these paths; the successful
+  unchanged retry above does not prove them in game.
+
 - [x] Distinguish a due equipment/engraving check from observed damage or a
   failed check. Pending verification is orange; an actual failure retains its
   reason, and an unresolved verification wait becomes an error after 120 s.
@@ -848,4 +861,4 @@ them; their crops go in on the next sighting, same rule.
 
 Latent Power recovery: fixed title, instruction and bottom-left X are calibrated from reviewed real crops. The supervised close returned to Character Growth; the destination was reread and further input stopped while Growth lacked its own identity. The graph keeps `unknown` because each return must be identified from a fresh frame, not assumed. No Latent Power awakening or spending action is authorised.
 
-Character Growth recovery: existing real selected-header and lit/unlit Character-tab crops identify the panel, independently validated on the newly observed return from Latent Power. One close-tab is guarded by that identity and reduced battle, followed by fresh plain-Battle verification. Its close-tab transition is assumed until the first supervised observation; never treat a parked return as proof of complete setup.
+Character Growth recovery: existing real selected-header and lit/unlit Character-tab crops identify the panel, independently validated on the newly observed return from Latent Power. One close-tab is guarded by that identity and reduced battle, followed by fresh plain-Battle verification. The supervised setup acceptance of source `8248076` observed close-tab returning to plain Battle, then verified the complete setup separately from parking. The packaged navigation metadata still conservatively marks this transition assumed; update that calibration marker in the next release.
