@@ -275,6 +275,19 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         name = status["mode"]
         return failed if failed and name in FARMED and failed["context"] == policy_context(name) else None
 
+    def active_menu_failure():
+        failure = memory.get("menu_failure")
+        if (not memory["backoff"].get("back_to_battle") or not isinstance(failure, dict)
+                or not ports.is_t(failure.get("text_t"))):
+            return None
+        try:
+            context = json.loads(memory.get("menu_context") or "null")
+        except (TypeError, ValueError):
+            return None
+        name = status["mode"]
+        return (failure if isinstance(context, dict) and name in FARMED
+                and context.get("mode") == name and context.get("target") == (loadout(name) or {}) else None)
+
     def pending_engraving():
         """Unfinished work or no current proof: both outrank preset policy."""
         soul = farming.get("soul_weapon_state", lambda: None)() if farming else None
@@ -398,7 +411,12 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                 seen["screen"], seen["numeral"], seen["stage"], seen["bar"], seen["named"] = \
                     await (scanned_facts(shot) if game is not None else ports.analyse(facts, shot))
                 if seen["screen"] == "menu" and farming and callable(farming.get("menu_recoverable")):
-                    seen["menu_recoverable"] = bool(await ports.analyse(farming["menu_recoverable"], shot))
+                    if callable(farming.get("menu_recovery_key")):
+                        seen["menu_key"] = await ports.analyse(farming["menu_recovery_key"], shot)
+                        seen["menu_recoverable"] = seen["menu_key"] is not None
+                    else:
+                        seen["menu_recoverable"] = bool(await ports.analyse(farming["menu_recoverable"], shot))
+                        seen["menu_key"] = "recognized" if seen["menu_recoverable"] else None
         return seen
 
     async def read_controls(seen):
@@ -518,6 +536,9 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                 if status["symptom"] not in CRITICAL:
                     status["symptom"] = "setup_check_failed"
             memory, actions = rules.stopped(memory, kind, ports.clock.wall(), random.uniform(-1.0, 1.0), name)
+            if kind == "back_to_battle" and mode_now() == name and policy_context(name) == attempt_context:
+                memory["menu_failure"] = {"text_t": copy.deepcopy(answer["text_t"]), "at": ports.clock.wall()}
+                ports.store.save()
             # Why it stopped, with the backoff's alert (if it is one).
             notify = any(action[4] for action in actions)
             failure_key = json.dumps({"target": part, "reason": answer["text_t"]}, sort_keys=True)
@@ -528,6 +549,9 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                 await send_notice(ports.english(rules.blocked_notice(name, answer["text_t"])))
                 status["failure_notices"][kind] = failure_key
             await notify_all([(*action[:4], False) for action in actions])
+        elif answer["result"] == "done" and kind == "back_to_battle":
+            memory["menu_failure"] = None
+            ports.store.save()
         elif answer["result"] == "done" and answer.get("verified_setup") is True:
             if mode_now() == name and policy_context(name) == attempt_context:
                 receipt = modes["confirm"](name, verified_setup=True, attempt=attempt)
@@ -666,6 +690,8 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         seen = await look(max_age=0 if fresh_input or confirming_menu else rules.MAX_AGE)
         if seen.get("screen") is not None:
             status["observed_input"] = stamp
+        if seen["screen"] == "menu" and name in FARMED:
+            memory = rules.menu_observed(memory, name, loadout(name) or {}, seen.get("menu_key"))
         # A healthy battle/parking frame says nothing about an interrupted
         # engraving. Keep its durable repair intent visible after a restart.
         if name in FARMED:
@@ -705,6 +731,9 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         symptom, text, params, memory = rules.judge(
             seen, profile(), numeral_of, last["monotonic"] if last else None, status["resumed"], memory, now,
             after_mode)
+        menu_failure = active_menu_failure() if symptom == "menu" else None
+        if menu_failure:
+            text, params = "Dernier échec du retour au combat : {why}", {"why": menu_failure["text_t"]}
         status["resumed"] = False
         status["symptom"] = symptom
         status["critical_observation"] = ports.t(text, **params) if symptom in CRITICAL else None
@@ -932,6 +961,8 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         symptom = status["symptom"]
         block = active_policy_block()
         failed = active_setup_failure() if symptom == "setup_check_failed" else None
+        if symptom == "menu" and active_menu_failure():
+            failed = {"text_t": status["text"]}
         return {"mode": status["mode"], "symptom": symptom,
                 "level": "error" if block or failed else rules.level(symptom),
                 "message_t": copy.deepcopy((block or failed)["text_t"]) if block or failed else status["text"],

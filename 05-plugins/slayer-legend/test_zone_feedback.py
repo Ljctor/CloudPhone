@@ -18,6 +18,46 @@ def append_worker(directory, index):
 
 
 class SharedZoneFeedback(unittest.TestCase):
+    def test_post_deployment_integration_preserves_evidence_and_requires_current_geometry(self):
+        registry = json.loads(Path(__file__).with_name('screen_registry.json').read_text())
+        tree = registry['tree']
+        with tempfile.TemporaryDirectory() as directory:
+            store = shared.ZoneFeedback(Path(directory) / 'review')
+            data = Path(directory) / 'data'
+            manual = data / 'manual-clicks'
+            manual.mkdir(parents=True)
+            cases = [('manual:bbf78faa6af8402d89f169c29b83d024', 'soul_weapon', tree['soul_weapon']['scroll'][0]['rect'])]
+            cases += [(item['annotation'], 'quest_repeat', [.1, .2, .9, .94])
+                      for item in tree['quest_repeat']['scroll'][0]['visual_source']['intent_annotations']]
+            for key, screen, rect in cases:
+                (manual / (key[7:] + '.json')).write_text(json.dumps({'id': key[7:], 'at': time.time(),
+                    'kind': 'vertical', 'capture_status': 'complete', 'before_scan': {'screen': screen}, 'rect': rect}))
+                (manual / (key[7:] + '-before.png')).write_bytes(b'original-test-evidence')
+            originals = {path: path.read_bytes() for path in manual.iterdir()}
+            before = store.read_annotations(data, {s for _, s, _ in cases}, tree=tree)
+            self.assertEqual(len(before), 5, 'source registry alone cannot close pending annotations')
+            with self.assertRaises(ValueError):
+                store.mark_integrated(cases[0][0], 'soul_weapon', tree, '', 'a' * 64)
+            for key, screen, _ in cases:
+                marked = store.mark_integrated(key, screen, tree, 'abcdef1', 'a' * 64)
+                snapshot = store.integration_path.read_bytes()
+                self.assertEqual(store.mark_integrated(key, screen, tree, 'abcdef1', 'a' * 64), marked)
+                self.assertEqual(store.integration_path.read_bytes(), snapshot, 'same release attestation is idempotent')
+            self.assertEqual(store.read_annotations(data, {s for _, s, _ in cases}, tree=tree), [])
+            self.assertEqual({path: path.read_bytes() for path in manual.iterdir()}, originals)
+            changed = json.loads(json.dumps(tree))
+            changed['soul_weapon']['scroll'][0]['rect'][0] += .001
+            self.assertEqual(len(store.read_annotations(data, {s for _, s, _ in cases}, tree=changed)), 1,
+                             'geometry change invalidates that integration marker only')
+            self.assertEqual(len(store.integrated_annotations(tree)), 5)
+            key, screen, rect = cases[0]
+            store.append({'nodeId': key + ':before', 'zoneId': key, 'screen': screen,
+                          'operation': 'remove', 'kind': 'vertical', 'rect': rect}, {screen})
+            visible = store.read_annotations(data, {s for _, s, _ in cases}, tree=tree)
+            self.assertEqual(len(visible), 1)
+            self.assertEqual(visible[0]['proposal'], 'remove', 'pending removal survives integration marker')
+
+
     def test_forbidden_action_and_forbidden_navigation_persist_as_distinct_roles(self):
         with tempfile.TemporaryDirectory() as temporary:
             store = shared.ZoneFeedback(Path(temporary))

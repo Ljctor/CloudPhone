@@ -4,13 +4,15 @@
 import visualTracker from './page_navigation_tracking.js';
 import { getScreen } from './page_screen_scan.js';
 import capturePreview, { archivedScreen } from './page_navigation_preview.js';
-import { zoneStyle, addZoneHatching } from './page_zone_style.js';
+import { zoneStyle, addZoneHatching, addSliderChevrons } from './page_zone_style.js';
 export { ZONE_COLOURS as COLOURS } from './page_zone_style.js';
 import { ZONE_COLOURS as COLOURS } from './page_zone_style.js';
 const VALUE_ROLES = ['progression_value', 'resource_value'];
 const RECTANGLE_ROLES = [...VALUE_ROLES, 'screen_identifier'];
 const recognition = (zone) => !VALUE_ROLES.includes(zone.kind)
   && (zone.kind === 'screen_identifier' || zone.detection || ['scannable', 'detection'].includes(zone.kind));
+export const visibleDebugZones = (zones, identification, navigation) => zones.filter((zone) =>
+  recognition(zone) ? identification : navigation);
 const ROLE_LABELS = { progression_value: 'Valeur de progression', resource_value: 'Valeur de ressource', screen_identifier: 'Identifiant d’écran' };
 const RECTANGLE_ANNOTATIONS = ['scannable', ...RECTANGLE_ROLES, 'action', 'draggable'];
 let trajectorySerial = 0;
@@ -37,6 +39,7 @@ export function zonesFor(screen, graph, registry, scan = null, tracked = null, d
   const tolerance = graph?.tolerance ?? 0.03;
   const safe = moves.filter((move) => !move.debug_dynamic && !['action', 'draggable'].includes(move.semantic_kind)
     && eligible(move, moves, tolerance)
+    && !(screen === 'quest_panel' && move.id === 'scroll_repeat' && scan?.quest_tab !== 'repeat')
     && (!move.combat_return || (scan?.screen === 'battle' && scan.plain === false
       && recognisedScreen(scan, registry) === screen)));
   const zones = safe.filter((move) => move.tap || move.hold || (move.area && move.kind !== 'swipe'))
@@ -44,8 +47,19 @@ export function zonesFor(screen, graph, registry, scan = null, tracked = null, d
       (move.tap ?? move.hold)[0] - 0.025, (move.tap ?? move.hold)[1] - 0.012,
       (move.tap ?? move.hold)[0] + 0.025, (move.tap ?? move.hold)[1] + 0.012,
     ] }));
-  const scrolls = registry?.tree?.[screen]?.scroll ?? [];
+  // Rendering a measured viewport is not permission to use its guarded
+  // scroll. In particular Soul Weapon still requires fresh off-tag checks.
+  const scrollKey = screen === 'quest_panel' && ['daily', 'repeat', 'achievement'].includes(scan?.quest_tab)
+    ? `quest_${scan.quest_tab}` : screen;
+  const scrolls = registry?.tree?.[scrollKey]?.scroll ?? [];
+  for (const known of scrolls.filter((item) => item.measured && item.visual_source?.role === 'display_bounds_only')) {
+    const move = moves.find((item) => known.move === `${screen}/${item.id}`);
+    if (!move || move.forbidden || move.assumed) continue;
+    zones.push({ id: move.id, kind: known.direction === 'horizontal' ? 'horizontal' : 'vertical',
+      conditional: true, rect: known.rect, visual_source: known.visual_source });
+  }
   for (const move of safe.filter((item) => item.area && item.kind === 'swipe')) {
+    if (zones.some((zone) => zone.id === move.id)) continue;
     const known = scrolls.find((item) => item.move === `${screen}/${move.id}` && item.measured);
     if (!known) continue;
     zones.push({ id: move.id, kind: known.direction === 'horizontal' ? 'horizontal' : 'vertical',
@@ -53,6 +67,7 @@ export function zonesFor(screen, graph, registry, scan = null, tracked = null, d
       rect: known.rect });
   }
   for (const move of safe.filter((item) => item.swipe)) {
+    if (zones.some((zone) => zone.id === move.id)) continue;
     const known = scrolls.find((item) => item.move === `${screen}/${move.id}` && item.measured);
     const [x1, y1, x2, y2] = move.swipe;
     const vertical = Math.abs(y2 - y1) >= Math.abs(x2 - x1);
@@ -364,23 +379,37 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
       else { url.port = '7890'; url.pathname = '/page_oral_feedback.js'; }
       url.search = `?attempt=${Math.floor(Date.now() / 30000)}`; url.hash = '';
       const { default: oralFeedback, freezeOralContext, liveOralTransport } = await import(url.href);
-      if (disposed) return;
+      if (disposed || !tools()) return;
       oral = oralFeedback({ tr: api.tr, transport: liveOralTransport(api), capture: () => freezeOralContext({
         image: api.video?.(), layer: api.layer, source: 'live', nodeId: screen ? `screen:${screen}` : `live:${Date.now()}`,
         screen, displayName: screenDisplayName(screen, graph, registry, api.tr), regions: currentZones,
-        state: { scan, correctionGroup, feedbackMode, selectedZone: feedbackTarget, debugEnabled: active() },
+        enabled: identification() || navigation(),
+        state: { scan, correctionGroup, feedbackMode, selectedZone: feedbackTarget, debugEnabled: active(),
+          identification: identification(), navigation: navigation(), reporting: tools() },
       }) });
       rendered = ''; render();
     } catch { oralUnavailable = true; }
     finally { oralPending = false; if (!disposed) { rendered = ''; render(); } }
   }
-  const active = () => !disposed && enabled() && api.setting('navigationDebug') === 'on';
+  const identification = () => api.setting('screenIdentification') === 'on';
+  const navigation = () => api.setting('navigationDebug') === 'on';
+  const tools = () => api.setting('navigationFeedback') === 'on';
+  const active = () => !disposed && enabled() && (identification() || navigation() || tools());
   const busy = () => ['arming', 'armed', 'saving', 'cancelling'].includes(captureState);
   const clear = () => { if (oral?.busy) oral.cancel(); closePreview?.(); closePreview = null; layer.replaceChildren(); layer.remove(); rendered = ''; };
   const stop = (event) => { event.preventDefault(); event.stopPropagation(); };
   const floating = floatingDebugPanel(api.layer, stop);
+  async function cancelTools() {
+    oral?.cancel(); closePreview?.(); closePreview = null;
+    clearTimeout(holdTimer); feedbackMode = false; feedbackTarget = null; correctionOpen = false;
+    if (captureState === 'armed') {
+      const id = captureId; captureState = 'cancelling';
+      try { await api.post('/trace/cancel', { id }); }
+      finally { captureId = null; captureState = 'cancelled'; }
+    }
+  }
   const finishTouch = (tap, synthetic = false) => {
-    if (captureState !== 'armed') return;
+    if (!tools() || captureState !== 'armed') return;
     captureState = 'saving';
     if (synthetic || api.setting('traceTaps') === 'off') {
       api.post('/trace', tap).then((answer) => {
@@ -402,20 +431,10 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
     const slider = !forbidden && (zone.kind === 'vertical' || zone.kind === 'horizontal');
     const visual = zoneStyle(zone);
     box.style.cssText = `position:absolute;left:${left * 100}%;top:${top * 100}%;width:${(right - left) * 100}%;height:${(bottom - top) * 100}%;box-sizing:border-box;color:${colour};pointer-events:none`;
-    if (slider) {
-      box.style.cssText += `;background:${colour}33;border-radius:0`;
-      box.style.cssText += `;display:flex;flex-direction:${zone.kind === 'vertical' ? 'column' : 'row'};align-items:center;justify-content:space-between;font:bold 22px sans-serif;text-shadow:0 1px 3px #000`;
-      for (const glyph of zone.kind === 'vertical' ? ['⌃', '⌄'] : ['❮', '❯']) {
-        const chevron = document.createElement('span');
-        chevron.textContent = glyph;
-        if (zone.conditional) chevron.style.opacity = '0.65';
-        box.append(chevron);
-      }
-    } else {
-      box.style.cssText += `;background:${colour}33;border-radius:0`;
-    }
+    box.style.cssText += `;background:${colour}33;border-radius:${visual.radius}px`;
+    if (slider) addSliderChevrons(box, colour, zone.kind, zone.rect);
     box.style.cssText += `;opacity:${visual.opacity};border:${visual.dash === 'none' ? `${visual.width}px solid ${colour}` : '0'}`;
-    if (visual.hatch) addZoneHatching(box, colour);
+    if (visual.hatch) addZoneHatching(box, colour, visual.radius);
     if (visual.opacity < 1) box.style.cssText += ';background:transparent';
     if (visual.double) box.style.cssText += `;outline:1px solid ${colour};outline-offset:-4px`;
     if (visual.dash !== 'none') {
@@ -423,12 +442,12 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
       svg.setAttribute('viewBox', '0 0 100 100'); svg.setAttribute('preserveAspectRatio', 'none');
       svg.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none';
       const outline = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-      for (const [key, value] of Object.entries({ x: .5, y: .5, width: 99, height: 99, fill: 'none',
+      for (const [key, value] of Object.entries({ x: .5, y: .5, width: 99, height: 99, rx: visual.radius, ry: visual.radius, fill: 'none',
         stroke: colour, 'stroke-width': visual.width, 'stroke-dasharray': visual.dash,
         'stroke-linecap': visual.linecap, 'vector-effect': 'non-scaling-stroke' })) outline.setAttribute(key, value);
       svg.append(outline); box.append(svg);
     }
-    if (['vertical', 'horizontal', 'draggable'].includes(zone.kind) && zone.trajectory?.length >= 2
+    if (zone.kind === 'draggable' && zone.trajectory?.length >= 2
         && zone.trajectory.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y))) {
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       svg.setAttribute('viewBox', '0 0 100 100'); svg.setAttribute('preserveAspectRatio', 'none');
@@ -454,7 +473,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
     box.setAttribute('data-zone-kind', zone.kind === 'action' ? 'action' : forbidden ? 'forbidden' : RECTANGLE_ROLES.includes(zone.kind) ? zone.kind
       : detection ? 'detection' : zone.kind === 'tap' ? 'navigation' : zone.kind);
     const roleLabel = ROLE_LABELS[zone.kind];
-    const label = forbidden ? `${zone.id} · ${api.tr(visual.hatch ? 'Action interdite' : 'Navigation interdite')}` : zone.id;
+    const label = forbidden ? `${zone.id} · ${api.tr(zone.kind === 'action' || zone.semantic_kind === 'action' ? 'Action interdite' : 'Navigation interdite')}` : zone.id;
     box.title = roleLabel && !forbidden ? `${api.tr(roleLabel)} · ${zone.id}` : detection && !forbidden ? `${api.tr('Repère de détection')} · ${zone.id}` : zone.conditional ? `${label} · ${api.tr('condition à vérifier')}` : label;
     parent.append(box);
     return box;
@@ -469,16 +488,16 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
     zoneLayer.replaceChildren();
     const configured = [...landmarksFor(screen, registry), ...zonesFor(screen, graph, registry, scan, tracked, dynamic)]
       .map((zone) => ({ ...zone, source: zone.source ?? (zone.detection ? 'calibrated_reader' : 'navigation_guard') }));
-    currentZones = feedbackZones(screen, configured, graph.screens?.[screen] ? userAnnotations : [], scan);
+    currentZones = visibleDebugZones(feedbackZones(screen, configured, graph.screens?.[screen] ? userAnnotations : [], scan), identification(), navigation());
     for (const zone of currentZones) drawZone(zone, zoneLayer);
   }
 
   function render() {
     if (!active() || !graph || !registry) { clear(); return; }
-    ensureOral();
+    if (tools()) ensureOral();
     floating.clamp();
     if (floating.dragging) { floating.afterDrag(render); return; }
-    const signature = JSON.stringify([screen, scan?.plain, scan?.overlays, captureState, captureId, captureKind, record, snapshotPending, snapshotMessage, correctionOpen, correctionGroup, feedbackMode, feedbackTarget?.id, feedbackMessage]);
+    const signature = JSON.stringify([identification(), navigation(), tools(), screen, scan?.plain, scan?.overlays, captureState, captureId, captureKind, record, snapshotPending, snapshotMessage, correctionOpen, correctionGroup, feedbackMode, feedbackTarget?.id, feedbackMessage]);
     renderZones();
     if (signature === rendered && layer.isConnected) return;
     rendered = signature;
@@ -489,7 +508,8 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
     const label = screen ? screenDisplayName(screen, graph, registry, api.tr) : api.tr('Écran non identifié');
     name.textContent = api.tr('Écran : {screen}', { screen: label });
     name.style.cssText = 'position:absolute;left:50%;top:1%;transform:translateX(-50%);max-width:90%;padding:3px 7px;border:1px solid #ffe100;border-radius:4px;background:#000c;color:#fff;font:600 12px sans-serif;text-align:center';
-    layer.append(name);
+    if (identification()) layer.append(name);
+    if (!tools()) return;
 
     if (feedbackMode && !busy()) {
       const surface = document.createElement('div');
@@ -605,6 +625,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
           captureId = answer?.id ?? null;
           armedUntil = answer?.until ?? Date.now() / 1000 + (answer?.seconds ?? 30);
           captureState = answer?.armed ? 'armed' : 'failed';
+          if (!tools()) await cancelTools();
         } catch { captureState = 'failed'; }
         render();
       };
@@ -764,8 +785,8 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
           stop(event); closePreview?.();
           const identity = archivedScreen(record, side);
           const historicalScan = record[`${side}_scan`];
-          const zones = identity ? feedbackZones(identity, [...landmarksFor(identity, registry), ...zonesFor(identity, graph, registry,
-            { ...historicalScan, at: Date.now() / 1000 })], userAnnotations, historicalScan) : [];
+          const zones = identity ? visibleDebugZones(feedbackZones(identity, [...landmarksFor(identity, registry), ...zonesFor(identity, graph, registry,
+            { ...historicalScan, at: Date.now() / 1000 })], userAnnotations, historicalScan), identification(), navigation()) : [];
           closePreview = capturePreview({ layer: api.layer, record, side, zones, drawZone, tr: api.tr });
         };
         link.textContent = api.tr(label);
@@ -837,11 +858,19 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
   animation = window.requestAnimationFrame?.(animate);
 
   return {
-    debug: [{ type: 'choice', key: 'navigationDebug', label: 'Zones de navigation',
+    debug: [{ type: 'choice', key: 'screenIdentification', label: 'Identification écran',
+      choices: [{ value: 'off', label: 'Désactivé' }, { value: 'on', label: 'Activé' }] },
+    { type: 'choice', key: 'navigationDebug', label: 'Zones de navigation',
+      choices: [{ value: 'off', label: 'Désactivé' }, { value: 'on', label: 'Activé' }] },
+    { type: 'choice', key: 'navigationFeedback', label: 'Outils signalement',
       choices: [{ value: 'off', label: 'Désactivé' }, { value: 'on', label: 'Activé' }] },
     { type: 'status', label: 'Légende navigation',
-      value: () => api.tr('Jaune : navigation · orange : action · rouge : navigation interdite · rouge hachuré : action interdite · bleu : progression · turquoise : ressource · vert : identifiant d’écran · rose : déplaçable · violet : slider, chevrons dans le sens du déplacement · pointillés : vos ajouts · tirets transparents : vos suppressions · double trait fin : bouton conditionnel') }],
-    onSetting: (key) => { if (key === 'navigationDebug') update(); },
+      value: () => api.tr('Jaune arrondi : navigation · orange à angles droits : action · rouge hachuré arrondi : navigation interdite · rouge hachuré à angles droits : action interdite · bleu : progression · turquoise : ressource · vert : identifiant d’écran · rose : déplaçable · violet : slider, chevrons dans le sens du déplacement · pointillés : vos ajouts · tirets transparents : vos suppressions · double trait fin : bouton conditionnel') }],
+    onSetting: (key) => {
+      if (!['navigationDebug', 'screenIdentification', 'navigationFeedback'].includes(key)) return;
+      if (key === 'navigationFeedback' && !tools()) cancelTools().catch(() => {});
+      rendered = ''; render(); update();
+    },
     update,
     dispose: () => { disposed = true; oral?.dispose(); clearTimeout(holdTimer); closePreview?.(); window.removeEventListener?.('resize', floating.clamp); stopTap?.(); window.clearInterval(timer); window.cancelAnimationFrame?.(animation); tracker.reset(); clear(); },
   };

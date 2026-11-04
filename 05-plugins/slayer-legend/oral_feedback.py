@@ -9,6 +9,7 @@ import fcntl
 import hashlib
 import importlib.util
 import json
+import logging
 import math
 import os
 from pathlib import Path
@@ -55,7 +56,7 @@ def validate_svg(value):
     except ET.ParseError as error:
         raise ValueError("Invalid overlay SVG") from error
     allowed = {"svg", "g", "rect", "circle", "ellipse", "line", "polyline", "polygon", "path", "text", "tspan",
-               "defs", "marker", "title", "desc", "style", "clipPath", "mask", "linearGradient", "radialGradient", "stop", "use"}
+               "defs", "pattern", "marker", "title", "desc", "style", "clipPath", "mask", "linearGradient", "radialGradient", "stop", "use"}
     if root.tag.split("}")[-1] != "svg":
         raise ValueError("Overlay must be an SVG")
     for element in root.iter():
@@ -318,7 +319,8 @@ def routes(store, prefix="/navigation/oral-feedback", allowed_origins=()):
             return web.json_response(await asyncio.to_thread(store.create, body), status=201)
         except Conflict as error:
             raise web.HTTPConflict(text=str(error))
-        except (ValueError, TypeError, KeyError, RecursionError):
+        except (ValueError, TypeError, KeyError, RecursionError) as error:
+            logging.getLogger(__name__).warning("Recording context rejected: %s", str(error)[:200])
             raise web.HTTPBadRequest(text="Invalid immutable recording context")
         except OSError:
             raise web.HTTPServiceUnavailable(text="Recording context could not be saved")

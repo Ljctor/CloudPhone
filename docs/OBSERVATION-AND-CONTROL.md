@@ -118,6 +118,73 @@ privée ; seuls des crops revus et sans données personnelles servent de fixture
 
 ## Travail restant explicite
 
+### Frontières cibles et migration
+
+La direction retenue est une refonte ciblée de l'orchestration par extractions
+progressives, en conservant les captures, lecteurs calibrés, faits et gardes
+déjà éprouvés. Les contrats ci-dessous sont la cible ; ils ne décrivent pas tous
+des composants déjà extraits.
+
+| Responsabilité | Produit | Ne décide pas |
+|---|---|---|
+| Capture | Image, identifiant, date d'acquisition, génération du jeu | Quel mode appliquer ou quel bouton toucher |
+| Identité d'écran | Écran reconnu, confiance, repères utilisés ; inconnu explicite | Quel trajet suivre |
+| État local de l'écran | Panneaux, contrôles dépliés, viewport du combat, défilement réellement observé ; état vide si non pertinent, inconnu si illisible | Que deux positions de scroll sont forcément le même contenu |
+| Éléments interactifs | Zones et gestes visibles, identité, préconditions et rôle navigation/action | Qu'un bouton reconnu est autorisé |
+| Lecture de l'état courant | Arme/preset/stage sélectionnés, placement, verrous et autres faits temporaires | Qu'un ancien fait certifie la situation présente |
+| Lecture des ressources | Soldes observés, provenance et fraîcheur indépendantes | Les débits et projections |
+| Lecture de progression | Avancement durable du compte, bornes et niveaux observés | Les sélections temporaires |
+| Calculs dérivés | Débits, estimations et comparaisons issus de faits datés | De nouvelles mesures inventées |
+| Gestion des modes | Mode choisi, mode par défaut, échéance, transition et annulation de la génération précédente | Des coordonnées ou des séquences de clics |
+| Politique de chaque mode | Objectif à atteindre et maintenir, priorités, demandes de rafraîchissement | Les gestes exécutés directement |
+| Planification | Chemin applicable entre états d'écran, préconditions, coût et preuve attendue après chaque étape | Un trajet supposé lorsqu'une transition manque |
+| Exécution exclusive | Un geste autorisé, puis observation de son résultat ; interruption à chaque frontière | La réussite à partir du seul envoi du geste |
+| Reprise et supervision | Échec typé et daté, contexte, prochain essai borné, alerte concise | Une seconde boucle concurrente de navigation |
+| Debug et apprentissage | Captures avant/après, clics et glissements, retours audio/visuels, version exacte de l'overlay | Une permission de clic dérivée automatiquement d'un signalement |
+| Présentation | Flux, overlay, options et états publiés, avec noms d'affichage | La vérité métier ou les décisions autonomes |
+
+Les scans d'état courant, de progression et de ressources consomment le même
+instantané daté ; ils ne prennent pas chacun leur propre capture et ne dépendent
+pas de l'achèvement des autres lecteurs. Une information absente est inconnue,
+pas une valeur par défaut qui pourrait autoriser un geste.
+
+La cible commune de contrôle comprend le mode et sa génération, la configuration
+acceptée et sa révision, la session de jeu, l'activité humaine, l'objectif de
+l'opération et ses preuves attendues. Le contexte d'un échec distingue la cible
+et la capacité de navigation reconnue : un ancien délai de reprise ne doit pas
+être hérité aveuglément par une nouvelle situation. Les échecs de lecture,
+préconditions non applicables et opérations annulées ont des politiques
+différentes ; une simple preuve périodique vieillie n'est pas un échec rouge.
+
+Soul Weapon/Engraving reste une transaction métier : enregistrer l'intention
+durable avant Equip, appliquer la gravure immédiatement après, puis vérifier
+identité, meilleures pièces et huit verrous. Le planificateur peut conduire à
+cette transaction mais ne l'intercale pas avec une excursion de ressources.
+Un changement de mode ou un input révoque les gestes suivants et les résultats
+anciens ; l'observation continue pendant la pause.
+
+Ordre de migration :
+
+1. Extraire le contexte et les résultats des opérations, sans changer leurs
+   autorisations ; supprimer les replis implicites vers un autre écran.
+2. Publier l'état local et les éléments interactifs dans un instantané commun,
+   en réutilisant les lecteurs existants et leurs preuves.
+3. Isoler les objectifs de chaque mode, puis migrer un trajet calibré à la fois
+   vers le planificateur et l'exécuteur communs ; comparer le parcours annoncé
+   aux captures avant/après.
+4. Retirer les anciens coordinateurs seulement quand leurs parcours et reprises
+   ont été exercés en production ; conserver les régressions reproduites comme
+   corpus de validation privé.
+
+La performance se mesure sur toute la chaîne : input/changement visuel → image
+disponible → identité publiée → faits requis → décision → résultat observé.
+Mesurer p50/p95, âge des données, files et abandons avant d'ajouter des workers.
+Prioriser reconnaissance et lectures nécessaires au prochain geste, puis les
+lectures de fond ; différer l'archivage. Les files remplacent une image dépassée
+par la plus récente plutôt que d'accumuler du retard. Une lecture exacte requise
+par une transaction conserve toutefois son identité de capture. Les lecteurs
+peuvent être concurrents ; il n'existe qu'un exécuteur des actions sur le jeu.
+
 Le moteur de navigation n'est pas encore un planificateur unique : mode,
 surveillance, rafraîchissement et setup ont encore leurs coordinateurs. Le bail
 sérialise leurs gestes, mais leur unification et la publication du chemin complet

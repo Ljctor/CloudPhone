@@ -264,6 +264,19 @@ class Tree(unittest.TestCase):
             self.assertFalse(screens.TREE[key]["visit"], key)
         self.assertIn("promotion_bonus", forbidden)
 
+    def test_soul_scroll_visual_annotation_never_changes_gesture_authority(self):
+        area = screens.TREE['soul_weapon']['scroll'][0]
+        self.assertEqual(area['rect'], [0.05145414083596044, 0.566408260848171,
+                                       0.1610738255033557, 0.9354005562242611])
+        self.assertEqual(area['visual_source']['annotation'], 'manual:bbf78faa6af8402d89f169c29b83d024')
+        self.assertIs(area['visual_source']['gestureAuthority'], False)
+        self.assertEqual(area['gesture'], [.087, .86, .087, .62])
+        move = move_of('soul_weapon/scroll')[1]
+        self.assertEqual(move['needs'], {'off_tags': True})
+        self.assertIsNotNone(nav.guard('soul_weapon', 'scroll', .087, .58, 'swipe', True, {'tags': []}))
+        self.assertIsNotNone(nav.guard('soul_weapon', 'scroll', .087, .7, 'swipe', True,
+                                      {'tags': [[.03, .69, .15, .72]]}))
+
     def test_scroll_areas(self):
         for key, entry in screens.TREE.items():
             for area in entry.get("scroll", []):

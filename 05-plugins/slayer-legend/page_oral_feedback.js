@@ -1,3 +1,4 @@
+import { ZONE_STYLE_VERSION } from './page_zone_style.js';
 // Spoken developer feedback. Capturing evidence never sends input to Android.
 const MAX_AUDIO = 12 * 1024 * 1024;
 const MAX_SECONDS = 120;
@@ -48,7 +49,7 @@ function renderedSvg(layer, width, height) {
     const group = document.createElementNS(NS, 'g'); group.setAttribute('opacity', css.opacity);
     const background = document.createElementNS(NS, 'rect');
     for (const [key, value] of Object.entries({ x, y, width: w, height: h, fill: css.backgroundColor,
-      stroke: css.borderTopColor, 'stroke-width': parseFloat(css.borderTopWidth) * sx || 0 })) background.setAttribute(key, value);
+      stroke: css.borderTopColor, rx:parseFloat(css.borderTopLeftRadius)*sx||0, ry:parseFloat(css.borderTopLeftRadius)*sy||0, 'stroke-width': parseFloat(css.borderTopWidth) * sx || 0 })) background.setAttribute(key, value);
     group.append(background);
     if (parseFloat(css.outlineWidth)) {
       const outline = background.cloneNode();
@@ -91,7 +92,7 @@ export function freezeOralContext({ image, layer, source, nodeId, screen, displa
     capture: { mimeType: 'image/png', base64, width, height }, overlay,
     view: { width: bounds.width, height: bounds.height, left: bounds.left, top: bounds.top,
       devicePixelRatio: window.devicePixelRatio, videoTime: image.currentTime ?? null },
-    assets: { rendererVersion: 'oral-context-v1', overlaySnapshotFormat: 1 } };
+    assets: { rendererVersion: 'oral-context-v2', overlaySnapshotFormat: 2, zoneStyleVersion: ZONE_STYLE_VERSION } };
 }
 
 export function oralTransport(base, { token = null } = {}) {

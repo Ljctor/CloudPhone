@@ -120,6 +120,10 @@ by the feature (texts.english).
 """
 
 
+import copy
+import json
+
+
 def t(template, **params):
     """A status text (features/texts.py)."""
     return {"template": template, "params": params}
@@ -342,12 +346,58 @@ def fresh(kept=None):
             "alerts": 0, "backoff": kept_backoff(kept.get("backoff")), "good_since": None, "watch": {},
             "repaired": False, "notified": {}, "alert_notified": False,
             "verifying": None, "menu_since": None, "planned": None, "deferred": None,
-            "away": 0, "tiers": [], "incidents": {}, "uncertain_since": None}
+            "away": 0, "tiers": [], "incidents": {}, "uncertain_since": None,
+            "menu_context": kept.get("menu_context") if isinstance(kept.get("menu_context"), str) else None,
+            "menu_history": {key: copy.deepcopy(value) for key, value in
+                             list((kept.get("menu_history") if isinstance(kept.get("menu_history"), dict) else {}).items())[-16:]
+                             if isinstance(key, str) and len(key) <= 4096 and isinstance(value, dict)},
+            "menu_failure": copy.deepcopy(kept.get("menu_failure"))}
 
 
 def persisted(memory):
     """What a gateway restart keeps: each kind's backoff."""
-    return {"backoff": {kind: {**state, "said": list(state["said"])} for kind, state in memory["backoff"].items()}}
+    return {"backoff": {kind: {**state, "said": list(state["said"])} for kind, state in memory["backoff"].items()},
+            "menu_context": memory.get("menu_context"), "menu_history": menu_history(memory),
+            "menu_failure": copy.deepcopy(memory.get("menu_failure"))}
+
+
+def menu_history(memory):
+    """A bounded cache for this one repair's target/route contexts."""
+    history = copy.deepcopy(memory.get("menu_history", {}))
+    key = memory.get("menu_context")
+    if key:
+        history[key] = {"backoff": copy.deepcopy(memory["backoff"].get("back_to_battle")),
+                        "watch": memory["watch"].get("back_to_battle"),
+                        "failure": copy.deepcopy(memory.get("menu_failure"))}
+    return dict(list(history.items())[-16:])
+
+
+def menu_observed(memory, mode, target, route):
+    """Rearm a new target/recognized route once, after normal observations.
+
+    Unknown/transient readings never downgrade a known route. Returning to a
+    prior context restores its own backoff rather than creating a retry loop.
+    """
+    context = {"version": 1, "mode": mode, "target": target, "route": route}
+    try:
+        previous = json.loads(memory.get("menu_context") or "null")
+    except (TypeError, ValueError):
+        previous = None
+    if (route is None and isinstance(previous, dict) and previous.get("mode") == mode
+            and previous.get("target") == target):
+        context["route"] = previous.get("route")
+    key = json.dumps(context, sort_keys=True, separators=(",", ":"))
+    if key == memory.get("menu_context"):
+        return memory
+    history = menu_history(memory)
+    restored = history.get(key, {})
+    memory = retry(memory, "back_to_battle")
+    memory["backoff"].update(kept_backoff({"back_to_battle": restored.get("backoff")}))
+    if isinstance(restored.get("watch"), (int, float)) and not isinstance(restored["watch"], bool):
+        memory["watch"]["back_to_battle"] = restored["watch"]
+    return {**memory, "menu_context": key, "menu_history": history,
+            "menu_failure": copy.deepcopy(restored.get("failure")), "streak": 0, "since_repair": 0,
+            "verifying": None if memory["verifying"] == "back_to_battle" else memory["verifying"]}
 
 
 def suspended(memory):

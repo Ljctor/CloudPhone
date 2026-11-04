@@ -945,7 +945,21 @@ Character Growth recovery: existing real selected-header and lit/unlit Character
 Preset badge context: reviewed game-control and Android-volume-overlay crops prove that Roman-like strokes without the AUTO tile label are not a preset. The reader now requires that label (regardless of AUTO state); two badge reads must agree, and preflight mismatches require a second fresh observation. Discordant reads stay unknown and use only the existing Settings read, never permission to change a preset. The historical III mismatch remains unproven because its exact source frames were not retained.
 
 
-Debug overlay visual contract: all regions use sharp rectangular outlines. Navigation is yellow, actions orange, forbidden navigation red, forbidden actions red with diagonal hatching. Progression values are blue, resource values turquoise, screen identifiers green; read-only regions have no visible captions. Both slider directions are violet with directional chevrons; draggable regions are pink. Fine double outlines apply only to conditional navigation/action buttons. User additions remain dotted; proposed removals remain transparent dashed advisory feedback. Live, capture preview and passive review share these semantics.
+Debug overlay visual contract (latest request): navigation uses rounded corners,
+actions sharp corners. Allowed navigation is yellow, allowed actions orange;
+both forbidden navigation and forbidden actions are red with diagonal hatching,
+preserving their respective shapes. Progression values are blue, resources
+turquoise, screen identifiers green; read-only regions have no visible captions.
+Both slider directions use a single violet rectangle with directional chevrons,
+without an internal transverse bar; draggable regions are pink with plain lines.
+Fine double outlines apply only to conditional navigation/action buttons. User
+additions remain dotted; proposed removals remain transparent dashed advisory
+feedback. Live, capture preview and passive review must share these semantics.
+The updated corner/hatching rules and the reported Soul Weapon slider bar remain
+pending published validation. An independent screen-identification option must
+show only the screen name and green identifiers without the reporting panel.
+Voice upload with a hatched SVG context is a reproduced regression, not closed
+by the earlier direct microphone-recording acceptance.
 
 Navigation geometry coverage remains partial: seven fixed Soul Weapon/Engraving controls have measured visible bounds and capture provenance, separate from conservative gesture permission envelopes. Other controls and dynamic preview states still need measurement. Passive review refresh now follows plugin upgrades only when already installed, keeping app and readers together without changing service configuration. Declared scrolls require a start inside their measured list; proven same-family visible close tabs remain available on processed scroll variants. Unknown variants still have no inferred return.
 

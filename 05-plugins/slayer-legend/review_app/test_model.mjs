@@ -17,7 +17,7 @@ assert.equal(screenLabel({ screen: 'battle', scan: { plain: true } }), 'Combat I
 assert.equal(battlefieldLabel({ battleViewport: { size: 'small' } }), 'Petit');
 console.log('Recorded gesture matching, ambiguity, forbidden zones and distinct screen/battlefield labels: OK');
 
-const {zoneStyle} = await import('../page_zone_style.js');
+const {zoneStyle, sliderChevronPath} = await import('../page_zone_style.js');
 assert.equal(zoneStyle({kind:'detection'}).dash, 'none');
 assert.equal(zoneStyle({user:true}).dash, '1 5');
 assert.equal(zoneStyle({conditional:true}).double, true);
@@ -59,3 +59,17 @@ assert.equal(reviewGesture([relicScroll], {start:relicScroll.start,end:relicScro
 assert.equal(reviewGesture([relicScroll], {start:{x:.41,y:.966},end:{x:.41,y:.66},duration:800}, []).matches.length,0);
 assert.equal(reviewGesture([{...relicScroll,startRect:null}], {start:relicScroll.start,end:relicScroll.end,duration:800}, []).matches.length,0);
 console.log('Declared scrolls require a measured start rectangle; the Equipment footer never scrolls a list: OK');
+
+for (const conditional of [false,true]) {
+  assert.equal(zoneStyle({kind:'navigation',conditional}).radius,6);
+  assert.equal(zoneStyle({kind:'action',conditional}).radius,0);
+  assert.equal(zoneStyle({kind:'navigation',forbidden:true,conditional}).hatch,true);
+  assert.equal(zoneStyle({kind:'action',forbidden:true,conditional}).hatch,true);
+  assert.equal(zoneStyle({kind:'vertical',conditional}).double,false);
+}
+assert.equal(zoneStyle({kind:'forbidden',semantic_kind:'action'}).radius,0);
+for (const kind of ['vertical','horizontal']) {
+  const path=sliderChevronPath(kind,[10,20,100,200]);
+  assert.equal((path.match(/M/g)??[]).length,2);
+  assert.equal((path.match(/L/g)??[]).length,4);
+}

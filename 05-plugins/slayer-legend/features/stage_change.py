@@ -639,14 +639,17 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         except Stop as e:
             raise Stop("Soul Weapon : {why}", why=e.t) from None
 
-    def menu_recoverable(shot):
-        """Read-only capability: exactly the panels this recovery can close."""
+    def menu_recovery_key(shot):
+        """Read-only route identity; never an action permission."""
         seen = screens.look(shot)
         if seen.get("screen") == "latent_power":
-            return bool(getattr(screens, "latent_power", lambda image: False)(shot))
+            return "latent_power" if getattr(screens, "latent_power", lambda image: False)(shot) else None
         panel = character_panel(shot)
-        return bool(seen.get("screen") == "battle" and panel
-                    and panel in seen.get("overlays", ()))
+        return panel if seen.get("screen") == "battle" and panel in seen.get("overlays", ()) else None
+
+    def menu_recoverable(shot):
+        """Read-only capability: exactly the panels this recovery can close."""
+        return menu_recovery_key(shot) is not None
 
     async def back_to_battle(mode):
         """Bounded menu recovery; no guessed panels and no loadout changes."""
@@ -838,7 +841,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
            "read_controls": read_controls, "switches": lambda: dict(switches),
            "relaunched": relaunched, "ensure_soul_weapon": ensure_soul_weapon,
            "park": lambda mode: run(mode, [("park", lambda: park(mode))]), "parked": parked, "unpark": unpark,
-           "back_to_battle": back_to_battle, "menu_recoverable": menu_recoverable, "guarded": guarded,
+           "back_to_battle": back_to_battle, "menu_recoverable": menu_recoverable, "menu_recovery_key": menu_recovery_key, "guarded": guarded,
            "soul_weapon_switch": lambda: souls["switch"]() if souls else "off",
            "soul_weapon_state": lambda: souls["state"]() if souls else None,
            "soul_verification_needed": soul_verification_needed,

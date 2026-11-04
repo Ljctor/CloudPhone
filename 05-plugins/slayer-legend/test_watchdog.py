@@ -127,18 +127,21 @@ class InputMenuScheduler(unittest.TestCase):
     """Run the public startup loop with real screen readers and virtual time."""
 
     def run_watch(self, *, inputs=(41.3,), mode='mpw4', known=True, held=False,
-                  capture_cost=0, saved=None, duration=55):
+                  capture_cost=0, saved=None, duration=55, recover_failure=False):
         import test_screen_model as model
         feature = model.load('features/watchdog')
         coroutines, captures, repairs = [], [], []
         battle = model.made('battle')
         menu = model.screen('battle_emerald', 'character_growth_header', 'character_close_tab_lit_480')
         logs = []
+        registered, stored = {}, copy.deepcopy(saved or {})
+        def save():
+            stored.update({name: copy.deepcopy(snapshot()) for name, snapshot in registered.items()})
 
         @text_ports
         class Ports:
             Busy = ports_module.Busy
-            store = types.SimpleNamespace(saved=saved or {}, register=lambda *a: None, save=lambda: None)
+            store = types.SimpleNamespace(saved=stored, register=lambda name, snapshot: registered.update({name: snapshot}), save=save)
             enabled = staticmethod(lambda: True)
             log = staticmethod(lambda *a: logs.append(a))
             exception = staticmethod(lambda *a: logs.append(a))
@@ -188,10 +191,12 @@ class InputMenuScheduler(unittest.TestCase):
                 state=lambda: {'holder': 'user'} if held else None)
         async def recover(name):
             repairs.append((Ports.clock.now, name))
-            return {'result': 'done', 'text_t': None}
+            return ({'result': 'failed', 'text_t': Ports.t('Character Growth non reconnu : panneau laissé ouvert')}
+                    if recover_failure else {'result': 'done', 'text_t': None})
         async def read_controls(): return None
         farming = {'switches': lambda: {'stage_change': 'plan', 'preset': 'plan'},
                    'back_to_battle': recover, 'menu_recoverable': lambda shot: known and model.screens.character_growth(shot),
+                   'menu_recovery_key': lambda shot: 'character_growth' if known and model.screens.character_growth(shot) else None,
                    'battle_stage': lambda shot, *args: 920, 'read_controls': read_controls}
         built = feature.watchdog(Ports, model.screens,
                     types.SimpleNamespace(read_battle=lambda shot: 3, progress=lambda shot: .5),
@@ -204,6 +209,7 @@ class InputMenuScheduler(unittest.TestCase):
             with self.assertRaises(asyncio.CancelledError):
                 await coroutines[0]
         asyncio.run(run())
+        self.saved_menu_state = stored
         return captures, repairs, built['api']['look'](), logs
 
     def test_two_fresh_menu_reads_start_at_pause_expiry_not_sixty_seconds_later(self):
@@ -238,15 +244,79 @@ class InputMenuScheduler(unittest.TestCase):
             self.assertEqual(repairs, [], mode)
 
     def test_held_lease_and_failure_backoff_are_not_bypassed(self):
-        for kwargs in ({'held': True}, {'saved': {'watchdog': {'backoff': {
-                'back_to_battle': {'failures': 2, 'next': EPOCH + 1000, 'delay': 120, 'said': []}}}}}):
+        memory = rules.menu_observed(rules.fresh(), 'mpw4', {'stage': 920}, 'character_growth')
+        memory['backoff']['back_to_battle'] = {'failures': 2, 'next': EPOCH + 1000, 'delay': 120, 'said': []}
+        for kwargs in ({'held': True}, {'saved': {'watchdog': rules.persisted(memory)}}):
             _, repairs, _, _ = self.run_watch(**kwargs)
             self.assertEqual(repairs, [])
+
+    def test_legacy_context_never_rearms_or_moves_in_free_or_agent(self):
+        saved = {'watchdog': {'backoff': {'back_to_battle': {
+            'failures': 8, 'next': EPOCH + 1000, 'delay': 1800, 'said': []}}}}
+        for name in ('free', 'agent'):
+            _, repairs, _, _ = self.run_watch(mode=name, saved=saved, duration=90)
+            self.assertEqual(repairs, [])
+            self.assertNotIn('menu_context', self.saved_menu_state['watchdog'])
+            self.assertEqual(self.saved_menu_state['watchdog']['backoff'], saved['watchdog']['backoff'])
+
+    def test_legacy_backoff_gets_one_bounded_reobservation_not_an_aggressive_loop(self):
+        saved = {'watchdog': {'backoff': {'back_to_battle': {
+            'failures': 8, 'next': EPOCH + 1000, 'delay': 1800, 'said': []}}}}
+        captures, repairs, look, _ = self.run_watch(saved=saved, duration=90, recover_failure=True)
+        self.assertEqual(len(repairs), 1)
+        self.assertGreaterEqual(repairs[0][0], 46.55)
+        self.assertTrue(look['blocked'])
+        self.assertIn('Dernier échec', str(look['message_t']))
+        failure = self.saved_menu_state['watchdog']
+        self.assertEqual(failure['backoff']['back_to_battle']['failures'], 1)
+        _, after_restart, restored, _ = self.run_watch(saved={'watchdog': failure}, duration=55)
+        self.assertEqual(after_restart, [])
+        self.assertTrue(restored['blocked'])
+        self.assertIn('Character Growth', str(restored['message_t']))
 
     def test_gateway_observation_window_is_not_shortened(self):
         captures, repairs, _, _ = self.run_watch(inputs=(0,), duration=50)
         self.assertEqual([round(at, 2) for at, age in captures], [5, 20, 35, 50])
         self.assertEqual(repairs[0], (35, 'mpw4'))
+
+
+class MenuBackoffContext(unittest.TestCase):
+    def failing(self, route=None, stage=970):
+        memory = rules.menu_observed(rules.fresh(), 'soul', {'stage': stage}, route)
+        memory, _ = rules.failure(memory, 'back_to_battle', EPOCH, 0, 'soul')
+        memory['menu_failure'] = {'text_t': rules.t('panne de fermeture'), 'at': EPOCH}
+        memory['watch']['back_to_battle'] = EPOCH + rules.WATCH_AFTER_FAILURE
+        return memory
+
+    def test_same_context_and_transient_unknown_preserve_backoff_after_restart(self):
+        memory = self.failing('character_enhance')
+        expected = copy.deepcopy(memory['backoff'])
+        for route in ('character_enhance', None, 'character_enhance'):
+            memory = rules.menu_observed(rules.fresh(rules.persisted(memory)), 'soul', {'stage': 970}, route)
+            self.assertEqual(memory['backoff'], expected)
+            self.assertIsNotNone(memory['menu_failure'])
+
+    def test_new_target_or_route_rearms_once_and_return_restores_its_own_failure(self):
+        memory = self.failing('character_enhance')
+        expected = copy.deepcopy(memory['backoff'])
+        for target, route in (({'stage': 974}, 'character_enhance'), ({'stage': 970}, 'character_growth')):
+            changed = rules.menu_observed(memory, 'soul', target, route)
+            self.assertNotIn('back_to_battle', changed['backoff'])
+            self.assertIsNone(changed['menu_failure'])
+            changed, _ = rules.failure(changed, 'back_to_battle', EPOCH + 5, 0, 'soul')
+            repeated = rules.menu_observed(rules.fresh(rules.persisted(changed)), 'soul', target, route)
+            self.assertEqual(repeated['backoff'], changed['backoff'])
+            memory = rules.menu_observed(repeated, 'soul', {'stage': 970}, 'character_enhance')
+            self.assertEqual(memory['backoff'], expected)
+            self.assertEqual(memory['watch']['back_to_battle'], EPOCH + rules.WATCH_AFTER_FAILURE)
+
+    def test_unknown_to_known_rearms_once_but_same_known_failure_keeps_delay(self):
+        memory = self.failing()
+        memory = rules.menu_observed(memory, 'soul', {'stage': 970}, 'character_enhance')
+        self.assertNotIn('back_to_battle', memory['backoff'])
+        memory, _ = rules.failure(memory, 'back_to_battle', EPOCH + 5, 0, 'soul')
+        again = rules.menu_observed(memory, 'soul', {'stage': 970}, 'character_enhance')
+        self.assertEqual(again['backoff'], memory['backoff'])
 
 
 class Timing(unittest.TestCase):

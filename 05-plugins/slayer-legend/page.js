@@ -91,8 +91,8 @@ const ENGLISH = {
   'Enregistrement de l’écran…': 'Recording screen…',
   'Erreur de détection enregistrée avec la capture': 'Detection error saved with screenshot',
   'Écran enregistré': 'Screen recorded',
-  'Jaune : navigation · orange : action · rouge : navigation interdite · rouge hachuré : action interdite · bleu : progression · turquoise : ressource · vert : identifiant d’écran · rose : déplaçable · violet : slider, chevrons dans le sens du déplacement · pointillés : vos ajouts · tirets transparents : vos suppressions · double trait fin : bouton conditionnel':
-    'Yellow: navigation · orange: action · red: forbidden navigation · hatched red: forbidden action · blue: progression · turquoise: resource · green: screen identifier · pink: draggable · purple: slider, chevrons show direction · dotted: your additions · transparent dashed: your removals · thin double outline: conditional button',
+  'Jaune arrondi : navigation · orange à angles droits : action · rouge hachuré arrondi : navigation interdite · rouge hachuré à angles droits : action interdite · bleu : progression · turquoise : ressource · vert : identifiant d’écran · rose : déplaçable · violet : slider, chevrons dans le sens du déplacement · pointillés : vos ajouts · tirets transparents : vos suppressions · double trait fin : bouton conditionnel':
+    'Rounded yellow: navigation · square orange: action · rounded hatched red: forbidden navigation · square hatched red: forbidden action · blue: progression · turquoise: resource · green: screen identifier · pink: draggable · purple: slider, chevrons show direction · dotted: your additions · transparent dashed: your removals · thin double outline: conditional button',
   "Intention": "Intention",
   "Détail de l’arme": "Weapon details",
   "Vers {destination} · {purpose}": "Going to {destination} · {purpose}",
@@ -121,6 +121,8 @@ const ENGLISH = {
   'Accessoires L3/h': 'L3 accessories/h',
   'Autres débits/h': 'Other rates/h',
   'Zones de navigation': 'Navigation zones',
+  'Identification écran': 'Screen identification',
+  'Outils signalement': 'Feedback tools',
   'Légende navigation': 'Navigation legend',
   'Écran non identifié': 'Unidentified screen',
   'Écran : {screen}': 'Screen: {screen}',

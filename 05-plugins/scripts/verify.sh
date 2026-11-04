@@ -17,7 +17,7 @@ print("Private oral developer-review queue: OK")
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_resource_balances.py -q
 # Real reviewed crops distinguish red drag ghosts from actionable controls;
 # this check stays deterministic and never gestures on the installed game.
-python3 "$(dirname "$0")/../slayer-legend/test_screen_model.py" EngravingPreview Registry
+python3 "$(dirname "$0")/../slayer-legend/test_screen_model.py" EngravingPreview Registry Tree
 # Quick debug scans retain acquisition provenance through slow classification and caching.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_screen_quick.py -q
 # Inventory order, capture provenance and exact bonus text, without gameplay.
@@ -79,6 +79,7 @@ python3 "$(dirname "$0")/../slayer-legend/test_stage_change.py" \
   Sequence.test_correct_visible_preset_does_not_block_stage_change \
   Sequence.test_unread_preset_is_not_treated_as_a_known_mismatch_before_stage
 # Due proof is pending, failures/overdue remain blockers; complete receipts acknowledge only setup faults.
+# Menu retries retain a target/route-bound backoff and precise failure across restart.
 python3 "$(dirname "$0")/../slayer-legend/test_watchdog.py"
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_hourly_resources.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_rate_completions.py -q
@@ -124,7 +125,10 @@ python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_zone_
 # Review URLs keep their service mount both at / and /navigation-review/.
 node "$(dirname "$0")/../slayer-legend/review_app/test_model.mjs"
 node "$(dirname "$0")/../slayer-legend/test_page_navigation_debug.mjs"
+node "$(dirname "$0")/../slayer-legend/test_page_navigation_toggles.mjs"
 # Direct microphone recording keeps its start frame through replay/cancel/retry.
+# Exact visible hatching is valid immutable voice evidence; active SVG remains rejected.
+python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend/review_app" -p test_oral_feedback.py -q
 node "$(dirname "$0")/../slayer-legend/test_page_oral_feedback.mjs"
 curl -fsS "${base%/}/api/v1/plugins/slayer-legend/game" | python3 -c '
 import json, math, re, sys

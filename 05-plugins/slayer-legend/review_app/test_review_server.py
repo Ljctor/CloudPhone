@@ -44,6 +44,35 @@ class ReviewAPI(AioHTTPTestCase):
         await super().asyncTearDown()
         self.temporary.cleanup()
 
+    async def test_integrated_scroll_history_is_retained_with_one_canonical_viewport(self):
+        tree = json.loads((Path(__file__).parents[1] / 'screen_registry.json').read_text())['tree']
+        key = 'manual:bbf78faa6af8402d89f169c29b83d024'
+        marker = self.evidence.zones.mark_integrated(key, 'soul_weapon', tree, 'abcdef1', 'a' * 64)
+        nodes = [{'id': key + ':before', 'screen': 'soul_weapon', 'captureId': key[7:],
+                  'regions': [{'id': key, 'kind': 'vertical', 'source': 'recorded', 'rect': tree['soul_weapon']['scroll'][0]['rect']}]}]
+        edges = [{'id': key, 'kind': 'swipe', 'source': 'manual'}]
+        self.evidence.apply_zones(nodes, edges)
+        permanent = [r for r in nodes[0]['regions'] if r['source'] == 'registered_scroll_viewport']
+        self.assertEqual(len(permanent), 1)
+        self.assertEqual(permanent[0]['kind'], 'vertical')
+        self.assertEqual(edges[0]['integration'], marker)
+        self.assertEqual(nodes[0]['regions'][0]['integration'], marker)
+        self.assertEqual(len(edges), 1, 'historical edge is annotated, never deleted')
+        self.evidence.zones.append({'nodeId': key + ':before', 'zoneId': key, 'screen': 'soul_weapon',
+            'operation': 'remove', 'kind': 'vertical', 'rect': permanent[0]['rect']}, {'soul_weapon'})
+        self.evidence.apply_zones(nodes, edges)
+        original = next(r for r in nodes[0]['regions'] if r['id'] == key)
+        self.assertTrue(original['removedProposal'])
+        self.assertNotIn('integration', original, 'pending removal cannot be hidden by integration')
+        edges[0]['from'] = nodes[0]['id']
+        self.evidence.zones.append({'nodeId': key + ':before', 'zoneId': 'edge:' + key, 'screen': 'soul_weapon',
+            'operation': 'remove', 'kind': 'vertical', 'rect': permanent[0]['rect']}, {'soul_weapon'})
+        self.evidence.apply_zones(nodes, edges)
+        self.assertTrue(edges[0]['removedProposal'])
+        self.assertNotIn('integration', edges[0], 'pending edge removal stays visible')
+
+
+
     async def test_recording_url_comes_only_from_explicit_https_frontend_origins(self):
         response = await self.client.get("/api/recording-config")
         self.assertIsNone((await response.json())["secure_review_url"])

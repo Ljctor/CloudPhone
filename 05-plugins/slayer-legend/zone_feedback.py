@@ -2,6 +2,7 @@
 import contextlib
 import importlib.util
 import fcntl
+import hashlib
 import json
 import math
 import os
@@ -38,6 +39,7 @@ class ZoneFeedback:
     def __init__(self, directory=None):
         self.directory = Path(directory or os.environ.get("CLOUDPHONE_REVIEW_FEEDBACK_DIR", "/var/lib/cloudphone-review"))
         self.path = self.directory / "zone-feedback.json"
+        self.integration_path = self.directory / "annotation-integrations.json"
 
     @contextlib.contextmanager
     def locked(self, exclusive=False):
@@ -122,6 +124,81 @@ class ZoneFeedback:
                 if os.path.exists(temporary):
                     os.unlink(temporary)
         return item
+
+    @staticmethod
+    def integration_geometry(annotation_id, screen, tree):
+        """Only an installed, explicitly sourced display rectangle can match.
+
+        The marker never creates a reader, navigation edge or gesture right.
+        """
+        for area in (tree or {}).get(screen, {}).get("scroll", []):
+            source = area.get("visual_source") or {}
+            linked = any(item.get("annotation") == annotation_id
+                         and item.get("relation") == "same_scroll_viewport_intent"
+                         and item.get("gesture_validated") is False
+                         for item in source.get("intent_annotations", []) if isinstance(item, dict))
+            if ((source.get("annotation") == annotation_id or linked) and source.get("role") == "display_bounds_only"
+                    and source.get("gestureAuthority") is False and area.get("measured") is True):
+                geometry = {"annotation": annotation_id, "screen": screen, "move": area["move"],
+                            "rect": rectangle(area.get("rect")), "visual_source": source}
+                digest = hashlib.sha256(json.dumps(geometry, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+                return geometry, digest
+        raise ValueError("No matching installed annotation geometry")
+
+    def mark_integrated(self, annotation_id, screen, tree, release, verification_sha256):
+        """Root's post-deployment attestation, not automatic annotation review.
+
+        Call only after the deployed overlay was checked. Preserve the raw
+        captures and review ledger; repeating this exact attestation is a no-op.
+        """
+        if (not isinstance(annotation_id, str) or not re.fullmatch(r"manual:[0-9a-f]{32}", annotation_id)
+                or not isinstance(release, str) or not re.fullmatch(r"[0-9a-f]{7,40}", release)
+                or not isinstance(verification_sha256, str) or not re.fullmatch(r"[0-9a-f]{64}", verification_sha256)):
+            raise ValueError("Expected annotation id, deployed git release and verification SHA256")
+        geometry, digest = self.integration_geometry(annotation_id, screen, tree)
+        with self.locked(exclusive=True):
+            current = _json(self.integration_path, {"version": 1, "items": {}})
+            if not isinstance(current, dict) or not isinstance(current.get("items"), dict):
+                raise OSError("Annotation integration state is unreadable")
+            previous = current["items"].get(annotation_id)
+            if isinstance(previous, dict) and previous.get("geometry_sha256") == digest and previous.get("release") == release:
+                return previous
+            item = {"annotation": annotation_id, "screen": screen, "move": geometry["move"],
+                    "geometry_sha256": digest, "release": release, "verified_at": time.time(),
+                    "verification_sha256": verification_sha256, "status": "integrated", "gestureAuthority": False}
+            current["items"][annotation_id] = item
+            fd, temporary = tempfile.mkstemp(prefix=".annotation-integrations-", dir=self.directory)
+            try:
+                with os.fdopen(fd, "w") as output:
+                    os.fchmod(output.fileno(), 0o600)
+                    json.dump(current, output)
+                    output.flush()
+                    os.fsync(output.fileno())
+                os.replace(temporary, self.integration_path)
+                directory = os.open(self.directory, os.O_RDONLY | os.O_DIRECTORY)
+                try:
+                    os.fsync(directory)
+                finally:
+                    os.close(directory)
+            finally:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
+            return item
+
+    def integrated_annotations(self, tree):
+        state = _json(self.integration_path, {})
+        items = state.get("items", {}) if isinstance(state, dict) else {}
+        accepted = {}
+        for key, item in (items.items() if isinstance(items, dict) else ()):
+            if not isinstance(item, dict) or item.get("status") != "integrated" or item.get("gestureAuthority") is not False:
+                continue
+            try:
+                _, digest = self.integration_geometry(key, item.get("screen"), tree)
+            except (ValueError, TypeError):
+                continue
+            if item.get("geometry_sha256") == digest:
+                accepted[key] = item
+        return accepted
 
     def read_annotations(self, data_dir, known_screens=None, tree=None):
         data = Path(data_dir)
@@ -224,4 +301,23 @@ class ZoneFeedback:
             if not matched:
                 zones["proposal:" + item["id"]] = {**item, "id": item["zoneId"], "source": "removal_proposal",
                                                     "proposal": "remove", "removedProposal": True, "user": True}
+        integrations = self.integrated_annotations(tree)
+        for zone_id, zone in list(zones.items()):
+            if zone.get("proposal") == "remove" or zone.get("removedProposal"):
+                continue  # An unresolved removal remains visible even after integration.
+            item = integrations.get(zone_id) if isinstance(integrations, dict) else None
+            if not isinstance(item, dict) or item.get("status") != "integrated":
+                continue
+            try:
+                geometry, digest = self.integration_geometry(zone_id, zone["screen"], tree)
+            except ValueError:
+                continue
+            source = geometry["visual_source"]
+            intent_duplicate = any(link.get("annotation") == zone_id
+                                   and link.get("relation") == "same_scroll_viewport_intent"
+                                   and link.get("gesture_validated") is False
+                                   for link in source.get("intent_annotations", []) if isinstance(link, dict))
+            if (item.get("geometry_sha256") == digest and item.get("gestureAuthority") is False
+                    and (zone["rect"] == geometry["rect"] or intent_duplicate)):
+                del zones[zone_id]  # Only the duplicated shared overlay; raw evidence stays intact.
         return list(zones.values())

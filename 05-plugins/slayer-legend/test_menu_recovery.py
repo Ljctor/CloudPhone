@@ -148,6 +148,9 @@ class GrowthRecovery(unittest.TestCase):
             _, api = build(game)
             self.assertEqual(api['menu_recoverable'](game.snapshot()),
                              name in ('enhance', 'growth', 'promotion', 'latent_power'))
+            expected = {'enhance': 'character_enhance', 'growth': 'character_growth',
+                        'promotion': 'character_promotion', 'latent_power': 'latent_power'}
+            self.assertEqual(api['menu_recovery_key'](game.snapshot()), expected.get(name))
 
 
     def test_growth_closes_once_then_parks_without_changing_equipment(self):

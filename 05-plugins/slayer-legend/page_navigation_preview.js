@@ -1,6 +1,6 @@
 // Inspect archived images only. This viewer never sends input or changes
 // navigation/scan declarations.
-import { zoneStyle, ZONE_COLOURS, addZoneHatching } from './page_zone_style.js';
+import { zoneStyle, ZONE_COLOURS, addZoneHatching, addSliderChevrons } from './page_zone_style.js';
 export function archivedScreen(record, side) {
   const scan = record?.[`${side}_scan`];
   if (!scan || scan.screen === 'unknown') return null;
@@ -67,7 +67,7 @@ export default function capturePreview({ layer, record, side, zones = [], drawZo
     const forbidden = record.forbidden || record.kind === 'forbidden';
     const colour = forbidden ? ZONE_COLOURS.forbidden : ZONE_COLOURS[record.kind] ?? ZONE_COLOURS.screen_identifier;
     const zone = { id: record.kind, kind: record.kind, forbidden, user: true,
-      proposal: record.proposal, detection: ['scannable', 'detection', 'screen_identifier'].includes(record.kind), rect: area,
+      proposal: record.proposal, semantic_kind: record.semantic_kind, detection: ['scannable', 'detection', 'screen_identifier'].includes(record.kind), rect: area,
       trajectory: tap?.end ? [{ x: tap.x, y: tap.y }, tap.end] : null };
     const visual = zoneStyle(zone);
     const drawn = drawZone?.(zone, frame);
@@ -75,13 +75,14 @@ export default function capturePreview({ layer, record, side, zones = [], drawZo
     box.setAttribute('data-recorded-rect', '');
     box.setAttribute('data-zone-kind', record.kind);
     if (!drawn) {
-      box.style.cssText = `position:absolute;left:${area[0] * 100}%;top:${area[1] * 100}%;width:${(area[2] - area[0]) * 100}%;height:${(area[3] - area[1]) * 100}%;border:0;background:${colour}33;border-radius:0;opacity:${visual.opacity};box-sizing:border-box;pointer-events:none`;
-      if (visual.hatch) addZoneHatching(box, colour);
+      box.style.cssText = `position:absolute;left:${area[0] * 100}%;top:${area[1] * 100}%;width:${(area[2] - area[0]) * 100}%;height:${(area[3] - area[1]) * 100}%;border:0;background:${colour}33;border-radius:${visual.radius}px;opacity:${visual.opacity};box-sizing:border-box;pointer-events:none`;
+      if (visual.hatch) addZoneHatching(box, colour, visual.radius);
+      if (['vertical','horizontal'].includes(zone.kind)) addSliderChevrons(box, colour, zone.kind, area);
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       svg.setAttribute('viewBox', '0 0 100 100'); svg.setAttribute('preserveAspectRatio', 'none');
       svg.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none';
       const outline = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-      for (const [key, value] of Object.entries({ x: .5, y: .5, width: 99, height: 99, fill: 'none',
+      for (const [key, value] of Object.entries({ x: .5, y: .5, width: 99, height: 99, rx: visual.radius, ry: visual.radius, fill: 'none',
         stroke: colour, 'stroke-width': visual.width, 'stroke-dasharray': visual.dash,
         'stroke-linecap': visual.linecap, 'vector-effect': 'non-scaling-stroke' })) outline.setAttribute(key, value);
       svg.append(outline); box.append(svg);

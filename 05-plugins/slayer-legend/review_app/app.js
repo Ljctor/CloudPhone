@@ -1,11 +1,24 @@
 import { COLOURS, reviewGesture, gestureLabel, screenLabel, inside, servicePath } from './model.js';
 import oralFeedback, { freezeOralContext, oralTransport } from './page_oral_feedback.js';
-import { zoneStyle } from './page_zone_style.js';
+import { zoneStyle, sliderChevronPath } from './page_zone_style.js';
 const $ = (id) => document.getElementById(id);
 const NS = 'http://www.w3.org/2000/svg';
 const serviceUrl = (path) => servicePath(path, import.meta.url);
 const state = { nodes: new Map(), outgoing: new Map(), current: null, history: [], position: -1,
-  overlay: true, landmarks: true, gesture: null, loading: false, revision: null, visit: 0 };
+  overlay: true, landmarks: true, tools: true, gesture: null, loading: false, revision: null, visit: 0 };
+try {
+  const saved = JSON.parse(localStorage.getItem('cloudphone-review-overlays') ?? '{}');
+  for (const key of ['overlay', 'landmarks', 'tools']) if (typeof saved[key] === 'boolean') state[key] = saved[key];
+} catch { /* Browser storage may be unavailable. */ }
+const visibleRegions = () => state.visibleRegions ?? [];
+function renderIdentification() {
+  $('screen-identification').hidden = !state.landmarks || !current();
+  $('screen-identification').textContent = current() ? screenLabel(current()) : '';
+}
+function saveOverlays() {
+  try { localStorage.setItem('cloudphone-review-overlays', JSON.stringify({ overlay: state.overlay, landmarks: state.landmarks, tools: state.tools })); }
+  catch { /* Keep working when storage is unavailable. */ }
+}
 const svg = (tag, attributes = {}, text) => {
   const node = document.createElementNS(NS, tag);
   for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, String(value));
@@ -46,7 +59,7 @@ async function visit(id, { remember = true } = {}) {
   $('phone').style.aspectRatio = `${image.naturalWidth}/${image.naturalHeight}`;
   history.replaceState(null, '', `#node=${encodeURIComponent(id)}`);
   $('back').disabled = state.position <= 0;
-  renderOverlay(); return true;
+  renderOverlay(); renderIdentification(); return true;
 }
 async function load() {
   if (state.loading) return; state.loading = true;
@@ -67,15 +80,19 @@ async function load() {
   finally { state.loading = false; }
 }
 function renderOverlay() {
+  state.visibleRegions = [];
   const layer = $('overlay'); layer.replaceChildren(); layer.toggleAttribute('hidden', !state.overlay && !state.landmarks);
   if ((!state.overlay && !state.landmarks) || !current()) return;
   const defs = svg('defs');
   const hatch = svg('pattern', { id: 'forbidden-action-hatch', patternUnits: 'userSpaceOnUse', width: 8, height: 8 });
   hatch.append(svg('path', { d: 'M-2 2 L2 -2 M0 8 L8 0 M6 10 L10 6', stroke: COLOURS.forbidden, 'stroke-width': 2, opacity: .45 }));
   defs.append(hatch); layer.append(defs);
-  const regions = [...(current().regions ?? [])];
+  const regions = (current().regions ?? []).filter(region => region.integration?.status !== 'integrated');
   // Recorded points are useful even when no annotation rectangle was made.
   for (const edge of state.overlay ? outgoing() : []) {
+    if (edge.integration?.status === 'integrated') continue;
+    if (edge.startRect && regions.some(region => region.source === 'registered_scroll_viewport'
+        && JSON.stringify(region.rect) === JSON.stringify(edge.startRect))) continue;
     if (!edge.start) continue;
     const proposal = regions.find((region) => region.id === `edge:${edge.id}`);
     if (regions.some((region) => ['navigation', 'tap'].includes(region.kind) && inside(edge.start, region.rect))) continue;
@@ -92,19 +109,21 @@ function renderOverlay() {
       continue;
     }
     if (isSwipe) {
-      const x = edge.start.x * 480, y = edge.start.y * 1040, x2 = edge.end.x * 480, y2 = edge.end.y * 1040;
-      layer.append(svg('line', { x1: x, y1: y, x2, y2, stroke: colour, 'stroke-width': 3, 'stroke-dasharray': 'none', opacity: .8 }));
-      const angle = Math.atan2(y2 - y, x2 - x), arm = 10;
-      layer.append(svg('path', { d: `M ${x2 - Math.cos(angle - .6) * arm} ${y2 - Math.sin(angle - .6) * arm} L ${x2} ${y2} L ${x2 - Math.cos(angle + .6) * arm} ${y2 - Math.sin(angle + .6) * arm}`, fill: 'none', stroke: colour, 'stroke-width': 3 }));
+      if (Array.isArray(edge.startRect)) continue;
+      state.visibleRegions.push({id:`edge:${edge.id}`,kind,trajectory:[edge.start,edge.end],source:edge.source});
+      // A raw observed swipe without measured bounds retains only its direction marker.
+      const x = edge.end.x*480, y = edge.end.y*1040, angle = Math.atan2(edge.end.y-edge.start.y,edge.end.x-edge.start.x), arm=10;
+      layer.append(svg('path',{d:`M${x-Math.cos(angle-.6)*arm} ${y-Math.sin(angle-.6)*arm} L${x} ${y} L${x-Math.cos(angle+.6)*arm} ${y-Math.sin(angle+.6)*arm}`,fill:'none',stroke:colour,'stroke-width':3}));
     } else {
-      const style = zoneStyle(proposal ?? { kind, user: edge.source === 'manual', conditional: edge.conditional });
+      const style = zoneStyle(proposal ?? { kind, semantic_kind: edge.semantic_kind, forbidden: edge.forbidden, user: edge.source === 'manual', conditional: edge.conditional });
       // Unmeasured recordings retain a point marker, never invented button bounds.
       const rect = edge.rect ?? [edge.start.x - 10 / 480, edge.start.y - 10 / 1040, edge.start.x + 10 / 480, edge.start.y + 10 / 1040];
+      state.visibleRegions.push({id:`edge:${edge.id}`,kind,rect,source:edge.source,semantic_kind:edge.semantic_kind});
       const [l, t, r, b] = rect, x = l * 480, y = t * 1040, width = (r-l)*480, height = (b-t)*1040;
-      const marker = svg('rect', { x, y, width, height, rx: 0, stroke: colour, fill: `${colour}18`, 'stroke-width': style.width, opacity: style.opacity, 'stroke-dasharray': style.dash, 'stroke-linecap': style.linecap });
+      const marker = svg('rect', { x, y, width, height, rx: style.radius, stroke: colour, fill: style.hatch ? 'url(#forbidden-action-hatch)' : `${colour}18`, 'stroke-width': style.width, opacity: style.opacity, 'stroke-dasharray': style.dash, 'stroke-linecap': style.linecap });
       marker.append(svg('title', {}, edge.rect ? edge.label : 'Point enregistré · dimensions du bouton non mesurées'));
       layer.append(marker);
-      if (style.double && width > 6 && height > 6) layer.append(svg('rect', { x:x+3, y:y+3, width:width-6, height:height-6, rx:0, stroke:colour, fill:'none', 'stroke-width':1 }));
+      if (style.double && width > 6 && height > 6) layer.append(svg('rect', { x:x+3, y:y+3, width:width-6, height:height-6, rx:Math.max(0,style.radius-2), stroke:colour, fill:'none', 'stroke-width':1 }));
     }
   }
   regions.sort((a, b) => Number(Boolean(a.forbidden || a.kind === 'forbidden')) - Number(Boolean(b.forbidden || b.kind === 'forbidden')));
@@ -112,20 +131,17 @@ function renderOverlay() {
     const landmark = ['detection', 'scannable', 'screen_identifier'].includes(region.kind);
     if (landmark ? !state.landmarks : !state.overlay) continue;
     if (!Array.isArray(region.rect) || region.rect.length !== 4 || region.rect.some((v) => !Number.isFinite(v))) continue;
+    state.visibleRegions.push(region);
     const [l, t, r, b] = region.rect, forbidden = region.forbidden || region.kind === 'forbidden';
     const style = zoneStyle(region);
     const kind = forbidden ? 'forbidden' : region.kind, colour = COLOURS[kind] ?? '#94a3b8';
     const box = svg('rect', { x: l * 480, y: t * 1040, width: (r - l) * 480, height: (b - t) * 1040,
-      'data-zone-kind': region.kind === 'action' ? 'action' : kind, 'data-zone-forbidden': String(Boolean(forbidden)), rx: 0, fill: style.hatch ? 'url(#forbidden-action-hatch)' : style.opacity < 1 ? 'none' : `${colour}12`, stroke: colour, 'stroke-width': style.width, opacity: style.opacity,
+      'data-zone-kind': region.kind === 'action' ? 'action' : kind, 'data-zone-forbidden': String(Boolean(forbidden)), rx: style.radius, fill: style.hatch ? 'url(#forbidden-action-hatch)' : style.opacity < 1 ? 'none' : `${colour}12`, stroke: colour, 'stroke-width': style.width, opacity: style.opacity,
       'stroke-dasharray': style.dash, 'stroke-linecap': style.linecap });
-    if (style.double && (r-l)*480 > 8 && (b-t)*1040 > 8) layer.append(svg('rect', { x:l*480+3, y:t*1040+3, width:(r-l)*480-6, height:(b-t)*1040-6, fill:'none', stroke:colour, 'stroke-width':1 }));
+    if (style.double && (r-l)*480 > 8 && (b-t)*1040 > 8) layer.append(svg('rect', { x:l*480+3, y:t*1040+3, width:(r-l)*480-6, height:(b-t)*1040-6, rx:Math.max(0,style.radius-2), fill:'none', stroke:colour, 'stroke-width':1 }));
     box.append(svg('title', {}, `${region.label ?? region.id ?? kind}${region.source ? ` · ${region.source}` : ''}`)); layer.append(box);
     if (!forbidden && ['vertical', 'horizontal'].includes(kind)) {
-      const x = (l + r) * 240, y = (t + b) * 520;
-      const arm = Math.min(7, (r - l) * 120, (b - t) * 260);
-      const d = kind === 'vertical'
-        ? `M${x-arm} ${t*1040+arm*2} L${x} ${t*1040+arm} L${x+arm} ${t*1040+arm*2} M${x-arm} ${b*1040-arm*2} L${x} ${b*1040-arm} L${x+arm} ${b*1040-arm*2}`
-        : `M${l*480+arm*2} ${y-arm} L${l*480+arm} ${y} L${l*480+arm*2} ${y+arm} M${r*480-arm*2} ${y-arm} L${r*480-arm} ${y} L${r*480-arm*2} ${y+arm}`;
+      const d = sliderChevronPath(kind, [l*480,t*1040,r*480,b*1040]);
       layer.append(svg('path', { d, fill: 'none', stroke: colour, 'stroke-width': 2, opacity: style.opacity }));
     }
   }
@@ -138,7 +154,8 @@ const oral = oralFeedback({ secureReviewUrl, transport: oralTransport(serviceUrl
   const node = current(); if (!node) throw Error('Aucune capture');
   return freezeOralContext({ image: $('screen-image'), layer: $('phone'), svgElement: $('overlay'),
     source: 'review', nodeId: node.id, screen: node.screen, displayName: screenLabel(node),
-    regions: node.regions ?? [], enabled: state.overlay || state.landmarks, state: { review: node.review } });
+    regions: visibleRegions(), enabled: state.overlay || state.landmarks,
+    state: { review: node.review, identification: state.landmarks, navigation: state.overlay, reporting: state.tools } });
 } });
 $('feedback-panel').append(oral.element);
 async function proposeZone(operation, zone, nodeId) {
@@ -172,10 +189,10 @@ function point(event) { const r = phone.getBoundingClientRect(); return {
   x: Math.max(0, Math.min(1, (event.clientX-r.left)/r.width)), y: Math.max(0, Math.min(1, (event.clientY-r.top)/r.height)) }; }
 phone.addEventListener('pointerdown', (event) => {
   if (event.button !== 0 || !current()) return;
-  const gesture = { start: point(event), at: performance.now(), pointerId: event.pointerId, node: state.current, annotation: $('annotation-kind').value }; state.gesture = gesture;
+  const gesture = { start: point(event), at: performance.now(), pointerId: event.pointerId, node: state.current, annotation: state.tools ? $('annotation-kind').value : '' }; state.gesture = gesture;
   // Explicit correction panel keeps an annotation hold separate from simulated long navigation.
-  if (!$('feedback-panel').hidden && !gesture.annotation) {
-    const zone = current().regions?.find((region) => inside(gesture.start, region.rect));
+  if (state.tools && !$('feedback-panel').hidden && !gesture.annotation) {
+    const zone = visibleRegions().find((region) => inside(gesture.start, region.rect));
     if (zone) gesture.timer = setTimeout(() => { if (state.gesture === gesture && !gesture.moved) {
       gesture.handled = true; proposeZone('remove', zone, gesture.node); } }, 600);
   }
@@ -207,14 +224,25 @@ phone.addEventListener('wheel', (event) => { event.preventDefault(); if (perform
   const axis=horizontal?'x':'y', delta=(horizontal?event.deltaX||event.deltaY:event.deltaY)>0?-.25:.25;
   follow({ start, end:{...start,[axis]:Math.max(0,Math.min(1,start[axis]+delta))},duration:500 }); },{passive:false});
 $('annotation-kind').addEventListener('change',()=>{if($('annotation-kind').value){$('feedback-panel').hidden=true;notice('Tracez la zone sur la capture · annotation seulement');}});
-$('overlay-toggle').addEventListener('change',(event)=>{state.overlay=event.target.checked;renderOverlay();});
-$('landmarks-toggle').addEventListener('change',(event)=>{state.landmarks=event.target.checked;renderOverlay();});
+for (const [id, key] of [['overlay-toggle', 'overlay'], ['landmarks-toggle', 'landmarks'], ['tools-toggle', 'tools']]) {
+  $(id).checked = state[key];
+  $(id).addEventListener('change', (event) => {
+    state[key] = event.target.checked; saveOverlays();
+    if (key === 'tools' && !state.tools) {
+      oral.cancel(); $('feedback-panel').hidden = true; $('annotation-kind').value = '';
+      clearTimeout(state.gesture?.timer); state.gesture = null;
+    }
+    $('feedback-open').hidden = !state.tools;
+    renderOverlay(); renderIdentification();
+  });
+}
+$('feedback-open').hidden = !state.tools;
 $('back').addEventListener('click',async()=>{if(state.position>0 && await visit(state.history[state.position-1],{remember:false})) {state.position--; $('back').disabled=state.position<=0;}});
 $('home').addEventListener('click',()=>{const node=state.nodes.get('screen:battle')??[...state.nodes.values()].find(n=>n.screen==='battle'&&safeImage(n.image));if(node)visit(node.id);else notice('Capture Combat absente',true);});
 $('reload').addEventListener('click',load);
 $('options-open').addEventListener('click',()=>{$('options-panel').hidden=!$('options-panel').hidden;$('feedback-panel').hidden=true;});
 $('options-close').addEventListener('click',()=>{$('options-panel').hidden=true;});
-$('feedback-open').addEventListener('click',()=>{$('options-panel').hidden=true;$('feedback-panel').hidden=false;});
+$('feedback-open').addEventListener('click',()=>{if(!state.tools)return;$('options-panel').hidden=true;$('feedback-panel').hidden=false;});
 $('feedback-close').addEventListener('click',()=>{$('feedback-panel').hidden=true;});
 $('fullscreen').addEventListener('click',async()=>{
   if(document.fullscreenElement){await document.exitFullscreen?.();return;}

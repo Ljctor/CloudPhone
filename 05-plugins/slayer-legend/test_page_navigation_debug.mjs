@@ -14,6 +14,24 @@ assert.ok(equipment.some((zone) => zone.id === 'scroll' && zone.kind === 'vertic
 assert.ok(!equipment.some((zone) => zone.id === 'batch_combine'));
 assert.ok(equipment.some((zone) => zone.move === 'batch_combine' && zone.forbidden),
   'forbidden navigation remains visible as a forbidden zone');
+const repeatSlides = zonesFor('quest_panel', graph, registry, { quest_tab: 'repeat' })
+  .filter((zone) => zone.id === 'scroll_repeat');
+assert.equal(repeatSlides.length, 1);
+assert.equal(repeatSlides[0].kind, 'vertical');
+assert.deepEqual(repeatSlides[0].rect, [.05, .265, .65, .95]);
+assert.equal(repeatSlides[0].visual_source.intent_annotations.length, 4);
+assert.ok(repeatSlides[0].visual_source.intent_annotations.every((item) => item.gesture_validated === false));
+for (const quest_tab of ['daily', 'achievement', undefined]) {
+  assert.ok(!zonesFor('quest_panel', graph, registry, { quest_tab }).some((zone) => zone.id === 'scroll_repeat'),
+    'Repeat viewport never becomes a Daily/Achievement scroll zone');
+}
+const soulScroll = zonesFor('soul_weapon', graph, registry).find((zone) => zone.id === 'scroll');
+assert.ok(soulScroll?.kind === 'vertical' && soulScroll.conditional);
+assert.deepEqual(soulScroll.rect, registry.tree.soul_weapon.scroll[0].rect);
+assert.equal(soulScroll.visual_source.annotation, 'manual:bbf78faa6af8402d89f169c29b83d024');
+assert.equal(soulScroll.visual_source.gestureAuthority, false);
+assert.deepEqual(graph.screens.soul_weapon.moves.find((move) => move.id === 'scroll').swipe, [.087, .86, .087, .62]);
+assert.deepEqual(graph.screens.soul_weapon.moves.find((move) => move.id === 'scroll').needs, { off_tags: true });
 const breakdown = zonesFor('soul_weapon', graph, registry, null,
   new Map([['breakdown-0', [.1, .1, .2, .2]]])).find((zone) => zone.move === 'breakdown');
 const measuredBreakdown = graph.screens.soul_weapon.moves.find((move) => move.id === 'breakdown');
@@ -214,7 +232,8 @@ assert.match(forbiddenZone.style.cssText, /left:25%;top:25%;width:50%;height:25%
 assert.match(forbiddenZone.style.cssText, /border:1px solid #ff5353/);
 assert.match(forbiddenZone.style.cssText, /outline:1px solid #ff5353;outline-offset:-4px/);
 assert.ok(!forbiddenZone.style.cssText.includes('dashed'), 'configured conditions use two thin lines, never user annotation marks');
-assert.match(forbiddenZone.style.cssText, /border-radius:0/);
+assert.match(forbiddenZone.style.cssText, /border-radius:6px/);
+assert.ok(all(forbiddenZone).some((item) => item.tagName === "pattern"), "forbidden navigation is hatched inside its rounded shape");
 currentScanOverrides = { plain: false, overlays: ['panel'] };
 await poll();
 assert.equal(all(root).filter((item) => item.title?.startsWith('preset_arrow')).length, 1,
@@ -273,7 +292,7 @@ surface.onpointerdown(event(20, 40));
 await poll();
 assert.ok(all(root).includes(surface));
 surface.onpointermove(event(30, 160));
-assert.ok(all(surface).some((item) => item.textContent === '⌃'));
+assert.ok(all(surface).some((item) => item.attrs['data-slider-chevrons'] === 'vertical'));
 surface.onpointerup(event(30, 160));
 assert.deepEqual(posts.at(-1).body, { x: .2, y: .2, kind: 'swipe', end: { x: .3, y: .8 } });
 archive.clicks.unshift({ id: 'capture-2', kind: 'vertical', capture_status: 'complete',
@@ -285,9 +304,9 @@ ui = navigationDebug(api); await flush();
 assert.match(status(), /Déclaration enregistrée/, 'restores archived declaration after reload');
 assert.match(status(), /slider vertical/);
 currentScreen = 'equipment_weapon'; await poll();
-assert.ok(all(root).some((item) => item.textContent === '⌃'));
-assert.ok(all(root).some((item) => item.textContent === '⌄'));
-const equipmentSlider = all(root).find((item) => item.textContent === '⌃').parent;
+const equipmentChevrons = all(root).find((item) => item.attrs['data-slider-chevrons'] === 'vertical');
+assert.ok(equipmentChevrons);
+const equipmentSlider = equipmentChevrons.parent;
 assert.match(equipmentSlider.style.cssText, /#bb50ff/);
 assert.match(equipmentSlider.style.cssText, /border:/);
 assert.match(equipmentSlider.style.cssText, /background:/);
@@ -479,7 +498,8 @@ viewer = all(root).find((item) => 'data-capture-preview' in item.attrs);
 const archivedForbidden = zoneById('forbidden_navigation_test', viewer);
 assert.match(archivedForbidden.style.cssText, /border:1px solid #ff5353/);
 assert.match(archivedForbidden.style.cssText, /left:25%;top:25%;width:50%;height:25%/);
-assert.match(archivedForbidden.style.cssText, /border-radius:0/);
+assert.match(archivedForbidden.style.cssText, /border-radius:6px/);
+assert.ok(all(archivedForbidden).some((item) => item.tagName === "pattern"));
 assert.match(all(viewer).find((item) => item.attrs['data-zone-kind'] === 'detection').style.cssText,
   /border:2px solid #4ade80/);
 all(viewer).find((item) => item.textContent === 'Fermer').onclick(event());
@@ -558,8 +578,11 @@ assert.ok(userSlider);
 assert.equal(all(userSlider).find((item) => item.tagName === 'rect').attrs['stroke-dasharray'], '1 5');
 assert.equal(all(userSlider).find((item) => item.tagName === 'rect').attrs['stroke-linecap'], 'round');
 const trajectory = all(userSlider).find((item) => item.tagName === 'polyline');
-assert.equal(trajectory.attrs['stroke-dasharray'], 'none', 'user bounding marks never dash the trajectory');
-assert.equal(trajectory.attrs.stroke, '#bb50ff');
+assert.equal(trajectory, undefined, 'slider rectangle declarations never render their diagonal capture path');
+const sliderPath = all(userSlider).find((item) => item.tagName === 'path');
+assert.equal(sliderPath.attrs['stroke-dasharray'], 'none');
+assert.equal(sliderPath.attrs.stroke, '#bb50ff');
+assert.equal((sliderPath.attrs.d.match(/M/g) ?? []).length, 2, 'two isolated directional chevrons, no shaft');
 assert.equal(zoneById('other-screen'), undefined, 'another screen annotation never leaks into the current battlefield');
 const feedbackToggle = () => all(root).find((item) => item.attrs['data-screen-evidence'] === 'zone-feedback');
 await feedbackToggle().onclick(event());

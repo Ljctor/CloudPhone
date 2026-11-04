@@ -86,6 +86,28 @@ class OralAPI(AioHTTPTestCase):
         self.assertIn("attachment", response.headers["Content-Disposition"])
         self.assertIn("sandbox", response.headers["Content-Security-Policy"])
 
+    async def test_real_hatching_markup_roundtrips_with_audio_and_immutable_hashes(self):
+        body = context()
+        body['overlay']['svg'] = ('<svg xmlns="http://www.w3.org/2000/svg"><defs>'
+            '<pattern id="forbidden-action-hatch" patternUnits="userSpaceOnUse" width="8" height="8">'
+            '<path d="M0 8 L8 0" stroke="#ff5353"/></pattern></defs>'
+            '<rect x="0" y="0" width="2" height="2" rx="1" fill="url(#forbidden-action-hatch)"/></svg>')
+        body['assets']['qa'] = 'Synthetic regression: hatching upload, not user feedback'
+        created = await self.create(body)
+        response = await self.client.post('/voice/'+created['id']+'/audio', data=wav(), headers={
+            'Content-Type':'audio/wav', 'X-Context-SHA256':created['contextSha256']})
+        self.assertEqual(response.status, 201, await response.text())
+        saved = self.store.get(created['id'])
+        self.assertEqual(saved['status'], 'pending_review')
+        self.assertEqual(saved['context']['overlay']['svgSha256'], oral.digest(body['overlay']['svg'].encode()))
+        self.assertEqual(saved['audio']['contextSha256'], created['contextSha256'])
+        self.assertEqual((self.store.path(created['id'])/'overlay.svg').read_text(), body['overlay']['svg'])
+        for unsafe in ('<image href="https://external.invalid/x"/>', '<script>bad()</script>',
+                       '<rect fill="url(https://external.invalid/x)"/>'):
+            invalid = context()
+            invalid['overlay']['svg'] = '<svg xmlns="http://www.w3.org/2000/svg"><defs><pattern id="x">'+unsafe+'</pattern></defs></svg>'
+            self.assertEqual((await self.client.post('/voice/contexts',json=invalid)).status,400)
+
     async def test_audio_is_bound_to_context_hash_and_cannot_replace_recorded_evidence(self):
         created = await self.create()
         endpoint = "/voice/" + created["id"] + "/audio"

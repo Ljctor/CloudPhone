@@ -91,7 +91,7 @@ class Evidence:
         return (set(registry.get("screens", {})) | set(registry.get("tree", {})) | set(navigation.get("screens", {}))) - zone_feedback.UNKNOWN
 
     def revision(self):
-        paths = [self.feedback_path, self.zones.path, self.ledger_path, self.data_dir / "trace.json",
+        paths = [self.feedback_path, self.zones.path, self.zones.integration_path, self.ledger_path, self.data_dir / "trace.json",
                  self.data_dir / "manual-clicks", self.data_dir / "screenshots"]
         paths += list(self.manual_dir.glob("*.json"))
         values = []
@@ -295,12 +295,30 @@ class Evidence:
         tree = read_json(self.plugin_dir / "screen_registry.json", {}).get("tree", {})
         shared = self.zones.read_annotations(self.data_dir, self.known_screens(), tree=tree)
         pending = self.zones.read()
+        integrated = self.zones.integrated_annotations(tree)
+        for edge in edges:
+            if edge.get("id") in integrated:
+                edge["integration"] = integrated[edge["id"]]
         for node in nodes:
+            for area in tree.get(node["screen"], {}).get("scroll", []):
+                source = area.get("visual_source") or {}
+                if source.get("role") != "display_bounds_only" or area.get("measured") is not True:
+                    continue
+                move = area.get("move", "").split("/")[-1]
+                zone_id = f"viewport:{node['screen']}:{move}"
+                if not any(region.get("id") == zone_id for region in node["regions"]):
+                    node["regions"].append({"id": zone_id, "zoneId": zone_id, "screen": node["screen"],
+                        "rect": area["rect"], "kind": area["direction"], "conditional": True,
+                        "source": "registered_scroll_viewport", "visual_source": source,
+                        "gestureAuthority": False})
             for region in node["regions"]:
                 region["user"] = region.get("source") in {"recorded", "reviewed_user_evidence", "user_recorded_unverified"}
                 region.setdefault("conditional", False)
                 region.setdefault("zoneId", "manual:" + node["captureId"] if region["user"] and node.get("captureId")
                                   else region["id"])
+                integration = integrated.get(region.get("zoneId"))
+                if integration:
+                    region["integration"] = integration
             for zone in shared:
                 if zone["screen"] != node["screen"]:
                     continue
@@ -326,6 +344,7 @@ class Evidence:
                 for region in node["regions"]:
                     if id_matches(region) or not anchored and region["kind"] == proposal["kind"] and bool(region.get("forbidden", region["kind"] == "forbidden")) == bool(proposal.get("forbidden", proposal["kind"] == "forbidden")) and max(abs(a-b) for a,b in zip(region["rect"], proposal["rect"])) <= .003:
                         region.update(removedProposal=True, proposal="remove", pending=True)
+                        region.pop("integration", None)
                         matched = True
                 if not matched:
                     node["regions"].append({**proposal, "id": proposal["zoneId"], "user": True,
@@ -335,6 +354,7 @@ class Evidence:
             if any(proposal["operation"] == "remove" and proposal["zoneId"] == "edge:" + edge["id"]
                    and proposal["screen"] == by_id[edge["from"]]["screen"] for proposal in pending):
                 edge["removedProposal"] = True
+                edge.pop("integration", None)
 
     def add_configured(self, nodes, edges):
         """Expose the existing declared graph as an explicitly separate layer.
