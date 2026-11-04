@@ -135,7 +135,7 @@ def trace(ports, screens, graphs, images=None, scan_visible=None, on_spend=None)
         if entry:
             entry.update(at=now, tap=pending["tap"], after=after[0][0], capture_status="complete")
             if isinstance(after[2], dict):
-                entry["after_scan"] = {key: after[2][key] for key in ("screen", "overlays", "plain", "quest_tab") if key in after[2]}
+                entry["after_scan"] = {key: after[2][key] for key in ("screen", "overlays", "plain", "quest_tab", "battle_viewport") if key in after[2]}
             if "after_stable" in pending:
                 entry["after_stable"] = pending["after_stable"]
             try:
@@ -342,7 +342,7 @@ def trace(ports, screens, graphs, images=None, scan_visible=None, on_spend=None)
             if expected:
                 entry["expected_screen"] = expected
             if isinstance(before[2], dict):
-                entry["before_scan"] = {key: before[2][key] for key in ("screen", "overlays", "plain", "quest_tab") if key in before[2]}
+                entry["before_scan"] = {key: before[2][key] for key in ("screen", "overlays", "plain", "quest_tab", "battle_viewport") if key in before[2]}
             try:
                 persist_manual(entry, "before", before)
             except OSError:
@@ -370,7 +370,7 @@ def trace(ports, screens, graphs, images=None, scan_visible=None, on_spend=None)
             entry = {"id": capture_id, "kind": kind, "at": ports.clock.wall(),
                      "before": before[0][0], "capture_status": "armed"}
             if isinstance(before[2], dict):
-                entry["before_scan"] = {key: before[2][key] for key in ("screen", "overlays", "plain", "quest_tab") if key in before[2]}
+                entry["before_scan"] = {key: before[2][key] for key in ("screen", "overlays", "plain", "quest_tab", "battle_viewport") if key in before[2]}
             try:
                 persist_manual(entry, "before", before)
             except OSError:

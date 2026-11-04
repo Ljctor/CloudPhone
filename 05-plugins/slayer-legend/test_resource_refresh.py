@@ -28,11 +28,31 @@ scroll_module = load("scrolling")
 REGISTRY = json.loads((HERE / "screen_registry.json").read_text())
 
 
+class ResourcePriority(unittest.TestCase):
+    def test_never_read_then_unverified_then_oldest_with_zero_kept_as_known(self):
+        facts = {field: {"value": 0, "seen": 99, "verified": True}
+                 for field in rules.RESOURCE_FIELDS + rules.EXTRA_FIELDS}
+        facts.pop("cubes")
+        facts["soul_white"].update(verified=False, seen=98)
+        facts["weapon_l3"]["seen"] = 10
+        order = rules.priority(facts, {})
+        self.assertEqual(order[:3], ["cubes", "soul_white", "weapon_l3"])
+        self.assertNotEqual(order[0], "diamond", "a real zero is a known value")
+
+    def test_unsupported_catalogue_never_authorizes_a_route(self):
+        missing = rules.unsupported()
+        self.assertEqual(len(missing), 13)
+        self.assertTrue(all(row["reason"] == "reader_not_calibrated" and row["navigation_allowed"] is False
+                            for row in missing))
+        self.assertIn("feather_black", {row["field"] for row in missing})
+
+
 class ResourceRefresh(unittest.IsolatedAsyncioTestCase):
     def build(self, *, gate=True, start="soul_weapon", zero=False, unread_cube=False, unread_l3=False, verified=True):
         model = {"screen": start, "position": {"equipment_weapon": 0, "equipment_accessories": 0},
                  "now": 100.0, "input": None, "recovery": None, "enabled": True,
                  "mode": {"mode": "mpw18", "configured": True, "state": "farming", "setup": False, "hold": None}}
+        model["loadout"] = {"stage": 920, "preset": "I", "soul_weapon": "test"}
         inputs, captures, observed, intents = [], [], [], []
         hooks = {"input": lambda *args: None, "scan": lambda *args: None, "rate": None,
                  "observed_at": [], "inspect_safe": True, "rates": {"weapon_l3": 1.0, "accessory_l3": 1.0}}
@@ -109,7 +129,12 @@ class ResourceRefresh(unittest.IsolatedAsyncioTestCase):
 
         async def scan(shot, force):
             screen = shot[2]["screen"]
-            values = {"gold_place": ("battle", [[True]])}
+            values = {"gold_place": ("battle", [[True]]),
+                      "gold": {"value": 0 if zero else 500, "text": "0" if zero else "500"},
+                      "emerald": {"value": 1, "text": "1"}, "diamond": {"value": 2, "text": "2"}}
+            if screen == "soul_weapon":
+                values["souls"] = {colour: {"value": 0 if zero else 4, "text": "0" if zero else "4"}
+                                    for colour in ("green", "blue", "red", "white")}
             if screen == "weapon_detail" and not unread_cube:
                 values["cubes"] = {"value": 1200, "text": "1,200"}
             if screen in ("equipment_weapon", "equipment_accessories"):
@@ -127,9 +152,59 @@ class ResourceRefresh(unittest.IsolatedAsyncioTestCase):
                                       **{field: {"rate": rate} for field, rate in hooks["rates"].items()}}}
         farming = {"soul_weapon_switch": lambda: "real", "soul_weapon_state": lambda: {"recovery": model["recovery"]}}
         part = feature.resource_refresh(ports, screens, nav, equipment, weapon, scrolling,
-                                       {"state": lambda: model["mode"]}, farming, gold, rules)
+                                       {"state": lambda: model["mode"]}, farming, gold, rules,
+                                       loadout=lambda name: model["loadout"])
         refresh_ref.update(part)
         return model, inputs, captures, observed, intents, hooks, ports, part["api"]
+
+    async def test_all_three_farming_modes_read_all_calibrated_resources_and_return(self):
+        for mode in ("soul", "mpw18", "mpw4"):
+            model, inputs, captures, observed, intents, hooks, ports, api = self.build()
+            model["mode"]["mode"] = mode
+            result = await api["tick"]()
+            self.assertEqual(result["result"], "complete")
+            self.assertTrue(set(rules.RESOURCE_FIELDS).issubset(result["read"]))
+            self.assertEqual(model["screen"], "soul_weapon")
+            self.assertEqual(len(result["unsupported"]), 13)
+            self.assertFalse(result["coverage_complete"], "uncalibrated resources stay explicit")
+            self.assertFalse(any(action in ("equip", "enhance", "auto", "obtain") for _, action in inputs))
+
+    async def test_never_read_accessory_precedes_historically_observed_cubes(self):
+        model, inputs, captures, observed, intents, hooks, ports, api = self.build()
+        ports.game["facts"] = lambda: {field: {"value": 1, "seen": 90, "verified": True}
+                                      for field in rules.RESOURCE_FIELDS + ("weapon_l3",)}
+        result = await api["tick"]()
+        self.assertEqual(result["priority"][0], "accessory_l3")
+        self.assertLess(inputs.index(("equipment_weapon", "accessories")), inputs.index(("equipment_weapon", "inspect_weapon")))
+        self.assertEqual(model["screen"], "soul_weapon")
+
+    async def test_loadout_change_during_ocr_stops_without_a_cleanup_gesture(self):
+        model, inputs, captures, observed, intents, hooks, ports, api = self.build()
+        def changed(screen):
+            if screen == "weapon_detail":
+                model["loadout"]["preset"] = "II"
+        hooks["scan"] = changed
+        result = await api["tick"]()
+        self.assertEqual(result["result"], "interrupted")
+        self.assertEqual(inputs[-1], ("equipment_weapon", "inspect_weapon"))
+        self.assertEqual(model["screen"], "weapon_detail")
+        self.assertNotIn("cubes", result["read"])
+
+    async def test_one_unread_soul_does_not_erase_other_colours_or_skip_safe_return(self):
+        model, inputs, captures, observed, intents, hooks, ports, api = self.build()
+        original = ports.game["scan"]
+        async def missing_white(shot, force):
+            values = await original(shot, force)
+            if "souls" in values:
+                values["souls"].pop("white", None)
+            return values
+        ports.game["scan"] = missing_white
+        result = await api["tick"]()
+        self.assertEqual(result["result"], "partial")
+        self.assertEqual(result["missing"], ["soul_white"])
+        self.assertIn("soul_green", result["read"])
+        self.assertNotIn("soul_white", result["read"])
+        self.assertEqual(model["screen"], "soul_weapon")
 
     async def test_cube_opening_frame_retries_fresh_popup_before_measuring(self):
         model, inputs, captures, observed, intents, hooks, ports, api = self.build()
@@ -197,7 +272,7 @@ class ResourceRefresh(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["result"], "interrupted")
         self.assertEqual(model["screen"], "weapon_detail")
         self.assertEqual(inputs[-1], ("equipment_weapon", "inspect_weapon"))
-        self.assertEqual(observed, [])
+        self.assertFalse(any(shot[2]["screen"] == "weapon_detail" for shot, row in observed), "input interrupts the popup observation; earlier parked readings remain valid")
 
     async def test_complete_guarded_circuit_and_valid_zero_returns_to_park(self):
         model, inputs, captures, observed, intents, hooks, ports, api = self.build(zero=True)
@@ -206,8 +281,8 @@ class ResourceRefresh(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["result"], "complete")
         self.assertEqual(model["screen"], "soul_weapon")
         self.assertEqual(model["mode"], requested)
-        self.assertEqual(set(result["read"]), {"cubes", "weapon_l3", "accessory_l3"})
-        self.assertEqual(len(observed), 4)
+        self.assertEqual(set(result["read"]), set(rules.RESOURCE_FIELDS + rules.EXTRA_FIELDS))
+        self.assertEqual(len(observed), 6)
         self.assertTrue(any(row.get("weapon_l3") == 0 for shot, row in observed))
         self.assertTrue(all(intent["kind"] == "resource_refresh" and not intent["route_known"] for intent in intents))
         self.assertFalse(result["active"])
@@ -249,7 +324,7 @@ class ResourceRefresh(unittest.IsolatedAsyncioTestCase):
         result = await api["tick"]()
         self.assertEqual(result["result"], "partial")
         self.assertEqual(model["screen"], "soul_weapon")
-        self.assertEqual(set(result["read"]), {"weapon_l3", "accessory_l3"})
+        self.assertEqual(set(result["read"]), set(rules.RESOURCE_FIELDS + rules.EXTRA_FIELDS) - {"cubes"})
         self.assertEqual(result["missing"], ["cubes"])
         self.assertIn(("weapon_detail", "close"), inputs)
 
@@ -289,7 +364,8 @@ class ResourceRefresh(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len([r for shot, r in observed if "cubes" in r]), expected)
             self.assertLess(model["now"], 100 + rules.DEADLINE)
             if rate is None:
-                self.assertGreaterEqual(hooks["observed_at"][1] - hooks["observed_at"][0], 10)
+                times = [at for at, (_, row) in zip(hooks["observed_at"], observed) if row.get("cubes") is not None]
+                self.assertGreaterEqual(times[1] - times[0], 10)
 
     async def test_first_l3_visit_bootstraps_two_exact_observations_within_its_deadline(self):
         model, inputs, captures, observed, intents, hooks, ports, api = self.build()
@@ -334,7 +410,7 @@ class ResourceRefresh(unittest.IsolatedAsyncioTestCase):
         result = await api["tick"]()
         self.assertEqual(result["result"], "complete")
         self.assertEqual(calls, 4)  # baseline, then three bounded fresh attempts
-        positions = [index for index, (_, values) in enumerate(observed) if "weapon_l3" in values]
+        positions = [index for index, (_, values) in enumerate(observed) if values.get("weapon_l3") is not None]
         self.assertEqual(len(positions), 1)
         self.assertEqual(result["read"]["weapon_l3"], hooks["observed_at"][positions[0]])
         self.assertEqual(model["screen"], "soul_weapon")
@@ -362,7 +438,7 @@ class ResourceRefresh(unittest.IsolatedAsyncioTestCase):
         hooks["scan"] = interrupt
         result = await api["tick"]()
         self.assertEqual(result["result"], "interrupted")
-        self.assertEqual(len([row for _, row in observed if "weapon_l3" in row]), 1)
+        self.assertEqual(len([row for _, row in observed if "weapon_l3" in row]), 0, "an OCR result arriving after input is not accepted")
         self.assertNotIn(("equipment_weapon", "accessories"), inputs)
 
     async def test_scan_can_evict_capture_metadata_without_losing_acquisition_time(self):
@@ -384,9 +460,9 @@ class ResourceRefresh(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["result"], "complete")
         self.assertEqual(hooks["observed_at"], acquisition_times)
         self.assertTrue(all(at is not None for at in acquisition_times))
-        self.assertEqual(result["read"]["cubes"], acquisition_times[1])
-        self.assertEqual(result["read"]["weapon_l3"], acquisition_times[2])
-        self.assertEqual(result["read"]["accessory_l3"], acquisition_times[3])
+        self.assertEqual(result["read"]["cubes"], acquisition_times[2])
+        self.assertEqual(result["read"]["weapon_l3"], acquisition_times[3])
+        self.assertEqual(result["read"]["accessory_l3"], acquisition_times[4])
 
     async def test_missing_acquisition_time_cannot_report_a_complete_visit(self):
         model, inputs, captures, observed, intents, hooks, ports, api = self.build(verified=False)
@@ -395,7 +471,7 @@ class ResourceRefresh(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["result"], "failed")
         self.assertFalse(result["supervised_verified"])
         self.assertEqual(result["read"], {})
-        self.assertEqual(observed, [])
+        self.assertFalse(any(shot[2]["screen"] == "weapon_detail" for shot, row in observed), "input interrupts the popup observation; earlier parked readings remain valid")
 
     async def test_user_pause_recovery_and_unconfigured_modes_never_navigate(self):
         for block in ("pause", "recovery", "unconfigured"):

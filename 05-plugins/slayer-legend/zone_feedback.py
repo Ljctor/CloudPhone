@@ -1,0 +1,212 @@
+"""Shared advisory overlays. Pending edits never change navigation authority."""
+import contextlib
+import fcntl
+import json
+import math
+import os
+from pathlib import Path
+import re
+import tempfile
+import time
+import uuid
+
+KINDS = {"navigation", "action", "forbidden", "detection", "vertical", "horizontal", "draggable"}
+UNKNOWN = {"unknown", "other", "menu", "", "None"}
+
+
+def rectangle(value):
+    if (not isinstance(value, list) or len(value) != 4 or any(isinstance(v, bool) or not isinstance(v, (int, float))
+            or not math.isfinite(v) or not 0 <= v <= 1 for v in value) or value[0] >= value[2] or value[1] >= value[3]):
+        raise ValueError("Expected a normalized nonempty rectangle")
+    return [float(v) for v in value]
+
+
+def _json(path, default):
+    try:
+        if path.is_symlink() or path.stat().st_size > 8 * 1024 * 1024:
+            return default
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return default
+
+
+class ZoneFeedback:
+    def __init__(self, directory=None):
+        self.directory = Path(directory or os.environ.get("CLOUDPHONE_REVIEW_FEEDBACK_DIR", "/var/lib/cloudphone-review"))
+        self.path = self.directory / "zone-feedback.json"
+
+    @contextlib.contextmanager
+    def locked(self, exclusive=False):
+        self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        fd = os.open(self.directory / ".zone-feedback.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH)
+            yield
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
+
+    def read(self):
+        if not self.path.exists():
+            return []
+        with self.locked():
+            value = _json(self.path, None)
+            if not isinstance(value, dict) or not isinstance(value.get("items"), list):
+                raise OSError("Shared zone feedback is unreadable")
+            return value["items"]
+
+    def append(self, body, known_screens=None):
+        if not isinstance(body, dict) or set(body) - {"nodeId", "zoneId", "screen", "operation", "kind", "rect", "label", "conditional"}:
+            raise ValueError("Invalid zone proposal")
+        operation, kind, screen, node = (body.get(key) for key in ("operation", "kind", "screen", "nodeId"))
+        if not isinstance(operation, str) or not isinstance(kind, str) or operation not in {"add", "remove"} or kind not in KINDS:
+            raise ValueError("Unsupported proposal operation or kind")
+        if not isinstance(screen, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", screen):
+            raise ValueError("Invalid screen")
+        if not isinstance(node, str) or not re.fullmatch(r"(?:screen:[A-Za-z0-9_-]+|example:[A-Za-z0-9_-]+|manual:[0-9a-f]{32}:(?:before|after)|trace:[0-9]+)", node):
+            raise ValueError("A specific evidence node is required")
+        unknown = screen in UNKNOWN or known_screens is not None and screen not in known_screens
+        if unknown and node.startswith("screen:"):
+            raise ValueError("An anonymous screen proposal must identify its exact evidence node")
+        zone = body.get("zoneId") or ("user:" + uuid.uuid4().hex if operation == "add" else None)
+        if not isinstance(zone, str) or not re.fullmatch(r"[A-Za-z0-9:._-]{1,240}", zone):
+            raise ValueError("Invalid zoneId")
+        label = body.get("label", "")
+        if not isinstance(label, str) or len(label) > 200:
+            raise ValueError("Label is too long")
+        if "conditional" in body and not isinstance(body["conditional"], bool):
+            raise ValueError("conditional must be boolean")
+        item = {"id": uuid.uuid4().hex, "at": time.time(), "nodeId": node, "zoneId": zone, "screen": screen,
+                "operation": operation, "kind": kind, "rect": rectangle(body.get("rect")), "label": label,
+                "pending": True, "status": "pending", "gestureAuthority": False,
+                "conditional": body.get("conditional", False), "scope": "node" if unknown else "screen", "known": not unknown}
+        with self.locked(exclusive=True):
+            previous = _json(self.path, None) if self.path.exists() else {"version": 1, "items": []}
+            if not isinstance(previous, dict) or not isinstance(previous.get("items"), list):
+                raise OSError("Existing shared zone feedback is unreadable")
+            def key(value):
+                zone_id = value.get("zoneId", "")
+                if zone_id.startswith("region:"):
+                    zone_id = "manual:" + zone_id[7:]
+                if zone_id.startswith("policy:") and zone_id.count(":") == 1:
+                    zone_id = "policy:" + value.get("screen", "") + ":" + zone_id[7:]
+                return (value.get("operation"), value.get("screen"), zone_id, value.get("kind"),
+                        value.get("rect"), value.get("nodeId") if value.get("scope") == "node" else None)
+            for existing in previous["items"]:
+                if existing.get("pending") is True and key(existing) == key(item):
+                    return existing
+            if len(previous["items"]) >= 10000:
+                raise OSError("Zone feedback capacity reached")
+            fd, temporary = tempfile.mkstemp(prefix=".zone-feedback-", dir=self.directory)
+            try:
+                with os.fdopen(fd, "w") as output:
+                    os.fchmod(output.fileno(), 0o600)
+                    json.dump({"version": 1, "items": previous["items"] + [item]}, output)
+                    output.flush()
+                    os.fsync(output.fileno())
+                os.replace(temporary, self.path)
+                directory = os.open(self.directory, os.O_RDONLY | os.O_DIRECTORY)
+                try:
+                    os.fsync(directory)
+                finally:
+                    os.close(directory)
+            finally:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
+        return item
+
+    def read_annotations(self, data_dir, known_screens=None):
+        data = Path(data_dir)
+        ledger = _json(self.directory / "trace-review.json", {})
+        ledger = ledger if isinstance(ledger, dict) else {}
+        items, zones = ledger.get("items", {}), {}
+        kinds = {"scannable": "detection"}
+        def known(value):
+            return isinstance(value, str) and value not in UNKNOWN and (known_screens is None or value in known_screens)
+        for annotation in ledger.get("annotations", []):
+            if not isinstance(annotation, dict) or annotation.get("review_status") != "processed" or not known(annotation.get("screen")):
+                continue
+            try:
+                rect = rectangle(annotation.get("rect"))
+            except ValueError:
+                continue
+            kind = kinds.get(annotation.get("kind"), annotation.get("kind"))
+            if kind not in KINDS:
+                continue
+            zone_id = annotation.get("id")
+            if not isinstance(zone_id, str):
+                continue
+            zones[zone_id] = {"id": zone_id, "zoneId": zone_id, "screen": annotation["screen"], "kind": kind,
+                              "rect": rect, "nodeId": annotation.get("nodeId"), "source": "reviewed_user_evidence",
+                              "user": True, "conditional": False, "forbidden": kind == "forbidden", "gestureAuthority": False}
+        for path in sorted((data / "manual-clicks").glob("*.json")):
+            if not re.fullmatch(r"[0-9a-f]{32}", path.stem):
+                continue
+            entry = _json(path, {})
+            if not isinstance(entry, dict) or entry.get("capture_status") != "complete":
+                continue
+            kind = kinds.get(entry.get("kind"), entry.get("kind"))
+            if kind not in KINDS:
+                continue
+            reviewed = items.get("manual:" + path.stem, {}) if isinstance(items, dict) else {}
+            before = reviewed.get("before", {})
+            scan = before.get("scan") if before.get("status") == "processed" else None
+            if reviewed and before.get("status") != "processed":
+                continue  # Historical misclassifications never become blanket overlays.
+            if scan is None:
+                if entry.get("at", 0) < max(time.time() - 300, ledger.get("updated_at", 0)):
+                    continue
+                scan = entry.get("before_scan", {})
+            if not isinstance(scan, dict):
+                continue
+            overlays = [value for value in scan.get("overlays", []) if value not in {"panel", "better_weapon_toast"}]
+            screen = before.get("screen") if before.get("status") == "processed" else (overlays[-1] if overlays else scan.get("screen"))
+            if screen == "battle" and "panel" in scan.get("overlays", []) and not overlays:
+                continue
+            if screen == "quest_panel" and scan.get("quest_tab"):
+                screen = "quest_" + scan["quest_tab"]
+            if not known(screen):
+                continue
+            tap = entry.get("tap", {})
+            rect = entry.get("rect")
+            trajectory = None
+            try:
+                if kind in {"vertical", "horizontal", "draggable"} and isinstance(tap.get("end"), dict):
+                    trajectory = [{"x": float(tap["x"]), "y": float(tap["y"])},
+                                  {"x": float(tap["end"]["x"]), "y": float(tap["end"]["y"])}]
+                if rect is None and trajectory:
+                    rect = [min(p["x"] for p in trajectory), min(p["y"] for p in trajectory),
+                            max(p["x"] for p in trajectory), max(p["y"] for p in trajectory)]
+                    for axis in (0, 1):
+                        if rect[axis] == rect[axis + 2]:
+                            rect[axis], rect[axis + 2] = max(0, rect[axis] - .015), min(1, rect[axis + 2] + .015)
+                if rect is None:
+                    x, y = float(tap["x"]), float(tap["y"])
+                    rect = [max(0, x - .015), max(0, y - .015), min(1, x + .015), min(1, y + .015)]
+                rect = rectangle(rect)
+            except (KeyError, TypeError, ValueError):
+                continue
+            zone_id = "manual:" + path.stem
+            zone = {"id": zone_id, "zoneId": zone_id, "aliases": ["region:" + path.stem],
+                    "nodeId": zone_id + ":before", "screen": screen, "kind": kind, "rect": rect,
+                    "label": kind, "source": "reviewed_user_evidence" if reviewed else "user_recorded_unverified",
+                    "user": True, "conditional": False, "forbidden": kind == "forbidden", "gestureAuthority": False}
+            if trajectory:
+                zone["trajectory"] = trajectory
+            zones[zone_id] = zone
+        for item in self.read():
+            if item.get("scope") == "node" or item.get("known") is False or not known(item.get("screen")):
+                continue
+            if item["operation"] == "add":
+                zones[item["zoneId"]] = {**item, "id": item["zoneId"], "source": "user_feedback", "user": True, "proposal": "add"}
+                continue
+            matched = False
+            for zone in zones.values():
+                if zone["screen"] == item["screen"] and (item["zoneId"] in [zone["id"], *zone.get("aliases", [])]
+                        or zone["kind"] == item["kind"] and max(abs(a - b) for a, b in zip(zone["rect"], item["rect"])) <= .003):
+                    zone.update(proposal="remove", removedProposal=True, pending=True)
+                    matched = True
+            if not matched:
+                zones["proposal:" + item["id"]] = {**item, "id": item["zoneId"], "source": "removal_proposal",
+                                                    "proposal": "remove", "removedProposal": True, "user": True}
+        return list(zones.values())

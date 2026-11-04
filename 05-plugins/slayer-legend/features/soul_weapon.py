@@ -379,12 +379,28 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
             return "cached"
         status["cache"] = None
         recovered = {}
+        equipment_input, equipment_launch = input_mark(), status["relaunched"]
         shot = await open_screen(recovered, {"id": target_id, "variant": variant})
         memory = rules.fresh_memory(status["direction"])
         view = await ports.analyse(view_of, shot)
+        def equipment_proof_current(seen):
+            # Five-minute engraving refreshes do not invalidate equipment
+            # proof. When its selected cell is outside the list viewport,
+            # retain that proof instead of selecting another weapon merely
+            # to scroll back to the same card. Selection alone is insufficient.
+            return bool(cache and not pending and cache.get("id") == target_id
+                        and cache.get("variant") == variant
+                        and equipment_input == input_mark() and equipment_launch == status["relaunched"]
+                        and rules.fresh_cache(cache, ports.clock.wall(),
+                                              (input_mark() or {}).get("wall"), status["relaunched"])
+                        and seen.get("open") and seen.get("selected") == target
+                        and (seen.get("owned") or 0) >= 1 and seen.get("tag") is None
+                        and rules.selected_row(seen) is None and not seen.get("tags"))
         result, moves = "equipped", 0
         while True:
             require_enabled()
+            if moves == 0 and equipment_proof_current(view):
+                break
             memory = rules.observe(memory, view, order)
             step = rules.plan(view, target, memory, order, reader.TAG_LEARNED)
             if step[0] == "done":
@@ -443,7 +459,8 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
             raise Stop(mismatch)
         # Engraving verifies its selected weapon, not whether that weapon
         # remained equipped. Prove the complete result again before leaving
-        # or publishing success; an old view or a badge is insufficient.
+        # or publishing success. Only an unchanged, previously verified
+        # equipment proof can cover an offscreen tag; selection/badge cannot.
         require_enabled()
         def final_view(shot):
             return view_of(shot) if reader.title(shot) else {}
@@ -458,12 +475,14 @@ def soul_weapon(ports, screens, reader, rules, table, helpers, engraving=None):
             selected = final.get("selected")
             # A readable different name or tag is evidence of failure. Only
             # incomplete transition readings may wait, without any action.
-            if selected and (selected != target or final.get("tag")):
+            if selected and (selected != target or final.get("tag")
+                             or moves == 0 and equipment_proof_current(final)):
                 break
             if ports.clock.monotonic() >= end:
                 break
             await ports.clock.sleep(rules.POLL)
-        if not final.get("open") or final.get("selected") != target or final.get("tag") != "Unequip":
+        if (not final.get("open") or final.get("selected") != target
+                or final.get("tag") != "Unequip" and not (moves == 0 and equipment_proof_current(final))):
             raise Stop("vérification finale de l’équipement (lu : {name}, {tag})",
                        name=final.get("selected") or ports.t("nom illisible"),
                        tag=final.get("tag") or ports.t("étiquette illisible"))

@@ -2,21 +2,37 @@
 
 import json
 import math
+import importlib.util
+import asyncio
 from pathlib import Path
 
 
 def navigation_debug(ports, navigation, directory, screens=None, geometry=None):
     registry = json.loads((Path(directory) / "screen_registry.json").read_text(encoding="utf-8"))
+    known_screens = set(navigation.SCREENS) | set(registry["tree"]) | set(registry["screens"])
+    feedback_spec = importlib.util.spec_from_file_location("slayer_shared_zone_feedback", Path(directory) / "zone_feedback.py")
+    feedback_module = importlib.util.module_from_spec(feedback_spec)
+    feedback_spec.loader.exec_module(feedback_module)
+    feedback = feedback_module.ZoneFeedback()
+    data_path = getattr(ports, "data_path", None)
+    data_directory = data_path("") if callable(data_path) else None
     graph = {"tolerance": navigation.TOLERANCE, "screens": {}}
     for screen, node in navigation.SCREENS.items():
         graph["screens"][screen] = {
-            "name": node.get("name", screen),
+            "name": registry["screens"].get(screen, {}).get("label", node.get("name", screen)),
             "moves": [{key: move[key] for key in
                        ("id", "kind", "tap", "hold", "area", "swipe", "forbidden", "precondition", "needs", "assumed", "combat_return", "semantic_kind")
                        if key in move} for move in node.get("moves", [])],
         }
-    tree = {screen: {key: node[key] for key in ("name", "parent", "scroll") if key in node}
+    tree = {screen: {key: node[key] for key in ("name", "parent", "scroll", "battle_viewport") if key in node}
             for screen, node in registry["tree"].items()}
+    for screen, node in registry["screens"].items():
+        tree.setdefault(screen, {})["battle_viewport"] = node["battle_viewport"]
+        if "label" in node:
+            tree[screen]["name"] = node["label"]
+    for screen in graph["screens"]:
+        tree.setdefault(screen, {}).setdefault("battle_viewport", {
+            "size": "unknown", "rect": None, "source": None, "calibrated": False, "shaded": None})
     # Guard envelopes are not UI button bounds. These positions depend on
     # fresh piece/tag readers and cannot be painted as broad grid/list boxes.
     dynamic = {"character_enhance": {"enhance_stat"}, "soul_weapon": {"equip", "unequip"},
@@ -118,4 +134,30 @@ def navigation_debug(ports, navigation, directory, screens=None, geometry=None):
             return ports.respond({"dynamic": await ports.analyse(dynamic_geometry, shot, captured_at)})
         return ports.respond({"graph": graph, "registry": {"tree": tree}})
 
-    return {"routes": [("GET", "/navigation-debug", handle)]}
+    async def annotations(request):
+        try:
+            return ports.respond({"annotations": await asyncio.to_thread(feedback.read_annotations, data_directory, known_screens)
+                                  if data_directory else [], "gestureAuthority": False})
+        except OSError:
+            return ports.respond({"annotations": [], "error": "Annotation storage unavailable"}, status=503)
+
+    async def read_feedback(request):
+        try:
+            return ports.respond({"items": await asyncio.to_thread(feedback.read), "gestureAuthority": False})
+        except OSError:
+            return ports.respond({"error": "Feedback storage unavailable"}, status=503)
+
+    async def write_feedback(request):
+        try:
+            body = await request.json()
+            item = await asyncio.to_thread(feedback.append, body, known_screens=known_screens)
+            return ports.respond({"item": item, "gestureAuthority": False}, status=201)
+        except (ValueError, TypeError):
+            return ports.respond({"error": "Invalid developer feedback proposal"}, status=400)
+        except OSError:
+            return ports.respond({"error": "Feedback storage unavailable"}, status=503)
+
+    return {"routes": [("GET", "/navigation-debug", handle),
+                       ("GET", "/navigation/annotations", annotations),
+                       ("GET", "/navigation/zone-feedback", read_feedback),
+                       ("POST", "/navigation/zone-feedback", write_feedback)]}

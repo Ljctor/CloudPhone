@@ -1,6 +1,9 @@
 """Autonomous resource visits: eligibility, required evidence and bounds.
 No game input or runtime guesses. Geometry stays in navigation.json.
 """
+import json
+from pathlib import Path
+
 HOLDER = "resource_refresh"
 MODES = ("mpw18", "mpw4", "soul")
 EVERY = 300
@@ -44,3 +47,28 @@ def missing(screens, navigation, equipment):
                    for area in screens.TREE.get(screen, {}).get("scroll", ())):
             absent.append(f"{screen}/scroll_geometry")
     return absent
+
+# Extend this catalogue only when an exact reader and its return route have
+# real calibration evidence. Pending entries never become navigation requests.
+CATALOG = json.loads((Path(__file__).resolve().parent.parent / 'resources.json').read_text())
+RESOURCE_FIELDS = tuple(row['field'] for row in CATALOG if not row['pending'])
+EXTRA_FIELDS = ('weapon_l3', 'accessory_l3')
+READERS = ('gold', 'currencies', 'cubes', 'equipment_l3', 'souls')
+TOP_FIELDS = ('gold', 'emerald', 'diamond')
+SOUL_FIELDS = ('soul_green', 'soul_blue', 'soul_red', 'soul_white')
+
+
+def priority(facts, read):
+    """Never observed first, then unverified, then oldest acquisition time."""
+    fields = (*RESOURCE_FIELDS, *EXTRA_FIELDS)
+    def key(field):
+        fact = facts.get(field) or {}
+        seen = fact.get('seen') if fact.get('value') is not None else read.get(field)
+        return (0 if seen is None else 1 if fact.get('verified') is False else 2,
+                float('-inf') if seen is None else seen, fields.index(field))
+    return sorted((*RESOURCE_FIELDS, *EXTRA_FIELDS), key=key)
+
+
+def unsupported():
+    return [{'field': row['field'], 'reason': 'reader_not_calibrated', 'navigation_allowed': False}
+            for row in CATALOG if row['pending']]

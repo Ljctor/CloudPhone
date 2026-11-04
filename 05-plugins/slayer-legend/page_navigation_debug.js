@@ -4,9 +4,11 @@
 import visualTracker from './page_navigation_tracking.js';
 import { getScreen } from './page_screen_scan.js';
 import capturePreview, { archivedScreen } from './page_navigation_preview.js';
-export const COLOURS = { tap: '#ffe100', action: '#ff9a23', draggable: '#ff65bd',
+import { zoneStyle } from './page_zone_style.js';
+export const COLOURS = { tap: '#ffe100', navigation: '#ffe100', action: '#ff9a23', forbidden: '#ff5353', detection: '#2dd4bf', scannable: '#2dd4bf', draggable: '#ff65bd',
   vertical: '#168bff', horizontal: '#bb50ff' };
 const RECTANGLE_ANNOTATIONS = ['scannable', 'action', 'draggable'];
+let trajectorySerial = 0;
 
 function covers(move, x, y, tolerance) {
   if (move.area) {
@@ -54,16 +56,18 @@ export function zonesFor(screen, graph, registry, scan = null, tracked = null, d
       rect: known?.rect ?? [Math.min(x1, x2) - 0.025, Math.min(y1, y2) - 0.015,
         Math.max(x1, x2) + 0.025, Math.max(y1, y2) + 0.015] });
   }
-  for (const move of moves.filter((item) => ['action', 'draggable'].includes(item.semantic_kind))) {
+  for (const move of moves.filter((item) => item.forbidden || ['action', 'draggable'].includes(item.semantic_kind))) {
     if (move.id === 'better_weapon_toast' && !scan?.overlays?.includes('better_weapon_toast')) continue;
     // Some guard envelopes intentionally cover a list or grid. They are
     // not button bounds: only explicit debug rectangles may replace them.
-    const rects = move.debug_rects ?? (move.debug_dynamic ? [] : move.area ? [move.area]
-      : move.tap ? [[move.tap[0] - .025, move.tap[1] - .012, move.tap[0] + .025, move.tap[1] + .012]] : []);
+    const point = move.tap ?? move.hold;
+    const rects = move.forbidden && move.area ? [move.area] : move.debug_rects ?? (move.debug_dynamic ? [] : move.area ? [move.area]
+      : point ? [[point[0] - (move.forbidden ? tolerance : .025), point[1] - (move.forbidden ? tolerance : .012),
+        point[0] + (move.forbidden ? tolerance : .025), point[1] + (move.forbidden ? tolerance : .012)]] : []);
     for (const [index, rect] of rects.entries()) {
       if (zones.some((zone) => zone.kind === move.semantic_kind && JSON.stringify(zone.rect) === JSON.stringify(rect))) continue;
       zones.push({ id: `${move.id}-${index}`, move: move.id,
-        kind: move.semantic_kind, forbidden: move.semantic_kind === 'action' || Boolean(move.forbidden),
+        kind: move.semantic_kind === 'draggable' ? 'draggable' : 'action', forbidden: Boolean(move.forbidden),
         conditional: Boolean(move.precondition), rect });
     }
   }
@@ -92,10 +96,11 @@ export function zonesFor(screen, graph, registry, scan = null, tracked = null, d
     }
   }
   return zones.flatMap((zone) => {
-    if (zone.fixed || !['tap', 'action', 'draggable'].includes(zone.kind) || !tracked?.has(zone.id)) return [zone];
+    if (zone.fixed || zone.forbidden || !['tap', 'action', 'draggable'].includes(zone.kind) || !tracked?.has(zone.id)) return [zone];
     const rect = tracked.get(zone.id);
     return rect ? [{ ...zone, rect }] : [];
-  });
+  }).sort((a, b) => Number(Boolean(a.forbidden || a.kind === 'forbidden'))
+    - Number(Boolean(b.forbidden || b.kind === 'forbidden')));
 }
 
 export function recognisedScreen(scan) {
@@ -112,13 +117,43 @@ export function landmarksFor(screen, registry) {
   }));
 }
 
+export function feedbackZones(screen, configured, annotations, scan = null) {
+  if (!screen || ['unknown', 'other', 'menu'].includes(screen)) return configured;
+  const identities = new Set([screen]);
+  if (screen === 'quest_panel' && ['daily', 'repeat', 'achievement'].includes(scan?.quest_tab)) identities.add(`quest_${scan.quest_tab}`);
+  const user = annotations.filter((zone) => identities.has(zone.screen) && zone.user === true
+    && zone.rect?.length === 4 && zone.rect.every((value) => Number.isFinite(value) && value >= 0 && value <= 1)
+    && zone.rect[0] < zone.rect[2] && zone.rect[1] < zone.rect[3]);
+  const removals = user.filter((zone) => zone.proposal === 'remove' || zone.removedProposal);
+  const matched = new Set();
+  const canonical = (id) => typeof id === 'string' ? id
+    .replace(/^edge:configured:[^:]+:/, '').replace(new RegExp(`^policy:${screen}:`), '').replace(/^policy:/, '') : null;
+  const kind = (zone) => zone.detection || ['scannable', 'detection'].includes(zone.kind) ? 'detection'
+    : zone.kind === 'tap' ? 'navigation' : zone.kind;
+  const idMatches = (item, zone) => {
+    const configuredIds = [zone.id, zone.move, ...(zone.aliases ?? [])].map(canonical).filter(Boolean);
+    return [item.zoneId, item.id, ...(item.aliases ?? [])].map(canonical)
+      .some((id) => id && configuredIds.includes(id));
+  };
+  const anchored = new Set(removals.filter((item) => configured.some((zone) => idMatches(item, zone))));
+  return [...configured.map((zone) => {
+    const pending = removals.find((item) => idMatches(item, zone) || !anchored.has(item)
+      && !/^(manual|region):/.test(item.zoneId ?? item.id) && kind(item) === kind(zone)
+      && item.rect.every((value, index) => Math.abs(value - zone.rect[index]) <= .003));
+    if (!pending) return zone;
+    matched.add(pending);
+    return { ...zone, proposal: 'remove', user: true };
+  }), ...user.filter((zone) => !matched.has(zone))].sort((a, b) => Number(Boolean(a.forbidden || a.kind === 'forbidden'))
+    - Number(Boolean(b.forbidden || b.kind === 'forbidden')));
+}
+
 export const ANNOTATIONS = [
   { kind: 'navigation', label: 'Ajouter un bouton de navigation' },
   { kind: 'forbidden', label: 'Déclarer un bouton de navigation interdit' },
   { kind: 'scannable', label: 'Marquer un élément scannable' },
   { kind: 'vertical', label: 'Marquer un slider vertical' },
   { kind: 'horizontal', label: 'Marquer un slider horizontal' },
-  { kind: 'action', label: 'Marquer un bouton d’action (interdit)' },
+  { kind: 'action', label: 'Marquer un bouton d’action' },
   { kind: 'draggable', label: 'Marquer un élément déplaçable' },
 ];
 
@@ -247,6 +282,12 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
   let correctionOpen = false;
   let dynamic = null;
   let dynamicAt = 0;
+  let userAnnotations = [];
+  let feedbackMode = false;
+  let feedbackTarget = null;
+  let feedbackMessage = '';
+  let currentZones = [];
+  let holdTimer = null;
   const active = () => !disposed && enabled() && api.setting('navigationDebug') === 'on';
   const busy = () => ['arming', 'armed', 'saving', 'cancelling'].includes(captureState);
   const clear = () => { closePreview?.(); closePreview = null; layer.replaceChildren(); layer.remove(); rendered = ''; };
@@ -269,11 +310,14 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
   function drawZone(zone, parent = layer) {
     const [left, top, right, bottom] = zone.rect.map((part) => Math.max(0, Math.min(1, part)));
     const box = document.createElement('div');
-    const colour = zone.kind === 'forbidden' ? '#ff5353' : zone.kind === 'scannable' ? '#52e99a' : COLOURS[zone.kind];
-    const slider = zone.kind === 'vertical' || zone.kind === 'horizontal';
+    const forbidden = zone.forbidden || zone.kind === 'forbidden';
+    const detection = zone.detection || ['scannable', 'detection'].includes(zone.kind);
+    const colour = forbidden ? COLOURS.forbidden : COLOURS[zone.kind];
+    const slider = !forbidden && (zone.kind === 'vertical' || zone.kind === 'horizontal');
+    const visual = zoneStyle(zone);
     box.style.cssText = `position:absolute;left:${left * 100}%;top:${top * 100}%;width:${(right - left) * 100}%;height:${(bottom - top) * 100}%;box-sizing:border-box;color:${colour};pointer-events:none`;
     if (slider) {
-      box.style.cssText += `;border:2px ${zone.conditional ? 'dashed' : 'solid'} ${colour};background:${colour}33;border-radius:3px`;
+      box.style.cssText += `;background:${colour}33;border-radius:0`;
       box.style.cssText += `;display:flex;flex-direction:${zone.kind === 'vertical' ? 'column' : 'row'};align-items:center;justify-content:space-between;font:bold 22px sans-serif;text-shadow:0 1px 3px #000`;
       for (const glyph of zone.kind === 'vertical' ? ['⌃', '⌄'] : ['❮', '❯']) {
         const chevron = document.createElement('span');
@@ -282,11 +326,52 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
         box.append(chevron);
       }
     } else {
-      box.style.cssText += `;border:2px ${zone.conditional ? 'dashed' : 'solid'} ${colour};background:${colour}33;border-radius:3px`;
+      box.style.cssText += `;background:${colour}33;border-radius:0`;
     }
-    box.setAttribute('data-zone-kind', zone.detection ? 'detection' : ['action', 'draggable'].includes(zone.kind) ? zone.kind : 'navigation');
-    const label = zone.forbidden ? `${zone.id} · ${api.tr('Action interdite')}` : zone.id;
-    box.title = zone.detection ? `${api.tr('Repère de détection')} · ${zone.id}` : zone.conditional ? `${label} · ${api.tr('condition à vérifier')}` : label;
+    box.style.cssText += `;opacity:${visual.opacity};border:${visual.dash === 'none' ? `${visual.width}px solid ${colour}` : '0'}`;
+    if (visual.opacity < 1) box.style.cssText += ';background:transparent';
+    if (visual.double) box.style.cssText += `;outline:1px solid ${colour};outline-offset:-4px`;
+    if (visual.dash !== 'none') {
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('viewBox', '0 0 100 100'); svg.setAttribute('preserveAspectRatio', 'none');
+      svg.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none';
+      const outline = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      for (const [key, value] of Object.entries({ x: .5, y: .5, width: 99, height: 99, fill: 'none',
+        stroke: colour, 'stroke-width': visual.width, 'stroke-dasharray': visual.dash,
+        'stroke-linecap': visual.linecap, 'vector-effect': 'non-scaling-stroke' })) outline.setAttribute(key, value);
+      svg.append(outline); box.append(svg);
+    }
+    if (['vertical', 'horizontal', 'draggable'].includes(zone.kind) && zone.trajectory?.length >= 2
+        && zone.trajectory.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y))) {
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('viewBox', '0 0 100 100'); svg.setAttribute('preserveAspectRatio', 'none');
+      svg.setAttribute('data-zone-trajectory', zone.kind);
+      svg.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none';
+      const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+      const markerId = `zone-chevron-${++trajectorySerial}`;
+      for (const [key, value] of Object.entries({ id: markerId, viewBox: '0 0 10 10', refX: 8, refY: 5,
+        markerWidth: 6, markerHeight: 6, orient: 'auto' })) marker.setAttribute(key, value);
+      const chevron = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      for (const [key, value] of Object.entries({ d: 'M1 1 L8 5 L1 9', fill: 'none', stroke: colour,
+        'stroke-width': 1.5, 'stroke-dasharray': 'none' })) chevron.setAttribute(key, value);
+      marker.append(chevron); svg.append(marker);
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+      const points = zone.trajectory.map((point) => `${(point.x - left) / (right - left) * 100},${(point.y - top) / (bottom - top) * 100}`).join(' ');
+      for (const [key, value] of Object.entries({ points, fill: 'none', stroke: colour, 'stroke-width': 2,
+        'stroke-dasharray': 'none', 'vector-effect': 'non-scaling-stroke', 'marker-end': `url(#${markerId})` })) line.setAttribute(key, value);
+      svg.append(line); box.append(svg);
+    }
+    box.setAttribute('data-zone-source', zone.user ? 'user' : 'configured');
+    box.setAttribute('data-zone-origin', zone.source ?? (zone.user ? 'user_feedback' : 'navigation_guard'));
+    box.setAttribute('data-zone-kind', forbidden ? 'forbidden' : detection ? 'detection' : ['action', 'draggable'].includes(zone.kind) ? zone.kind : 'navigation');
+    const label = forbidden ? `${zone.id} · ${api.tr('Action interdite')}` : zone.id;
+    box.title = detection && !forbidden ? `${api.tr('Repère de détection')} · ${zone.id}` : zone.conditional ? `${label} · ${api.tr('condition à vérifier')}` : label;
+    if (detection && !forbidden) {
+      const caption = document.createElement('span');
+      caption.textContent = `${api.tr('Repère de détection')} · ${zone.id}`;
+      caption.style.cssText = `position:absolute;left:0;top:0;max-width:100%;overflow:hidden;white-space:nowrap;background:#000c;color:${colour};font:10px sans-serif;line-height:12px`;
+      box.append(caption);
+    }
     parent.append(box);
     return box;
   }
@@ -298,15 +383,17 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
     const zones = zonesFor(screen, graph, registry, scan, null, dynamic);
     const tracked = tracker.update(screen, zones, registry?.tree?.[screen]?.scroll ?? []);
     zoneLayer.replaceChildren();
-    for (const zone of landmarksFor(screen, registry)) drawZone(zone, zoneLayer);
-    for (const zone of zonesFor(screen, graph, registry, scan, tracked, dynamic)) drawZone(zone, zoneLayer);
+    const configured = [...landmarksFor(screen, registry), ...zonesFor(screen, graph, registry, scan, tracked, dynamic)]
+      .map((zone) => ({ ...zone, source: zone.source ?? (zone.detection ? 'calibrated_reader' : 'navigation_guard') }));
+    currentZones = feedbackZones(screen, configured, graph.screens?.[screen] ? userAnnotations : [], scan);
+    for (const zone of currentZones) drawZone(zone, zoneLayer);
   }
 
   function render() {
     if (!active() || !graph || !registry) { clear(); return; }
     floating.clamp();
     if (floating.dragging) { floating.afterDrag(render); return; }
-    const signature = JSON.stringify([screen, scan?.plain, scan?.overlays, captureState, captureId, captureKind, record, snapshotPending, snapshotMessage, correctionOpen]);
+    const signature = JSON.stringify([screen, scan?.plain, scan?.overlays, captureState, captureId, captureKind, record, snapshotPending, snapshotMessage, correctionOpen, feedbackMode, feedbackTarget?.id, feedbackMessage]);
     renderZones();
     if (signature === rendered && layer.isConnected) return;
     rendered = signature;
@@ -318,6 +405,59 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
     name.textContent = api.tr('Écran : {screen}', { screen: label });
     name.style.cssText = 'position:absolute;left:50%;top:1%;transform:translateX(-50%);max-width:90%;padding:3px 7px;border:1px solid #ffe100;border-radius:4px;background:#000c;color:#fff;font:600 12px sans-serif;text-align:center';
     layer.append(name);
+
+    if (feedbackMode && !busy()) {
+      const surface = document.createElement('div');
+      surface.setAttribute('data-zone-feedback-surface', '');
+      surface.style.cssText = 'position:absolute;inset:0;pointer-events:auto;touch-action:none;user-select:none;z-index:1';
+      surface.onclick = surface.ondblclick = surface.oncontextmenu = surface.onwheel = stop;
+      let origin = null;
+      const cancelHold = () => { clearTimeout(holdTimer); holdTimer = null; };
+      surface.onpointerdown = (event) => {
+        stop(event); cancelHold();
+        origin = annotationPoint(event, surface.getBoundingClientRect());
+        surface.setPointerCapture?.(event.pointerId);
+        const target = [...currentZones].reverse().find((zone) => zone.rect[0] <= origin.x && origin.x <= zone.rect[2]
+          && zone.rect[1] <= origin.y && origin.y <= zone.rect[3]);
+        const identity = screen;
+        if (target && identity) holdTimer = setTimeout(() => {
+          if (!active() || !feedbackMode || screen !== identity) return;
+          feedbackTarget = { ...target, screen: target.screen ?? identity, displayScreen: identity }; render();
+        }, 500);
+      };
+      surface.onpointermove = (event) => {
+        stop(event);
+        const point = annotationPoint(event, surface.getBoundingClientRect());
+        if (origin && Math.hypot(point.x - origin.x, point.y - origin.y) > .02) cancelHold();
+      };
+      surface.onpointerup = surface.onpointercancel = (event) => { stop(event); cancelHold(); origin = null; };
+      if (feedbackTarget) {
+        const remove = document.createElement('button');
+        remove.type = 'button'; remove.textContent = api.tr('Supprimer · proposition uniquement');
+        remove.setAttribute('data-zone-feedback-remove', feedbackTarget.id);
+        remove.style.cssText = 'position:absolute;left:10%;top:15%;max-width:80%;padding:10px;pointer-events:auto;background:#171717;color:#fff;border:1px solid #ff5353';
+        remove.onpointerdown = remove.onpointerup = stop;
+        remove.onclick = async (event) => {
+          stop(event);
+          const target = feedbackTarget;
+          if (!active() || !target || (target.displayScreen ?? target.screen) !== screen) return;
+          const proposal = { zoneId: target.zoneId ?? target.id, nodeId: target.nodeId ?? `screen:${target.screen}`,
+            screen: target.screen, operation: 'remove', kind: target.kind === 'tap' ? 'navigation'
+              : target.kind === 'scannable' ? 'detection' : target.kind, rect: target.rect };
+          try {
+            const response = await api.post('/navigation/zone-feedback', proposal);
+            if (!response?.ok) throw Error('feedback rejected');
+            userAnnotations.push({ ...target, id: `pending:${target.id}`, zoneId: proposal.zoneId,
+              user: true, source: 'user_feedback', proposal: 'remove', removedProposal: true });
+            feedbackMessage = 'Proposition enregistrée pour le développeur · comportement inchangé';
+            feedbackTarget = null;
+          } catch { feedbackMessage = 'Échec de l’enregistrement'; }
+          render();
+        };
+        surface.append(remove);
+      }
+      layer.append(surface);
+    }
 
     // Annotation gestures are consumed here, before they reach Android.
     if (captureState === 'armed' && captureKind !== 'navigation') {
@@ -368,7 +508,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
       const button = document.createElement('button');
       button.type = 'button';
       button.textContent = api.tr(action.label);
-      button.disabled = busy() || snapshotPending;
+      button.disabled = busy() || snapshotPending || feedbackMode;
       button.style.cssText = 'flex:1 1 130px;padding:5px;border:1px solid #888;border-radius:3px;background:#292929;color:#fff;font:inherit;cursor:pointer';
       button.onclick = async (event) => {
         stop(event);
@@ -416,10 +556,20 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
         snapshotPending = false; render();
       };
       snapshotButton('Enregistrer cet écran', 'capture', () => captureScreen());
+      snapshotButton(feedbackMode ? 'Terminer la correction des zones' : 'Corriger une zone', 'zone-feedback', () => {
+        feedbackMode = !feedbackMode; feedbackTarget = null; feedbackMessage = '';
+        clearTimeout(holdTimer); render();
+      });
       snapshotButton(screen ? 'Mauvais écran détecté' : 'Identifier cet écran', 'correction', () => {
         correctionOpen = !correctionOpen; render();
       });
       content.append(snapshots);
+      if (feedbackMode || feedbackMessage) {
+        const note = document.createElement('div');
+        note.setAttribute('data-zone-feedback-instructions', '');
+        note.textContent = api.tr(feedbackMessage || 'Maintenez une zone 0,5 s pour proposer sa suppression. Aucun geste n’est envoyé au jeu.');
+        content.append(note);
+      }
       if (correctionOpen) {
         const correction = document.createElement('div');
         correction.style.cssText = 'display:flex;gap:4px;margin-top:6px';
@@ -506,8 +656,8 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
           stop(event); closePreview?.();
           const identity = archivedScreen(record, side);
           const historicalScan = record[`${side}_scan`];
-          const zones = identity ? [...landmarksFor(identity, registry), ...zonesFor(identity, graph, registry,
-            { ...historicalScan, at: Date.now() / 1000 })] : [];
+          const zones = identity ? feedbackZones(identity, [...landmarksFor(identity, registry), ...zonesFor(identity, graph, registry,
+            { ...historicalScan, at: Date.now() / 1000 })], userAnnotations, historicalScan) : [];
           closePreview = capturePreview({ layer: api.layer, record, side, zones, drawZone, tr: api.tr });
         };
         link.textContent = api.tr(label);
@@ -530,12 +680,15 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
     hiddenCheck = Date.now();
     refreshing = true;
     try {
-      const [state, archive] = await Promise.all([
+      const [state, archive, annotations] = await Promise.all([
         getScreen(api).catch(() => null), api.get('/trace/manual').catch(() => null),
+        api.get('/navigation/annotations').catch(() => null),
       ]);
       if (!active()) { clear(); return; }
       scan = state?.scan;
       screen = recognisedScreen(scan);
+      if (annotations?.annotations) userAnnotations = annotations.annotations;
+      if (feedbackTarget && (feedbackTarget.displayScreen ?? feedbackTarget.screen) !== screen) feedbackTarget = null;
       if (['character_enhance', 'soul_weapon', 'soul_weapon_engraving', 'soul_weapon_engraving_piece', 'soul_weapon_engraving_preview'].includes(screen)
           && Date.now() - dynamicAt >= 1000) {
         dynamicAt = Date.now();
@@ -579,9 +732,9 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
     debug: [{ type: 'choice', key: 'navigationDebug', label: 'Zones de navigation',
       choices: [{ value: 'off', label: 'Désactivé' }, { value: 'on', label: 'Activé' }] },
     { type: 'status', label: 'Légende navigation',
-      value: () => api.tr('Vert : repère de détection · jaune : navigation · orange : action interdite · rose : déplaçable · chevrons bleus : vertical · chevrons violets : horizontal · pointillés : condition à vérifier') }],
+      value: () => api.tr('Turquoise : repère de détection · jaune : navigation · orange : action · rouge : action interdite · rose : déplaçable · chevrons bleus : vertical · chevrons violets : horizontal · pointillés : vos annotations · double trait : condition à vérifier') }],
     onSetting: (key) => { if (key === 'navigationDebug') update(); },
     update,
-    dispose: () => { disposed = true; closePreview?.(); window.removeEventListener?.('resize', floating.clamp); stopTap?.(); window.clearInterval(timer); window.cancelAnimationFrame?.(animation); tracker.reset(); clear(); },
+    dispose: () => { disposed = true; clearTimeout(holdTimer); closePreview?.(); window.removeEventListener?.('resize', floating.clamp); stopTap?.(); window.clearInterval(timer); window.cancelAnimationFrame?.(animation); tracker.reset(); clear(); },
   };
 }

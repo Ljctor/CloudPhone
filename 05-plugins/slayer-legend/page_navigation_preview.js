@@ -1,5 +1,6 @@
 // Inspect archived images only. This viewer never sends input or changes
 // navigation/scan declarations.
+import { zoneStyle } from './page_zone_style.js';
 export function archivedScreen(record, side) {
   const scan = record?.[`${side}_scan`];
   if (!scan || scan.screen === 'unknown') return null;
@@ -59,15 +60,33 @@ export default function capturePreview({ layer, record, side, zones = [], drawZo
   frame.append(image);
   for (const zone of zones) drawZone?.(zone, frame);
   const tap = record.tap;
-  const rectangle = ['scannable', 'action', 'draggable'].includes(record.kind);
+  const rectangle = ['scannable', 'action', 'draggable', 'vertical', 'horizontal'].includes(record.kind) || record.kind === 'forbidden' && record.rect;
   const area = record.rect ?? (rectangle && tap?.end
     ? [Math.min(tap.x, tap.end.x), Math.min(tap.y, tap.end.y), Math.max(tap.x, tap.end.x), Math.max(tap.y, tap.end.y)] : null);
   if (area?.length === 4 && area.every(Number.isFinite)) {
-    const colour = record.kind === 'action' ? '#ff9a23' : record.kind === 'draggable' ? '#ff65bd' : '#52e99a';
-    const box = document.createElement('div');
+    const forbidden = record.forbidden || record.kind === 'forbidden';
+    const colour = forbidden ? '#ff5353' : record.kind === 'action' ? '#ff9a23' : record.kind === 'draggable' ? '#ff65bd'
+      : record.kind === 'vertical' ? '#168bff' : record.kind === 'horizontal' ? '#bb50ff' : '#2dd4bf';
+    const zone = { id: record.kind, kind: record.kind, forbidden, user: true,
+      proposal: record.proposal, detection: record.kind === 'scannable', rect: area,
+      trajectory: tap?.end ? [{ x: tap.x, y: tap.y }, tap.end] : null };
+    const visual = zoneStyle(zone);
+    const drawn = drawZone?.(zone, frame);
+    const box = drawn ?? document.createElement('div');
     box.setAttribute('data-recorded-rect', '');
-    box.style.cssText = `position:absolute;left:${area[0] * 100}%;top:${area[1] * 100}%;width:${(area[2] - area[0]) * 100}%;height:${(area[3] - area[1]) * 100}%;border:2px solid ${colour};background:${colour}33;box-sizing:border-box;pointer-events:none;z-index:2`;
-    frame.append(box);
+    if (!drawn) {
+      box.style.cssText = `position:absolute;left:${area[0] * 100}%;top:${area[1] * 100}%;width:${(area[2] - area[0]) * 100}%;height:${(area[3] - area[1]) * 100}%;border:0;background:${colour}33;border-radius:0;opacity:${visual.opacity};box-sizing:border-box;pointer-events:none`;
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('viewBox', '0 0 100 100'); svg.setAttribute('preserveAspectRatio', 'none');
+      svg.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none';
+      const outline = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      for (const [key, value] of Object.entries({ x: .5, y: .5, width: 99, height: 99, fill: 'none',
+        stroke: colour, 'stroke-width': visual.width, 'stroke-dasharray': visual.dash,
+        'stroke-linecap': visual.linecap, 'vector-effect': 'non-scaling-stroke' })) outline.setAttribute(key, value);
+      svg.append(outline); box.append(svg);
+      frame.append(box);
+    }
+    box.style.cssText += ';z-index:2';
   }
   if (!rectangle && tap && Number.isFinite(tap.x) && Number.isFinite(tap.y)) {
     const marker = document.createElement('div');

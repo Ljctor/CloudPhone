@@ -31,7 +31,9 @@ class QuickScreen(unittest.IsolatedAsyncioTestCase):
         ports = NS(clock=NS(monotonic=lambda: now[0], wall=lambda: now[0]), capture=capture,
                    focused=focused, analyse=analyse, respond=lambda value: value,
                    store=NS(saved={}), game={"scan": forbidden_scan})
-        screens = NS(look=lambda shot: {"screen": shot, "overlays": [], **(
+        viewport = {"size": "big", "rect": [0, .046, 1, .537], "calibrated": True,
+                    "source": "reviewed geometry", "shaded": False}
+        screens = NS(look=lambda shot: {"screen": shot, "overlays": [], "battle_viewport": viewport, **(
             {"quest_tab": "repeat"} if shot == "quest_panel" else {})})
         api = feature.screen(ports, screens, None, None, NS(number_or_none=lambda *args: None), None)
         route = next(handler for method, path, handler in api["routes"] if path == "/screen")
@@ -39,6 +41,7 @@ class QuickScreen(unittest.IsolatedAsyncioTestCase):
         results = await asyncio.gather(*(route(request) for _ in range(4)))
         self.assertEqual(len(captures), 1)
         self.assertEqual(results[0]["scan"]["screen"], "battle")
+        self.assertEqual(results[0]["scan"]["battle_viewport"], viewport)
         self.assertEqual(results[0]["scan"]["age"], 0)
         self.assertEqual(captures[0], .25)
         now[0] += .1

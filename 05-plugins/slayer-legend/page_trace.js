@@ -87,16 +87,6 @@ export default function trace(api) {
       }).catch(() => report('capture transport failed'));
     }
   });
-  // The counts, asked only while the panel shows them, at most every 5 s.
-  const traced = { answer: null, at: 0, busy: false };
-  const watchTrace = () => {
-    if (traced.busy || Date.now() - traced.at < 5000) return;
-    traced.busy = true;
-    api.get('/trace').catch(() => null).then((answer) => {
-      Object.assign(traced, { answer, at: Date.now(), busy: false });
-      api.refresh();
-    });
-  };
 
   return {
     options: [],
@@ -104,16 +94,6 @@ export default function trace(api) {
       {
         type: 'choice', key: 'traceTaps', label: 'Enregistrer mes parcours',
         choices: [{ value: 'on', label: 'Activé' }, { value: 'off', label: 'Désactivé' }],
-      },
-      {
-        type: 'status', label: 'Parcours enregistrés',
-        value: () => {
-          watchTrace();
-          const answer = traced.answer;
-          if (!answer) return '…';
-          if (!answer.enabled) return api.tr('indisponible (gateway sans dossier de données)');
-          return api.tr('{nodes} écrans, {taps} appuis', { nodes: answer.nodes, taps: answer.taps ?? answer.edges });
-        },
       },
     ],
     dispose: () => {

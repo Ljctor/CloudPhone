@@ -106,6 +106,9 @@ def screen(ports, screens, stage, rules, values, table):
                 plain = False
             answer = {"screen": name, "panel": None,
                       "scan": {"screen": name, "overlays": overlays, "plain": plain,
+                               "battle_viewport": seen.get("battle_viewport") if shot and focused else {
+                                   "size": "unknown", "rect": None,
+                                   "source": None, "calibrated": False, "shaded": None},
                                "at": captured}}
             if shot and focused and "quest_tab" in seen:
                 answer["scan"]["quest_tab"] = seen["quest_tab"]

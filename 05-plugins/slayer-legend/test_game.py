@@ -232,6 +232,12 @@ class Rules(unittest.TestCase):
         self.assertEqual(engraving['path'], ['Equipment: Weapon', 'Soul Weapon', 'Soul Weapon Engraving'])
         self.assertFalse({row['screen'] for row in answer['screens']} &
                          {'top_menu', 'top_ranking', 'top_settings', 'top_mail'})
+        presented = {row['screen'] for row in answer['screens']}
+        self.assertFalse(presented & {'quit_dialog', 'quest_panel', 'quest_daily', 'quest_repeat',
+                                     'quest_achievement', 'shop_package', 'shop_goods', 'shop_golden_key',
+                                     'shop_event', 'adventure_map', 'adventure_quest', 'dungeon_map', 'mine_list'})
+        self.assertEqual({screen for screen in presented if screen.startswith('shop_')},
+                         {'shop_summon', 'shop_summon_equipment', 'shop_summon_relic'})
         self.assertNotIn("gold_place", rows)
         json.dumps(answer)
 

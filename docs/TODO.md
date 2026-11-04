@@ -7,6 +7,39 @@ An unchecked item stays open until its whole user-visible path is verified.
 Implementation, automated tests, deployment and in-game verification are
 separate milestones. Historical checked items below do not close a new regression.
 
+### Navigation review and resource coverage acceptance
+
+- [ ] Deploy the private navigation review application on the requested port;
+  verify screenshot navigation, recorded slides, overlay toggle and saved feedback
+  from a browser. Keep configured routes distinct from observed transitions.
+- [x] Classify archived screenshots, manual annotations and passive edges into
+  explicit reviewed, ambiguous or rejected evidence without granting gestures.
+  A passive thumbnail does not constitute a full screenshot or calibration.
+- [ ] Resolve ambiguous archived evidence through real captures and feedback;
+  a processing disposition does not mean every navigation edge is proven.
+- [x] Distinguish navigation, actions, forbidden rectangles and recognition-only
+  landmarks in the shared live and archived debug renderer.
+- [x] Persist user zone edits separately from navigation authority and share them
+  between live debug and screenshot review. Reserve dots for user additions,
+  double outlines for configured conditions, and transparent long dashes for
+  proposed removals. Live correction mode consumes holds without game input.
+- [ ] Review and resolve pending zone proposals as developer changes; feedback
+  alone never modifies navigation permissions, readers or farming behavior.
+- [x] Separate screen identity (Combat Interface / Interface de combat) from
+  battlefield size (champ de bataille), measured bounds and shading. Unmeasured
+  layouts stay unknown; a menu displaying combat is not Combat Interface.
+- [x] Hide Quit, Quest and Adventure in game-state presentation; retain only
+  Shop > Summon and preserve global resources and recognition/navigation data.
+- [x] Retain current-session equipment proof during periodic engraving checks
+  when the selected equipped weapon's list cell is offscreen. Revalidate after
+  user input or a relaunch and always verify the grid and its locks.
+- [ ] Verify the extended common resource visit in all three farming modes,
+  including cancellation and return to Soul Weapon. Calibrated readers cover
+  eight resources; thirteen remaining readers/routes must be calibrated before
+  the full-resource request can be considered complete.
+- [ ] Complete a fresh automatic relaunch and target-setup acceptance after
+  silent process death; interruption testing must yield to recent user input.
+
 ### Architecture refactor acceptance
 
 - [x] Keep reader registry, fact storage, observation scheduling and capture
@@ -348,6 +381,19 @@ Follow-up release evidence:
 - [ ] Turn the historical details into live readers where a changing value matters; a dated capture is not a current value.
 - [ ] Calibrate the full-digit gold reader and restore gold/s measurement.
 - [ ] Replace remaining placeholder resource icons with verified game icons and add readers for the unread resources.
+- [ ] Prove the expanded resource circuit on real captures in Soul Farming,
+  mpw18 and mpw4: all eight calibrated resource fields plus both L3 counts,
+  never-read/unverified/old priority, exact acquisition times, partial OCR,
+  and a freshly recognised return to Soul Weapon. Synthetic circuit tests
+  do not establish this real-game proof. Keep the first supervised gate.
+- [ ] Calibrate the thirteen remaining resource readers and their safe return
+  routes before scheduling them: crystals, dice, green/blue/red/yellow stones,
+  white/green/purple/black feathers, Dragon Power, Dragon Spark and Black Mana.
+  Each requires real counter fixtures for the exact numeric value and a
+  tested screen identity. No new visit is authorised by a catalogue entry;
+  `black_orb/obtain` remains forbidden, including for reading black feathers.
+  The refresh API exposes these as unsupported and never claims full resource
+  coverage while they remain pending.
 - [ ] Alert in the web page and through ntfy when an expected overlay is absent.
 - [ ] Let Agent mode explore approved screens between farming checks, then return to the selected mode under the navigation guard.
 

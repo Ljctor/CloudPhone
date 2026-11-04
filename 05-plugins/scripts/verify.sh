@@ -4,7 +4,7 @@ set -euo pipefail
 base=${1:?Usage: verify.sh http://LISTEN_ADDRESS:WEB_PORT}
 # Real reviewed crops distinguish red drag ghosts from actionable controls;
 # this check stays deterministic and never gestures on the installed game.
-python3 "$(dirname "$0")/../slayer-legend/test_screen_model.py" EngravingPreview
+python3 "$(dirname "$0")/../slayer-legend/test_screen_model.py" EngravingPreview Registry
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_title_logo.py -q
 # Silent process loss, bounded reopen attempts, and the original launch deadline.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_launch.py -q
@@ -14,7 +14,10 @@ python3 "$(dirname "$0")/../slayer-legend/test_soul_weapon.py" Tag ActualNativeC
 python3 "$(dirname "$0")/../slayer-legend/test_soul_weapon.py" \
   Engraving.test_opening_can_outlast_the_card_polling_deadline \
   Engraving.test_timed_out_opening_is_recovered_before_the_next_stage_navigation \
-  Engraving.test_recovery_before_stage_refuses_unknown_identity_or_unread_locks
+  Engraving.test_recovery_before_stage_refuses_unknown_identity_or_unread_locks \
+  Engraving.test_periodic_grid_check_keeps_valid_equipment_proof_when_target_cell_is_offscreen \
+  Engraving.test_offscreen_selection_after_relaunch_cannot_reuse_equipment_proof \
+  Engraving.test_retained_equipment_proof_still_repairs_current_grid_and_locks
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_screen.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_geometry.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_engraving_recovery.py -q
@@ -47,6 +50,10 @@ python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_trans
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_game.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_navigation_debug.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_trace_feature.py -q
+python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_evidence_review.py -q
+python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_zone_feedback.py -q
+node "$(dirname "$0")/../slayer-legend/review_app/test_model.mjs"
+node "$(dirname "$0")/../slayer-legend/test_page_navigation_debug.mjs"
 curl -fsS "${base%/}/api/v1/plugins/slayer-legend/game" | python3 -c '
 import json, math, re, sys
 state = json.load(sys.stdin)

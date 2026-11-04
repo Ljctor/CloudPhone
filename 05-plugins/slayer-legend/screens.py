@@ -342,7 +342,8 @@ def fixture(name):
 _REGISTRY = _load("screen_registry.json")
 REGISTRY = _REGISTRY["screens"]
 OUTSIDE = _REGISTRY["outside"]
-NAMES = {key: node["name"] for key, node in _load("navigation.json")["screens"].items()}
+NAMES = {key: REGISTRY.get(key, {}).get("label", node["name"])
+         for key, node in _load("navigation.json")["screens"].items()}
 # Every screen of the game known so far, recognised or not (see the registry's about).
 TREE = _REGISTRY["tree"]
 BASES = [key for key, entry in REGISTRY.items() if entry["kind"] == "screen"]
@@ -640,6 +641,39 @@ def look(shot):
     return answer
 
 
+def battle_viewport(screen, overlays=(), plain=False):
+    """Observed battlefield bounds, separate from screen identity/actions.
+
+    Bounds exclude the persistent top status bar and lower panels/skill
+    controls; chat and edge controls may overlay the field. An unmeasured
+    panel is unknown, never its parent's size. Shading is independent of
+    size. Metadata describes reviewed geometry, not gesture permission.
+    """
+    unknown = {"size": "unknown", "rect": None, "source": None,
+               "calibrated": False, "shaded": None}
+    candidates = [name for name in overlays if name not in ("panel", "better_weapon_toast")]
+
+    def ancestors(name):
+        found = set()
+        while name and name not in found:
+            found.add(name)
+            name = TREE.get(name, {}).get("parent")
+        return found
+
+    deepest = [name for name in candidates
+               if not any(name in ancestors(other) for other in candidates if other != name)]
+    if len(deepest) > 1:
+        return unknown
+    if deepest:
+        key = deepest[0]
+    elif screen == "battle" and ("panel" in overlays or not plain):
+        return unknown
+    else:
+        key = screen
+    metadata = REGISTRY.get(key, {}).get("battle_viewport", TREE.get(key, {}).get("battle_viewport", unknown))
+    return {**metadata, "rect": list(metadata["rect"]) if metadata.get("rect") is not None else None}
+
+
 def _look(shot):
     width, height, _ = shot
     margins = {key: margin(shot, key) for key in BASES}
@@ -672,6 +706,7 @@ def _look(shot):
     plain = screen == "battle" and share(shot, MANA_BAR, blue) > 0.5
     answer = {"screen": screen, "overlays": overlays, "margin": round(sure, 3), "plain": plain,
               "margins": {key: round(value, 3) for key, value in margins.items()}, "size": (width, height)}
+    answer["battle_viewport"] = battle_viewport(screen, overlays, plain)
     if "quest_panel" in overlays:
         answer["quest_tab"] = quest_tab(shot)
     return answer

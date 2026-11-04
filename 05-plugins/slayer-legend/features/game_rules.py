@@ -108,6 +108,20 @@ def forbidden_menu(screen):
     return False
 
 
+def game_state_visible(screen):
+    """Presentation only: keep hidden branches readable and persisted."""
+    shown_shop = {"shop_summon", "shop_summon_equipment", "shop_summon_relic"}
+    hidden = {"quit_dialog", "quest_panel", "quest_daily", "quest_repeat", "quest_achievement",
+              "adventure_map", "top_menu"}
+    ancestor, visited = screen, set()
+    while ancestor and ancestor not in visited:
+        visited.add(ancestor)
+        if ancestor in hidden or ancestor == "shop_summon" and screen not in shown_shop:
+            return False
+        ancestor = TREE.get(ancestor, {}).get("parent")
+    return True
+
+
 FIELDS = {field: {"persist": True, "pending": False, **spec, "screen": screen}
           for screen, group in SCHEMA.items() for field, spec in group["fields"].items()}
 
@@ -312,7 +326,8 @@ def answer(facts):
         ordered.append(known.pop(screen, {"screen": screen, "label": node["name"],
                                          "path": screen_path(screen), "fields": [], "pending": True}))
     ordered.extend(known.values())
-    return {"screens": ordered, "resources": resources}
+    return {"screens": [group for group in ordered if game_state_visible(group["screen"])],
+            "resources": resources}
 
 
 def change_line(field, before, after):

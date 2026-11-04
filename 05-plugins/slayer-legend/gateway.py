@@ -116,7 +116,8 @@ def setup(context):
                                 module("soul_counters"), table)
     refresh = feature("resource_refresh").resource_refresh(
         ports, screens, module("nav"), module("equipment_l3"), module("soul_weapon"), module("scrolling"),
-        mode["api"], farming["api"], gold["api"], feature("resource_refresh_rules"))
+        mode["api"], farming["api"], gold["api"], feature("resource_refresh_rules"),
+        loadout=engraving["api"]["loadout"])
     mode["api"]["resource_refresh_by"](refresh["api"]["state"])
     watchdog = feature("watchdog").watchdog(ports, screens, stage, feature("watchdog_rules"),
                                             lambda number: screen_rules.name_numeral(table, stage, number),

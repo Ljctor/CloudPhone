@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Atlas · Slayer Legend</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Accueil Atlas"><span class="brand-icon">⌘</span><span>ATLAS<small>Slayer Legend</small></span></a>
+    <nav class="view-switch" aria-label="Vue"><button id="explore-view" aria-pressed="true">Parcourir</button><button id="graph-view" aria-pressed="false">Graphe</button></nav>
+    <div class="top-actions"><label class="toggle"><input id="overlay-toggle" type="checkbox" checked><span>Overlay</span></label><button id="reload" class="icon-button" title="Actualiser les captures" aria-label="Actualiser">↻</button></div>
+  </header>
+  <div class="workspace">
+    <aside class="sidebar" aria-label="Écrans enregistrés">
+      <div class="sidebar-heading"><h2>Écrans</h2><span class="eyebrow">EXPLORER</span></div>
+      <input id="search" type="search" placeholder="Rechercher un écran…" aria-label="Rechercher un écran">
+      <label class="trace-option"><input id="include-traces" type="checkbox">Inclure les traces sans capture</label>
+      <div id="screen-list" class="screen-list" role="list"></div>
+      <div class="sidebar-note">Les captures et les gestes enregistrés constituent cette carte.</div>
+    </aside>
+    <main class="main">
+      <div class="screen-heading"><div><div id="source-label" class="eyebrow">CARTE DE NAVIGATION</div><h1 id="screen-title">Chargement…</h1></div><button id="feedback-open" class="secondary">Signaler une correction</button></div>
+      <div class="capture-toolbar"><div class="history"><button id="back" class="icon-button" aria-label="Capture précédente" title="Capture précédente">←</button><button id="forward" class="icon-button" aria-label="Capture suivante" title="Capture suivante">→</button></div><label for="capture-select" class="sr-only">Capture</label><select id="capture-select" aria-label="Choisir une capture"></select><span id="capture-date"></span></div>
+      <div class="annotation-toolbar"><label for="annotation-kind">Outil</label><select id="annotation-kind"><option value="">Parcourir les captures</option><option value="navigation">Ajouter une navigation</option><option value="action">Ajouter une action</option><option value="forbidden">Signaler une zone interdite</option><option value="detection">Ajouter un repère de reconnaissance</option><option value="vertical">Déclarer un slide vertical</option><option value="horizontal">Déclarer un slide horizontal</option><option value="draggable">Déclarer un glisser-déposer</option></select><span>Appui long sur une zone : proposer sa suppression.</span></div>
+      <div id="notice" class="notice" role="status" hidden></div>
+      <section id="explorer" class="explorer" aria-label="Navigation dans les captures">
+        <div class="phone-wrap"><div id="phone" class="phone"><img id="screen-image" alt="Capture de l’écran sélectionné" draggable="false"><div id="image-empty" class="image-empty" hidden><span>◇</span><strong>Capture complète absente</strong><p>Cette trace conserve le geste, mais pas une image assez précise pour revoir l’écran.</p><canvas id="thumbnail" width="12" height="26" aria-label="Aperçu de la trace"></canvas></div><svg id="overlay" viewBox="0 0 480 1040" preserveAspectRatio="none" aria-hidden="true"></svg><div id="gesture-hint" class="gesture-hint" hidden></div></div></div>
+        <div class="explorer-help"><span class="keycap">↗</span> Cliquez sur une zone, glissez une liste ou déplacez un élément pour suivre une transition enregistrée.</div>
+      </section>
+      <section id="map-view" class="map-view" aria-label="Graphe autour de cet écran" hidden><div class="map-intro">L’écran courant et ses transitions enregistrées. Cliquez sur une capture pour poursuivre.</div><div id="map-scroll" class="map-scroll"><svg id="map" role="img" aria-label="Graphe de navigation"></svg></div></section>
+      <footer class="legend" aria-label="Couleurs des zones"><span style="--zone:#ffe100">Navigation</span><span style="--zone:#ff9a23">Action</span><span style="--zone:#ff5353">Interdit</span><span style="--zone:#2dd4bf">Reconnaissance</span><span style="--zone:#168bff">Slide vertical</span><span style="--zone:#bb50ff">Slide horizontal</span><span style="--zone:#ff65bd">Déplacement</span><p>Pointillés : vos modifications · Double bordure : condition · Tirets transparents : suppression proposée</p></footer>
+    </main>
+    <aside class="inspector" aria-label="Transitions et retours">
+      <div class="sidebar-heading"><h2>Depuis cet écran</h2></div><p id="transition-note" class="muted">Les destinations sont issues des gestes enregistrés.</p><div id="transitions" class="transitions"></div>
+      <section id="feedback-panel" class="feedback-panel" hidden><div class="sidebar-heading"><h2>Votre correction</h2><button id="feedback-close" class="icon-button" aria-label="Fermer la correction">×</button></div><form id="feedback-form"><label for="correct-screen">Nom réel de l’écran <span class="muted">facultatif</span></label><input id="correct-screen" type="text" maxlength="120" placeholder="Ex. Soul Weapon → Engraving"><label for="feedback-text">Ce qui ne correspond pas</label><textarea id="feedback-text" rows="5" maxlength="4000" required placeholder="Décrivez la zone, le geste ou la destination attendue…"></textarea><div id="feedback-context" class="muted"></div><button type="submit" class="primary">Enregistrer le retour</button><p id="feedback-result" role="status"></p></form></section>
+      <section class="review-history"><h2>Retours sur cette capture</h2><div id="feedback-list" class="muted">Aucun retour enregistré.</div></section>
+    </aside>
+  </div>
+</body>
+</html>

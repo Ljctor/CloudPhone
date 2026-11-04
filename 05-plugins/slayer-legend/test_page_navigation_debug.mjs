@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import trace from './page_trace.js';
 import capturePreview, { archivedScreen } from './page_navigation_preview.js';
-import navigationDebug, { ANNOTATIONS, annotationPoint, floatingDebugPanel, landmarksFor, zonesFor, recognisedScreen } from './page_navigation_debug.js';
+import navigationDebug, { ANNOTATIONS, annotationPoint, floatingDebugPanel, landmarksFor, zonesFor, recognisedScreen, feedbackZones } from './page_navigation_debug.js';
 
 const graph = JSON.parse(readFileSync(new URL('./navigation.json', import.meta.url)));
 const registry = JSON.parse(readFileSync(new URL('./screen_registry.json', import.meta.url)));
@@ -12,6 +12,24 @@ assert.ok(!battle.some((zone) => zone.id === 'better_weapon_toast'));
 const equipment = zonesFor('equipment_weapon', graph, registry);
 assert.ok(equipment.some((zone) => zone.id === 'scroll' && zone.kind === 'vertical' && zone.conditional));
 assert.ok(!equipment.some((zone) => zone.id === 'batch_combine'));
+assert.ok(equipment.some((zone) => zone.move === 'batch_combine' && zone.forbidden),
+  'forbidden navigation remains visible as a forbidden zone');
+const breakdown = zonesFor('soul_weapon', graph, registry, null,
+  new Map([['breakdown-0', [.1, .1, .2, .2]]])).find((zone) => zone.move === 'breakdown');
+assert.deepEqual(breakdown.rect, [.66, .8, .97, .88], 'the full forbidden area cannot shrink or track an unrelated button');
+for (const zoneId of ['policy:breakdown', 'policy:soul_weapon:breakdown', 'edge:configured:soul_weapon:breakdown']) {
+  const configured = { ...breakdown, source: 'navigation_guard' };
+  const decorated = feedbackZones('soul_weapon', [configured], [{ id: 'proposal', zoneId, screen: 'soul_weapon',
+    kind: 'forbidden', rect: [.65, .79, .98, .89], user: true, proposal: 'remove' }]);
+  assert.equal(decorated.length, 1, 'a cross-app ID decorates the original instead of adding another ghost');
+  assert.equal(decorated[0].source, 'navigation_guard');
+  assert.equal(decorated[0].proposal, 'remove');
+  assert.deepEqual(configured, { ...breakdown, source: 'navigation_guard' }, 'policy geometry remains unchanged');
+}
+assert.deepEqual(feedbackZones('unknown', [], [{ screen: 'unknown', user: true, kind: 'navigation', rect: [0, 0, 1, 1] }]), []);
+const questAnnotation = { screen: 'quest_repeat', user: true, kind: 'detection', rect: [.1, .2, .3, .4] };
+assert.equal(feedbackZones('quest_panel', [], [questAnnotation], { quest_tab: 'repeat' }).length, 1);
+assert.equal(feedbackZones('quest_panel', [], [questAnnotation], { quest_tab: 'daily' }).length, 0);
 
 const centreY = (zone) => (zone.rect[1] + zone.rect[3]) / 2;
 const fullBattle = zonesFor('battle', graph, registry, { screen: 'battle', plain: true, overlays: [] });
@@ -99,6 +117,7 @@ const event = (clientX = 30, clientY = 70) => ({ clientX, clientY, pointerId: 1,
 // coupling the fixture to the number of microtasks in the scan cache.
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 let archive = { clicks: [] };
+let reviewAnnotations = [];
 let currentScreen = 'battle';
 let currentScanOverrides = {};
 let armedReply;
@@ -116,11 +135,13 @@ const api = {
     if (path === '/navigation-debug') return { graph, registry };
     if (path === '/trace') return {};
     if (path === '/trace/manual') return archive;
+    if (path === '/navigation/annotations') return { annotations: reviewAnnotations };
     if (path === '/screen?quick=1') return { scan: { screen: currentScreen, plain: true, overlays: [], at: Date.now() / 1000, ...currentScanOverrides } };
     throw Error(path);
   },
   post(path, body) {
     posts.push({ path, body });
+    if (path === '/navigation/zone-feedback') return Promise.resolve({ ok: true, body: { item: body } });
     if (path === '/trace/arm') return new Promise((resolve) => { armedReply = () => resolve(armResponse ?? { ok: true, status: 200, body: { armed: true, id: `capture-${++nextId}`, seconds: 30 } }); });
     if (path === '/trace') return Promise.resolve(traceResponse);
     if (path === '/trace/capture') return Promise.resolve(snapshotResponse);
@@ -128,11 +149,25 @@ const api = {
     throw Error(path);
   },
 };
-assert.deepEqual(ANNOTATIONS.map((action) => action.kind), ['navigation', 'forbidden', 'scannable', 'vertical', 'horizontal']);
+assert.deepEqual(ANNOTATIONS.map((action) => action.kind), ['navigation', 'forbidden', 'scannable', 'vertical', 'horizontal', 'action', 'draggable']);
 assert.deepEqual(annotationPoint(event(200, -20), root.getBoundingClientRect()), { x: 1, y: 0 });
+graph.screens.battle.moves.push(
+  { id: 'ordinary_action_test', semantic_kind: 'action', area: [.1, .2, .2, .3] },
+  { id: 'forbidden_navigation_test', semantic_kind: 'navigation', forbidden: true,
+    precondition: 'never authorizes this forbidden zone', area: [.25, .25, .75, .5] });
 let ui = navigationDebug(api);
 await flush();
-assert.equal(buttons().length, 5);
+assert.equal(buttons().length, ANNOTATIONS.length);
+const zoneById = (id, parent = root) => all(parent).find((item) => item.title?.startsWith(id));
+assert.match(zoneById('menu_equipment').style.cssText, /#ffe100/);
+assert.match(zoneById('ordinary_action_test').style.cssText, /border:2px solid #ff9a23/);
+const forbiddenZone = zoneById('forbidden_navigation_test');
+assert.equal(forbiddenZone.attrs['data-zone-kind'], 'forbidden');
+assert.match(forbiddenZone.style.cssText, /left:25%;top:25%;width:50%;height:25%/);
+assert.match(forbiddenZone.style.cssText, /border:1px solid #ff5353/);
+assert.match(forbiddenZone.style.cssText, /outline:1px solid #ff5353;outline-offset:-4px/);
+assert.ok(!forbiddenZone.style.cssText.includes('dashed'), 'configured conditions use two thin lines, never user annotation marks');
+assert.match(forbiddenZone.style.cssText, /border-radius:0/);
 currentScanOverrides = { plain: false, overlays: ['panel'] };
 await poll();
 assert.equal(all(root).filter((item) => item.title?.startsWith('preset_arrow')).length, 1,
@@ -272,7 +307,7 @@ for (const kind of ['navigation', 'forbidden', 'vertical']) {
   buttons()[0].onclick(event()); await flush();
   assert.deepEqual(posts.at(-1), { path: '/trace/cancel', body: { id } });
   assert.match(status(), /Capture annulée/);
-  assert.equal(buttons().length, 5, 'cancel returns the action panel');
+  assert.equal(buttons().length, ANNOTATIONS.length, 'cancel returns the action panel');
   await poll();
   assert.match(status(), /Capture annulée/, 'polling cannot restore a cancelled declaration');
 }
@@ -280,7 +315,7 @@ ui.dispose();
 archive = { clicks: [{ id: 'cancelled-reload', kind: 'navigation', capture_status: 'cancelled', before_url: '/before' }] };
 ui = navigationDebug(api); await flush();
 assert.match(status(), /Capture annulée/, 'reloading a cancelled declaration restores its final status');
-assert.equal(buttons().length, 5);
+assert.equal(buttons().length, ANNOTATIONS.length);
 await poll();
 assert.match(status(), /Capture annulée/);
 ui.dispose();
@@ -365,7 +400,7 @@ surface.onpointerdown(event(80, 160)); surface.onpointerup(event(80, 160));
 assert.equal(posts.length, beforeRectangle, 'a click cannot declare a scannable rectangle');
 const rectangleDown = event(80, 160); surface.onpointerdown(rectangleDown);
 const rectangleMove = event(20, 40); surface.onpointermove(rectangleMove);
-assert.ok(all(surface).some((item) => item.style.cssText?.includes('#52e99a')), 'green drag preview');
+assert.ok(all(surface).some((item) => item.style.cssText?.includes('#2dd4bf')), 'turquoise drag preview');
 const rectangleUp = event(20, 40); surface.onpointerup(rectangleUp);
 for (const pointer of [rectangleDown, rectangleMove, rectangleUp]) assert.ok(pointer.prevented && pointer.stopped);
 assert.deepEqual(posts.at(-1).body, { x: .8, y: .8, kind: 'swipe', end: { x: .2, y: .2 } });
@@ -381,13 +416,26 @@ const evidenceButton = (kind) => all(root).find((item) => item.attrs['data-scree
 await poll();
 const landmarkBox = all(root).find((item) => item.attrs['data-zone-kind'] === 'detection');
 assert.ok(landmarkBox.title.includes('battle_title'));
-assert.match(landmarkBox.style.cssText, /#52e99a/);
+assert.match(landmarkBox.style.cssText, /#2dd4bf/);
+assert.match(landmarkBox.style.cssText, /border:2px solid/);
+assert.match(landmarkBox.style.cssText, /pointer-events:none/);
+assert.ok(landmarkBox.children.some((child) => child.textContent.includes('battle_title')),
+  'read-only recognition evidence has a visible label');
 const beforeSnapshot = posts.length;
 await evidenceButton('capture').onclick(event());
 assert.deepEqual(posts.slice(beforeSnapshot), [{ path: '/trace/capture', body: {} }]);
 assert.ok(all(root).some((item) => item.textContent === 'Écran enregistré'));
 assert.ok(all(root).some((item) => item.href === '/snapshot'));
 assert.ok(!all(root).some((item) => 'data-annotation-surface' in item.attrs));
+all(root).find((item) => item.attrs['data-capture-open'] === 'before').onclick(event());
+viewer = all(root).find((item) => 'data-capture-preview' in item.attrs);
+const archivedForbidden = zoneById('forbidden_navigation_test', viewer);
+assert.match(archivedForbidden.style.cssText, /border:1px solid #ff5353/);
+assert.match(archivedForbidden.style.cssText, /left:25%;top:25%;width:50%;height:25%/);
+assert.match(archivedForbidden.style.cssText, /border-radius:0/);
+assert.match(all(viewer).find((item) => item.attrs['data-zone-kind'] === 'detection').style.cssText,
+  /border:2px solid #2dd4bf/);
+all(viewer).find((item) => item.textContent === 'Fermer').onclick(event());
 await evidenceButton('correction').onclick(event());
 const expectedSelect = all(root).find((item) => 'data-expected-screen' in item.attrs);
 assert.ok(expectedSelect.children.some((item) => item.value === 'title'));
@@ -446,8 +494,56 @@ viewer = all(root).find((item) => 'data-capture-preview' in item.attrs);
 const rectangleOverlay = all(viewer).find((item) => 'data-recorded-rect' in item.attrs);
 assert.ok(rectangleOverlay);
 assert.match(rectangleOverlay.style.cssText, /left:20%;top:20%/);
+assert.equal(all(rectangleOverlay).find((item) => item.tagName === 'rect').attrs['stroke-dasharray'], '1 5');
 assert.ok(!all(viewer).some((item) => 'data-recorded-swipe' in item.attrs), 'a scannable rectangle is not presented as a game swipe');
 closeRectanglePreview();
+
+// Read-only user annotations appear immediately only on their known screen.
+reviewAnnotations = [
+  { id: 'user-slider', screen: 'battle', kind: 'vertical', rect: [.05, .1, .15, .4], source: 'reviewed_user_evidence',
+    user: true, trajectory: [{ x: .1, y: .12 }, { x: .1, y: .38 }] },
+  { id: 'other-screen', screen: 'title', kind: 'detection', rect: [.1, .1, .3, .2], user: true },
+];
+archive = { clicks: [] }; currentScreen = 'battle'; currentScanOverrides = {};
+ui = navigationDebug(api); await flush();
+const userSlider = all(root).find((item) => item.title === 'user-slider');
+assert.ok(userSlider);
+assert.equal(all(userSlider).find((item) => item.tagName === 'rect').attrs['stroke-dasharray'], '1 5');
+assert.equal(all(userSlider).find((item) => item.tagName === 'rect').attrs['stroke-linecap'], 'round');
+const trajectory = all(userSlider).find((item) => item.tagName === 'polyline');
+assert.equal(trajectory.attrs['stroke-dasharray'], 'none', 'user bounding marks never dash the trajectory');
+assert.equal(trajectory.attrs.stroke, '#168bff');
+assert.equal(zoneById('other-screen'), undefined, 'another screen annotation never leaks into the current battlefield');
+const feedbackToggle = () => all(root).find((item) => item.attrs['data-screen-evidence'] === 'zone-feedback');
+await feedbackToggle().onclick(event());
+let feedbackSurface = all(root).find((item) => 'data-zone-feedback-surface' in item.attrs);
+assert.ok(feedbackSurface);
+const beforeFeedback = posts.length;
+const shortDown = event(50, 70), shortUp = event(50, 70);
+feedbackSurface.onpointerdown(shortDown); feedbackSurface.onpointerup(shortUp);
+await new Promise((resolve) => setTimeout(resolve, 510));
+assert.equal(all(root).find((item) => 'data-zone-feedback-remove' in item.attrs), undefined);
+assert.equal(posts.length, beforeFeedback, 'a short selection tap sends no game input or proposal');
+const holdDown = event(50, 70);
+feedbackSurface.onpointerdown(holdDown);
+await new Promise((resolve) => setTimeout(resolve, 510));
+const removeProposal = all(root).find((item) => 'data-zone-feedback-remove' in item.attrs);
+assert.ok(removeProposal, 'a consumed long press offers a separate proposal action');
+assert.equal(posts.length, beforeFeedback, 'holding alone never changes policy or sends a game gesture');
+await removeProposal.onclick(event());
+assert.equal(posts.length, beforeFeedback + 1);
+assert.equal(posts.at(-1).path, '/navigation/zone-feedback');
+assert.equal(posts.at(-1).body.operation, 'remove');
+assert.equal(posts.at(-1).body.nodeId, 'screen:battle');
+assert.ok(shortDown.stopped && shortDown.prevented && shortUp.stopped && holdDown.stopped);
+const ghost = zoneById('forbidden_navigation_test');
+assert.match(ghost.style.cssText, /opacity:0.28/);
+assert.equal(all(ghost).find((item) => item.tagName === 'rect').attrs['stroke-dasharray'], '10 7');
+assert.equal(ghost.attrs['data-zone-origin'], 'navigation_guard');
+assert.equal(graph.screens.battle.moves.find((move) => move.id === 'forbidden_navigation_test').forbidden, true);
+await feedbackToggle().onclick(event());
+assert.ok(!all(root).some((item) => 'data-zone-feedback-surface' in item.attrs));
+ui.dispose();
 
 Date.now = realDateNow;
 console.log('Navigation annotations, floating panel gestures and archived previews: OK');

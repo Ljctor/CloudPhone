@@ -3,6 +3,7 @@ The selected farming instruction is unchanged. No equip, enhancement,
 purchase or engraving action is part of this circuit.
 """
 import asyncio
+import copy
 
 
 class Stopped(RuntimeError):
@@ -17,19 +18,21 @@ class UnreadCounter(Stopped):
     pass
 
 
-def resource_refresh(ports, screens, navigation, equipment, weapon, scrolling, modes, farming, gold, rules):
+def resource_refresh(ports, screens, navigation, equipment, weapon, scrolling, modes, farming, gold, rules, loadout=None):
     saved = ports.store.saved.get("resource_refresh") or {}
     status = {"active": False, "result": "idle", "intention": None, "reason_t": None,
               "supervised_verified": saved.get("supervised_verified") is True,
               "last_attempt": saved.get("last_attempt"), "last_complete": saved.get("last_complete"),
-              "next_at": 0, "read": dict(saved.get("read") or {}), "missing": []}
+              "next_at": 0, "read": dict(saved.get("read") or {}), "missing": [],
+              "priority": [], "unsupported": rules.unsupported(), "coverage_complete": False}
     running = {"task": None, "mode": None, "deadline": None, "reported": None, "supervised_task": None,
-               "cancelled": False, "supervised": False}
+               "cancelled": False, "supervised": False, "loadout": None}
     ports.store.register("resource_refresh", lambda: {key: status[key] for key in (
         "last_attempt", "last_complete", "read", "supervised_verified")})
 
     def state():
-        return {**status, "read": dict(status["read"]), "missing": list(status["missing"])}
+        return {**status, "read": dict(status["read"]), "missing": list(status["missing"]),
+                "priority": list(status["priority"]), "unsupported": copy.deepcopy(status["unsupported"])}
 
     def report(result, reason=None):
         status.update(result=result, reason_t=reason)
@@ -45,6 +48,7 @@ def resource_refresh(ports, screens, navigation, equipment, weapon, scrolling, m
     def check():
         current = modes["state"]()
         if (running["cancelled"] or current.get("mode") != running["mode"]
+                or loadout is not None and loadout(running["mode"]) != running["loadout"]
                 or not rules.eligible(current, ports.enabled(), recovery(), supervised=running["supervised"])
                 or farming["soul_weapon_switch"]() != "real" or ports.pause_left() > 0):
             raise Interrupted("refresh no longer authorized")
@@ -143,12 +147,25 @@ def resource_refresh(ports, screens, navigation, equipment, weapon, scrolling, m
         captured_at = ports.capture_time(shot)
         if captured_at is None:
             raise Stopped("resource capture acquisition time unavailable")
-        readings = await ports.game["scan"](shot, ("gold", "cubes", "equipment_l3", "souls"))
-        value = readings.get(field)
-        if value is None:
-            raise UnreadCounter(f"{field} unread on its fresh capture")
+        readings = await ports.game["scan"](shot, rules.READERS)
+        check()  # OCR can overlap a changed loadout, user input or shutdown.
+        observed = dict(readings)
+        for colour, value in (readings.get("souls") or {}).items():
+            observed["soul_" + colour] = value
         gold["observe_resources"](shot, readings, captured_at)
-        status["read"][field] = captured_at
+        for name in (*rules.RESOURCE_FIELDS, *rules.EXTRA_FIELDS):
+            value = observed.get(name)
+            raw = value.get("value") if isinstance(value, dict) else value
+            if type(raw) is int and raw >= 0:
+                status["read"][name] = captured_at
+                if name in status["missing"]:
+                    status["missing"].remove(name)
+        if field is None:
+            return observed
+        value = observed.get(field)
+        raw = value.get("value") if isinstance(value, dict) else value
+        if type(raw) is not int or raw < 0:
+            raise UnreadCounter(f"{field} unread on its fresh capture")
         return value
 
     async def read_l3(screen, field):
@@ -218,8 +235,18 @@ def resource_refresh(ports, screens, navigation, equipment, weapon, scrolling, m
             second, _ = await look("weapon_detail")
             await sample_counter(second, "cubes", "weapon_detail")
 
-    async def circuit():
-        shot, source = await look()
+    async def visible_resources(shot, screen, fields):
+        observed = await sample(shot, None)
+        for field in fields:
+            value = observed.get(field)
+            raw = value.get("value") if isinstance(value, dict) else value
+            if type(raw) is not int or raw < 0:
+                if field not in status["missing"]:
+                    status["missing"].append(field)
+        check()
+
+    async def equipment_weapon():
+        _, source = await look()
         if source == "soul_weapon":
             await tap("soul_weapon", "close", "equipment_weapon")
         elif source == "battle":
@@ -233,19 +260,39 @@ def resource_refresh(ports, screens, navigation, equipment, weapon, scrolling, m
             await tap("weapon_detail", "close", "equipment_weapon")
         elif source != "equipment_weapon":
             raise Stopped("no calibrated resource route from the current screen")
-        await to_start("equipment_weapon")
-        shot = await tap("equipment_weapon", "inspect_weapon", "weapon_detail", equipment.inspect_weapon_safe)
-        intention("weapon_detail", "reading")
-        await phase("cubes", "weapon_detail", lambda: cubes(shot))
-        await tap("weapon_detail", "close", "equipment_weapon")
-        await phase("weapon_l3", "equipment_weapon", lambda: read_l3("equipment_weapon", "weapon_l3"))
-        await tap("equipment_weapon", "accessories", "equipment_accessories")
-        await to_start("equipment_accessories")
-        await phase("accessory_l3", "equipment_accessories", lambda: read_l3("equipment_accessories", "accessory_l3"))
-        await tap("equipment_accessories", "weapon", "equipment_weapon")
-        await tap("equipment_weapon", "soul_weapon", "soul_weapon",
-                  lambda shot: weapon.tab(shot) == "weapon")
-        # Keep regular read-only Gold/souls sampling alive while parked.
+
+    async def circuit():
+        shot, source = await look()
+        if source is None:
+            raise Stopped("no calibrated resource route from the current screen")
+        await visible_resources(shot, source, rules.TOP_FIELDS + (rules.SOUL_FIELDS if source == "soul_weapon" else ()))
+        groups = {"cubes": ("cubes",), "weapon_l3": ("weapon_l3",), "accessory_l3": ("accessory_l3",)}
+        order = sorted(groups, key=lambda name: min(status["priority"].index(field) for field in groups[name]))
+        for name in order:
+            if ports.clock.monotonic() + rules.RETURN_RESERVE >= running["deadline"]:
+                for remaining in order[order.index(name):]:
+                    if remaining not in status["missing"]:
+                        status["missing"].append(remaining)
+                break
+            await equipment_weapon()
+            if name == "cubes":
+                await to_start("equipment_weapon")
+                shot = await tap("equipment_weapon", "inspect_weapon", "weapon_detail", equipment.inspect_weapon_safe)
+                intention("weapon_detail", "reading")
+                await phase("cubes", "weapon_detail", lambda: cubes(shot))
+                await tap("weapon_detail", "close", "equipment_weapon")
+            elif name == "weapon_l3":
+                await to_start("equipment_weapon")
+                await phase(name, "equipment_weapon", lambda: read_l3("equipment_weapon", "weapon_l3"))
+            else:
+                await tap("equipment_weapon", "accessories", "equipment_accessories")
+                await to_start("equipment_accessories")
+                await phase(name, "equipment_accessories", lambda: read_l3("equipment_accessories", "accessory_l3"))
+                await tap("equipment_accessories", "weapon", "equipment_weapon")
+        await return_to_park()
+        shot, _ = await look("soul_weapon")
+        intention("soul_weapon", "reading")
+        await visible_resources(shot, "soul_weapon", rules.TOP_FIELDS + rules.SOUL_FIELDS)
         gold["current"]()
 
     async def return_to_park():
@@ -287,15 +334,22 @@ def resource_refresh(ports, screens, navigation, equipment, weapon, scrolling, m
             status["next_at"] = ports.clock.wall() + rules.EVERY
             report("blocked", ports.t("Actualisation des ressources bloquée : {gates}", gates=", ".join(status["missing"])))
             return state()
+        facts = ports.game.get("facts", lambda: {})()
+        status["priority"] = rules.priority(facts, status["read"])
+        status["coverage_complete"] = False
         status["last_attempt"] = ports.clock.wall()
         running.update(task=asyncio.current_task(), mode=current["mode"], deadline=ports.clock.monotonic() + rules.DEADLINE,
-                       cancelled=False, supervised=supervised)
+                       cancelled=False, supervised=supervised,
+                       loadout=copy.deepcopy(loadout(current["mode"]) if loadout else None))
         try:
             async with ports.leased(rules.HOLDER, "refresh resource balances", rules.DEADLINE + 10):
                 status["active"] = True
                 report("running")
                 try:
                     await circuit()
+                    for field in rules.RESOURCE_FIELDS:
+                        if status["read"].get(field, float("-inf")) < status["last_attempt"] and field not in status["missing"]:
+                            status["missing"].append(field)
                 except (ports.Busy, Interrupted, asyncio.CancelledError):
                     raise
                 except Exception:
@@ -308,6 +362,9 @@ def resource_refresh(ports, screens, navigation, equipment, weapon, scrolling, m
                     report("partial", ports.t("Actualisation des ressources incomplète : {fields}",
                                                fields=", ".join(status["missing"])))
                 else:
+                    status["coverage_complete"] = (not status["unsupported"] and all(
+                        status["read"].get(field, float("-inf")) >= status["last_attempt"]
+                        for field in rules.RESOURCE_FIELDS))
                     status["last_complete"] = ports.clock.wall()
                     report("complete")
                 if supervised:

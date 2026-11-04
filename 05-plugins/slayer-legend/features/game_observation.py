@@ -426,6 +426,8 @@ class ObservationPipeline:
         }
         if "quest_tab" in last["look"]:
             answer["quest_tab"] = last["look"]["quest_tab"]
+        if "battle_viewport" in last["look"]:
+            answer["battle_viewport"] = last["look"]["battle_viewport"]
         return answer
 
     def view(self):

@@ -166,11 +166,18 @@ Rules:
       read E and its padlock closed.
     - At most 24 moves per setup, 8 preview moves per piece.
     - Never Change, the gear or %.
-  - Resource refresh (mpw18 and mpw4): a bounded read-only visit every five
+  - Resource refresh (Soul Farming, mpw18 and mpw4): a bounded read-only visit every five
     minutes after its first supervised circuit has returned successfully.
     Before that first run, the scheduler stays inactive. It keeps the mode's
     target unchanged and uses the shared lease; user input, mode/loadout
     change, plugin shutdown or pending engraving recovery interrupts it.
+    Never-read counters have priority over unverified readings, then older
+    dated readings; only calibrated readers and the existing safe circuit
+    are scheduled. Unsupported catalogue fields remain explicitly pending,
+    with no inferred zero, estimated balance or additional gesture.
+    - Read gold, emeralds and diamonds on freshly recognised circuit screens;
+      read all four soul colours on the recognised Soul Weapon screen.
+      An unread colour remains independent of the other colours.
     - From a recognised Soul Weapon screen, its red X; from battle, Equipment;
       select Weapon only when Accessories is recognised.
     - Scroll only along a calibrated empty gap, at most four gestures per

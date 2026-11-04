@@ -1168,6 +1168,47 @@ def engraving_moves(game):
 
 
 class Engraving(unittest.TestCase):
+    def test_periodic_grid_check_keeps_valid_equipment_proof_when_target_cell_is_offscreen(self):
+        game = vision_game()
+        _, api = self.setup_game(game)
+        self.assertEqual(asyncio.run(api["soul_weapon"]("mpw18"))["result"], "done")
+        game.moves.clear()
+        game.state["offset"] = 8  # The selected card stays Vision; its cell is outside the viewport.
+        game.now += 300
+        self.assertTrue(api["soul_verification_needed"]("mpw18"))
+        answer = asyncio.run(api["soul_weapon"]("mpw18"))
+        self.assertEqual(answer["result"], "done", answer)
+        self.assertEqual(game.moves, [("soul_weapon", "engraving"), ("soul_weapon_engraving", "close")])
+        self.assert_gold_balanced(game)
+        self.assertFalse(api["soul_verification_needed"]("mpw18"))
+
+    def test_offscreen_selection_after_relaunch_cannot_reuse_equipment_proof(self):
+        game = vision_game()
+        _, api = self.setup_game(game)
+        self.assertEqual(asyncio.run(api["soul_weapon"]("mpw18"))["result"], "done")
+        game.moves.clear()
+        game.state["offset"] = 8
+        game.now += 1
+        api["relaunched"]("mpw18")
+        asyncio.run(api["soul_weapon"]("mpw18"))
+        self.assertTrue(any(screen == "soul_weapon" and move in ("select", "scroll") for screen, move in game.moves))
+
+    def test_retained_equipment_proof_still_repairs_current_grid_and_locks(self):
+        game = vision_game()
+        _, api = self.setup_game(game)
+        self.assertEqual(asyncio.run(api["soul_weapon"]("mpw18"))["result"], "done")
+        game.moves.clear()
+        game.state["offset"] = 8
+        game.state["engraving"]["pieces"].clear()
+        for card in game.state["engraving"]["cards"]:
+            card["placed"], card["locked"] = False, False
+        game.now += 300
+        answer = asyncio.run(api["soul_weapon"]("mpw18"))
+        self.assertEqual(answer["result"], "done", answer)
+        self.assertFalse(any(screen == "soul_weapon" and move in ("select", "scroll", "equip")
+                             for screen, move in game.moves))
+        self.assert_gold_balanced(game)
+
     def delayed_opening(self, game, delay):
         original_apply, original_snapshot = game.apply, game.snapshot
         pending = [None]

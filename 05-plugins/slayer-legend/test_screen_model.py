@@ -134,6 +134,34 @@ def todo_line(prefix):
 
 
 class Registry(unittest.TestCase):
+    def test_every_screen_has_explicit_battlefield_metadata(self):
+        for name, entry in {**screens.TREE, **screens.REGISTRY}.items():
+            with self.subTest(name=name):
+                field = entry['battle_viewport']
+                self.assertIn(field['size'], {'mini', 'compact', 'small', 'medium', 'big', 'none', 'unknown'})
+                if field['size'] in {'none', 'unknown'}:
+                    self.assertIsNone(field['rect'])
+                else:
+                    left, top, right, bottom = field['rect']
+                    self.assertTrue(0 <= left < right <= 1 and 0 <= top < bottom <= 1)
+                    self.assertTrue(field['calibrated'])
+                    self.assertTrue(field['source'])
+        self.assertEqual(screens.NAMES['battle'], 'Combat Interface')
+
+    def test_battlefield_geometry_follows_the_actual_panel_not_its_parent(self):
+        self.assertEqual(screens.battle_viewport('battle', [], True)['size'], 'big')
+        self.assertEqual(screens.battle_viewport('battle', ['panel'], False)['size'], 'unknown')
+        equipment = screens.battle_viewport('battle', ['panel', 'equipment_weapon'], False)
+        parked = screens.battle_viewport('battle', ['panel', 'soul_weapon', 'equipment_weapon'], False)
+        self.assertEqual((equipment['size'], parked['size']), ('small', 'small'))
+        self.assertEqual(equipment['rect'], parked['rect'])
+        self.assertEqual((equipment['shaded'], parked['shaded']), (False, True))
+        self.assertEqual(screens.battle_viewport('battle', ['character_enhance'], False)['size'], 'medium')
+        self.assertEqual(screens.battle_viewport('adventure_map')['size'], 'mini')
+        self.assertEqual(screens.battle_viewport('title')['size'], 'none')
+        self.assertEqual(screens.battle_viewport('unknown')['size'], 'unknown')
+        self.assertEqual(screens.battle_viewport('battle', ['battle_settings'], False)['size'], 'unknown')
+
     def test_complete_battle_settings_identifies_its_dimmed_parent(self):
         parts = ['settings_live_header', 'settings_live_presets_ii', 'settings_live_close']
         found = screens.look(screen(*parts))
