@@ -61,7 +61,7 @@ during it stops it at the next tap.
   complete setup. No detached navigation survives a mode change.
 
 api: farm(stage, preset, mode) runs the three and parks; change_stage, set_preset,
-back_to_battle(mode) closes calibrated Latent Power or Character Promotion and parks,
+back_to_battle(mode) closes calibrated Latent Power or Character Growth/Promotion and parks,
 under one lease and a fixed overall deadline; it changes no loadout settings.
 ensure_soul_weapon(mode, loadout=None) alone (the last for a
 loadout change of the active mode); each answers {result: "done", "plan"
@@ -210,6 +210,8 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
             return "quest"
         if controls.settings_open(shot) and "battle_settings" in screens.look(shot)["overlays"]:
             return "settings"
+        if getattr(screens, "character_growth", lambda image: False)(shot):
+            return (.073, "character_growth")
         if getattr(screens, "character_promotion", lambda image: False)(shot):
             return (.073, "character_promotion")
         if screens.plain_battle(shot):
@@ -222,18 +224,20 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
             return "engraving"
         return screens.open_tab(shot)
 
-    async def close_promotion(shot):
-        """One guarded close-tab, only on the calibrated Promotion panel."""
+    async def close_character(shot, panel="character_promotion"):
+        """One guarded close-tab, only on the specifically recognised panel."""
+        label = "Character Growth" if panel == "character_growth" else "Character Promotion"
         seen = await ports.analyse(screens.look, shot)
-        if ("character_promotion" not in seen.get("overlays", ())
-                or not await ports.analyse(getattr(screens, "character_promotion", lambda image: False), shot)):
-            raise Stop("Character Promotion non reconnu : panneau laissé ouvert")
-        await tap(shot, "character_promotion", "close_tab", (.073, screens.TAB_TAP_Y), verified=True,
+        if (panel not in ("character_growth", "character_promotion")
+                or panel not in seen.get("overlays", ())
+                or not await ports.analyse(getattr(screens, panel, lambda image: False), shot)):
+            raise Stop("{panel} non reconnu : panneau laissé ouvert", panel=label)
+        await tap(shot, panel, "close_tab", (.073, screens.TAB_TAP_Y), verified=True,
                   seen={"look": seen, "combat_visible": seen["screen"] == "battle",
-                        "active_tab": "character_promotion"})
+                        "active_tab": panel})
         fresh, plain = await settle(screens.plain_battle, timeout=10.0)
         if not plain:
-            raise Stop("fermeture de Character Promotion non confirmée")
+            raise Stop("fermeture de {panel} non confirmée", panel=label)
         return fresh
 
     async def close_latent_power(shot):
@@ -250,7 +254,7 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         # A merely lit tab on an unknown screen cannot authorise cleanup.
         if (exposed in (None, "latent_power") or identified.get("screen") != "battle"
                 or not (identified.get("plain") or any(name in identified.get("overlays", ())
-                        for name in ("character_promotion", "character_enhance", "equipment_weapon",
+                        for name in ("character_promotion", "character_growth", "character_enhance", "equipment_weapon",
                                      "equipment_accessories", "soul_weapon")))):
             raise Stop("Écran après Latent Power non reconnu : navigation arrêtée")
         return fresh, exposed
@@ -307,8 +311,8 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
                        screen=await ports.analyse(screens.classify, shot))
         if not may_tap:
             raise Plan("fermer le panneau ({panel})", panel=tab[1])
-        if tab[1] == "character_promotion":
-            return await close_promotion(shot)
+        if tab[1] in ("character_promotion", "character_growth"):
+            return await close_character(shot, tab[1])
         reduced = await ports.analyse(screens.look, shot)
         # The Equipment tab toggles its panel; tapping visible combat can
         # leave this panel unchanged. Only use the tab the fresh reader lit.
@@ -608,7 +612,9 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
                 if await ports.analyse(getattr(screens, "latent_power", lambda image: False), shot):
                     await to_battle()
                 else:
-                    await close_promotion(shot)
+                    panel = ("character_growth" if await ports.analyse(
+                        getattr(screens, "character_growth", lambda image: False), shot) else "character_promotion")
+                    await close_character(shot, panel)
 
         async def finish_parking():
             if not parks(mode):

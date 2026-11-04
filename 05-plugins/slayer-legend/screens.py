@@ -470,6 +470,8 @@ _CHARACTER_TABS = ((26, 550, 88, 566), (121, 550, 171, 566), (204, 550, 274, 566
 _CHARACTER_PAID = ((353, 704, 454, 753), (353, 807, 454, 856), (353, 909, 454, 958))
 _character_patches = None
 _promotion_patch = None
+_growth_patch = None
+CHARACTER_GROWTH_CALIBRATED = True
 _latent_power_patches = None
 LATENT_POWER_CALIBRATED = True
 LATENT_POWER_CLOSE = (38 / 480, 984 / 1040)
@@ -508,6 +510,25 @@ def character_promotion(shot):
     return (open_tab(shot) == (.073, "character_enhance")
             and share(shot, MANA_BAR, blue) <= .5
             and _promotion_patch.margin(shot) >= MARGIN)
+
+
+
+def character_growth(shot):
+    """Growth selected and the Character tab lit, independent of stat rows.
+
+    The real header tolerates its notification badge; paid +/Level Up
+    controls and scrolling stat values never contribute identity.
+    """
+    global _growth_patch
+    if not CHARACTER_GROWTH_CALIBRATED:
+        return False
+    if _growth_patch is None:
+        _growth_patch = Patch("character_growth_header", limit=.45)
+    selected = [i for i, box in enumerate(_CHARACTER_TABS)
+                if share(shot, _character_area(box), white, step=1) > .08]
+    return (open_tab(shot) == (.073, "character_enhance")
+            and share(shot, MANA_BAR, blue) <= .5 and selected == [1]
+            and _growth_patch.margin(shot) >= MARGIN)
 
 
 def _character_templates():

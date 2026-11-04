@@ -106,13 +106,17 @@ class SetupStatus(unittest.IsolatedAsyncioTestCase):
             self.started.set()
             if self.block: await self.block.wait()
             return {'result': 'failed', 'text_t': rules.t('écran inattendu'), 'timings': {}}
+        class Busy(Exception):
+            def __init__(self, text):
+                self.t = rules.t(text)
+                super().__init__(text)
         self.ports = NS(t=rules.t, log=lambda *a, **k: None, english=lambda text: str(text), notify=notify,
             store=NS(saved={'mode': {'mode': 'mpw18', 'default': 'mpw18', 'configured': True}},
                      register=lambda *a: None, save=lambda: None),
             clock=NS(wall=lambda: self.now, monotonic=lambda: self.now, sleep=sleep), spawn=spawn,
             respond=lambda body, status=200: (body, status),
             enabled=lambda: self.enabled, pause_left=lambda: 5 if self.playing else 0, last_input=lambda: self.input,
-            on_relaunch=self.relaunch.append, Busy=type('Busy', (Exception,), {}))
+            on_relaunch=self.relaunch.append, Busy=Busy)
         self.loadouts = {'loadout': lambda name: dict(self.parts[name]), 'stage': lambda name: self.parts[name]['stage'],
             'set_stage': lambda name, n: self.parts[name].update(stage=n), 'adopt_stage': lambda *a: None,
             'on_change': self.callbacks.append, 'revision': lambda name: engravings.revision(self.parts[name]),
@@ -290,21 +294,16 @@ class SetupStatus(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(state['state'], 'farming')
         self.assertEqual(state['setup_result']['result'], 'done')
 
-    async def test_receipt_signal_does_not_acknowledge_input_relaunch_or_revision_invalidated_proof(self):
+    async def test_final_readback_invalidation_cannot_publish_receipt_or_ready(self):
         self.engraving = 'real'
         receipts = []
         self.part['api']['on_setup_verified'](receipts.append)
-
-        async def farm(*args, **kwargs):
-            return {'result': 'done', 'verified_setup': True, 'text_t': None, 'timings': {}}
-
-        self.farming['farm'] = farm
         for changed in ('input', 'relaunch', 'revision'):
             with self.subTest(changed=changed):
                 self.input = None
                 self.parts['mpw18']['preset'] = 'III'
 
-                async def notify(*args, **kwargs):
+                async def farm(*args, **kwargs):
                     if changed == 'input':
                         self.input = {'wall': self.now, 'monotonic': self.now}
                     elif changed == 'relaunch':
@@ -312,13 +311,177 @@ class SetupStatus(unittest.IsolatedAsyncioTestCase):
                             callback('new process')
                     else:
                         self.parts['mpw18']['preset'] = 'I'
+                    return {'result': 'done', 'verified_setup': True, 'text_t': None, 'timings': {}}
 
-                # Model invalidation at the asynchronous notification boundary
-                # after execution, before durable attempt completion/publication.
-                self.ports.notify = notify
+                self.farming['farm'] = farm
                 await self.attempt()
                 self.assertIsNone(self.part['api']['state']()['setup_result'])
+                self.assertNotEqual(self.part['api']['state']()['state'], 'farming')
                 self.assertEqual(receipts, [])
+
+    async def test_input_busy_retry_renews_receipt_before_publishing_ready(self):
+        self.engraving = 'real'
+        receipts, calls, notifications = [], [], []
+        self.part['api']['on_setup_verified'](receipts.append)
+
+        async def farm(*args, **kwargs):
+            calls.append(args)
+            if len(calls) == 1:
+                self.input = {'wall': self.now, 'monotonic': self.now}
+                raise self.ports.Busy(rules.USER_PLAYING)
+            return {'result': 'done', 'verified_setup': True, 'text_t': None, 'timings': {}}
+
+        async def notify(*args, **kwargs):
+            state = self.part['api']['state']()
+            notifications.append(state['state'])
+            if state['state'] == 'farming':
+                self.assertEqual(state['setup_result']['result'], 'done')
+                self.assertEqual(receipts, [state['setup_result']])
+
+        self.farming['farm'] = farm
+        self.ports.notify = notify
+        await self.attempt()
+        state = self.part['api']['state']()
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(state['state'], 'farming')
+        self.assertEqual(state['setup_result']['result'], 'done')
+        self.assertEqual(len(receipts), 1)
+        self.assertEqual(notifications[-1], 'farming')
+
+    async def test_new_readback_input_revokes_resume_bypass_before_retry(self):
+        self.engraving = 'real'
+        calls, receipts = [], []
+        resumed = False
+        self.part['api']['on_setup_verified'](receipts.append)
+        self.ports.pause_left = lambda: max(0, 5 - (self.now - self.input['wall'])) if self.input else 0
+
+        async def farm(*args, **kwargs):
+            force = kwargs.get('force', False)
+            calls.append(force)
+            if len(calls) == 1:
+                self.input = {'wall': self.now, 'monotonic': self.now}
+                raise self.ports.Busy(rules.USER_PLAYING)
+            if len(calls) == 2:
+                self.assertTrue(force, 'the explicit Resume applies to this attempt')
+                self.input = {'wall': self.now, 'monotonic': self.now}
+                return {'result': 'done', 'verified_setup': True, 'text_t': None, 'timings': {}}
+            self.assertFalse(force, 'new input revokes the old Resume permission')
+            if self.ports.pause_left():
+                raise self.ports.Busy(rules.USER_PLAYING)
+            return {'result': 'done', 'verified_setup': True, 'text_t': None, 'timings': {}}
+
+        async def notify(*args, **kwargs):
+            nonlocal resumed
+            hold = self.part['api']['state']()['hold']
+            if hold and not resumed:
+                resumed = True
+                _, code = await self.call_mode({'action': 'resume', 'hold': hold['id']}, '/mode/hold')
+                self.assertEqual(code, 200)
+
+        self.farming['farm'] = farm
+        self.ports.notify = notify
+        await self.attempt()
+        self.assertEqual(calls[:2], [False, True])
+        self.assertTrue(all(force is False for force in calls[2:]))
+        self.assertGreaterEqual(self.now - self.input['wall'], 5)
+        self.assertEqual(self.part['api']['state']()['setup_result']['result'], 'done')
+        self.assertEqual(len(receipts), 1)
+
+    async def test_success_observers_and_notification_never_see_expired_hold(self):
+        self.engraving = 'real'
+        calls, observed_holds, notification_holds = [], [], []
+        self.part['api']['on_setup_verified'](
+            lambda receipt: observed_holds.append(self.part['api']['state']()['hold']))
+
+        async def farm(*args, **kwargs):
+            calls.append(args)
+            if len(calls) == 1:
+                self.input = {'wall': self.now, 'monotonic': self.now}
+                raise self.ports.Busy(rules.USER_PLAYING)
+            return {'result': 'done', 'verified_setup': True, 'text_t': None, 'timings': {}}
+
+        async def notify(*args, **kwargs):
+            state = self.part['api']['state']()
+            if state['state'] == 'farming':
+                notification_holds.append(state['hold'])
+                self.assertEqual(state['setup_result']['result'], 'done')
+
+        self.farming['farm'] = farm
+        self.ports.notify = notify
+        await self.attempt()
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(observed_holds, [None])
+        self.assertEqual(notification_holds, [None])
+
+    async def test_readiness_relaunch_precedes_the_actual_attempt_snapshot(self):
+        self.engraving = 'real'
+        receipts = []
+        async def running():
+            return False
+        async def focus():
+            return {'game': False}
+        async def launch(*args, **kwargs):
+            kwargs['guard']()
+            for callback in self.relaunch:
+                callback('readiness launch')
+            kwargs['guard']()
+            return {'state': 'done'}
+        async def farm(*args, **kwargs):
+            return {'result': 'done', 'verified_setup': True, 'text_t': None, 'timings': {}}
+        self.ports.running, self.ports.focus = running, focus
+        self.farming['farm'] = farm
+        self.part = feature.mode(
+            self.ports, rules, timer_rules,
+            NS(time_or_none=lambda value: value, number_or_none=lambda value, top: value),
+            self.mines, None, NS(fresh=lambda: {'gold': None}), self.loadouts,
+            self.farming, setup_feature.mode_setup, {'running': lambda: False, 'ensure': launch})
+        self.part['api']['on_setup_verified'](receipts.append)
+        response, code = await self.call_setup(self.part['api']['state']()['setup_request'])
+        self.assertEqual(code, 202)
+        await self.settle()
+        state = self.part['api']['state']()
+        self.assertEqual(state['state'], 'farming')
+        self.assertEqual(state['setup_result']['result'], 'done')
+        self.assertEqual(len(receipts), 1)
+
+    async def test_changed_target_during_busy_wait_never_reuses_old_stage_and_preset(self):
+        self.engraving = 'real'
+        calls, receipts = [], []
+        self.part['api']['on_setup_verified'](receipts.append)
+        async def farm(*args, **kwargs):
+            calls.append(args)
+            self.input = {'wall': self.now, 'monotonic': self.now}
+            raise self.ports.Busy(rules.USER_PLAYING)
+        async def notify(*args, **kwargs):
+            self.parts['mpw18']['preset'] = 'I'
+        self.farming['farm'] = farm
+        self.ports.notify = notify
+        await self.attempt()
+        self.assertEqual(len(calls), 1)
+        self.assertIsNone(self.part['api']['state']()['setup_result'])
+        self.assertNotEqual(self.part['api']['state']()['state'], 'farming')
+        self.assertEqual(receipts, [])
+
+    async def test_notification_yields_only_after_receipt_state_and_event_agree(self):
+        self.engraving = 'real'
+        receipts = []
+        self.part['api']['on_setup_verified'](receipts.append)
+
+        async def farm(*args, **kwargs):
+            return {'result': 'done', 'verified_setup': True, 'text_t': None, 'timings': {}}
+
+        async def notify(*args, **kwargs):
+            state = self.part['api']['state']()
+            self.assertEqual(state['state'], 'farming')
+            self.assertEqual(state['setup_result']['result'], 'done')
+            self.assertEqual(receipts, [state['setup_result']])
+            self.input = {'wall': self.now, 'monotonic': self.now}
+
+        self.farming['farm'] = farm
+        self.ports.notify = notify
+        await self.attempt()
+        self.assertIsNone(self.part['api']['state']()['setup_result'])
+        self.assertEqual(len(receipts), 1)
 
     async def test_off_gate_is_visible_without_an_attempt_and_idle_is_red(self):
         state = self.part['api']['state']()

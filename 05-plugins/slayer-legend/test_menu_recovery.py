@@ -35,6 +35,87 @@ class PromotionReader(unittest.TestCase):
                       verified=True, seen={**seen, 'look': {**seen['look'], 'overlays': ['panel']}}))
 
 
+class GrowthReader(unittest.TestCase):
+    def test_real_selected_growth_and_lit_character_tab(self):
+        shot = model.screen('battle_emerald', 'character_growth_header', 'character_close_tab_lit_480')
+        for size in ((360, 780), (480, 1040), (720, 1560)):
+            seen = model.scaled(shot, *size)
+            self.assertTrue(screens.character_growth(seen))
+            overlays = screens.look(seen)['overlays']
+            self.assertIn('character_growth', overlays)
+            self.assertNotIn('character_enhance', overlays)
+            self.assertNotIn('character_promotion', overlays)
+
+    def test_other_headers_unknown_and_unlit_tab_refuse_growth_close(self):
+        for header in ('character_enhance_header', 'character_promotion_header_live_480'):
+            self.assertFalse(screens.character_growth(model.screen(
+                'battle_emerald', header, 'character_close_tab_lit_480')))
+        self.assertFalse(screens.character_growth(model.screen(
+            'battle_emerald', 'character_growth_header', 'character_close_tab_unlit_480')))
+        self.assertFalse(screens.character_growth(model.screen('battle_emerald', 'character_close_tab_lit_480')))
+        for key in model.REGISTERED:
+            if key != 'character_growth':
+                self.assertFalse(screens.character_growth(model.made(key)), key)
+
+    def test_guard_requires_specific_identity_lit_tab_and_visible_battle(self):
+        seen = {'look': {'screen': 'battle', 'plain': False, 'overlays': ['panel', 'character_growth']},
+                'combat_visible': True, 'active_tab': 'character_growth'}
+        self.assertIsNone(soul.nav.guard('character_growth', 'close_tab', .073, .966, verified=True, seen=seen))
+        for bad in (None, dict(seen, active_tab='character_enhance'), dict(seen, combat_visible=False),
+                    dict(seen, look={'screen': 'battle', 'plain': False, 'overlays': ['panel']})):
+            self.assertIsNotNone(soul.nav.guard('character_growth', 'close_tab', .073, .966, verified=True, seen=bad))
+        self.assertIsNotNone(soul.nav.guard('character_growth', 'close_tab', .073, .966, seen=seen))
+        move = next(move for move in soul.nav.connections('character_growth') if move['id'] == 'close_tab')
+        self.assertTrue(move['assumed'], 'No actual close-tab transition has been observed yet')
+
+
+class GrowthRecovery(unittest.TestCase):
+    def test_growth_closes_once_then_parks_without_changing_equipment(self):
+        for mode in ('mpw4', 'mpw18', 'soul'):
+            game = soul.Game(screen='growth')
+            before = (game.state['equipped'], game.state['selected'])
+            _, api = build(game)
+            answer = asyncio.run(api['back_to_battle'](mode))
+            self.assertEqual(answer['result'], 'done')
+            self.assertEqual(game.moves, [('character_growth', 'close_tab'), ('battle', 'menu_equipment'),
+                                          ('equipment_weapon', 'soul_weapon')])
+            self.assertEqual((game.state['equipped'], game.state['selected']), before)
+            self.assertNotIn('verified_setup', answer)
+
+    def test_latent_return_growth_is_reread_before_its_own_close(self):
+        game = LatentPowerRecovery().game('growth')
+        _, api = build(game)
+        self.assertEqual(asyncio.run(api['back_to_battle']('soul'))['result'], 'done')
+        self.assertEqual(game.moves, [('latent_power', 'close'), ('character_growth', 'close_tab'),
+                                      ('battle', 'menu_equipment'), ('equipment_weapon', 'soul_weapon')])
+
+    def test_failed_tab_close_never_repeats_and_never_parks(self):
+        game = soul.Game(screen='growth')
+        game.apply = lambda *args: None
+        _, api = build(game)
+        self.assertEqual(asyncio.run(api['back_to_battle']('mpw4'))['result'], 'failed')
+        self.assertEqual(game.moves, [('character_growth', 'close_tab')])
+        self.assertLessEqual(game.now, 10.25)
+
+    def test_user_interruption_after_close_stops_before_parking(self):
+        game = soul.Game(screen='growth')
+        original = game.apply
+        def apply(*args):
+            original(*args)
+            game.state['focused'] = False
+        game.apply = apply
+        _, api = build(game)
+        asyncio.run(api['back_to_battle']('soul'))
+        self.assertEqual(game.moves, [('character_growth', 'close_tab')])
+
+    def test_free_mine_agent_never_capture_or_move(self):
+        for mode in ('free', 'mine', 'agent'):
+            game = soul.Game(screen='growth')
+            _, api = build(game)
+            self.assertEqual(asyncio.run(api['back_to_battle'](mode))['result'], 'failed')
+            self.assertEqual((game.moves, game.captures), ([], 0))
+
+
 class LatentPowerReader(unittest.TestCase):
     PARTS = ('latent_power_title_480', 'latent_power_description_480', 'latent_power_close_480')
 
@@ -106,16 +187,16 @@ class LatentPowerRecovery(unittest.TestCase):
                                       ('battle', 'menu_equipment'), ('equipment_weapon', 'soul_weapon')])
 
     def test_falsely_lit_tab_on_unknown_return_cannot_authorize_a_second_tap(self):
-        game = self.game('growth')
+        game = self.game('unrecognised_growth')
         original = soul.fake_screens()
-        original.open_tab = lambda shot: (.073, 'character_enhance') if shot[2]['screen'] == 'growth' else None
+        original.open_tab = lambda shot: (.073, 'character_enhance') if shot[2]['screen'] == 'unrecognised_growth' else None
         with patch.object(soul, 'fake_screens', return_value=original):
             _, api = build(game)
         self.assertEqual(asyncio.run(api['back_to_battle']('mpw4'))['result'], 'failed')
         self.assertEqual(game.moves, [('latent_power', 'close')])
 
     def test_unknown_destination_or_unchanged_panel_never_repeats_close(self):
-        for destination in ('unknown', 'latent_power', 'growth'):
+        for destination in ('unknown', 'latent_power', 'unrecognised_growth'):
             game = self.game(destination)
             _, api = build(game)
             answer = asyncio.run(api['back_to_battle']('mpw4'))
@@ -141,10 +222,13 @@ def build(game):
     original = soul.fake_screens()
     original.LATENT_POWER_CLOSE = screens.LATENT_POWER_CLOSE
     original.latent_power = lambda shot: shot[2]["screen"] == "latent_power"
+    original.character_growth = lambda shot: shot[2]["screen"] == "growth"
     original.character_promotion = lambda shot: shot[2]['screen'] == 'promotion'
     old_look = original.look
     original.look = lambda shot: ({'screen': 'battle', 'plain': False, 'overlays': ['panel', 'character_promotion']}
                                  if shot[2]['screen'] == 'promotion' else
+                                 {'screen': 'battle', 'plain': False, 'overlays': ['panel', 'character_growth']}
+                                 if shot[2]['screen'] == 'growth' else
                                  {"screen": "latent_power", "overlays": [], "plain": False}
                                  if shot[2]['screen'] == 'latent_power' else old_look(shot))
     with patch.object(soul, 'fake_screens', return_value=original):

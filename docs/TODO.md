@@ -169,6 +169,14 @@ layers on item visuals, never baked into their base sprites or menu symbols.
 - [ ] Complete a fresh automatic relaunch and target-setup acceptance after
   silent process death; interruption testing must yield to recent user input.
 
+### Menu-return timing acceptance
+
+- [ ] Make the post-input return respect the requested five-second quiet period.
+  `MENU_GRACE` currently adds a separate sixty-second menu observation grace;
+  the watcher cadence can add more delay. Keep unknown-screen refusal and
+  guarded per-frame navigation while verifying the complete visible countdown
+  and actual return timing. Recognition alone does not prove prompt recovery.
+
 ### Architecture refactor acceptance
 
 - [x] Keep reader registry, fact storage, observation scheduling and capture
@@ -614,7 +622,7 @@ the full-screen image can already exist.
 Classifier calibration inventory (a full-screen example may already exist;
 this list grants no permission to enter a forbidden screen).
 
-Screens pending capture: `character_growth`, `skill`, `skill_refinement_grounds`, `skill_rave_mantra`, `familiar`, `equipment_relic`, `spirit`, `companion`, `companion_advancement`, `beast`, `beast_mount`, `beast_scouting`, `beast_scouting_info`, `adventure_map`, `adventure_quest`, `adventure_story_main`, `adventure_story_easy`, `adventure_story_sub`, `adventure_story_ellie`, `dungeon_map`, `dungeon_shelter`, `dungeon_rift`, `dungeon_forest`, `dungeon_kingdom`, `dungeon_training`, `raid_camp`, `mine_list`, `mine_area`, `mine_feathers`, `mine_fight`, `top_menu`, `shop_summon`, `shop_package`, `shop_goods`, `shop_golden_key`, `shop_event`, `guild`, `guild_divine_beast`, `guild_shop_normal`, `guild_shop_appearance`, `airfield`, `airfield_recipes_appetizer`, `airfield_recipes_main`, `airfield_recipes_dessert`, `airfield_boarding_status`, `guild_request`, `guild_info_basic`, `guild_info_members`, `promotion_bonus`, `quit_dialog`, `black_orb`, `black_orb_accessory`, `top_ranking`, `top_settings`, `top_mail`, `character_growth_icon_1`, `character_growth_icon_2`, `character_class`, `equipment_weapon_icon`, `black_orb_obtain`, `equipment_relic_icon_1`, `equipment_relic_icon_2`, `raid_ranking`, `raid_bag`, `shop_summon_equipment`, `shop_summon_relic`, `quest_daily`, `quest_repeat`, `quest_achievement`, `scroll`, `event`, `top_achievements`, `top_collection`, `top_events`, `top_guild_entry`, `event_popup`, `daily_reward`, `offer_popup`, `maintenance`, `update_required`, `another_device`, `save_choice`.
+Screens pending capture: `skill`, `skill_refinement_grounds`, `skill_rave_mantra`, `familiar`, `equipment_relic`, `spirit`, `companion`, `companion_advancement`, `beast`, `beast_mount`, `beast_scouting`, `beast_scouting_info`, `adventure_map`, `adventure_quest`, `adventure_story_main`, `adventure_story_easy`, `adventure_story_sub`, `adventure_story_ellie`, `dungeon_map`, `dungeon_shelter`, `dungeon_rift`, `dungeon_forest`, `dungeon_kingdom`, `dungeon_training`, `raid_camp`, `mine_list`, `mine_area`, `mine_feathers`, `mine_fight`, `top_menu`, `shop_summon`, `shop_package`, `shop_goods`, `shop_golden_key`, `shop_event`, `guild`, `guild_divine_beast`, `guild_shop_normal`, `guild_shop_appearance`, `airfield`, `airfield_recipes_appetizer`, `airfield_recipes_main`, `airfield_recipes_dessert`, `airfield_boarding_status`, `guild_request`, `guild_info_basic`, `guild_info_members`, `promotion_bonus`, `quit_dialog`, `black_orb`, `black_orb_accessory`, `top_ranking`, `top_settings`, `top_mail`, `character_growth_icon_1`, `character_growth_icon_2`, `character_class`, `equipment_weapon_icon`, `black_orb_obtain`, `equipment_relic_icon_1`, `equipment_relic_icon_2`, `raid_ranking`, `raid_bag`, `shop_summon_equipment`, `shop_summon_relic`, `quest_daily`, `quest_repeat`, `quest_achievement`, `scroll`, `event`, `top_achievements`, `top_collection`, `top_events`, `top_guild_entry`, `event_popup`, `daily_reward`, `offer_popup`, `maintenance`, `update_required`, `another_device`, `save_choice`.
 
 Screens recognised without a fixture: `save_notice`, `panel`.
 
@@ -838,4 +846,6 @@ them; their crops go in on the next sighting, same rule.
   visits, the correct weapon/accessory drop counter, and the date shown for
   each historical value. Offline tests alone do not close these acceptances.
 
-Latent Power recovery: fixed title, instruction and bottom-left X are calibrated from reviewed real crops. No game gesture has validated its return destination; the graph keeps it `unknown`. Observe the first supervised close, then calibrate any newly exposed panel before permitting further navigation. No Latent Power awakening or spending action is authorised.
+Latent Power recovery: fixed title, instruction and bottom-left X are calibrated from reviewed real crops. The supervised close returned to Character Growth; the destination was reread and further input stopped while Growth lacked its own identity. The graph keeps `unknown` because each return must be identified from a fresh frame, not assumed. No Latent Power awakening or spending action is authorised.
+
+Character Growth recovery: existing real selected-header and lit/unlit Character-tab crops identify the panel, independently validated on the newly observed return from Latent Power. One close-tab is guarded by that identity and reduced battle, followed by fresh plain-Battle verification. Its close-tab transition is assumed until the first supervised observation; never treat a parked return as proof of complete setup.

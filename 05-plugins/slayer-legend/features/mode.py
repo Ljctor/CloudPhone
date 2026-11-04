@@ -257,24 +257,14 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
         name = "soul" if mpw == "soul" else f"mpw{mpw}"
         parked = farming.get("soul_weapon_switch", lambda: "off")() == "real"
         owner = object()
-        attempt = setup.begin_attempt(name, number)
+        setup.clear_result()
         status["intention"] = {"owner": owner, "kind": "apply_loadout",
                                "destination": "soul_weapon" if parked else "battle",
                                "destination_t": t("Soul Weapon") if parked else t("Combat"),
                                "purpose_t": t("appliquer la configuration demandée de {mode}", mode=rules.mode_name(name)),
                                "route": None, "route_known": False}
         try:
-            completed = await apply_stage(number, mpw, applied)
-            setup.complete_attempt(attempt, mode=status["mode"], completed=completed,
-                                   state=status["state"], message=status["message"])
-            receipt = setup.current_result(name, mines["state"]().get("enabled"))
-            if completed and receipt and receipt["result"] == "done":
-                for listener in setup_listeners:
-                    try:
-                        listener(copy.deepcopy(receipt))
-                    except Exception as exc:
-                        ports.log("warning", f"Setup observer failed: {type(exc).__name__}")
-            return completed
+            return await apply_stage(number, mpw, applied)
         finally:
             if status["intention"] and status["intention"]["owner"] is owner:
                 status["intention"] = None
@@ -334,7 +324,17 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
         over rules.SWITCH_BUDGET. A complete current setup receipt is
         required before announcing readiness."""
         name = "soul" if mpw == "soul" else f"mpw{mpw}"
-        preset = loadouts["loadout"](name).get("preset")
+        accepted_target = copy.deepcopy(loadouts["loadout"](name))
+        revision = loadouts.get("revision")
+        accepted_revision = revision(name) if revision else None
+        preset = accepted_target.get("preset")
+
+        def require_target():
+            if (status["mode"] != name or mines["state"]().get("enabled")
+                    or loadouts["loadout"](name) != accepted_target
+                    or revision and revision(name) != accepted_revision):
+                raise asyncio.CancelledError
+
         moving = t("Passage au stage {number} ({name})", number=number, name=rules.mode_name(name))
         report("moving", moving)
         since = status["switch_at"] if status["switch_at"] is not None else ports.clock.monotonic()
@@ -352,14 +352,47 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
                     report("moving", t("{switch} : repris à ta demande", switch=moving))
                 try:
                     forced = {"force": True} if force else {}
+                    require_target()
                     answer = await ready_game(name)
+                    require_target()
+                    # Readiness may have launched the game. Each actual farm
+                    # attempt owns its current input mark and verified launch
+                    # epoch; accepted target/revision stay bound across waits.
+                    attempt = setup.begin_attempt(name, number)
                     if answer is None:
                         answer = await farming["farm"](number, preset, name, highest(), **forced)
+                    require_target()
                     if (answer.get("result") not in ("failed", "plan")
                             and (answer.get("result") != "done" or answer.get("verified_setup") is not True)):
                         answer = {**answer, "result": "failed", "retryable": False,
                                   "failure_code": "setup_unverified",
                                   "text_t": t("Configuration demandée non vérifiée")}
+                    if answer["result"] == "done":
+                        if status["hold"] and status["hold"]["owner"] is me:
+                            end_hold("timeout")
+                        message = farming_text(name, number, preset)
+                        accepted = setup.complete_attempt(
+                            attempt, mode=status["mode"], completed=True,
+                            state="farming", message=message)
+                        receipt = setup.current_result(name, mines["state"]().get("enabled"))
+                        if not accepted or not receipt or receipt["result"] != "done":
+                            # Input or launch invalidated the readback. Keep
+                            # normal pause/retry semantics, never a false READY.
+                            # An explicit Resume cannot survive new input.
+                            force = False
+                            raise ports.Busy("Configuration demandée non vérifiée")
+                        # One synchronous publication boundary: observers see
+                        # the same current receipt and ready state before any
+                        # notification can yield to user input or a relaunch.
+                        report("farming", message)
+                        for listener in setup_listeners:
+                            try:
+                                listener(copy.deepcopy(receipt))
+                            except Exception as exc:
+                                ports.log("warning", f"Setup observer failed: {type(exc).__name__}")
+                        alert = switched(answer, since, waited, applied)
+                        await ports.notify(rules.ready_text(name, ports.clock.monotonic() - since, applied, alert, held))
+                        return True
                 except ports.Busy as e:
                     if not ports.enabled():
                         # The plugin off: it waits for as long, no alert.
@@ -396,17 +429,17 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
             if status["hold"] and status["hold"]["owner"] is me:
                 end_hold("ended")
         alert = switched(answer, since, waited, applied)
-        if answer["result"] == "done":
-            await ports.notify(rules.ready_text(name, ports.clock.monotonic() - since, applied, alert, held))
         if answer["result"] == "failed":
             report("failed", t("{switch} arrêté : {why}", switch=moving, why=answer["text_t"]))
+            setup.complete_attempt(attempt, mode=status["mode"], completed=False,
+                                   state=status["state"], message=status["message"])
             await ports.notify(rules.blocked_text(name, number, ports.english(answer["text_t"])))
             return False
         if answer["result"] == "plan":
             report("plan", t("{switch}, plan seul : {plan}", switch=moving, plan=answer["text_t"]))
+            setup.complete_attempt(attempt, mode=status["mode"], completed=False,
+                                   state=status["state"], message=status["message"])
             return False
-        report("farming", farming_text(name, number, preset))
-        return True
 
     def farming_text(name, number, preset):
         if preset:

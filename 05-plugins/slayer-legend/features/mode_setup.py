@@ -100,11 +100,12 @@ class SetupEvidence:
         if (not revision or attempt.generation != self._generation or mode != attempt.mode
                 or attempt.revision != revision(attempt.mode) or attempt.target.get("stage") != attempt.stage
                 or attempt.input_mark != self._input_mark() or attempt.launch_epoch != self._launch_epoch):
-            return
+            return False
         self._result = {"mode": attempt.mode, "revision": attempt.revision,
                         "target": copy.deepcopy(attempt.target), "at": self.ports.clock.wall(),
                         "result": "done" if completed else state, "message_t": copy.deepcopy(message),
                         "input_mark": attempt.input_mark, "launch_epoch": attempt.launch_epoch}
+        return True
 
     def current_result(self, mode, mine_enabled=False):
         """A detached public result; input, launch, revision or age can invalidate it."""

@@ -1,4 +1,6 @@
 {
+  "{panel} non reconnu : panneau laissé ouvert": "{panel} not recognised; panel left open",
+  "fermeture de {panel} non confirmée": "Closing {panel} not confirmed",
   "Latent Power non reconnu : panneau laissé ouvert": "Latent Power not recognised; panel left open",
   "Écran après Latent Power non reconnu : navigation arrêtée": "Latent Power close destination not recognised; navigation stopped",
   "fermer Latent Power": "close Latent Power",

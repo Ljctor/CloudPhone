@@ -85,6 +85,11 @@ Rules:
       One close only, then identify the exposed screen; an unknown return
       permits no further gesture. Never its tiers, stats, magnifiers,
       awakening, purchase or spending controls.
+    - Closing Character Growth with its own Character tab: only when a
+      fresh capture recognises Growth selected, reduced battle and the
+      Character tab as the only lit tab. One close, then verify plain Battle;
+      no stat +, LEVEL UP or sub-tab icon is authorised. The close-tab
+      transition still awaits its first supervised gameplay confirmation.
     - Closing a bottom panel with its own tab: only when that tab reads lit.
     - "Press here to finish Power Saving Mode": held 4 s, once per
       sequence, only when the screen reads Power Saving Mode.
