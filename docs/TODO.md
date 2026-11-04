@@ -72,15 +72,15 @@ layers on item visuals, never baked into their base sprites or menu symbols.
 
 ### Navigation review and resource coverage acceptance
 
-- [ ] Voice feedback starts microphone recording directly in the browser, with
+- [x] Voice feedback starts microphone recording directly in the browser, with
   visible recording state, stop, playback, send and cancel. Do not route the
   primary action through a file picker or another app. Preserve the screenshot
   and overlay version from recording start; offer the existing secure review
   origin when browser microphone APIs are unavailable on plain HTTP.
-- [ ] Check the annotation editor exposes distinct Action (orange, already
+- [x] Check the annotation editor exposes distinct Action (orange, already
   implemented) and Forbidden action (red) choices without duplicating Action
   or granting gameplay authority to a feedback proposal.
-- [ ] Replace the generic scannable-element annotation with three explicit
+- [x] Replace the generic scannable-element annotation with three explicit
   rectangular tools: Mark a progression value, Mark a resource value and
   Mark a screen identifier. Persist their distinct roles in feedback and use
   the same definitions in live and archived overlays.
