@@ -83,6 +83,14 @@ function renderOverlay() {
     const kind = ['action', 'forbidden'].includes(edge.annotationKind) ? edge.annotationKind : edge.annotationKind === 'draggable' ? 'draggable' : isSwipe
       ? Math.abs(edge.end.y - edge.start.y) >= Math.abs(edge.end.x - edge.start.x) ? 'vertical' : 'horizontal' : 'navigation';
     const colour = COLOURS[kind];
+    if (isSwipe && Array.isArray(edge.startRect) && edge.startRect.length === 4
+        && edge.startRect.every(Number.isFinite)) {
+      // A calibrated slide is a rectangular interaction area, not its sample path.
+      if (!regions.some((region) => region.kind === kind && JSON.stringify(region.rect) === JSON.stringify(edge.startRect))) {
+        regions.push({ id: `scroll:${edge.id}`, kind, rect: edge.startRect, label: edge.label, source: 'measured_scroll_area' });
+      }
+      continue;
+    }
     if (isSwipe) {
       const x = edge.start.x * 480, y = edge.start.y * 1040, x2 = edge.end.x * 480, y2 = edge.end.y * 1040;
       layer.append(svg('line', { x1: x, y1: y, x2, y2, stroke: colour, 'stroke-width': 3, 'stroke-dasharray': 'none', opacity: .8 }));
