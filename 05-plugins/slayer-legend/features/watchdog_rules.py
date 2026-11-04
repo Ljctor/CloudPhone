@@ -152,7 +152,7 @@ AWAY_AFTER = 2
 # Google's windows in front are the sign-in path, not another app.
 GMS = "com.google.android.gms"
 # The modes the watchdog checks, by the name its texts give them.
-MODE_NAMES = {"soul": t("Soul Farming"), "mpw18": t("Farming mpw18"), "mpw4": t("Farming mpw4"), "mine": t("Mine fermée")}
+MODE_NAMES = {"soul": t("Soul Farming"), "mpw18": t("Gear Farming"), "mpw4": t("Gold Farming"), "mine": t("Mine fermée")}
 # The mine: the game gone or away this many looks (2 minutes) is its alert.
 MINE_AWAY_LOOKS = 8
 # Looks seen at the gateway's start before any repair.

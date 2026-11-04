@@ -450,7 +450,7 @@ class OutOfFeathers(MineTest):
         self.assertEqual((state["enabled"], state["state"]), (False, "no_feather"))
         self.assertEqual(self.last(answers, "/mode")["mode"], "mpw18")
         texts = [text for _, text in game.alerts if "feather" in text or "Mine" in text]
-        self.assertEqual(texts, ["Closed Mine stopped: no feather left, back to farming mpw18 (stage 920)"])
+        self.assertEqual(texts, ["Closed Mine stopped: no feather left, back to Gear Farming (stage 920)"])
 
 
 class WayBackIn(unittest.TestCase):
@@ -583,7 +583,7 @@ class FreePlayWarning(MineTest):
         self.assertTrue(480 <= warnings[0] <= 490, warnings)
         self.assertTrue(780 <= warnings[1] <= 790, warnings)
         self.assertEqual([text for _, text in game.alerts if text.startswith("Timer ended")],
-                         ["Timer ended: back to farming mpw18"])
+                         ["Timer ended: back to Gear Farming"])
         self.assertEqual(game.taps, [], "free play touches nothing")
 
 

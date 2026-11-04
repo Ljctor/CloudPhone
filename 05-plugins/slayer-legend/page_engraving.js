@@ -370,7 +370,7 @@ export default function loadoutFeature(api, { onApplied = () => {}, execution = 
   return {
     // The options of a mode's dialog, in page_mode.js.
     options: (mode, stageChoices = () => []) => [
-      { type: 'choice', key: keyOf(mode, 'Stage'), label: { mpw18: 'Stage mpw18', mpw4: 'Stage mpw4', soul: 'Stage Soul Farming' }[mode],
+      { type: 'choice', key: keyOf(mode, 'Stage'), label: { mpw18: 'Stage Gear Farming', mpw4: 'Stage Gold Farming', soul: 'Stage Soul Farming' }[mode],
         value: () => String(value(mode, 'Stage')), choices: stageChoices },
       {
         type: 'choice', key: `${mode}Preset`, label: 'Préréglage de combat', value: () => value(mode, 'Preset'), choices: () => presetChoices(mode),

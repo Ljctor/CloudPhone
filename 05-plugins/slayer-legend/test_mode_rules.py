@@ -25,7 +25,7 @@ class Request(unittest.TestCase):
     def test_mpw4_needs_its_stage(self):
         asked, error = rules.request({"mode": "mpw4"})
         self.assertIsNone(asked)
-        self.assertEqual(error, rules.t("Farming mpw4 : choisis d’abord son stage"))
+        self.assertEqual(error, rules.t("Gold Farming : choisis d’abord son stage"))
         asked, error = rules.request({"mode": "mpw4", "stage4": 31})
         self.assertIsNone(error)
         self.assertEqual((asked[0], asked[2]["stage4"]), ("mpw4", 31))
@@ -95,14 +95,14 @@ class MineEnds(unittest.TestCase):
 
     def test_one_alert_naming_the_default(self):
         self.assertEqual(rules.back_text("mine no feather", "mpw18", 920),
-                         "Closed Mine stopped: no feather left, back to farming mpw18 (stage 920)")
+                         "Closed Mine stopped: no feather left, back to Gear Farming (stage 920)")
         self.assertEqual(rules.back_text("mine no feather", "free"),
                          "Closed Mine stopped: no feather left, back to free play")
         self.assertEqual(rules.back_text("mine entry", "mpw4", 925,
                                          "no way back into the mine (Dungeon screen not seen)"),
                          "Closed Mine stopped: no way back into the mine (Dungeon screen not seen), "
-                         "back to farming mpw4 (stage 925)")
-        self.assertEqual(rules.back_text("timer", "mpw18", 920), "Timer ended: back to farming mpw18 (stage 920)")
+                         "back to Gold Farming (stage 925)")
+        self.assertEqual(rules.back_text("timer", "mpw18", 920), "Timer ended: back to Gear Farming (stage 920)")
 
 
 class Timer(unittest.TestCase):
@@ -192,24 +192,24 @@ class Hold(unittest.TestCase):
 
     def test_the_alert_and_the_state_row(self):
         self.assertEqual(rules.hold_alert("mpw18", 59.6),
-                         "Switch to farming mpw18 on hold: you are playing. Next try in 60 s.")
+                         "Switch to Gear Farming on hold: you are playing. Next try in 60 s.")
         self.assertEqual(rules.hold_alert("mpw4", 12, applied=True),
-                         "Loadout mpw4 on hold: you are playing. Next try in 12 s.")
+                         "Loadout Gold Farming on hold: you are playing. Next try in 12 s.")
         self.assertEqual(texts.french(rules.hold_message("mpw18", 42)),
-                         "Passage au farming mpw18 en attente : tu joues · nouvel essai dans 42 s")
+                         "Passage à Gear Farming en attente : tu joues · nouvel essai dans 42 s")
         self.assertEqual(texts.french(rules.hold_message("mpw4", 42, applied=True)),
-                         "Configuration mpw4 en attente : tu joues · nouvel essai dans 42 s")
+                         "Configuration Gold Farming en attente : tu joues · nouvel essai dans 42 s")
         self.assertEqual(texts.english(rules.hold_message("mpw18", 42)),
-                         "Switch to farming mpw18 on hold: you are playing · next try in 42 s")
-        self.assertEqual(texts.french(rules.hold_message("mpw18", 0.2)), "Passage au farming mpw18 en attente : "
+                         "Switch to Gear Farming on hold: you are playing · next try in 42 s")
+        self.assertEqual(texts.french(rules.hold_message("mpw18", 0.2)), "Passage à Gear Farming en attente : "
                          "tu joues · nouvel essai dans 1 s", "never « dans 0 s »")
 
     def test_the_ready_text_says_the_hold_apart(self):
         self.assertEqual(rules.ready_text("mpw18", 95, held=60.2),
-                         "Farming mpw18 ready in 95 s (including 60 s waiting: you were playing)")
-        self.assertEqual(rules.ready_text("mpw18", 34, held=0.3), "Farming mpw18 ready in 34 s")
+                         "Gear Farming ready in 95 s (including 60 s waiting: you were playing)")
+        self.assertEqual(rules.ready_text("mpw18", 34, held=0.3), "Gear Farming ready in 34 s")
         self.assertEqual(rules.ready_text("mpw4", 80, applied=True, alert="X", held=50),
-                         "Loadout mpw4 applied in 80 s (including 50 s waiting: you were playing)")
+                         "Loadout Gold Farming applied in 80 s (including 50 s waiting: you were playing)")
 
     def test_free_or_resume_while_on_hold(self):
         hold = {"id": "a1", "action": None}

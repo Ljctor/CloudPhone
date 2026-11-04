@@ -206,7 +206,7 @@ class Switch(unittest.TestCase):
         line = next(line for line in self.lines if line.startswith("switch "))
         self.assertRegex(line, r"^switch mpw18→mpw4 in \d+ s \(stage \d+ s, preset \d+ s, soul_weapon \d+ s\), done$")
         self.assertEqual(len(game.alerts), 1, game.alerts)
-        self.assertRegex(game.alerts[0], r"^Farming mpw4 ready in \d+ s$", "within budget: the time alone")
+        self.assertRegex(game.alerts[0], r"^Gold Farming ready in \d+ s$", "within budget: the time alone")
 
     def test_the_timers_end_switches_back_on_time_without_a_watchdog(self):
         game = SlowGame(stage=905, preset="IV")
@@ -243,7 +243,7 @@ class Switch(unittest.TestCase):
             return (await h.state())[1]
         state = asyncio.run(go())
         self.assertEqual((state["mode"], state["default"], state["until"]), ("mpw4", "mpw4", None))
-        self.assertIn("Timer ended: back to farming mpw4 (stage 925)", game.alerts)
+        self.assertIn("Timer ended: back to Gold Farming (stage 925)", game.alerts)
 
     def test_free_play_as_the_default_touches_nothing_at_the_end(self):
         game = SlowGame(stage=905, preset="IV")
@@ -285,7 +285,7 @@ class Switch(unittest.TestCase):
         self.assertEqual(state["state"], "farming", "it still completes")
         self.assertTrue(there(game, 925, "II"))
         self.assertEqual(len(game.alerts), 1, game.alerts)
-        self.assertRegex(game.alerts[0], r"^Farming mpw4 ready in \d+ s; Switch mpw18 → mpw4 in \d+ s \(over 60 s\): "
+        self.assertRegex(game.alerts[0], r"^Gold Farming ready in \d+ s; Switch Gear Farming → Gold Farming in \d+ s \(over 60 s\): "
                                          r"slowest step: stage change \(\d+ s\)$")
 
     def test_the_users_10_s_are_waited_apart_and_never_counted(self):
@@ -308,8 +308,8 @@ class Switch(unittest.TestCase):
         # The hold said once; the time since the choice, the user's wait
         # included and said apart; no over-budget alert.
         self.assertEqual(len(game.alerts), 2, game.alerts)
-        self.assertEqual(game.alerts[0], "Switch to farming mpw4 on hold: you are playing. Next try in 10 s.")
-        self.assertRegex(game.alerts[1], r"^Farming mpw4 ready in \d+ s \(including 4\d s waiting: you were playing\)$")
+        self.assertEqual(game.alerts[0], "Switch to Gold Farming on hold: you are playing. Next try in 10 s.")
+        self.assertRegex(game.alerts[1], r"^Gold Farming ready in \d+ s \(including 4\d s waiting: you were playing\)$")
         self.assertGreaterEqual(int(game.alerts[1].split(" in ")[1].split(" ")[0]), 40)
         self.assertTrue(there(game, 925, "II"))
 
@@ -342,10 +342,10 @@ class Switch(unittest.TestCase):
         during = seen["during"]
         self.assertEqual((during["state"], during["setup"], during["hold"]["mode"]), ("waiting", True, "mpw4"))
         self.assertEqual(during["tone"], "hold", "yellow on the overlay")
-        self.assertEqual(french(during["message_t"]), "Passage au farming mpw4 en attente : tu joues · nouvel essai dans 10 s")
+        self.assertEqual(french(during["message_t"]), "Passage à Gold Farming en attente : tu joues · nouvel essai dans 10 s")
         self.assertEqual(len(game.alerts), 2, game.alerts)
-        self.assertEqual(game.alerts[0], "Switch to farming mpw4 on hold: you are playing. Next try in 10 s.")
-        self.assertRegex(game.alerts[1], r"^Farming mpw4 ready in \d+ s \(including 1[67]\d s waiting: you were playing\)$")
+        self.assertEqual(game.alerts[0], "Switch to Gold Farming on hold: you are playing. Next try in 10 s.")
+        self.assertRegex(game.alerts[1], r"^Gold Farming ready in \d+ s \(including 1[67]\d s waiting: you were playing\)$")
         self.assertEqual((seen["after"]["state"], seen["after"]["hold"]), ("farming", None))
         self.assertEqual(seen["after"]["tone"], "ok", "green once set up")
 
@@ -358,7 +358,7 @@ class Switch(unittest.TestCase):
         self.assertEqual(seen["answers"][0][0], 200)
         self.assertTrue(there(game, 925, "II"))
         self.assertEqual(seen["after"]["state"], "farming")
-        self.assertRegex(game.alerts[-1], r"^Farming mpw4 ready in \d+ s \(including 1\d s waiting: you were playing\)$")
+        self.assertRegex(game.alerts[-1], r"^Gold Farming ready in \d+ s \(including 1\d s waiting: you were playing\)$")
         self.assertEqual(len(game.alerts), 2, game.alerts)
 
     def test_free_play_instead_touches_nothing(self):
@@ -378,7 +378,7 @@ class Switch(unittest.TestCase):
         self.assertEqual((after["mode"], after["state"], after["hold"]), ("free", "free", None))
         self.assertIsNotNone(after["until"], "free play is timed, as its radio button")
         self.assertEqual(game.moves, [], "nothing tapped")
-        self.assertEqual(game.alerts, ["Switch to farming mpw4 on hold: you are playing. Next try in 10 s."])
+        self.assertEqual(game.alerts, ["Switch to Gold Farming on hold: you are playing. Next try in 10 s."])
 
     def test_the_hold_alert_has_two_buttons_with_a_one_time_token_revoked_after(self):
         game = SlowGame(stage=905, preset="IV", busy="l’utilisateur joue")
@@ -430,7 +430,7 @@ class Switch(unittest.TestCase):
         self.assertEqual(state["state"], "farming", french(state["message_t"]))
         line = next(l for l in self.lines if l.startswith("loadout "))
         self.assertRegex(line, r"^loadout mpw4 changed → applied in \d+ s \(.*\), done$")
-        self.assertRegex(game.alerts[-1], r"^Loadout mpw4 applied in \d+ s$")
+        self.assertRegex(game.alerts[-1], r"^Loadout Gold Farming applied in \d+ s$")
         self.assertEqual(len(h.farmed), 2, "the switch's own path, farm()")
 
     def test_a_soul_weapon_change_verifies_the_full_target(self):
@@ -447,7 +447,7 @@ class Switch(unittest.TestCase):
         self.assertEqual(h.souls, [], "a partial weapon check is not a full setup receipt")
         self.assertEqual(len(h.farmed), 2)
         self.assertTrue(there(game, 925, "II"))
-        self.assertRegex(game.alerts[-1], r"^Loadout mpw4 applied in \d+ s$")
+        self.assertRegex(game.alerts[-1], r"^Loadout Gold Farming applied in \d+ s$")
 
     def test_a_change_of_another_mode_or_the_same_values_does_nothing(self):
         game = SlowGame(stage=905, preset="IV")
@@ -488,18 +488,18 @@ class Switch(unittest.TestCase):
         line, alert = mode_rules.switch_report("mpw18", "mpw18", 21.2, {"preset": 4.0}, applied=True)
         self.assertEqual((line, alert), ("loadout mpw18 changed → applied in 21 s (preset 4 s)", None))
         _, alert = mode_rules.switch_report("mpw18", "mpw18", 75, {"stage": 70}, applied=True)
-        self.assertTrue(alert.startswith("Loadout mpw18 applied in 75 s (over 60 s)"), alert)
+        self.assertTrue(alert.startswith("Loadout Gear Farming applied in 75 s (over 60 s)"), alert)
 
     def test_the_ready_text(self):
-        self.assertEqual(mode_rules.ready_text("mpw18", 34.4), "Farming mpw18 ready in 34 s")
-        self.assertEqual(mode_rules.ready_text("mpw18", 21.0, applied=True), "Loadout mpw18 applied in 21 s")
+        self.assertEqual(mode_rules.ready_text("mpw18", 34.4), "Gear Farming ready in 34 s")
+        self.assertEqual(mode_rules.ready_text("mpw18", 21.0, applied=True), "Loadout Gear Farming applied in 21 s")
 
     def test_the_budget_report(self):
         line, alert = mode_rules.switch_report("mpw4", "mpw18", 38.2, {"stage": 24.0, "preset": 4.4, "auto": 6.0})
         self.assertEqual(line, "switch mpw4→mpw18 in 38 s (stage 24 s, preset 4 s, auto 6 s)")
         self.assertIsNone(alert)
         _, alert = mode_rules.switch_report("mpw4", "mpw18", 75, {"stage": 50, "preset": 4, "auto": 6})
-        self.assertEqual(alert, "Switch mpw4 → mpw18 in 75 s (over 60 s): slowest step: stage change (50 s)")
+        self.assertEqual(alert, "Switch Gold Farming → Gear Farming in 75 s (over 60 s): slowest step: stage change (50 s)")
         # The lease's wait (the user's minute, another holder) is said, never counted.
         line, alert = mode_rules.switch_report("mpw4", "mpw18", 20, {"stage": 10, "preset": 4, "auto": 6}, 55)
         self.assertEqual(line, "switch mpw4→mpw18 in 20 s (stage 10 s, preset 4 s, auto 6 s) "
@@ -516,7 +516,7 @@ class Switch(unittest.TestCase):
 class GoldScrollInMpw4(unittest.TestCase):
     """mpw4 farming looks for the gold scroll whether it is the default
     mode (« Mode par défaut ») or a timed one."""
-    GONE = "Farming mpw4: no more gold scroll"
+    GONE = "Gold Farming: no more gold scroll"
 
     def missing(self):
         """The real record and debounce, the scroll never seen in battle."""
@@ -554,7 +554,7 @@ class GoldScrollInMpw4(unittest.TestCase):
                           "until": h.ports.clock.wall() + 60})
         state = self.alerted(h, game, start, limit=900)
         self.assertEqual((state["mode"], state["until"], state["gold"]), ("mpw4", None, False))
-        self.assertIn("Timer ended: back to farming mpw4 (stage 925)", game.alerts)
+        self.assertIn("Timer ended: back to Gold Farming (stage 925)", game.alerts)
 
     def test_after_a_gateway_restart_as_the_default_mode(self):
         game = SlowGame(stage=925, preset="II")

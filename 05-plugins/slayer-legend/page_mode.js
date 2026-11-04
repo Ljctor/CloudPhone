@@ -23,7 +23,7 @@ const UNTIL = 'cloudphone-slayer-legend-mode-until';
 // A timed mode starts with this timer (then +30 … −30 to adjust it).
 const TIMED_MINUTES = 30;
 const DOTS = { green: '🟢', blue: '🔵', red: '🔴' };
-const MODE_NAMES = { mpw18: 'Farming mpw18', mpw4: 'Farming mpw4', soul: 'Soul Farming', free: 'Jeu libre',
+const MODE_NAMES = { mpw18: 'Gear Farming', mpw4: 'Gold Farming', soul: 'Soul Farming', free: 'Jeu libre',
   agent: 'Agent mode', mine: 'Mine fermée' };
 // The overlay's colour per tone (GET /mode).
 const TONES = { ok: '#ffffff', hold: '#409cff', error: '#ff4040', setup: '#ffa31a' };
@@ -214,14 +214,14 @@ export default function modeFeature(api, { known, watchdog, stage }) {
         options: [],
       },
       {
-        type: 'dialog', label: 'Farming mpw18',
+        type: 'dialog', label: 'Gear Farming',
         select: { key: 'mode', value: 'mpw18', default: 'mpw18' },
         options: [
           ...loadouts.options('mpw18', () => stageChoices('mpw18')),
         ],
       },
       {
-        type: 'dialog', label: 'Farming mpw4',
+        type: 'dialog', label: 'Gold Farming',
         // Only once configured: its stage chosen.
         select: { key: 'mode', value: 'mpw4', default: 'mpw18', disabled: () => !loadouts.stage('mpw4') },
         options: [
@@ -259,9 +259,9 @@ export default function modeFeature(api, { known, watchdog, stage }) {
         // button); never the mine.
         type: 'choice', key: 'defaultMode', label: 'Mode par défaut',
         choices: () => [
-          { value: 'mpw18', label: api.tr('Farming mpw18') },
+          { value: 'mpw18', label: api.tr('Gear Farming') },
           ...(loadouts.stage('mpw4') || defaultMode() === 'mpw4'
-            ? [{ value: 'mpw4', label: api.tr('Farming mpw4') }] : []),
+            ? [{ value: 'mpw4', label: api.tr('Gold Farming') }] : []),
           ...(loadouts.stage('soul') || defaultMode() === 'soul'
             ? [{ value: 'soul', label: api.tr('Soul Farming') }] : []),
           { value: 'free', label: api.tr('Jeu libre') },

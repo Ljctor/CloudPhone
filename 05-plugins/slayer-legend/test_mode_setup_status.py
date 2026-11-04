@@ -142,7 +142,7 @@ class SetupStatus(unittest.IsolatedAsyncioTestCase):
         state = self.part['api']['state']()
         self.assertEqual(state['state'], 'farming')
         self.assertEqual(state['message_t']['params'],
-                         {'name': 'mpw18', 'number': 970, 'preset': 'III'})
+                         {'name': 'Gear Farming', 'number': 970, 'preset': 'III'})
         self.assertEqual(self.farm_calls, [])
 
     async def test_health_and_other_target_receipts_do_not_confirm_startup_idle(self):

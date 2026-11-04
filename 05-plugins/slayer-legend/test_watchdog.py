@@ -237,17 +237,17 @@ class Alerts(unittest.TestCase):
         w.look(GONE)
         self.assertEqual(w.alerts(), [])
         w.looks(GONE, 8)
-        self.assertEqual(w.alerts(), [("warning", "Farming mpw18: the game is not running")])
+        self.assertEqual(w.alerts(), [("warning", "Gear Farming: the game is not running")])
         w.looks(BATTLE, 3)
         self.assertEqual(len(w.alerts()), 1, "well for less than a minute: not back yet")
         w.look(BATTLE)
-        self.assertEqual(w.alerts()[1:], [("normal", "Farming mpw18: monitoring is stable again")])
+        self.assertEqual(w.alerts()[1:], [("normal", "Gear Farming: monitoring is stable again")])
         self.assertEqual(rules.counters(w.memory, w.wall())["alerts"], 1)
 
     def test_adb_missing_is_an_error_and_never_repaired(self):
         w = Watch()
         w.looks(NO_ADB, 8)
-        self.assertEqual(w.alerts(), [("error", "Farming mpw18: adb does not answer: the emulator or adb is missing")])
+        self.assertEqual(w.alerts(), [("error", "Gear Farming: adb does not answer: the emulator or adb is missing")])
         self.assertEqual(w.repairs, [])
 
 
@@ -258,7 +258,7 @@ class OtherScreen(unittest.TestCase):
         w.looks(OTHER, 3)
         self.assertEqual(w.alerts(), [], "a stage transition or a loading screen")
         w.look(OTHER)
-        self.assertEqual(w.alerts(), [("error", "Farming mpw18: unknown screen: no text read; farming blocked")])
+        self.assertEqual(w.alerts(), [("error", "Gear Farming: unknown screen: no text read; farming blocked")])
         w.looks(OTHER, 40)
         self.assertEqual((w.repairs, w.plans), ([], []))
 
@@ -372,7 +372,7 @@ class Saver(unittest.TestCase):
         self.assertEqual(set(w.symptoms), {None}, "unread is not wrong")
         w.looks(OTHER_STAGE, 2)
         self.assertEqual(w.symptoms[-1], "wrong_stage")
-        self.assertEqual(w.alerts(), [("warning", "Farming mpw18: wrong stage, not 920")])
+        self.assertEqual(w.alerts(), [("warning", "Gear Farming: wrong stage, not 920")])
         self.assertEqual(w.kinds(), ["stage_change"])
 
 
@@ -483,8 +483,8 @@ class Backoff(unittest.TestCase):
         self.gone_for(w, 3 * 3600)
         self.assertEqual([n for n in w.notifications() if "the game is not running" not in n], [
             "Action incomplete: game relaunch; verification failed, next attempt in 1 min",
-            "Farming mpw18: game relaunch still failing, next attempt in 8 min",
-            "Farming mpw18: game relaunch still failing, next attempt in 30 min"])
+            "Gear Farming: game relaunch still failing, next attempt in 8 min",
+            "Gear Farming: game relaunch still failing, next attempt in 30 min"])
         self.assertFalse([r for r in w.records if "stuck" in said(r[2], r[3]).lower()])
 
     def test_the_status_says_when_the_next_try_is(self):
@@ -505,7 +505,7 @@ class Backoff(unittest.TestCase):
         # The last delay of battle: durable.
         w.looks(BATTLE, int(last // E) + 1)
         self.assertEqual(w.memory["backoff"], {})
-        self.assertEqual(w.notifications()[-1], "Farming mpw18: monitoring is stable again")
+        self.assertEqual(w.notifications()[-1], "Gear Farming: monitoring is stable again")
 
     def test_a_short_delay_needs_the_5_minute_floor(self):
         w = Watch()
@@ -1053,7 +1053,7 @@ class GoldTrigger(unittest.TestCase):
         _, alerts, _ = self.looks(8, "on", stage=940, answer={"result": "failed", "text_t": TEXTS["t"]("écran inattendu")})
         self.assertEqual(len(self.farmed), 1, "then its passive watch and delay")
         self.assertEqual(self.state["counters"]["next_attempt"]["stage_change"]["failures"], 1, "counted once")
-        stopped = [a for a in alerts if "Farming mpw18 blocked:" in a]
+        stopped = [a for a in alerts if "Gear Farming blocked:" in a]
         self.assertEqual(len(stopped), 1)
         self.assertIn("unexpected screen", stopped[0])
 
@@ -1109,7 +1109,7 @@ class ModesOnTheFeature(GoldTrigger):
         _, alerts, _ = self.looks(8, "on", stage=920, mode="mpw4")
         stage, preset, mode, highest = self.farmed[0]
         self.assertEqual((stage, preset, mode, highest), (915, "II", "mpw4", 925))
-        self.assertIn("Farming mpw4: wrong stage, not 915", alerts)
+        self.assertIn("Gold Farming: wrong stage, not 915", alerts)
         self.assertEqual(self.state["mode"], "mpw4")
         self.assertEqual(self.state["profile"]["stage"], 915)
 
@@ -1163,7 +1163,7 @@ class ModesOnTheFeature(GoldTrigger):
         read, alerts, other = self.looks(6, "off", stage=940, entering=True)
         self.assertEqual((read, alerts, other, self.farmed), ([], [], [], []))
         self.assertEqual(self.state["status"]["template"], "En pause : entrée dans le mode {mode}")
-        self.assertEqual(self.state["line"]["params"], {"mode": TEXTS["t"]("Farming mpw18")})
+        self.assertEqual(self.state["line"]["params"], {"mode": TEXTS["t"]("Gear Farming")})
 
     def test_free_play_looks_at_nothing(self):
         read, alerts, other = self.looks(6, "off", stage=940, mode="free", game=False)
@@ -1423,7 +1423,7 @@ class StageProgressBar(GoldTrigger):
     def test_a_45_s_stall_is_one_error_alert_and_no_tap(self):
         _, alerts, other = self.looks(12, "on", bar=lambda look: look * 0.27 % 1 if look <= 4 else 0.4)
         self.assertEqual(self.stalled(alerts),
-                         ["Farming mpw18: Stage progress bar stalled for 45 s"])
+                         ["Gear Farming: Stage progress bar stalled for 45 s"])
         self.assertEqual((other, self.farmed), ([], []))
         self.assertEqual(self.state["symptom"], "progress_stalled")
 
@@ -1439,7 +1439,7 @@ class StageProgressBar(GoldTrigger):
         _, alerts, _ = self.looks(11, "on", bar=bar)
         self.assertEqual(self.stalled(alerts), [])
         _, alerts, _ = self.looks(12, "on", bar=bar)
-        self.assertEqual(self.stalled(alerts), ["Farming mpw18: Stage progress bar stalled for 90 s"])
+        self.assertEqual(self.stalled(alerts), ["Gear Farming: Stage progress bar stalled for 90 s"])
 
     def test_another_screen_starts_the_count_over(self):
         # Power Saving Mode has no bar: unknown, and the count starts over.
@@ -1461,7 +1461,7 @@ class StageProgressBar(GoldTrigger):
         bar = lambda look: 0.4 if look <= 6 else look * 0.27 % 1
         _, alerts, _ = self.looks(12, "on", bar=bar)
         self.assertEqual(len(self.stalled(alerts)), 1)
-        self.assertEqual(alerts[-1], "Farming mpw18: monitoring is stable again")
+        self.assertEqual(alerts[-1], "Gear Farming: monitoring is stable again")
 
     def test_free_play_and_the_mine_count_nothing(self):
         for mode in ("free", "mine"):
@@ -1476,7 +1476,7 @@ class StageProgressBar(GoldTrigger):
                  if notify and "stalled" in said(text, params)]
         self.assertEqual(times, list(range(15, 130 * E, 120)))
         w.looks(BATTLE, rules.RECOVERED_AFTER)
-        self.assertEqual(w.alerts()[-1], ("normal", "Farming mpw18: monitoring is stable again"))
+        self.assertEqual(w.alerts()[-1], ("normal", "Gear Farming: monitoring is stable again"))
 
 
 PARKED = {**BATTLE, "screen": "parked"}
@@ -1510,7 +1510,7 @@ class Parking(unittest.TestCase):
 
     def test_a_park_that_does_not_take_is_alerted_late(self):
         w = Watch(profile=rules.profile(None, 920, park=True), available=ALL + ("park",))
-        off = ("warning", "Farming mpw18: off the Soul Weapon screen")
+        off = ("warning", "Gear Farming: off the Soul Weapon screen")
         w.looks(BATTLE, rules.PARK_ALERT_AFTER - 1)
         self.assertNotIn(off, w.alerts())
         self.assertIn("park", w.kinds())
@@ -1543,7 +1543,7 @@ class Parking(unittest.TestCase):
         _, alerts, _ = self.feature().looks(8, "on", park="real", screen=lambda look: "parked",
                                             bar=lambda look: 0.4)
         self.assertEqual([a for a in alerts if "Stage progress bar stalled" in a],
-                         ["Farming mpw18: Stage progress bar stalled for 45 s"])
+                         ["Gear Farming: Stage progress bar stalled for 45 s"])
         # The controls are never unfolded on the parking screen.
         self.assertEqual((self.harness.parks, self.harness.farmed), ([], []))
 
@@ -1588,7 +1588,7 @@ class RedirectDescriptions(unittest.TestCase):
         notice = said(rules.redirect_notice(intent, rules.t("stage {stage} au lieu de {target}", stage=960, target=970)), {})
         self.assertIn("970", notice)
         self.assertIn("III", notice)
-        self.assertEqual(notice, "Restoring Farming mpw18: stage 970, preset III.")
+        self.assertEqual(notice, "Restoring Gear Farming: stage 970, preset III.")
         details = said(rules.redirect_details(intent), {})
         self.assertIn("destination: Soul Weapon", details)
         self.assertNotIn("Repair", notice)
@@ -1618,7 +1618,7 @@ class Focus(unittest.TestCase):
         w.looks(BATTLE, 4)
         w.looks({**AWAY, "window": "com.android.launcher3/.Launcher"}, 3)
         alert = next(r for r in w.records if r[4])
-        self.assertEqual(said(alert[2], alert[3]), "Farming mpw18: another app is in front: "
+        self.assertEqual(said(alert[2], alert[3]), "Gear Farming: another app is in front: "
                                                    "com.android.launcher3/.Launcher")
 
     def test_googles_window_is_the_sign_in_path(self):
@@ -1791,7 +1791,7 @@ class NamedScreens(unittest.TestCase):
         w = Watch()
         w.looks(BATTLE, 3)
         w.looks({**OTHER, "named": '"Connected on another device" [OK]'}, 4)
-        self.assertEqual(w.alerts(), [("error", 'Farming mpw18: unknown screen: "Connected on another device" [OK]; '
+        self.assertEqual(w.alerts(), [("error", 'Gear Farming: unknown screen: "Connected on another device" [OK]; '
                                                  'farming blocked')])
         self.assertEqual(w.repairs, [])
         self.assertEqual(w.plans, [])
@@ -1801,19 +1801,19 @@ class NamedScreens(unittest.TestCase):
         w.looks(BATTLE, 3)
         w.after_mode = True
         w.looks({**OTHER, "named": '"Select save data" [Local] [Cloud]'}, 2)
-        self.assertEqual(w.alerts(), [("error", 'Farming mpw18: unknown screen after the mode ended: '
+        self.assertEqual(w.alerts(), [("error", 'Gear Farming: unknown screen after the mode ended: '
                                                  '"Select save data" [Local] [Cloud]; farming blocked')])
 
     def test_a_known_screen_is_stated_open_never_unknown(self):
         w = Watch()
         w.looks(BATTLE, 3)
         w.looks({**OTHER, "screen": "known", "named": "Soul Weapon Engraving"}, 4)
-        self.assertEqual(w.alerts(), [("error", "Farming mpw18: screen Soul Weapon Engraving open; farming blocked")])
+        self.assertEqual(w.alerts(), [("error", "Gear Farming: screen Soul Weapon Engraving open; farming blocked")])
         w = Watch()
         w.looks(BATTLE, 3)
         w.after_mode = True
         w.looks({**OTHER, "screen": "known", "named": "Soul Weapon Engraving"}, 2)
-        self.assertEqual(w.alerts(), [("error", "Farming mpw18: screen Soul Weapon Engraving open after the mode "
+        self.assertEqual(w.alerts(), [("error", "Gear Farming: screen Soul Weapon Engraving open after the mode "
                                                  "ended; farming blocked")])
         for text in rules.KNOWN.values():
             self.assertNotIn("inconnu", text)
@@ -1879,11 +1879,11 @@ class Flapping(unittest.TestCase):
         w.looks(AWAY, 3)
         w.looks(MENU, 6)
         w.looks(BATTLE, 4)
-        self.assertNotIn("Farming mpw18: monitoring is stable again", w.notifications(), "repaired: 5 minutes of battle first")
+        self.assertNotIn("Gear Farming: monitoring is stable again", w.notifications(), "repaired: 5 minutes of battle first")
         w.looks(BATTLE, rules.RECOVERY_FLOOR // E)
         self.assertEqual(w.kinds(), ["relaunch", "back_to_battle"])
         self.assertLessEqual(len(w.notifications()), 3, w.notifications())
-        self.assertEqual(w.notifications()[-1], "Farming mpw18: monitoring is stable again")
+        self.assertEqual(w.notifications()[-1], "Gear Farming: monitoring is stable again")
 
     def test_c_a_missed_capture_keeps_the_menu_grace(self):
         w = Watch()
@@ -1908,9 +1908,9 @@ class Status(unittest.TestCase):
     def test_the_status_says_the_numeral_never_a_stage_number(self):
         _, text, params, _ = rules.judge(BATTLE, PROFILE, NUMERALS.get, None, False, rules.fresh(), 60)
         t = TEXTS["t"]
-        self.assertEqual(rules.status(text, params), t("{mode} : {what}", mode=t("Farming mpw18"),
+        self.assertEqual(rules.status(text, params), t("{mode} : {what}", mode=t("Gear Farming"),
                                                        what=t("OK (numéral {numeral})", numeral="III")))
-        self.assertEqual(rules.status(text, params, "mpw4")["params"]["mode"], t("Farming mpw4"))
+        self.assertEqual(rules.status(text, params, "mpw4")["params"]["mode"], t("Gold Farming"))
 
 
 class Modes(unittest.TestCase):
@@ -1920,7 +1920,7 @@ class Modes(unittest.TestCase):
         w = Watch()
         w.looks(BATTLE, 3)
         w.looks({**BATTLE, "stage": 921, "numeral": 4}, 2)
-        self.assertEqual(w.alerts(), [("warning", "Farming mpw18: wrong stage, not 920")])
+        self.assertEqual(w.alerts(), [("warning", "Gear Farming: wrong stage, not 920")])
         self.assertEqual(w.kinds(), ["stage_change"])
 
     def test_mpw4_farming_has_its_own_stage_and_names_itself(self):
@@ -1928,7 +1928,7 @@ class Modes(unittest.TestCase):
         w.looks({**BATTLE, "stage": 915, "numeral": None}, 3)
         self.assertEqual(w.symptoms, [None] * 3, "915 is mpw4's stage")
         w.looks({**BATTLE, "stage": 920}, 2)
-        self.assertEqual(w.alerts(), [("warning", "Farming mpw4: wrong stage, not 915")])
+        self.assertEqual(w.alerts(), [("warning", "Gold Farming: wrong stage, not 915")])
         self.assertEqual(w.kinds(), ["stage_change"])
         w.looks({**BATTLE, "stage": 915, "battle_settings": "I"}, 2)
         self.assertEqual(w.symptoms[-1], "wrong_battle_settings", "its own preset")

@@ -261,7 +261,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
         status["intention"] = {"owner": owner, "kind": "apply_loadout",
                                "destination": "soul_weapon" if parked else "battle",
                                "destination_t": t("Soul Weapon") if parked else t("Combat"),
-                               "purpose_t": t("appliquer la configuration demandée de {mode}", mode=name),
+                               "purpose_t": t("appliquer la configuration demandée de {mode}", mode=rules.mode_name(name)),
                                "route": None, "route_known": False}
         try:
             completed = await apply_stage(number, mpw, applied)
@@ -332,7 +332,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
         required before announcing readiness."""
         name = "soul" if mpw == "soul" else f"mpw{mpw}"
         preset = loadouts["loadout"](name).get("preset")
-        moving = t("Passage au stage {number} ({name})", number=number, name=name)
+        moving = t("Passage au stage {number} ({name})", number=number, name=rules.mode_name(name))
         report("moving", moving)
         since = status["switch_at"] if status["switch_at"] is not None else ports.clock.monotonic()
         waited, held, failures = 0.0, 0.0, 0
@@ -407,8 +407,8 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
 
     def farming_text(name, number, preset):
         if preset:
-            return t("Farming {name} au stage {number}, preset {preset}", name=name, number=number, preset=preset)
-        return t("Farming {name} au stage {number}", name=name, number=number)
+            return t("{name} au stage {number}, preset {preset}", name=rules.mode_name(name), number=number, preset=preset)
+        return t("{name} au stage {number}", name=rules.mode_name(name), number=number)
 
     def confirm(name, *, verified_setup=False):
         """Only a complete setup receipt acknowledges failure or startup idle.
@@ -490,7 +490,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
             if move[0] == "stage":
                 await set_stage(move[1], move[2])
             elif move[0] == "choose":
-                report("idle", t("Farming {name} : choisis le stage", name="Soul Farming" if move[1] == "soul" else f"mpw{move[1]}"))
+                report("idle", t("{name} : choisis le stage", name=rules.mode_name("soul" if move[1] == "soul" else f"mpw{move[1]}")))
             elif move[0] in ("free", "agent"):
                 report("free", free_text() if name == "free" else t("Agent mode : agent autorisé à jouer"))
             else:
@@ -507,7 +507,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
         owner = object()
         status["intention"] = {"owner": owner, "kind": "leave_farming", "destination": "battle",
                                "destination_t": t("Combat"),
-                               "purpose_t": t("libérer le jeu pour {mode}", mode=name),
+                               "purpose_t": t("libérer le jeu pour {mode}", mode=rules.mode_name(name)),
                                "route": None, "route_known": False}
         try:
             answer = await farming["unpark"](name)
@@ -535,7 +535,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
         status.update(switch=(name, name), switch_at=ports.clock.monotonic())
         if not after.get("stage"):
             async def idle():
-                report("idle", t("Farming {name} : choisis le stage", name=name))
+                report("idle", t("{name} : choisis le stage", name=rules.mode_name(name)))
             replace_change(idle)
             return
         replace_change(lambda: set_stage(after["stage"], "soul" if name == "soul" else int(name[3:]), applied=True))
@@ -566,7 +566,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
         status["scroll"], news = scroll.look(status["scroll"], await ports.analyse(gold_facts, shot))
         if news:
             ports.log("normal", f"Mode mpw4: gold scroll {news}")
-            await ports.notify("Farming mpw4: " + ("no more gold scroll" if news == "gone" else "gold scroll back"))
+            await ports.notify("Gold Farming: " + ("no more gold scroll" if news == "gone" else "gold scroll back"))
 
     async def watch():
         """Ends a timed mode: back to the default mode once its time is up
@@ -725,7 +725,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
         """At the gateway's start: the timed mode state.json kept goes on."""
         if rules.watched(status["mode"], status["default"]):
             report(*{"free": ("free", free_text()), "agent": ("free", t("Agent mode : agent autorisé à jouer")),
-                     "mine": ("mine", t("Mine"))}.get(status["mode"], ("idle", t("Farming {name}", name=status["mode"]))))
+                     "mine": ("mine", t("Mine"))}.get(status["mode"], ("idle", t("{name}", name=rules.mode_name(status["mode"])))))
             status["task"] = ports.spawn(watch())
 
     saved = ports.store.saved.get("mode") or {}

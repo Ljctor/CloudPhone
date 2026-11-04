@@ -74,6 +74,7 @@ node "$(dirname "$0")/../slayer-legend/test_page_trace.mjs"
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_mode_setup_status.py -q
 # POST /loadout requires complete stage/preset/weapon proof, including weapon-only edits.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_loadout_receipt.py -q
+# Gear Farming / Gold Farming retain their internal mode IDs and renamed outcomes.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_mode_rules.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_transaction_ownership.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_game.py -q

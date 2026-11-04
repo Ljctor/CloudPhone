@@ -35,7 +35,7 @@ const intentRow = ui.options.find((option) => option.label === 'Intention');
 assert.equal(intentRow.visible(), false);
 const overlay = ui.overlay();
 assert.equal(overlay.length, 2, 'game overlay remains only mode and timer');
-assert.equal(overlay[0].text, 'FARMING MPW18');
+assert.equal(overlay[0].text, 'GEAR FARMING');
 assert.equal(overlay[1].text, 'défaut');
 state.intention = { kind: 'resource_refresh', destination: 'equipment_weapon',
   purpose_t: { template: 'Actualiser les compteurs de ressources', params: {} }, route: null, route_known: false };
@@ -81,7 +81,7 @@ let resolveSetup;
 setupResponse = new Promise((resolve) => { resolveSetup = resolve; });
 const beforeSetup = posts.length;
 ui.onSetting('stage18', '970'); // Restore the accepted draft before retrying it.
-const loadoutStatus = ui.options.find((option) => option.label === 'Farming mpw18').options
+const loadoutStatus = ui.options.find((option) => option.label === 'Gear Farming').options
   .find((option) => option.label === 'État');
 assert.equal(loadoutStatus.button().label, 'Réessayer cette configuration');
 const applying = loadoutStatus.button().run();

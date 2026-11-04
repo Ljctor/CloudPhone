@@ -25,7 +25,7 @@ DEFAULT = "mpw18"
 # What the default mode may be (never the mine: it ends by itself).
 DEFAULTS = ("free", "mpw18", "mpw4", "soul", "agent")
 # "back to ..." once a timed mode ends, per default mode (its alert).
-BACK_TO = {"mpw18": "back to farming mpw18", "mpw4": "back to farming mpw4",
+BACK_TO = {"mpw18": "back to Gear Farming", "mpw4": "back to Gold Farming",
            "soul": "back to Soul Farming", "free": "back to free play", "agent": "back to agent mode"}
 # A timed mode chosen without an end time runs this long.
 TIMED_MINUTES = 30
@@ -91,7 +91,7 @@ def switch_report(before, after, seconds, timings, waited=0.0, applied=False):
     slowest = max(timings, key=timings.get) if timings else None
     why = (f": slowest step: {STEP_NAMES.get(slowest, slowest)} ({round(timings[slowest])} s)"
            if slowest else "")
-    what = f"Loadout {after} applied" if applied else f"Switch {before} → {after}"
+    what = f"Loadout {mode_name(after)} applied" if applied else f"Switch {mode_name(before)} → {mode_name(after)}"
     return line, f"{what} in {round(seconds)} s (over {SWITCH_BUDGET} s){why}"
 
 
@@ -134,7 +134,7 @@ def request(body, stored=None, default=DEFAULT):
     numbers = {key: value if value is not None else (stored or {}).get(key) for key, value in numbers.items()}
     # A mode is chosen only once configured (the page greys it out until then).
     if mode == "mpw4" and not numbers["stage4"]:
-        return None, t("Farming mpw4 : choisis d’abord son stage")
+        return None, t("Gold Farming : choisis d’abord son stage")
     if mode == "soul" and not (numbers["stageSoul"] and 1 <= numbers["stageSoul"] <= 99999):
         return None, t("Soul Farming : choisis d’abord son stage")
     if mode == "mine" and not (numbers["floor"] and 1 <= numbers["floor"] <= 9999
@@ -155,7 +155,7 @@ def default_request(body, numbers, current):
     if default not in DEFAULTS:
         return None, t("{field} : un de {choices}", field="default", choices=", ".join(DEFAULTS))
     if default == "mpw4" and not numbers.get("stage4"):
-        return None, t("Farming mpw4 : choisis d’abord son stage")
+        return None, t("Gold Farming : choisis d’abord son stage")
     if default == "soul" and not numbers.get("stageSoul"):
         return None, t("Soul Farming : choisis d’abord son stage")
     return default, None
@@ -232,13 +232,18 @@ def retry_after(failures, elapsed):
     return delay if elapsed + delay < SWITCH_BUDGET else None
 
 
+def mode_name(name):
+    """User-facing names; persisted mode IDs and loadout keys stay unchanged."""
+    return {"mpw18": "Gear Farming", "mpw4": "Gold Farming", "soul": "Soul Farming"}.get(name, name)
+
+
 def ready_text(name, seconds, applied=False, alert=None, held=0.0):
     """The one notification once a farming mode is set up: the seconds
     since it was chosen (applied: since its loadout changed), the lease's
     wait included; held: the part of it on hold while the user played,
     said apart. Over-budget step diagnostics stay in the technical log."""
-    text = (f"Loadout {name} applied in {round(seconds)} s" if applied
-            else f"{'Soul Farming' if name == 'soul' else 'Farming ' + name} ready in {round(seconds)} s")
+    text = (f"Loadout {mode_name(name)} applied in {round(seconds)} s" if applied
+            else f"{mode_name(name)} ready in {round(seconds)} s")
     if round(held):
         text += f" (including {round(held)} s waiting: you were playing)"
     return text
@@ -246,7 +251,7 @@ def ready_text(name, seconds, applied=False, alert=None, held=0.0):
 
 def blocked_text(name, number, reason):
     """A human outcome/reason; detailed switch diagnostics are logged separately."""
-    return f"{'Soul Farming' if name == 'soul' else 'Farming ' + name} blocked at stage {number}: {reason}"
+    return f"{mode_name(name)} blocked at stage {number}: {reason}"
 
 
 # The lease's refusal while the user played in the last 5 s (ports.Lease):
@@ -272,14 +277,14 @@ def hold_buttons(hold_id, token):
 def hold_alert(name, left, applied=False):
     """The one alert when a switch is put on hold because the user plays:
     left, the seconds before its next try."""
-    what = f"Loadout {name}" if applied else f"Switch to farming {name}"
+    what = f"Loadout {mode_name(name)}" if applied else f"Switch to {mode_name(name)}"
     return f"{what} on hold: you are playing. Next try in {max(1, round(left))} s."
 
 
 def hold_message(name, left, applied=False):
     """The État row's text while on hold (a status text): « Passage au
     farming mpw18 », or « Configuration mpw18 » (applied), en attente."""
-    what = t("Configuration {name}", name=name) if applied else t("Passage au farming {name}", name=name)
+    what = t("Configuration {name}", name=mode_name(name)) if applied else t("Passage à {name}", name=mode_name(name))
     return t("{what} en attente : tu joues · nouvel essai dans {seconds} s", what=what, seconds=max(1, round(left)))
 
 

@@ -629,7 +629,7 @@ class Mode(unittest.TestCase):
         calls, state, alerts = self.enter([{**done(), "verified_setup": True}])
         self.assertEqual(calls, [(931, "III", "mpw4")])
         self.assertEqual(state["state"], "farming", french(state["message_t"]))
-        self.assertEqual(alerts, ["Farming mpw4 ready in 0 s"])
+        self.assertEqual(alerts, ["Gold Farming ready in 0 s"])
 
     def test_failure_is_tried_again_within_the_budget_then_one_alert(self):
         failed = {"result": "failed", "text": "ouverture de Select Region"}
@@ -645,7 +645,7 @@ class Mode(unittest.TestCase):
         calls, state, alerts = self.enter([failed, {**done(), "verified_setup": True}])
         self.assertEqual(len(calls), 2)
         self.assertEqual(state["state"], "farming", french(state["message_t"]))
-        self.assertEqual(alerts, ["Farming mpw4 ready in 2 s"], "no failure alert, the retry's time in")
+        self.assertEqual(alerts, ["Gold Farming ready in 2 s"], "no failure alert, the retry's time in")
 
     def test_typed_preset_policy_refusal_stops_after_one_attempt(self):
         reason = "Préréglage IV demandé, II lu : changement bloqué, actions en pause"
@@ -664,7 +664,7 @@ class Mode(unittest.TestCase):
         calls, state, alerts = self.enter([transient, {**done(), "verified_setup": True}])
         self.assertEqual(len(calls), 2, "retry policy never infers permanent failure from translated text")
         self.assertEqual(state["state"], "farming")
-        self.assertEqual(alerts, ["Farming mpw4 ready in 2 s"])
+        self.assertEqual(alerts, ["Gold Farming ready in 2 s"])
 
     def test_retry_backoff(self):
         self.assertEqual([mode_rules.retry_after(n, 0) for n in (1, 2, 3, 4, 5)], [2, 4, 8, 16, 16])
@@ -692,14 +692,14 @@ class Mode(unittest.TestCase):
         self.assertEqual(len(calls), 2)
         self.assertEqual(state["state"], "farming")
         self.assertIsNone(state["hold"], "the hold is over")
-        self.assertEqual(alerts[0], "Switch to farming mpw4 on hold: you are playing. Next try in 5 s.")
+        self.assertEqual(alerts[0], "Switch to Gold Farming on hold: you are playing. Next try in 5 s.")
         # The fake's sleeps all move one clock: the hold's time is all of it.
-        self.assertRegex(alerts[1], r"^Farming mpw4 ready in (\d+) s \(including \1 s waiting: you were playing\)$")
+        self.assertRegex(alerts[1], r"^Gold Farming ready in (\d+) s \(including \1 s waiting: you were playing\)$")
         self.assertEqual(len(alerts), 2)
 
     def test_another_holder_is_waited_for_without_a_hold(self):
         calls, state, alerts = self.enter(["bail tenu par mine", {**done(), "verified_setup": True}])
-        self.assertEqual(alerts, ["Farming mpw4 ready in 2 s"])
+        self.assertEqual(alerts, ["Gold Farming ready in 2 s"])
 
     def test_the_lease_waited_for_30_min_at_most_then_one_alert(self):
         held = 1 + mode_rules.LEASE_WAIT // mode_rules.BUSY_RETRY
@@ -707,7 +707,7 @@ class Mode(unittest.TestCase):
         # mpw4 gave up after LEASE_WAIT (one alert); its timer then ended:
         # back to mpw18, which farms.
         self.assertEqual([mode for _, _, mode in calls], ["mpw4"] * held + ["mpw18"])
-        self.assertEqual(alerts[0], "Farming mpw4 blocked at stage 931: another action is still running after 30 min")
+        self.assertEqual(alerts[0], "Gold Farming blocked at stage 931: another action is still running after 30 min")
         self.assertEqual(len([a for a in alerts if "blocked" in a]), 1)
 
     def test_plan_is_said_not_alerted(self):
