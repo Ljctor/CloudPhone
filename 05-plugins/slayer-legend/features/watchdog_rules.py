@@ -174,6 +174,9 @@ SYMPTOMS = {
     "wrong_stage": "mauvais stage, pas le {stage}",
     "wrong_battle_settings": "mauvais préréglage de combat : pas le {preset}",
     "wrong_loadout": "mauvais équipement : {what}",
+    "setup_check_failed": "contrôle de la configuration échoué : {what}",
+    "verification_due": "contrôle de l’arme et de la gravure à refaire",
+    "verification_overdue": "contrôle de l’arme et de la gravure non obtenu depuis {seconds} s ; configuration non vérifiée",
     "progress_stalled": "barre de progression du stage immobile depuis {seconds} s",
     "unparked": "hors de l’écran Soul Weapon",
     "unexpected": "écran inconnu : {screen} ; farming bloqué",
@@ -200,6 +203,9 @@ REPAIRS = {
     "wrong_stage": "stage_change",
     "wrong_battle_settings": "select_preset",
     "wrong_loadout": "loadout",
+    "setup_check_failed": "loadout",
+    "verification_due": "loadout",
+    "verification_overdue": "loadout",
     "progress_stalled": None,
     "unparked": "park",
     "unexpected": None,
@@ -225,7 +231,7 @@ ESCALATE = (480, 1800)
 KINDS = tuple(REPAIR_NAMES)
 # Error level: adb gone, the ANR, a stalled bar, and another screen (the
 # plugin does not know it: a bug report).
-ERRORS = ("adb_missing", "anr", "after_mode_screen", "progress_stalled", "unexpected", "wrong_loadout", "monitoring_unavailable", "progress_unverified")
+ERRORS = ("adb_missing", "anr", "after_mode_screen", "progress_stalled", "unexpected", "wrong_loadout", "setup_check_failed", "verification_overdue", "monitoring_unavailable", "progress_unverified")
 # Alert-only symptoms said again when they last this long (seconds).
 TIERED = ("progress_stalled",)
 # Repeated unresolved incidents are reported on wall time, never per frame.
@@ -382,6 +388,14 @@ def roman(number):
     return text
 
 
+def verification_status(seen, memory):
+    """Missing proof is pending; a bounded unsuccessful wait is a blocker."""
+    if seen.get("verification_overdue") is not None:
+        return "verification_overdue", SYMPTOMS["verification_overdue"], {
+            "seconds": round(seen["verification_overdue"])}, memory
+    return "verification_due", SYMPTOMS["verification_due"], {}, memory
+
+
 def judge(seen, profile, numeral_of, last_input, resumed, memory, now, after_mode=False):
     """(symptom, text, params, memory) for one look.
 
@@ -453,6 +467,10 @@ def judge(seen, profile, numeral_of, last_input, resumed, memory, now, after_mod
         return "sign_in", SYMPTOMS["sign_in"], {}, memory
     if screen == "engraving" and seen.get("loadout"):
         return "wrong_loadout", SYMPTOMS["wrong_loadout"], {"what": seen["loadout"]}, memory
+    if screen == "engraving" and seen.get("setup_failure"):
+        return "setup_check_failed", SYMPTOMS["setup_check_failed"], {"what": seen["setup_failure"]}, memory
+    if screen == "engraving" and seen.get("verification_due"):
+        return verification_status(seen, memory)
     if screen == "menu":
         since = now if menu_since is None else menu_since
         memory["menu_since"] = since
@@ -480,6 +498,10 @@ def judge(seen, profile, numeral_of, last_input, resumed, memory, now, after_mod
         if seen.get("stalled") is not None:
             return "progress_stalled", SYMPTOMS["progress_stalled"], {
                 "seconds": round(seen["stalled"])}, memory
+        if seen.get("setup_failure"):
+            return "setup_check_failed", SYMPTOMS["setup_check_failed"], {"what": seen["setup_failure"]}, memory
+        if seen.get("verification_due"):
+            return verification_status(seen, memory)
         if profile.get("park") and seen["screen"] == "battle":
             return "unparked", SYMPTOMS["unparked"], {}, memory
         if number is not None and number == wanted:

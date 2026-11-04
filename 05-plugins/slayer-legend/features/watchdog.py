@@ -104,7 +104,8 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
               "bar": rules.bar_fresh(), "relaunched_at": None,
               "policy_block": copy.deepcopy(saved_block), "last_input": None,
               "notice_wall": None, "notice_attempt": None, "notice_mode": None, "observed": None,
-              "critical_observation": None, "entry_mode": None, "entry_since": None}
+              "critical_observation": None, "entry_mode": None, "entry_since": None,
+              "setup_failure": None, "verification_since": None}
     notice_lock = asyncio.Lock()
 
     def notice_context():
@@ -263,6 +264,11 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                 "input": copy.deepcopy(input_reader() if callable(input_reader) else status["last_input"]),
                 "preset_allowed": bool(callable(allowed) and allowed("battle_settings", "preset"))}
 
+    def active_setup_failure():
+        failed = status["setup_failure"]
+        name = status["mode"]
+        return failed if failed and name in FARMED and failed["context"] == policy_context(name) else None
+
     def pending_engraving():
         """Unfinished work or no current proof: both outrank preset policy."""
         soul = farming.get("soul_weapon_state", lambda: None)() if farming else None
@@ -283,6 +289,33 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         if block:
             memory = rules.retry(memory, block["kind"])
             status["policy_block"] = None
+
+    def setup_verified(receipt):
+        """A current complete receipt only acknowledges its setup fault family."""
+        nonlocal memory
+        name = receipt.get("mode")
+        if (receipt.get("result") != "done" or name not in FARMED or status["mode"] != name
+                or receipt.get("target") != (loadout(name) or {})):
+            return
+        status["setup_failure"] = None
+        status["verification_since"] = None
+        setup_kinds = (*FARMING, "loadout")
+        block = status["policy_block"]
+        if block and block["context"]["mode"] == name and block["context"]["target"] == receipt["target"]:
+            release_policy_block()
+        for kind in setup_kinds:
+            memory = rules.retry(memory, kind)
+        if memory["verifying"] in setup_kinds:
+            memory["verifying"] = None
+        if rules.REPAIRS.get(status["symptom"]) in setup_kinds:
+            status["symptom"] = None
+            memory["symptom"] = None
+            memory["incidents"] = {kind: stamp for kind, stamp in memory.get("incidents", {}).items()
+                                   if kind not in setup_kinds}
+            show(ports.t("Configuration vérifiée"))
+
+    if "on_setup_verified" in modes:
+        modes["on_setup_verified"](setup_verified)
 
     game = getattr(ports, "game", None)
 
@@ -442,6 +475,12 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             ports.store.save()
             return
         if answer["result"] == "failed":
+            if mode_now() == name and policy_context(name) == attempt_context:
+                # Only an actual failed check for this target/input may make
+                # missing proof a fault. Lifetime backoff is not evidence.
+                status["setup_failure"] = {"context": attempt_context, "text_t": copy.deepcopy(answer["text_t"])}
+                if status["symptom"] not in CRITICAL:
+                    status["symptom"] = "setup_check_failed"
             memory, actions = rules.stopped(memory, kind, ports.clock.wall(), random.uniform(-1.0, 1.0), name)
             # Why it stopped, with the backoff's alert (if it is one).
             notify = any(action[4] for action in actions)
@@ -454,7 +493,8 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                 status["failure_notices"][kind] = failure_key
             await notify_all([(*action[:4], False) for action in actions])
         elif answer["result"] == "done" and answer.get("verified_setup"):
-            release_policy_block()
+            if mode_now() == name and policy_context(name) == attempt_context:
+                setup_verified({"result": "done", "mode": name, "target": attempt_context["target"]})
             modes["confirm"](name, verified_setup=True)
         elif answer["result"] == "plan":
             memory = rules.not_run(memory, kind)
@@ -538,6 +578,8 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
             status["last_input"] = copy.deepcopy(last)
         if name != status["mode"]:
             status["critical_observation"] = None
+            status["setup_failure"] = None
+            status["verification_since"] = None
             status["redirect_episode"] = None
             status["failure_notices"] = {}
             if status["mode"] is not None:
@@ -564,6 +606,7 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         if why or launches["running"]():
             status["bar"] = rules.bar_fresh()
         if why:
+            status["verification_since"] = None
             if name not in rules.MODE_NAMES or moving:
                 memory = rules.suspended(memory)
                 status["resumed"] = True
@@ -576,8 +619,28 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         seen = await look()
         # A healthy battle/parking frame says nothing about an interrupted
         # engraving. Keep its durable repair intent visible after a restart.
-        if name in FARMED and (mode_state.get("state") == "failed" or pending_engraving()):
-            seen["loadout"] = ports.t("configuration demandée non vérifiée")
+        if name in FARMED:
+            soul = farming.get("soul_weapon_state", lambda: None)() if farming else None
+            unfinished = bool(((soul or {}).get("recovery") or {}).get("required"))
+            failed = active_setup_failure()
+            if unfinished:
+                seen["loadout"] = ports.t("configuration demandée non vérifiée")
+                status["verification_since"] = None
+            elif failed or mode_state.get("state") == "failed":
+                seen["setup_failure"] = failed["text_t"] if failed else (
+                    mode_state.get("message_t") or ports.t("configuration demandée non vérifiée"))
+                status["verification_since"] = None
+            elif pending_engraving():
+                # Expired, invalidated or absent proof requests a check. It
+                # is not an observation of wrong equipment/incomplete cells.
+                seen["verification_due"] = True
+                if status["verification_since"] is None:
+                    status["verification_since"] = now
+                elapsed = now - status["verification_since"]
+                if elapsed >= rules.REMIND_EVERY:
+                    seen["verification_overdue"] = elapsed
+            else:
+                status["verification_since"] = None
         if seen["anr"]:
             await wait_anr()
         else:
@@ -809,14 +872,15 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
         """Its last look, for the mode's overlay tone: {mode, level}."""
         symptom = status["symptom"]
         block = active_policy_block()
-        return {"mode": status["mode"], "level": "error" if block else rules.level(symptom),
-                "message_t": copy.deepcopy(block["text_t"]) if block else status["text"],
+        failed = active_setup_failure() if symptom == "setup_check_failed" else None
+        return {"mode": status["mode"], "level": "error" if block or failed else rules.level(symptom),
+                "message_t": copy.deepcopy((block or failed)["text_t"]) if block or failed else status["text"],
                 "repairing": status["repairing"], "intention": status["intention"],
                 "execution_blocker_t": copy.deepcopy(block["text_t"]) if block else None,
                 "execution_blocker_mode": block["context"]["mode"] if block else None,
                 "execution_blocker_target": copy.deepcopy(block["context"]["target"]) if block else None,
                 "execution_blocker_kind": block["kind"] if block else None,
-                "blocked": bool(block or memory["alerted"] and symptom in rules.ERRORS
+                "blocked": bool(block or failed and not status["repairing"] or memory["alerted"] and symptom in rules.ERRORS
                                 and not status["repairing"])}
 
     return {"routes": [("GET", "/watchdog", handle_state), ("POST", "/watchdog/retry", handle_retry)],

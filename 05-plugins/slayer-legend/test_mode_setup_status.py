@@ -177,6 +177,53 @@ class SetupStatus(unittest.IsolatedAsyncioTestCase):
         self.part['api']['confirm']('mpw18', verified_setup=True)
         self.assertEqual(self.part['api']['state']()['state'], 'moving')
 
+    async def test_full_setup_route_emits_only_its_valid_current_receipt(self):
+        self.engraving = 'real'
+        receipts = []
+        self.part['api']['on_setup_verified'](receipts.append)
+
+        async def farm(*args, **kwargs):
+            return {'result': 'done', 'verified_setup': True, 'text_t': None, 'timings': {}}
+
+        self.farming['farm'] = farm
+        response, code = await self.call_setup(self.part['api']['state']()['setup_request'])
+        self.assertEqual(code, 202)
+        await self.settle()
+        self.assertEqual(len(receipts), 1)
+        self.assertEqual(receipts[0], self.part['api']['state']()['setup_result'])
+        self.assertEqual(receipts[0]['result'], 'done')
+        self.assertEqual(receipts[0]['target'], self.parts['mpw18'])
+
+    async def test_receipt_signal_does_not_acknowledge_input_relaunch_or_revision_invalidated_proof(self):
+        self.engraving = 'real'
+        receipts = []
+        self.part['api']['on_setup_verified'](receipts.append)
+
+        async def farm(*args, **kwargs):
+            return {'result': 'done', 'verified_setup': True, 'text_t': None, 'timings': {}}
+
+        self.farming['farm'] = farm
+        for changed in ('input', 'relaunch', 'revision'):
+            with self.subTest(changed=changed):
+                self.input = None
+                self.parts['mpw18']['preset'] = 'III'
+
+                async def notify(*args, **kwargs):
+                    if changed == 'input':
+                        self.input = {'wall': self.now, 'monotonic': self.now}
+                    elif changed == 'relaunch':
+                        for callback in self.relaunch:
+                            callback('new process')
+                    else:
+                        self.parts['mpw18']['preset'] = 'I'
+
+                # Model invalidation at the asynchronous notification boundary
+                # after execution, before durable attempt completion/publication.
+                self.ports.notify = notify
+                await self.attempt()
+                self.assertIsNone(self.part['api']['state']()['setup_result'])
+                self.assertEqual(receipts, [])
+
     async def test_off_gate_is_visible_without_an_attempt_and_idle_is_red(self):
         state = self.part['api']['state']()
         self.assertEqual(state['state'], 'idle')

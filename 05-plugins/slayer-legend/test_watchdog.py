@@ -13,6 +13,8 @@ import os
 import types
 import unittest
 
+from test_mode_rules import rules as mode_rules
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 spec = importlib.util.spec_from_file_location("watchdog_rules", os.path.join(HERE, "features", "watchdog_rules.py"))
 rules = importlib.util.module_from_spec(spec)
@@ -690,6 +692,18 @@ class GoldAtZero(unittest.TestCase):
                                       rules.fresh(), 60)[0])
 
 
+class VerificationPriority(unittest.TestCase):
+    def test_missing_proof_does_not_hide_process_bar_or_unfinished_grid_faults(self):
+        for seen, expected in ((GONE, "not_running"),
+                               ({**BATTLE, "stalled": 120}, "progress_stalled"),
+                               ({**BATTLE, "progress_unverified": True}, "progress_unverified"),
+                               ({**BATTLE, "loadout": "incomplete grid"}, "wrong_loadout")):
+            with self.subTest(expected=expected):
+                result = rules.judge({**seen, "verification_due": True, "setup_failure": "old failed check"}, PROFILE,
+                                     NUMERALS.get, None, False, rules.fresh(), 100)
+                self.assertEqual(result[0], expected)
+
+
 class GoldTrigger(unittest.TestCase):
     """features/watchdog.py on fake ports, the battle screen at each look
     (rules.EVERY apart), gold/s always 0 over a full window: when the
@@ -810,6 +824,7 @@ class GoldTrigger(unittest.TestCase):
         self.farmed = farmed = []
         self.farm_looks = farm_looks = []
         self.confirmed = confirmed = []
+        self.setup_callbacks = []
         self.verified = verified = []
         self.launches = launches_made = []
         self.reentered = reentered = []
@@ -886,7 +901,7 @@ class GoldTrigger(unittest.TestCase):
             Ports, None, None, rules, NUMERALS.get,
             {"state": lambda: {"mode": mode(looked[0]) if callable(mode) else mode, "highest": 925, "state": "moving" if (entering(looked[0]) if callable(entering) else entering) else "failed" if (failed_setup(looked[0]) if callable(failed_setup) else failed_setup) else "farming",
                                "hold": hold, "intention": intention},
-             "confirm": confirm},
+             "confirm": confirm, "on_setup_verified": self.setup_callbacks.append},
             {"state": lambda: {"enabled": mode == "mine"}, "reenter": reenter},
             {"running": lambda: False, "start": start, "state": lambda: {"state": "done", "message": ""}},
             lambda name: target(looked[0]) if callable(target) else target or
@@ -914,6 +929,66 @@ class GoldTrigger(unittest.TestCase):
         self.saved = copy.deepcopy(stored)
         self.retry = lambda body: asyncio.run(built["routes"][1][2](types.SimpleNamespace(json=lambda: body())))
         return read, alerts, other
+
+    def test_expired_proof_is_pending_verification_not_wrong_equipment(self):
+        self.looks(2, "on", recovery={"verified": True, "required": False}, verification_debt=True)
+        observed = self.last_look()
+        self.assertEqual(self.state["symptom"], "verification_due")
+        self.assertEqual(observed["level"], "warning")
+        self.assertFalse(observed["blocked"])
+        self.assertEqual(mode_rules.tone("soul", "farming", False, False, observed), "setup")
+        self.assertNotIn("wrong loadout", TEXTS["english"](observed["message_t"]))
+
+    def test_proof_age_and_old_backoff_do_not_claim_wrong_equipment(self):
+        saved = {"watchdog": {"backoff": {"loadout": {
+            "failures": 4, "next": EPOCH + 1000, "delay": 240, "said": []}}}}
+        self.looks(21, "on", recovery={"verified": True, "required": False},
+                   verification_debt=lambda look: look * E >= 300, saved=saved)
+        self.assertEqual(self.state["symptom"], "verification_due")
+        self.assertFalse(self.last_look()["blocked"])
+        self.assertEqual(self.last_look()["level"], "warning")
+
+    def test_failed_periodic_check_is_a_real_current_blocker(self):
+        reason = TEXTS["t"]("écran inattendu")
+        self.looks(3, "on", recovery={"verified": True, "required": False}, verification_debt=True,
+                   answer={"result": "failed", "text_t": reason})
+        self.assertTrue(self.farmed)
+        self.assertTrue(self.last_look()["blocked"])
+        self.assertEqual(self.last_look()["level"], "error")
+        self.assertEqual(self.last_look()["message_t"], reason)
+
+    def test_unavailable_periodic_check_becomes_overdue_with_120_second_reminders(self):
+        _, alerts, _ = self.looks(25, "on", recovery={"verified": True, "required": False},
+                                 verification_debt=True)
+        self.assertEqual(self.state["symptom"], "verification_overdue")
+        self.assertTrue(self.last_look()["blocked"])
+        self.assertEqual(self.last_look()["level"], "error")
+        notices = [at for at, text in zip(self.alert_times, alerts)
+                   if "verification is due" in text or "verification unavailable" in text]
+        self.assertGreaterEqual(len(notices), 2)
+        self.assertTrue(all(b - a >= rules.REMIND_EVERY for a, b in zip(notices, notices[1:])))
+
+    def test_full_repair_clears_old_setup_error_before_another_observation(self):
+        self.looks(3, "on", failed_setup=True,
+                   answer={"result": "done", "text_t": None, "verified_setup": True})
+        self.assertTrue(self.verified)
+        self.assertIsNone(self.last_look()["level"])
+        self.assertFalse(self.last_look()["blocked"])
+        self.assertIsNone(self.state["symptom"])
+
+    def test_matching_external_receipt_only_acknowledges_its_setup_fault(self):
+        self.looks(2, "on", recovery={"required": True})
+        callback = self.setup_callbacks[0]
+        callback({"result": "done", "mode": "mpw18", "target": {"stage": 921, "preset": 1}})
+        self.assertTrue(self.last_look()["blocked"], "another target cannot acknowledge this fault")
+        callback({"result": "done", "mode": "mpw18", "target": {"stage": 920, "preset": 1}})
+        self.assertFalse(self.last_look()["blocked"])
+        self.assertIsNone(self.last_look()["level"])
+        self.looks(2, "on", process_running=False)
+        symptom = self.state["symptom"]
+        self.setup_callbacks[0]({"result": "done", "mode": "mpw18", "target": {"stage": 920, "preset": 1}})
+        self.assertEqual(self.state["symptom"], symptom)
+        self.assertIsNotNone(self.last_look()["level"], "a setup receipt cannot resolve a lost process")
 
     def test_calibrated_menu_recovery_is_available_and_dispatched_without_loadout_work(self):
         self.looks(30, "on", screen=lambda look: "menu", menu_recovery=True)

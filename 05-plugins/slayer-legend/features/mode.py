@@ -95,6 +95,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
     replacements = {"pending": no_change, "task": None}
     stopping = set()
     setup = setup_factory(ports, loadouts, farming)
+    setup_listeners = []
 
     def highest():
         """The highest stage seen: the game's state (features/game.py)."""
@@ -266,6 +267,10 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
             completed = await apply_stage(number, mpw, applied)
             setup.complete_attempt(attempt, mode=status["mode"], completed=completed,
                                    state=status["state"], message=status["message"])
+            receipt = setup.current_result(name, mines["state"]().get("enabled"))
+            if completed and receipt and receipt["result"] == "done":
+                for listener in setup_listeners:
+                    listener(copy.deepcopy(receipt))
             return completed
         finally:
             if status["intention"] and status["intention"]["owner"] is owner:
@@ -757,5 +762,6 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
         "startup": [resume],
         # For the watchdog: the mode now (it runs only in the default one).
         "api": {"state": state, "confirm": confirm, "watched_by": watched_by,
+                "on_setup_verified": setup_listeners.append,
                 "resource_refresh_by": resource_refresh_by},
     }

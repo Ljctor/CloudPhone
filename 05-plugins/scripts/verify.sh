@@ -54,6 +54,7 @@ python3 "$(dirname "$0")/../slayer-legend/test_stage_change.py" \
   Sequence.test_accessible_preset_mismatch_stops_before_stage_navigation \
   Sequence.test_correct_visible_preset_does_not_block_stage_change \
   Sequence.test_unread_preset_is_not_treated_as_a_known_mismatch_before_stage
+# Due proof is pending, failures/overdue remain blockers; complete receipts acknowledge only setup faults.
 python3 "$(dirname "$0")/../slayer-legend/test_watchdog.py"
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_hourly_resources.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_rate_completions.py -q

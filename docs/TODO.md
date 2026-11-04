@@ -126,15 +126,25 @@ separate milestones. Historical checked items below do not close a new regressio
 
 ### Engraving completion and motion acceptance
 
+- [x] Distinguish a due equipment/engraving check from observed damage or a
+  failed check. Pending verification is orange; an actual failure retains its
+  reason, and an unresolved verification wait becomes an error after 120 s.
+  Complete current setup receipts clear only their own old fault family,
+  without acknowledging process, capture or progress incidents.
+- [ ] Verify the periodic-check status in the installed plugin, including a
+  fresh successful receipt without a transient old equipment error.
 - [x] Require a complete farming receipt after every active loadout edit,
   including Soul Weapon-only changes. Remove the partial weapon shortcut;
   only `done` with `verified_setup: true` may announce readiness. The POST
   loadout regression uses the stage executor to correct a stale stage and
   preserve a preset-policy refusal after weapon verification. Partial and
   unexpected results cannot become a successful full setup.
-- [ ] Confirm this full-receipt path after a live Soul Weapon configuration
-  edit, including current stage/preset, immediate engraving and eight locks.
-  The scripted route regression does not certify this gameplay acceptance.
+- [x] Confirm this full-receipt path after a live Soul Weapon configuration
+  edit. Ambition Gold-maxed → Gold-balanced → Gold-maxed produced a fresh
+  target-bound full receipt each time, with stage 970, preset IV, complete
+  engraving and eight locks. The two variants have identical piece targets:
+  this verifies the real configuration-edit path, not replacement of pieces.
+  The original Gold-maxed configuration was restored and verified.
 - [x] Reject setup proof if user input or relaunch crosses the final asynchronous
   equipment readback; an input during the last return also defers the attempt.
   Require fresh equipment, full-grid and lock evidence for the full farm receipt.

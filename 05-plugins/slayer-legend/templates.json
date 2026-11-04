@@ -1,4 +1,8 @@
 {
+  "contrôle de la configuration échoué : {what}": "Setup verification failed: {what}",
+  "contrôle de l’arme et de la gravure non obtenu depuis {seconds} s ; configuration non vérifiée": "Weapon and engraving verification unavailable for {seconds} s; setup unverified",
+  "contrôle de l’arme et de la gravure à refaire": "Weapon and engraving verification is due",
+  "Configuration vérifiée": "Configuration verified",
   "Entrée farming non vérifiée : état du processus ou premier plan inconnu": "Farming entry unverified: game process or foreground state unknown",
   "Entrée farming arrêtée : lancement du jeu non confirmé": "Farming entry stopped: game launch not confirmed",
   "vérification Soul Weapon interrompue par une relance": "Soul Weapon verification interrupted by a game relaunch",
