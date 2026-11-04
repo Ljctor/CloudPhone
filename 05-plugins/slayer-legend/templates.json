@@ -1,4 +1,6 @@
 {
+  "gravure récupérée : saisie utilisateur ou relance pendant la vérification finale": "Engraving recovered: user input or relaunch during final verification",
+  "configuration demandée non vérifiée": "Requested setup not verified",
   "Configuration du mode non vérifiée après {seconds} s": "Mode setup not verified after {seconds} s",
   "gravure interrompue : la cible de récupération est une autre arme": "Engraving interrupted: recovery targets another weapon",
   "Dernière observation : {observation} ; reprise non vérifiée": "Last observed: {observation}; recovery not yet verified",
