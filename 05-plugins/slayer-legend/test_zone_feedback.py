@@ -18,6 +18,35 @@ def append_worker(directory, index):
 
 
 class SharedZoneFeedback(unittest.TestCase):
+    def test_forbidden_action_and_forbidden_navigation_persist_as_distinct_roles(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            store = shared.ZoneFeedback(Path(temporary))
+            body = {"nodeId": "screen:battle", "screen": "battle", "operation": "add", "rect": [.1, .2, .3, .4]}
+            allowed = store.append({**body, "kind": "action"}, {"battle"})
+            action = store.append({**body, "kind": "action", "forbidden": True}, {"battle"})
+            navigation = store.append({**body, "kind": "forbidden"}, {"battle"})
+            self.assertEqual(len({item["id"] for item in (allowed, action, navigation)}), 3)
+            data = Path(temporary) / "data"
+            manual = data / "manual-clicks"
+            manual.mkdir(parents=True)
+            capture = "a" * 32
+            (manual / (capture + ".json")).write_text(json.dumps({
+                "id": capture, "at": time.time(), "kind": "action", "forbidden": True,
+                "capture_status": "complete", "before_scan": {"screen": "battle", "plain": True},
+                "rect": [.4, .4, .5, .5]}))
+            generated = store.read_annotations(data, {"battle"}, tree={"battle": {"parent": None}})
+            recorded = next(zone for zone in generated if zone["id"] == "manual:" + capture)
+            self.assertEqual((recorded["kind"], recorded["forbidden"], recorded["gestureAuthority"]), ("action", True, False))
+            restored = shared.ZoneFeedback(Path(temporary)).read()
+            self.assertEqual([(item["kind"], item["forbidden"]) for item in restored],
+                             [("action", False), ("action", True), ("forbidden", True)])
+            self.assertTrue(all(item["gestureAuthority"] is False for item in restored))
+            for invalid in ({"kind": "action", "forbidden": 1},
+                            {"kind": "navigation", "forbidden": True},
+                            {"kind": "forbidden", "forbidden": False}):
+                with self.assertRaises(ValueError):
+                    store.append({**body, **invalid}, {"battle"})
+
     def test_value_roles_persist_independently_and_require_valid_rectangles(self):
         with tempfile.TemporaryDirectory() as directory:
             store = shared.ZoneFeedback(directory)

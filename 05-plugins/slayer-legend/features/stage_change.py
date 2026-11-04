@@ -438,7 +438,9 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
         return first, await look()
 
     async def badge_of(first, second):
-        return (await ports.analyse(controls.badge, first)) or (await ports.analyse(controls.badge, second))
+        one = await ports.analyse(controls.badge, first)
+        two = await ports.analyse(controls.badge, second)
+        return one if one is not None and one == two else None
 
     def preset_policy(name, seen):
         """Only a read mismatch requires permission to change a preset."""
@@ -459,6 +461,10 @@ def stage_change(ports, screens, select, controls, rules, table, soul=None):
             seen = await ports.analyse(controls.selected, shot)
         elif await ports.analyse(screens.plain_battle, shot) or parked(shot):
             seen = await ports.analyse(controls.badge, shot)
+            if seen is not None and seen != name:
+                # A single transient badge cannot freeze a policy blocker.
+                await ports.clock.sleep(LOOK_GAP)
+                seen = await badge_of(shot, await look())
         else:
             return
         preset_policy(name, seen)

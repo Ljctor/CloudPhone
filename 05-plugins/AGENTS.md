@@ -105,6 +105,12 @@ Rules:
     - Select Region's arrows and list scrolls: at most 10 moves for the whole
       sequence, arrows and scrolls together (`MOST_MOVES`).
     - Move: only on the row whose name reads as the target stage.
+    - Preset readings require the unfolded game control tile (its AUTO
+      label, regardless of AUTO state), never Roman-like strokes alone.
+      Two badge readings must agree; a discordant or absent reading stays
+      unknown and may only lead to the existing Battle settings read.
+      A preflight badge mismatch also requires a second fresh confirmation.
+      This grants no preset change or AUTO action.
     - The preset badge: with the arrow that unfolds it, in one adb call,
       only when the fresh capture reads the controls folded and the badge
       reads another preset.
@@ -273,3 +279,10 @@ Rules:
   developer to fix.
 - Screenshots of a game go in the repository only when reviewed one by one
   (no Google account, no server address); never commit raw captures.
+
+- A Slayer Legend plugin upgrade also refreshes the passive navigation-review
+  app and its reader snapshot when that service is already installed. Preserve
+  its bind address, frontend origins, enabled/inactive state, raw evidence and
+  feedback. Never install or enable the optional review service implicitly.
+  Explicit review installation and refresh share the same staged file set;
+  only the review service stops during its atomic code/reader replacement.

@@ -26,6 +26,8 @@ def load(name):
 # (module, flag, the fixtures of every state its reading tells apart, the
 # test reading them).
 GATES = [
+    ("battle_controls", "BADGE_CONTEXT_CALIBRATED", ["controls_iii_auto_on", "controls_iv",
+        "controls_iv_live_480", "controls_android_volume_480"], "test_fixtures"),
     ("screens", "CHARACTER_GROWTH_CALIBRATED", ["character_growth_header", "character_enhance_header",
         "character_promotion_header_live_480", "character_close_tab_lit_480",
         "character_close_tab_unlit_480"], "test_menu_recovery"),

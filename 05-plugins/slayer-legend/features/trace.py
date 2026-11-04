@@ -361,6 +361,10 @@ def trace(ports, screens, graphs, images=None, scan_visible=None, on_spend=None)
         kind = body.get("kind", "navigation") if isinstance(body, dict) else None
         if kind not in ANNOTATION_KINDS:
             return ports.respond({"error": "unknown annotation kind", "kinds": ANNOTATION_KINDS}, status=400)
+        forbidden = body.get("forbidden", kind == "forbidden")
+        if (not isinstance(forbidden, bool) or forbidden and kind not in ("action", "forbidden")
+                or kind == "forbidden" and not forbidden):
+            return ports.respond({"error": "forbidden must be boolean and match the annotation role"}, status=400)
         if recorded["lock"] is None:
             recorded["lock"] = asyncio.Lock()
         async with recorded["lock"]:
@@ -368,7 +372,7 @@ def trace(ports, screens, graphs, images=None, scan_visible=None, on_spend=None)
             if before is None:
                 return ports.respond({"error": "game not visible"}, status=409)
             capture_id = uuid.uuid4().hex
-            entry = {"id": capture_id, "kind": kind, "at": ports.clock.wall(),
+            entry = {"id": capture_id, "kind": kind, "forbidden": forbidden, "at": ports.clock.wall(),
                      "before": before[0][0], "capture_status": "armed", "gestureAuthority": False}
             if isinstance(before[2], dict):
                 entry["before_scan"] = {key: before[2][key] for key in ("screen", "overlays", "plain", "quest_tab", "battle_viewport") if key in before[2]}
@@ -378,9 +382,9 @@ def trace(ports, screens, graphs, images=None, scan_visible=None, on_spend=None)
                 return ports.respond({"error": "before screenshot could not be saved"}, status=503)
             if recorded["armed"]:
                 manual_error(recorded["armed"]["entry"], "annotation replaced")
-            recorded["armed"] = {"id": capture_id, "kind": kind, "entry": entry,
+            recorded["armed"] = {"id": capture_id, "kind": kind, "forbidden": forbidden, "entry": entry,
                                  "screen": before, "until": ports.clock.wall() + ARM_SECONDS}
-        return ports.respond({"armed": True, "id": capture_id, "kind": kind, "seconds": ARM_SECONDS})
+        return ports.respond({"armed": True, "id": capture_id, "kind": kind, "forbidden": forbidden, "seconds": ARM_SECONDS})
 
     async def handle_cancel(request):
         try:
@@ -412,9 +416,9 @@ def trace(ports, screens, graphs, images=None, scan_visible=None, on_spend=None)
             "edges": len(graph.edges) if graph else 0,
             "taps": graph.taps() if graph else 0,
             "last": graph.last if graph else None,
-            "armed": ({key: recorded["armed"][key] for key in ("id", "kind", "until")}
+            "armed": ({key: recorded["armed"][key] for key in ("id", "kind", "forbidden", "until")}
                       if recorded["armed"] and ports.clock.wall() <= recorded["armed"]["until"] else None),
-            "pending": ({key: recorded["pending"]["manual"][key] for key in ("id", "kind")}
+            "pending": ({key: recorded["pending"]["manual"][key] for key in ("id", "kind", "forbidden")}
                         if recorded["pending"] and recorded["pending"]["manual"] else None),
         })
 

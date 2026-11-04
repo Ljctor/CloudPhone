@@ -38,6 +38,7 @@ TILE_TOP = (0.88, 0.424, 0.995, 0.430)
 FIGHT = (0.10, 0.30, 0.80, 0.47)
 SKILLS = [(x, y, x + 0.145, y + 0.067) for y in (0.570, 0.655) for x in (0.08, 0.25, 0.425, 0.60, 0.775)]
 WHITE = 200
+BADGE_CONTEXT_CALIBRATED = True
 # Mean change of a grey level (0-255) between the two screenshots.
 SPINNING = 10
 STILL = 4
@@ -87,6 +88,11 @@ def _white_share(shot, area):
 def badge(shot):
     """The preset the unfolded badge shows ("III"), or None (folded, or
     unreadable)."""
+    # The same coordinates can contain Android volume bars or Equipment
+    # decoration. Roman-looking strokes alone never establish the game tile.
+    # Its AUTO label identifies the unfolded controls independently of ON/OFF.
+    if not BADGE_CONTEXT_CALIBRATED or not auto_label(shot):
+        return None
     number = font.numeral(font.ink(font.crop(shot, BADGE, min), WHITE))
     return NUMERALS[number - 1] if number else None
 

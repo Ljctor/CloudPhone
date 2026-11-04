@@ -313,7 +313,7 @@ def batch(data, plugin, screens, limit=16, ledger=None, feedback_file=None):
                         item.update(status='rejected', reason='geometry_invalid')
                     elif before['status'] == 'processed':
                         item['annotation'] = {'id': key, 'screen': before['screen'], 'kind': item['kind'], 'rect': rect,
-                                              'forbidden': item['kind'] == 'forbidden', 'source': 'reviewed_user_evidence',
+                                              'forbidden': item['kind'] == 'forbidden' or item['kind'] == 'action' and entry.get('forbidden') is True, 'source': 'reviewed_user_evidence',
                                               'side': 'before', 'review_status': 'processed', 'nodeId': key + ':before',
                                               'gesture_authority': False, 'reader_calibrated': False}
                         item.update(status='processed', reason='read_only_annotation_integrated')

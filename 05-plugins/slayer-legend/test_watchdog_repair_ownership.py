@@ -39,7 +39,8 @@ class RepairOwnership(unittest.IsolatedAsyncioTestCase):
         self.part = watchdog.watchdog(
             self.ports, menu.soul.fake_screens(), NS(), watchdog_tests.rules, lambda value: value,
             {'state': lambda: dict(self.mode), 'mode_epoch': lambda: self.epoch,
-             'confirm': lambda *args, **kwargs: self.confirmed.append((args, kwargs))},
+             'confirm': lambda *args, **kwargs: self.confirmed.append((args, kwargs)),
+             'begin_verification': lambda name: object()},
             {'state': lambda: {'enabled': False}}, {'running': lambda: False},
             lambda mode: dict(self.target), self.farming)
         # Exercise the real dispatcher without its independent polling clock.

@@ -243,6 +243,7 @@ class Evidence:
                         node["regions"].append({"id": f"region:{capture_id}", "kind": "detection" if annotation == "scannable" else annotation,
                                                 "rect": [a["x"], a["y"], b["x"], b["y"]],
                                                 "label": annotation, "source": "recorded", "gestureAuthority": False,
+                                                "forbidden": annotation == "forbidden" or annotation == "action" and item.get("forbidden") is True,
                                                 "detection": annotation in {"scannable", "detection", "screen_identifier"}})
                 nodes.append(node)
                 known.add(node_id)
@@ -323,7 +324,7 @@ class Evidence:
                     return proposal["zoneId"] in aliases
                 anchored = any(id_matches(region) for region in node["regions"])
                 for region in node["regions"]:
-                    if id_matches(region) or not anchored and region["kind"] == proposal["kind"] and max(abs(a-b) for a,b in zip(region["rect"], proposal["rect"])) <= .003:
+                    if id_matches(region) or not anchored and region["kind"] == proposal["kind"] and bool(region.get("forbidden", region["kind"] == "forbidden")) == bool(proposal.get("forbidden", proposal["kind"] == "forbidden")) and max(abs(a-b) for a,b in zip(region["rect"], proposal["rect"])) <= .003:
                         region.update(removedProposal=True, proposal="remove", pending=True)
                         matched = True
                 if not matched:
@@ -412,6 +413,8 @@ class Evidence:
                               "source": "configured", "status": "to_verify", "annotationKind": "navigation",
                               "label": text(move.get("label", move.get("id"))), "holdMs": move.get("hold_ms", 0),
                               "conditional": bool(move.get("precondition")),
+                              "rect": move.get("visual_rect"), "visual_source": move.get("visual_source"),
+                              "semantic_kind": move.get("semantic_kind"),
                               "assumed": move.get("assumed") is True, "review": {
                                   "status": "ambiguous", "reason": "declared_route_not_an_observed_transition", "gestureAuthority": False}})
                 edge_count += 1
@@ -419,12 +422,18 @@ class Evidence:
             for index, scroll in enumerate(spec.get("scroll", [])):
                 if not isinstance(scroll, dict) or scroll.get("measured") is not True:
                     continue
-                gesture, captures = scroll.get("gesture"), scroll.get("captures")
+                gesture, captures, area = scroll.get("gesture"), scroll.get("captures"), scroll.get("rect")
                 if not isinstance(gesture, list) or len(gesture) != 4 or not isinstance(captures, list):
                     continue
                 start, end = point(*gesture[:2]), point(*gesture[2:])
                 previous = f"screen:{screen}"
                 if not start or not end or previous not in by_id:
+                    continue
+                if not isinstance(area, list) or len(area) != 4:
+                    continue
+                low, high = point(*area[:2]), point(*area[2:])
+                if (not low or not high or low["x"] >= high["x"] or low["y"] >= high["y"]
+                        or not (low["x"] <= start["x"] <= high["x"] and low["y"] <= start["y"] <= high["y"])):
                     continue
                 direction = scroll.get("direction")
                 if direction not in {"vertical", "horizontal"}:
@@ -436,12 +445,56 @@ class Evidence:
                     if target not in by_id or not by_id[target].get("image"):
                         break
                     edges.append({"id": f"configured-scroll:{screen}:{index}:{step}", "from": previous, "to": target,
-                                  "kind": "swipe", "start": start, "end": end, "source": "configured", "status": "to_verify",
+                                  "kind": "swipe", "start": start, "end": end, "startRect": list(area),
+                                  "source": "configured", "status": "to_verify",
                                   "annotationKind": direction, "label": text(scroll.get("content", "Declared scroll")),
                                   "review": {"status": "ambiguous", "reason": "declared_ordered_capture_route_to_verify", "gestureAuthority": False}})
                     previous = target
                     edge_count += 1
+        edge_count += self.add_variant_returns(nodes, edges, registry, declared)
         return created, edge_count
+
+    @staticmethod
+    def add_variant_returns(nodes, edges, registry, declared):
+        """Only reuse an existing close-tab whose reader proves that visible tab.
+
+        Capture filenames/family guesses alone never establish a return. This
+        creates simulator routes, never observed-transition or input authority.
+        """
+        by_id = {node["id"]: node for node in nodes}
+        count = 0
+        for node in nodes:
+            family, scan = node["screen"], node.get("scan", {})
+            spec = registry.get("screens", {}).get(family, {})
+            if (node.get("source") not in {"example", "manual"} or not node.get("image")
+                    or node.get("review", {}).get("status") != "processed"
+                    or spec.get("status") != "registered" or spec.get("kind") != "overlay"
+                    or scan.get("screen") != "battle" or scan.get("plain") is not False
+                    or family not in scan.get("overlays", ())
+                    or set(scan.get("overlays", ())) - {family, "panel", "better_weapon_toast"}):
+                continue
+            for move in declared.get(family, {}).get("moves", []):
+                needs, destination = move.get("needs", {}), by_id.get("screen:" + str(move.get("to")))
+                if (move.get("id") != "close_tab" or move.get("forbidden")
+                        or move.get("semantic_kind") != "navigation"
+                        or not needs.get("reduced_battle") or needs.get("active_tab") != family
+                        or needs.get("required_overlay") != family
+                        or not destination or not destination.get("image")
+                        or destination.get("scan", {}).get("plain") is not True):
+                    continue
+                position = move.get("tap")
+                start = point(*position) if isinstance(position, list) and len(position) == 2 else None
+                if not start:
+                    continue
+                edges.append({"id": f"configured-variant:{node['id']}:close_tab", "from": node["id"],
+                              "to": destination["id"], "kind": "tap", "start": start,
+                              "source": "configured", "status": "to_verify", "annotationKind": "navigation",
+                              "label": text(move.get("label", "close_tab")), "conditional": True,
+                              "assumed": move.get("assumed") is True,
+                              "review": {"status": "ambiguous", "reason": "calibrated_visible_tab_on_this_capture_not_observed_transition",
+                                         "gestureAuthority": False}})
+                count += 1
+        return count
 
     def configured_policy_regions(self, screen, spec):
         """Policy geometry belongs to its declared screen, never to an
@@ -453,16 +506,21 @@ class Evidence:
         for move in spec.get("moves", []):
             if move.get("assumed") or move.get("id") in dynamic.get(screen, set()):
                 continue
-            rect = move.get("area")
+            # Visible UI bounds and conservative gesture envelopes are different.
+            # Both frontends consume this same measured metadata; guard is unchanged.
+            rect = move.get("visual_rect") or move.get("area")
             tap = move.get("tap") or move.get("hold")
             if rect is None and isinstance(tap, list) and len(tap) == 2 and point(*tap):
                 rect = [max(0, tap[0] - .015), max(0, tap[1] - .015), min(1, tap[0] + .015), min(1, tap[1] + .015)]
             if not isinstance(rect, list) or len(rect) != 4 or not point(*rect[:2]) or not point(*rect[2:]):
                 continue
             regions.append({"id": f"policy:{move.get('id')}", "rect": rect,
-                            "kind": "forbidden" if move.get("forbidden") else move.get("semantic_kind", "action"),
-                            "label": text(move.get("label", move.get("id"))), "source": "navigation_guard_envelope",
-                            "conditional": bool(move.get("precondition"))})
+                            "kind": "forbidden" if move.get("forbidden") and move.get("semantic_kind") == "navigation" else move.get("semantic_kind", "action"),
+                            "label": text(move.get("label", move.get("id"))),
+                            "source": "measured_control_bounds" if move.get("visual_rect") else "navigation_guard_envelope",
+                            "visual_source": move.get("visual_source"), "guard_rect": move.get("area"),
+                            "semantic_kind": move.get("semantic_kind"), "forbidden": bool(move.get("forbidden")),
+                            "gestureAuthority": False, "conditional": bool(move.get("precondition"))})
         return regions
 
     def add_review(self, nodes, edges):
@@ -510,8 +568,9 @@ class Evidence:
             region = {"id": text(annotation.get("id", "review")), "kind": kind,
                       "rect": [a["x"], a["y"], b["x"], b["y"]], "label": text(kind),
                       "source": "reviewed_user_evidence", "readerCalibrated": False, "gestureAuthority": False,
+                      "forbidden": kind == "forbidden" or kind == "action" and annotation.get("forbidden") is True,
                       "detection": kind in {"detection", "screen_identifier"}}
-            if not any(r["rect"] == region["rect"] and r["kind"] == kind for r in node["regions"]):
+            if not any(r["rect"] == region["rect"] and r["kind"] == kind and r.get("forbidden", kind == "forbidden") == region["forbidden"] for r in node["regions"]):
                 node["regions"].append(region)
         registry = read_json(self.plugin_dir / "screen_registry.json", {})
         navigation = read_json(self.plugin_dir / "navigation.json", {})
@@ -714,7 +773,8 @@ def make_app(evidence):
                             x, y = edge["start"]["x"], edge["start"]["y"]
                             zone = {"kind": edge.get("annotationKind", "navigation"),
                                     "rect": [max(0, x - .025), max(0, y - .012), min(1, x + .025), min(1, y + .012)]}
-                    if zone is None or body.get("kind") != zone["kind"]:
+                    if (zone is None or body.get("kind") != zone["kind"]
+                            or body.get("forbidden", body.get("kind") == "forbidden") != zone.get("forbidden", zone["kind"] == "forbidden")):
                         raise ValueError("Unknown removal target")
                     proposed = zone_feedback.rectangle(body.get("rect"))
                     if max(abs(a-b) for a,b in zip(proposed, zone["rect"])) > .003:

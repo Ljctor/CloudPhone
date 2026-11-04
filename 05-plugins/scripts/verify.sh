@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Read-only validation of the installed Slayer Legend resource catalogue.
 set -euo pipefail
+# Optional review upgrades keep their app and reader snapshot on the same release.
+python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend/review_app" -p test_review_install.py -q
+# Review scrolls stay in measured lists; visible-tab variants retain calibrated returns.
+python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend/review_app" -p test_review_server.py -q
 base=${1:?Usage: verify.sh http://LISTEN_ADDRESS:WEB_PORT}
 curl -fsS "${base%/}/api/v1/plugins/slayer-legend/navigation/oral-feedback?limit=1" | python3 -c '
 import json, sys
@@ -27,7 +31,9 @@ python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_menu_
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_launch.py -q
 # Farming entry joins or owns the ordinary launch before taking its farm lease.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_mode_entry_readiness.py -q
-python3 "$(dirname "$0")/../slayer-legend/test_fixtures.py" ProgressBar
+# Real AUTO-labelled control tile versus Android volume-overlay Roman false positives.
+python3 "$(dirname "$0")/../slayer-legend/test_fixtures.py" ProgressBar Readings.test_actual_android_volume_bar_is_not_a_game_badge
+python3 "$(dirname "$0")/../slayer-legend/test_reading.py" Controls.test_badge
 python3 "$(dirname "$0")/../slayer-legend/test_soul_weapon.py" Tag ActualNativeCaptures Readers NativeReaders \
   Sequence.test_after_a_relaunch_no_detached_repair_or_notification \
   Sequence.test_slow_readback_confirms_select_and_equip_without_repeating_gestures \
@@ -56,7 +62,11 @@ python3 "$(dirname "$0")/../slayer-legend/test_nav.py" Graph.test_low_preview_ba
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_agent_soul_weapon.py -q
 # Repair ownership survives bounded child tasks; revoked mode/input cannot navigate or publish proof.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_watchdog_repair_ownership.py -q
+# Full repairs commit the current Mode receipt before their event.
+python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_watchdog_current_receipt.py -q
 python3 "$(dirname "$0")/../slayer-legend/test_stage_change.py" \
+  Sequence.test_discordant_badges_read_settings_instead_of_freezing_a_false_blocker \
+  Sequence.test_isolated_preflight_badge_mismatch_does_not_block_before_confirmation \
   Sequence.test_user_input_during_parking_after_preset_refusal_stays_deferred \
   Sequence.test_user_input_during_readback_defers_success_and_stale_failure \
   Sequence.test_recognized_settings_closes_without_changing_preset \
@@ -96,7 +106,9 @@ python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_loado
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_mode_rules.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_transaction_ownership.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_game.py -q
+# Measured visual button bounds are exported independently of gesture envelopes.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_navigation_debug.py -q
+# Forbidden navigation and forbidden rectangular action stay distinct advisory feedback after reload.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_trace_feature.py -q
 # Evidence matching: exact registered capture aliases and destination-specific panel tabs.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_evidence_review.py -q

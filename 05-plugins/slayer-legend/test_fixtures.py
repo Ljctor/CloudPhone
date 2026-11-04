@@ -121,6 +121,19 @@ class Readings(unittest.TestCase):
             self.assertTrue(controls.auto_label(shot), name)
             self.assertEqual(controls.controls(shot), "unfolded", name)
 
+    def test_actual_android_volume_bar_is_not_a_game_badge(self):
+        from test_screen_model import scaled
+        for width, height in ((360, 780), (480, 1040), (720, 1560)):
+            negative = scaled(screen("controls_android_volume_480"), width, height)
+            self.assertIsNone(controls.badge(negative))
+            self.assertFalse(controls.unfolded_now(negative))
+            self.assertIsNone(controls.controls(negative))
+            for name, expected in (("controls_iii_auto_on", "III"), ("controls_iv", "IV"),
+                                   ("controls_iv_live_480", "IV")):
+                positive = scaled(screen(name), width, height)
+                self.assertEqual(controls.badge(positive), expected, (name, width))
+                self.assertTrue(controls.unfolded_now(positive))
+
     def test_taps_land_on_the_unfolded_controls(self):
         """The second tap of the unfold call, checked on the unfolded
         capture: the badge's tap on its numeral; and the folded arrow's

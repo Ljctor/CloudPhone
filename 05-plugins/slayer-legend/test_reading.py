@@ -212,8 +212,10 @@ class Controls(unittest.TestCase):
         self.assertIsNone(controls.auto(battle(0.0, 0, grey=True), battle(0.0, 3, grey=True)))
 
     def test_badge(self):
-        self.assertEqual(controls.badge(battle(0.0, badge="III")), "III")
-        self.assertEqual(controls.badge(battle(0.0, badge="IV")), "IV")
+        for name in ("I", "II", "III", "IV", "V"):
+            for angle in (0., .25):
+                self.assertEqual(controls.badge(battle(angle, badge=name)), name)
+            self.assertIsNone(controls.badge(battle(0., badge=name, label=False)), name)
         self.assertIsNone(controls.badge(battle(0.0)))
         self.assertFalse(controls.folded(battle(0.0, badge="II")))
 

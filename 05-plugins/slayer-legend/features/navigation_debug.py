@@ -21,7 +21,7 @@ def navigation_debug(ports, navigation, directory, screens=None, geometry=None):
         graph["screens"][screen] = {
             "name": registry["screens"].get(screen, {}).get("label", node.get("name", screen)),
             "moves": [{key: move[key] for key in
-                       ("id", "kind", "tap", "hold", "area", "swipe", "forbidden", "precondition", "needs", "assumed", "combat_return", "semantic_kind")
+                       ("id", "kind", "tap", "hold", "area", "swipe", "forbidden", "precondition", "needs", "assumed", "combat_return", "semantic_kind", "visual_rect", "visual_source")
                        if key in move} for move in node.get("moves", [])],
         }
     tree = {screen: {key: node[key] for key in ("name", "parent", "scroll", "battle_viewport") if key in node}

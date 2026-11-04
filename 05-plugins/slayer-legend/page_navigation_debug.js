@@ -4,9 +4,9 @@
 import visualTracker from './page_navigation_tracking.js';
 import { getScreen } from './page_screen_scan.js';
 import capturePreview, { archivedScreen } from './page_navigation_preview.js';
-import { zoneStyle } from './page_zone_style.js';
-export const COLOURS = { tap: '#ffe100', navigation: '#ffe100', action: '#ff9a23', forbidden: '#ff5353', detection: '#2dd4bf', scannable: '#2dd4bf', progression_value: '#7dd3fc', resource_value: '#a3e635', screen_identifier: '#2dd4bf', draggable: '#ff65bd',
-  vertical: '#168bff', horizontal: '#bb50ff' };
+import { zoneStyle, addZoneHatching } from './page_zone_style.js';
+export { ZONE_COLOURS as COLOURS } from './page_zone_style.js';
+import { ZONE_COLOURS as COLOURS } from './page_zone_style.js';
 const VALUE_ROLES = ['progression_value', 'resource_value'];
 const RECTANGLE_ROLES = [...VALUE_ROLES, 'screen_identifier'];
 const recognition = (zone) => !VALUE_ROLES.includes(zone.kind)
@@ -40,7 +40,7 @@ export function zonesFor(screen, graph, registry, scan = null, tracked = null, d
     && (!move.combat_return || (scan?.screen === 'battle' && scan.plain === false
       && recognisedScreen(scan, registry) === screen)));
   const zones = safe.filter((move) => move.tap || move.hold || (move.area && move.kind !== 'swipe'))
-    .map((move) => ({ id: move.id, kind: 'tap', conditional: Boolean(move.precondition), rect: move.area ?? [
+    .map((move) => ({ id: move.id, kind: 'tap', conditional: Boolean(move.precondition), rect: move.visual_rect ?? move.area ?? [
       (move.tap ?? move.hold)[0] - 0.025, (move.tap ?? move.hold)[1] - 0.012,
       (move.tap ?? move.hold)[0] + 0.025, (move.tap ?? move.hold)[1] + 0.012,
     ] }));
@@ -66,15 +66,16 @@ export function zonesFor(screen, graph, registry, scan = null, tracked = null, d
     // Some guard envelopes intentionally cover a list or grid. They are
     // not button bounds: only explicit debug rectangles may replace them.
     const point = move.tap ?? move.hold;
-    const rects = move.forbidden && move.area ? [move.area] : move.debug_rects ?? (move.debug_dynamic ? [] : move.area ? [move.area]
+    const rects = move.visual_rect ? [move.visual_rect] : move.forbidden && move.area ? [move.area] : move.debug_rects ?? (move.debug_dynamic ? [] : move.area ? [move.area]
       : point ? [[point[0] - (move.forbidden ? tolerance : .025), point[1] - (move.forbidden ? tolerance : .012),
         point[0] + (move.forbidden ? tolerance : .025), point[1] + (move.forbidden ? tolerance : .012)]] : []);
     for (const [index, rect] of rects.entries()) {
       if (zones.some((zone) => zone.kind === move.semantic_kind && JSON.stringify(zone.rect) === JSON.stringify(rect))) continue;
       zones.push({ id: `${move.id}-${index}`, move: move.id,
         dynamic: Boolean(move.debug_dynamic || rects.length > 1),
-        kind: move.semantic_kind === 'draggable' ? 'draggable' : 'action', forbidden: Boolean(move.forbidden),
-        conditional: Boolean(move.precondition), rect });
+        kind: move.semantic_kind === 'navigation' ? 'tap' : move.semantic_kind === 'draggable' ? 'draggable' : 'action',
+        semantic_kind: move.semantic_kind, forbidden: Boolean(move.forbidden),
+        conditional: Boolean(move.precondition), guard_rect: move.area, visual_source: move.visual_source, rect });
     }
   }
   if (dynamic?.screen === screen && Date.now() / 1000 - dynamic.at >= 0
@@ -141,7 +142,7 @@ export function landmarksFor(screen, registry) {
 }
 
 export function zoneRemovalProposal(target) {
-  const kind = target.forbidden || target.kind === 'forbidden' ? 'forbidden'
+  const kind = target.kind === 'action' ? 'action' : target.forbidden || target.kind === 'forbidden' ? 'forbidden'
     : RECTANGLE_ROLES.includes(target.kind) ? target.kind
     : target.detection || target.kind === 'scannable' ? 'detection'
       : target.kind === 'tap' ? 'navigation' : target.kind;
@@ -152,7 +153,7 @@ export function zoneRemovalProposal(target) {
     else zoneId = `policy:${target.screen}:${target.move ?? target.id}`;
   }
   return { zoneId, nodeId: target.nodeId ?? `screen:${target.screen}`, screen: target.screen,
-    operation: 'remove', kind, rect: [...target.rect], conditional: Boolean(target.conditional || target.dynamic) };
+    operation: 'remove', kind, forbidden: Boolean(target.forbidden || target.kind === 'forbidden'), rect: [...target.rect], conditional: Boolean(target.conditional || target.dynamic) };
 }
 
 export function feedbackZones(screen, configured, annotations, scan = null) {
@@ -166,7 +167,7 @@ export function feedbackZones(screen, configured, annotations, scan = null) {
   const matched = new Set();
   const canonical = (id) => typeof id === 'string' ? id
     .replace(/^edge:configured:[^:]+:/, '').replace(new RegExp(`^policy:${screen}:`), '').replace(/^policy:/, '') : null;
-  const kind = (zone) => zone.forbidden || zone.kind === 'forbidden' ? 'forbidden'
+  const kind = (zone) => zone.kind === 'action' ? 'action' : zone.forbidden || zone.kind === 'forbidden' ? 'forbidden'
     : RECTANGLE_ROLES.includes(zone.kind) ? zone.kind
     : zone.detection || ['scannable', 'detection'].includes(zone.kind) ? 'detection'
     : zone.kind === 'tap' ? 'navigation' : zone.kind;
@@ -179,6 +180,7 @@ export function feedbackZones(screen, configured, annotations, scan = null) {
   return [...configured.map((zone) => {
     const pending = removals.find((item) => idMatches(item, zone) || !anchored.has(item)
       && !/^(manual|region):/.test(item.zoneId ?? item.id) && kind(item) === kind(zone)
+      && Boolean(item.forbidden || item.kind === 'forbidden') === Boolean(zone.forbidden || zone.kind === 'forbidden')
       && item.rect.every((value, index) => Math.abs(value - zone.rect[index]) <= .003));
     if (!pending) return zone;
     matched.add(pending);
@@ -196,6 +198,7 @@ export const ANNOTATIONS = [
   { kind: 'vertical', label: 'Marquer un slider vertical' },
   { kind: 'horizontal', label: 'Marquer un slider horizontal' },
   { kind: 'action', label: 'Marquer un bouton d’action' },
+  { kind: 'action', forbidden: true, label: 'Déclarer un bouton d’action interdit' },
   { kind: 'draggable', label: 'Marquer un élément déplaçable' },
 ];
 
@@ -329,6 +332,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
   let captureState = 'idle';
   let captureId = null;
   let captureKind = 'navigation';
+  let captureForbidden = false;
   let record = null;
   let refreshing = false;
   let hiddenCheck = 0;
@@ -411,6 +415,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
       box.style.cssText += `;background:${colour}33;border-radius:0`;
     }
     box.style.cssText += `;opacity:${visual.opacity};border:${visual.dash === 'none' ? `${visual.width}px solid ${colour}` : '0'}`;
+    if (visual.hatch) addZoneHatching(box, colour);
     if (visual.opacity < 1) box.style.cssText += ';background:transparent';
     if (visual.double) box.style.cssText += `;outline:1px solid ${colour};outline-offset:-4px`;
     if (visual.dash !== 'none') {
@@ -445,17 +450,12 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
     }
     box.setAttribute('data-zone-source', zone.user ? 'user' : 'configured');
     box.setAttribute('data-zone-origin', zone.source ?? (zone.user ? 'user_feedback' : 'navigation_guard'));
-    box.setAttribute('data-zone-kind', forbidden ? 'forbidden' : RECTANGLE_ROLES.includes(zone.kind) ? zone.kind
+    box.setAttribute('data-zone-forbidden', String(Boolean(forbidden)));
+    box.setAttribute('data-zone-kind', zone.kind === 'action' ? 'action' : forbidden ? 'forbidden' : RECTANGLE_ROLES.includes(zone.kind) ? zone.kind
       : detection ? 'detection' : zone.kind === 'tap' ? 'navigation' : zone.kind);
     const roleLabel = ROLE_LABELS[zone.kind];
-    const label = forbidden ? `${zone.id} · ${api.tr('Action interdite')}` : zone.id;
+    const label = forbidden ? `${zone.id} · ${api.tr(visual.hatch ? 'Action interdite' : 'Navigation interdite')}` : zone.id;
     box.title = roleLabel && !forbidden ? `${api.tr(roleLabel)} · ${zone.id}` : detection && !forbidden ? `${api.tr('Repère de détection')} · ${zone.id}` : zone.conditional ? `${label} · ${api.tr('condition à vérifier')}` : label;
-    if ((detection || roleLabel) && !forbidden) {
-      const caption = document.createElement('span');
-      caption.textContent = `${api.tr(roleLabel ?? 'Repère de détection')} · ${zone.id}`;
-      caption.style.cssText = `position:absolute;left:0;top:0;max-width:100%;overflow:hidden;white-space:nowrap;background:#000c;color:${colour};font:10px sans-serif;line-height:12px`;
-      box.append(caption);
-    }
     parent.append(box);
     return box;
   }
@@ -559,7 +559,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
         if (!start || !['vertical', 'horizontal', ...RECTANGLE_ANNOTATIONS].includes(captureKind)) return;
         const end = annotationPoint(event, surface.getBoundingClientRect());
         preview?.remove();
-        preview = drawZone({ id: captureKind, kind: captureKind, rect: [
+        preview = drawZone({ id: captureKind, kind: captureKind, forbidden: captureForbidden, rect: [
           Math.min(start.x, end.x), Math.min(start.y, end.y), Math.max(start.x, end.x), Math.max(start.y, end.y)] }, surface);
       };
       surface.onpointerup = (event) => {
@@ -597,10 +597,10 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
         stop(event);
         if (busy() || snapshotPending) return;
         snapshotMessage = '';
-        captureState = 'arming'; captureKind = action.kind; captureId = null; record = null;
+        captureState = 'arming'; captureKind = action.kind; captureForbidden = action.forbidden === true || action.kind === 'forbidden'; captureId = null; record = null;
         render();
         try {
-          const response = await api.post('/trace/arm', { kind: action.kind });
+          const response = await api.post('/trace/arm', { kind: action.kind, forbidden: captureForbidden });
           const answer = response?.ok ? response.body : null;
           captureId = answer?.id ?? null;
           armedUntil = answer?.until ?? Date.now() / 1000 + (answer?.seconds ?? 30);
@@ -631,7 +631,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
           const answer = response?.body?.record ?? response?.body;
           if (!response?.ok || !answer?.id) throw Error('capture failed');
           record = answer; captureId = answer.id;
-          captureKind = correction ? 'screen_correction' : 'screen';
+          captureKind = correction ? 'screen_correction' : 'screen'; captureForbidden = false;
           captureState = 'saved';
           snapshotMessage = correction ? 'Erreur de détection enregistrée avec la capture' : 'Écran enregistré';
           correctionOpen = false;
@@ -719,7 +719,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
       cancelling: 'Annulation…', cancelled: 'Capture annulée · Choisis une action',
       failed: 'Échec de l’enregistrement', expired: 'Capture expirée · Choisis une action' })[captureState];
     status.textContent = api.tr(message);
-    if (captureState !== 'idle' && ANNOTATIONS.some((item) => item.kind === captureKind)) status.textContent = `${api.tr(ANNOTATIONS.find((item) => item.kind === captureKind)?.label ?? '')} · ${status.textContent}`;
+    if (captureState !== 'idle' && ANNOTATIONS.some((item) => item.kind === captureKind)) status.textContent = `${api.tr(ANNOTATIONS.find((item) => item.kind === captureKind && Boolean(item.forbidden || item.kind === 'forbidden') === captureForbidden)?.label ?? '')} · ${status.textContent}`;
     content.append(status);
     if (busy()) {
       const cancel = document.createElement('button');
@@ -805,7 +805,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
       const clicks = archive?.clicks ?? [];
       const found = captureId ? clicks.find((click) => click.id === captureId) : captureState === 'idle' ? clicks[0] : null;
       if (found && !['arming', 'cancelling'].includes(captureState)) {
-        record = found; captureId = found.id; captureKind = found.kind ?? 'navigation';
+        record = found; captureId = found.id; captureKind = found.kind ?? 'navigation'; captureForbidden = found.forbidden === true || found.kind === 'forbidden';
         captureState = found.capture_status === 'cancelled' ? 'cancelled' : found.capture_status === 'armed' ? (captureState === 'saving' ? 'saving' : 'armed') : found.capture_status === 'error' ? 'failed' : found.capture_status === 'complete' || found.after_url ? 'saved' : 'saving';
       } else if (captureState === 'armed' && Date.now() / 1000 > armedUntil) captureState = 'expired';
       render();
@@ -817,7 +817,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
   }).then((trace) => {
     const pending = trace?.armed ?? trace?.pending;
     if (pending) {
-      captureId = pending.id; captureKind = pending.kind ?? 'navigation';
+      captureId = pending.id; captureKind = pending.kind ?? 'navigation'; captureForbidden = pending.forbidden === true || pending.kind === 'forbidden';
       armedUntil = pending.until ?? 0; captureState = trace.armed ? 'armed' : 'saving';
     }
     update();
@@ -840,7 +840,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
     debug: [{ type: 'choice', key: 'navigationDebug', label: 'Zones de navigation',
       choices: [{ value: 'off', label: 'Désactivé' }, { value: 'on', label: 'Activé' }] },
     { type: 'status', label: 'Légende navigation',
-      value: () => api.tr('Turquoise : repère de détection · jaune : navigation · orange : action · rouge : action interdite · rose : déplaçable · chevrons bleus : vertical · chevrons violets : horizontal · pointillés : vos annotations · double trait : condition à vérifier') }],
+      value: () => api.tr('Jaune : navigation · orange : action · rouge : navigation interdite · rouge hachuré : action interdite · bleu : progression · turquoise : ressource · vert : identifiant d’écran · rose : déplaçable · violet : slider, chevrons dans le sens du déplacement · pointillés : vos ajouts · tirets transparents : vos suppressions · double trait fin : bouton conditionnel') }],
     onSetting: (key) => { if (key === 'navigationDebug') update(); },
     update,
     dispose: () => { disposed = true; oral?.dispose(); clearTimeout(holdTimer); closePreview?.(); window.removeEventListener?.('resize', floating.clamp); stopTap?.(); window.clearInterval(timer); window.cancelAnimationFrame?.(animation); tracker.reset(); clear(); },

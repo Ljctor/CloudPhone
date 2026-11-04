@@ -57,6 +57,20 @@ class ReviewAPI(AioHTTPTestCase):
         self.evidence.frontend_origins = ("http://private.example:8100",)
         self.assertIsNone((await (await self.client.get("/api/recording-config")).json())["secure_review_url"])
 
+    async def test_measured_soul_button_bounds_are_shared_with_the_live_overlay(self):
+        navigation = json.loads((Path(__file__).parents[1] / "navigation.json").read_text())
+        for screen in ("soul_weapon", "soul_weapon_engraving"):
+            spec = navigation["screens"][screen]
+            regions = {region["id"]: region for region in self.evidence.configured_policy_regions(screen, spec)}
+            for move in spec["moves"]:
+                if "visual_rect" not in move:
+                    continue
+                region = regions["policy:" + move["id"]]
+                self.assertEqual(region["rect"], move["visual_rect"])
+                self.assertEqual(region["source"], "measured_control_bounds")
+                self.assertFalse(region["gestureAuthority"])
+                self.assertEqual(region["guard_rect"], move.get("area"))
+
     async def test_frontend_assets_and_api_are_available_under_https_proxy_prefix(self):
         source = Path(__file__).parent
         for filename in ("index.html", "app.js", "model.js", "style.css"):
@@ -181,7 +195,7 @@ class ReviewAPI(AioHTTPTestCase):
             "menu": {"name": "Menu", "moves": []}}}))
         (plugin / "screen_registry.json").write_text(json.dumps({"screens": {
             "battle": {"example": "screenshots/battle.png"}}, "tree": {"battle": {"scroll": [
-                {"measured": True, "direction": "vertical", "gesture": [.5, .8, .5, .4], "captures": ["battle_scroll.png"]}]}}}))
+                {"measured": True, "direction": "vertical", "rect": [.1,.3,.9,.9], "gesture": [.5, .8, .5, .4], "captures": ["battle_scroll.png"]}]}}}))
         (self.data / "screenshots" / "battle_scroll.png").write_bytes(b"actual-archived-frame")
         self.evidence.plugin_dir = plugin
         graph = await (await self.client.get("/api/graph")).json()
@@ -215,6 +229,23 @@ class ReviewAPI(AioHTTPTestCase):
         self.assertTrue(zone["removedProposal"])
         self.assertEqual(len(graph["edges"]), len(before["edges"]))
         self.assertEqual(len((await (await self.client.get("/api/zone-feedback")).json())["items"]), 1)
+
+    async def test_forbidden_action_survives_api_reload_without_creating_edges(self):
+        before = await (await self.client.get("/api/graph")).json()
+        body = {"nodeId": NODE, "screen": "battle", "operation": "add", "kind": "action",
+                "forbidden": True, "rect": [.4, .4, .5, .5]}
+        response = await self.client.post("/api/zone-feedback", json=body)
+        self.assertEqual(response.status, 201)
+        saved = await response.json()
+        self.assertEqual((saved["kind"], saved["forbidden"], saved["gestureAuthority"]), ("action", True, False))
+        graph = await (await self.client.get("/api/graph")).json()
+        node = next(node for node in graph["nodes"] if node["id"] == NODE)
+        zone = next(region for region in node["regions"] if region["id"] == saved["zoneId"])
+        self.assertEqual((zone["kind"], zone["forbidden"]), ("action", True))
+        self.assertEqual(graph["edges"], before["edges"])
+        self.assertEqual(self.evidence.zones.read()[0]["forbidden"], True)
+        for value in (1, "true"):
+            self.assertEqual((await self.client.post("/api/zone-feedback", json={**body, "forbidden": value})).status, 400)
 
     async def test_zone_add_and_revision_are_shared_and_never_change_route_geometry(self):
         old = await (await self.client.get("/api/revision")).json()
@@ -275,7 +306,8 @@ class ReviewAPI(AioHTTPTestCase):
         soul = next(node for node in graph["nodes"] if node["id"] == "screen:soul_weapon")
         self.assertIsNone(soul["image"], "a calibrated conflicting identity cannot represent Soul Weapon")
         self.assertEqual({region["id"] for region in soul["regions"]}, {"policy:breakdown"})
-        self.assertEqual(soul["regions"][0]["kind"], "forbidden")
+        self.assertEqual(soul["regions"][0]["kind"], "action")
+        self.assertTrue(soul["regions"][0]["forbidden"])
         reviewed["items"]["manual:" + CAPTURE] = {"status": "processed", "before": {
             "status": "processed", "screen": "soul_weapon", "scan": {"screen": "battle", "overlays": ["soul_weapon"]}}}
         ledger.write_text(json.dumps(reviewed))
@@ -285,6 +317,30 @@ class ReviewAPI(AioHTTPTestCase):
         self.assertEqual(soul["status"], "configured")
         self.assertTrue(any(region["id"] == "policy:breakdown" for region in soul["regions"]))
         self.assertFalse(any(region["id"] == "policy:accessories" for region in soul["regions"]))
+
+    async def test_variant_returns_require_the_matching_calibrated_visible_tab(self):
+        registry = {"screens": {"character_promotion": {"kind": "overlay", "status": "registered"}}}
+        move = {"id": "close_tab", "semantic_kind": "navigation", "to": "battle", "tap": [.073,.966],
+                "needs": {"reduced_battle": True, "active_tab": "character_promotion", "required_overlay": "character_promotion"}}
+        declared = {"character_promotion": {"moves": [move]}}
+        battle = {"id": "screen:battle", "screen": "battle", "source": "configured", "image": "/api/image/example:battle", "scan": {"plain": True}}
+        variant = {"id": "example:character_promotion_scroll_1", "screen": "character_promotion", "source": "example",
+                   "image": "/api/image/example:character_promotion_scroll_1", "review": {"status": "processed"},
+                   "scan": {"screen": "battle", "overlays": ["panel", "character_promotion"], "plain": False}}
+        edges = []
+        self.assertEqual(self.evidence.add_variant_returns([battle,variant], edges, registry, declared), 1)
+        self.assertEqual(edges[0]["from"], variant["id"])
+        self.assertEqual(edges[0]["to"], "screen:battle")
+        self.assertEqual(edges[0]["status"], "to_verify")
+        self.assertFalse(edges[0]["review"]["gestureAuthority"])
+        for invalid in ({**variant, "review": {"status": "ambiguous"}},
+                        {**variant, "screen": "character_growth"},
+                        {**variant, "scan": {"screen":"battle", "overlays":["panel"], "plain":False}},
+                        {**variant, "scan": {"screen":"battle", "overlays":["character_promotion","quest_panel"], "plain":False}}):
+            self.assertEqual(self.evidence.add_variant_returns([battle, invalid], [], registry, declared), 0)
+        self.assertEqual(self.evidence.add_variant_returns([dict(battle,scan={"plain":False}),variant], [], registry, declared), 0)
+        self.assertEqual(self.evidence.add_variant_returns([battle,variant], [], registry,
+                         {"character_promotion":{"moves":[dict(move, needs={"active_tab":"character_promotion"})]}}), 0)
 
     async def test_exact_removal_id_never_ghosts_another_policy_at_the_same_coordinates(self):
         plugin = self.root / "same-point-plugin"

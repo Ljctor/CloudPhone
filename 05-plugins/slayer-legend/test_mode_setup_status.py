@@ -220,11 +220,15 @@ class SetupStatus(unittest.IsolatedAsyncioTestCase):
     async def test_complete_setup_receipt_confirms_restored_farming_idle(self):
         self.engraving = 'real'
         self.assertEqual(self.part['api']['state']()['state'], 'idle')
-        self.part['api']['confirm']('mpw18', verified_setup=True)
+        attempt = self.part['api']['begin_verification']('mpw18')
+        receipt = self.part['api']['confirm']('mpw18', verified_setup=True, attempt=attempt)
         state = self.part['api']['state']()
         self.assertEqual(state['state'], 'farming')
         self.assertEqual(state['message_t']['params'],
                          {'name': 'Gear Farming', 'number': 970, 'preset': 'III'})
+        self.assertEqual(state['setup_result'], receipt)
+        self.assertEqual(receipt['result'], 'done')
+        self.assertEqual(receipt['revision'], self.loadouts['revision']('mpw18'))
         self.assertEqual(self.farm_calls, [])
 
     async def test_health_and_other_target_receipts_do_not_confirm_startup_idle(self):
@@ -626,11 +630,13 @@ class SetupStatus(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(unchanged['state'], 'failed')
         self.assertEqual(unchanged['tone'], 'error')
         self.assertEqual(unchanged['setup_result'], failed['setup_result'])
-        self.part['api']['confirm']('mpw18', verified_setup=True)
+        attempt = self.part['api']['begin_verification']('mpw18')
+        self.part['api']['confirm']('mpw18', verified_setup=True, attempt=attempt)
         repaired = self.part['api']['state']()
         self.assertEqual(repaired['state'], 'farming')
         self.assertEqual(repaired['tone'], 'ok')
-        self.assertIsNone(repaired['setup_result'], 'the old failure must disappear after the full repair')
+        self.assertEqual(repaired['setup_result']['result'], 'done')
+        self.assertEqual(repaired['setup_result']['revision'], revision)
         self.assertEqual(self.parts['mpw18'], target)
         self.assertEqual(engravings.revision(self.parts['mpw18']), revision)
 

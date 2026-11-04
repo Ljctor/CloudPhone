@@ -61,30 +61,10 @@ feedback_directory=$(dirname "$feedback_file")
 [[ $feedback_file != "$data_dir"/* && $ledger_file == "$feedback_directory"/* ]] || {
   echo 'Feedback and review ledger must share a separate writable directory outside raw evidence' >&2; exit 2;
 }
-install -d -m 755 "$destination"
-for name in review_server.py index.html style.css app.js model.js; do
-  install -m 644 "$source_dir/$name" "$destination/$name"
-done
-install -m 644 "$source_dir/../evidence_review.py" "$destination/evidence_review.py"
-install -m 644 "$plugin_source/zone_feedback.py" "$destination/zone_feedback.py"
-install -m 644 "$plugin_source/oral_feedback.py" "$destination/oral_feedback.py"
-install -m 644 "$plugin_source/page_zone_style.js" "$destination/page_zone_style.js"
-install -m 644 "$plugin_source/page_oral_feedback.js" "$destination/page_oral_feedback.js"
-# A private reader snapshot keeps catalogue review independent of gateway
-# upgrades. It contains repository code/crops only, never runtime captures.
-rm -rf "$destination/readers.new"
-install -d -m 755 "$destination/readers.new/fixtures"
-find "$plugin_source" -maxdepth 1 -type f \( -name '*.py' -o -name '*.json' \) ! -name 'test_*' \
-  -exec install -m 644 -t "$destination/readers.new" {} +
-find "$plugin_source/fixtures" -maxdepth 1 -type f -name '*.txt' \
-  -exec install -m 644 -t "$destination/readers.new/fixtures" {} +
-if systemctl is-active --quiet cloudphone-review.service; then
-  systemctl stop cloudphone-review.service
-fi
-rm -rf "$destination/readers.old"
-[ ! -e "$destination/readers" ] || mv -T "$destination/readers" "$destination/readers.old"
-mv -T "$destination/readers.new" "$destination/readers"
-rm -rf "$destination/readers.old"
+# Explicit install and subsequent plugin upgrades share the exact same copy set.
+# shellcheck source=refresh-installed.sh
+. "$source_dir/refresh-installed.sh"
+sync_review_files "$source_dir" "$destination" false
 install -d -o cloudphone -g cloudphone -m 700 "$feedback_directory"
 unit_file=$(mktemp)
 trap 'rm -f "$unit_file"' EXIT

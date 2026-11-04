@@ -429,6 +429,45 @@ class Sequence(unittest.TestCase):
         self.assertEqual(game.state["preset"], "III")
         self.assertTrue(game.state["auto"])
 
+    def test_discordant_badges_read_settings_instead_of_freezing_a_false_blocker(self):
+        for first in ("III", None):
+            game = Game(stage=920, preset="IV", unfolded_forever=True)
+            parts = readers(game)
+            original = parts[2].badge
+            calls = []
+            def noisy(shot):
+                value = original(shot)
+                if value is not None:
+                    calls.append(value)
+                    return first if len(calls) == 1 else value
+                return None
+            parts[2].badge = noisy
+            api = feature.stage_change(game.ports(), *parts, rules, TABLE)["api"]
+            answer = asyncio.run(api["set_preset"]("IV"))
+            self.assertEqual(answer["result"], "done")
+            self.assertIn(("battle", "preset_badge"), game.moves)
+            self.assertNotIn(("battle_settings", "preset"), game.moves)
+            self.assertEqual(game.state["preset"], "IV")
+            self.assertTrue(game.state["auto"])
+
+    def test_isolated_preflight_badge_mismatch_does_not_block_before_confirmation(self):
+        game = Game(stage=915, preset="IV", unfolded_forever=True)
+        parts = readers(game)
+        original = parts[2].badge
+        calls = []
+        def noisy(shot):
+            value = original(shot)
+            if value is not None:
+                calls.append(value)
+                return "III" if len(calls) == 1 else value
+            return None
+        parts[2].badge = noisy
+        api = feature.stage_change(game.ports(), *parts, rules, TABLE)["api"]
+        answer = asyncio.run(api["farm"](920, "IV", "mpw18"))
+        self.assertEqual(answer["result"], "done")
+        self.assertEqual(game.state["stage"], 920)
+        self.assertNotIn(("battle_settings", "preset"), game.moves)
+
     def test_accessible_preset_mismatch_stops_before_stage_navigation(self):
         game = Game(stage=915, preset="II", unfolded_forever=True)
         answer = run(game, lambda api: api["farm"](920, "IV", "mpw18"))
@@ -624,7 +663,8 @@ class Mode(unittest.TestCase):
             for _ in range(20):
                 await asyncio.sleep(0)
             if confirm:
-                part["api"]["confirm"](confirm, verified_setup=verified_setup)
+                attempt = part["api"]["begin_verification"](confirm) if verified_setup else None
+                part["api"]["confirm"](confirm, verified_setup=verified_setup, attempt=attempt)
             get = next(h for method, path, h in part["routes"] if method == "GET")
             return (await get(None))[1]
 

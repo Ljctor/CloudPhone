@@ -60,7 +60,7 @@ class ZoneFeedback:
             return value["items"]
 
     def append(self, body, known_screens=None):
-        if not isinstance(body, dict) or set(body) - {"nodeId", "zoneId", "screen", "operation", "kind", "rect", "label", "conditional"}:
+        if not isinstance(body, dict) or set(body) - {"nodeId", "zoneId", "screen", "operation", "kind", "rect", "label", "conditional", "forbidden"}:
             raise ValueError("Invalid zone proposal")
         operation, kind, screen, node = (body.get(key) for key in ("operation", "kind", "screen", "nodeId"))
         if not isinstance(operation, str) or not isinstance(kind, str) or operation not in {"add", "remove"} or kind not in KINDS:
@@ -80,8 +80,12 @@ class ZoneFeedback:
             raise ValueError("Label is too long")
         if "conditional" in body and not isinstance(body["conditional"], bool):
             raise ValueError("conditional must be boolean")
+        forbidden = body.get("forbidden", kind == "forbidden")
+        if (not isinstance(forbidden, bool) or forbidden and kind not in {"action", "forbidden"}
+                or kind == "forbidden" and not forbidden):
+            raise ValueError("forbidden must be boolean and match the annotation role")
         item = {"id": uuid.uuid4().hex, "at": time.time(), "nodeId": node, "zoneId": zone, "screen": screen,
-                "operation": operation, "kind": kind, "rect": rectangle(body.get("rect")), "label": label,
+                "operation": operation, "kind": kind, "forbidden": forbidden, "rect": rectangle(body.get("rect")), "label": label,
                 "pending": True, "status": "pending", "gestureAuthority": False,
                 "conditional": body.get("conditional", False), "scope": "node" if unknown else "screen", "known": not unknown}
         with self.locked(exclusive=True):
@@ -94,7 +98,7 @@ class ZoneFeedback:
                     zone_id = "manual:" + zone_id[7:]
                 if zone_id.startswith("policy:") and zone_id.count(":") == 1:
                     zone_id = "policy:" + value.get("screen", "") + ":" + zone_id[7:]
-                return (value.get("operation"), value.get("screen"), zone_id, value.get("kind"),
+                return (value.get("operation"), value.get("screen"), zone_id, value.get("kind"), value.get("forbidden", value.get("kind") == "forbidden"),
                         value.get("rect"), value.get("nodeId") if value.get("scope") == "node" else None)
             for existing in previous["items"]:
                 if existing.get("pending") is True and key(existing) == key(item):
@@ -149,7 +153,7 @@ class ZoneFeedback:
                 continue
             zones[zone_id] = {"id": zone_id, "zoneId": zone_id, "screen": screen, "kind": kind,
                               "rect": rect, "nodeId": annotation.get("nodeId"), "source": "reviewed_user_evidence",
-                              "user": True, "conditional": False, "forbidden": kind == "forbidden", "gestureAuthority": False}
+                              "user": True, "conditional": False, "forbidden": kind == "forbidden" or kind == "action" and annotation.get("forbidden") is True, "gestureAuthority": False}
         for path in sorted((data / "manual-clicks").glob("*.json")):
             if not re.fullmatch(r"[0-9a-f]{32}", path.stem):
                 continue
@@ -198,7 +202,7 @@ class ZoneFeedback:
             zone = {"id": zone_id, "zoneId": zone_id, "aliases": ["region:" + path.stem],
                     "nodeId": zone_id + ":before", "screen": screen, "kind": kind, "rect": rect,
                     "label": kind, "source": "reviewed_user_evidence" if reviewed else "user_recorded_unverified",
-                    "user": True, "conditional": False, "forbidden": kind == "forbidden", "gestureAuthority": False}
+                    "user": True, "conditional": False, "forbidden": kind == "forbidden" or kind == "action" and entry.get("forbidden") is True, "gestureAuthority": False}
             if trajectory:
                 zone["trajectory"] = trajectory
             zones[zone_id] = zone
@@ -213,7 +217,8 @@ class ZoneFeedback:
                            for zone in zones.values())
             for zone in zones.values():
                 if zone["screen"] == item["screen"] and (item["zoneId"] in [zone["id"], *zone.get("aliases", [])]
-                        or not anchored and zone["kind"] == item["kind"] and max(abs(a - b) for a, b in zip(zone["rect"], item["rect"])) <= .003):
+                        or not anchored and zone["kind"] == item["kind"]
+                        and zone.get("forbidden", zone["kind"] == "forbidden") == item.get("forbidden", item["kind"] == "forbidden") and max(abs(a - b) for a, b in zip(zone["rect"], item["rect"])) <= .003):
                     zone.update(proposal="remove", removedProposal=True, pending=True)
                     matched = True
             if not matched:

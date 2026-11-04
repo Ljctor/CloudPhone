@@ -453,15 +453,22 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                     or policy_context(name) != attempt_context):
                 raise ports.Busy("Configuration demandée non vérifiée")
 
+        attempt = None
         status["repairing"] = kind
         status["intention"] = rules.redirect_intention(kind, profile())
         show(ports.t("Vers {destination} : {purpose}", destination=status["intention"]["destination_t"],
                      purpose=status["intention"]["purpose_t"]))
         try:
             async def operation():
-                return await (farming["back_to_battle"](name) if kind == "back_to_battle" else
-                              farming["park"](name) if kind == "park" else
-                              farming["farm"](part["stage"], part["preset"], name, modes["state"]().get("highest")))
+                nonlocal attempt
+                if kind == "back_to_battle":
+                    return await farming["back_to_battle"](name)
+                if kind == "park":
+                    return await farming["park"](name)
+                attempt = modes["begin_verification"](name)
+                if attempt is None:
+                    raise ports.Busy("Configuration demandée non vérifiée")
+                return await farming["farm"](part["stage"], part["preset"], name, modes["state"]().get("highest"))
             require_current_repair()
             if "guarded" in farming:
                 answer = await farming["guarded"](operation, require_current_repair)
@@ -521,10 +528,13 @@ def watchdog(ports, screens, stage, rules, numeral_of, modes, mines, launches, l
                 await send_notice(ports.english(rules.blocked_notice(name, answer["text_t"])))
                 status["failure_notices"][kind] = failure_key
             await notify_all([(*action[:4], False) for action in actions])
-        elif answer["result"] == "done" and answer.get("verified_setup"):
+        elif answer["result"] == "done" and answer.get("verified_setup") is True:
             if mode_now() == name and policy_context(name) == attempt_context:
-                modes["confirm"](name, verified_setup=True)
-                setup_verified({"result": "done", "mode": name, "target": attempt_context["target"]})
+                receipt = modes["confirm"](name, verified_setup=True, attempt=attempt)
+                if receipt:
+                    setup_verified(receipt)
+                else:
+                    memory = rules.not_run(memory, kind)
         elif answer["result"] == "plan":
             memory = rules.not_run(memory, kind)
             say("normal", "Plan only: {repair}: {plan}", {"repair": rules.REPAIR_NAMES[kind], "plan": answer["text_t"]})

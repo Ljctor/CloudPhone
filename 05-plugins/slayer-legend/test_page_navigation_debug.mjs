@@ -16,10 +16,31 @@ assert.ok(equipment.some((zone) => zone.move === 'batch_combine' && zone.forbidd
   'forbidden navigation remains visible as a forbidden zone');
 const breakdown = zonesFor('soul_weapon', graph, registry, null,
   new Map([['breakdown-0', [.1, .1, .2, .2]]])).find((zone) => zone.move === 'breakdown');
-assert.deepEqual(breakdown.rect, [.66, .8, .97, .88], 'the full forbidden area cannot shrink or track an unrelated button');
+const measuredBreakdown = graph.screens.soul_weapon.moves.find((move) => move.id === 'breakdown');
+assert.deepEqual(breakdown.rect, measuredBreakdown.visual_rect, 'draw the actual full button, not a guard envelope or tracking guess');
+assert.deepEqual(breakdown.guard_rect, [.66, .8, .97, .88], 'conservative authority envelope stays separate and unchanged');
+for (const screen of ['soul_weapon', 'soul_weapon_engraving']) {
+  const zones = zonesFor(screen, graph, registry);
+  for (const move of graph.screens[screen].moves.filter((move) => move.visual_rect)) {
+    const zone = zones.find((zone) => zone.id === move.id || zone.move === move.id);
+    assert.deepEqual(zone.rect, move.visual_rect, `${screen}/${move.id}: measured bounds survive rendering`);
+    const [l, t, r, b] = zone.rect;
+    const [pl, pt, pr, pb] = move.visual_source.rect_px;
+    assert.deepEqual([l * 480, t * 1040, r * 480, b * 1040].map(Math.round), [pl, pt, pr, pb]);
+    assert.ok(l >= 0 && t >= 0 && r <= 1 && b <= 1, 'rect stays in full captured screen coordinates');
+  }
+}
+
+const forbiddenNavigation = zonesFor('soul_weapon_engraving', graph, registry).find((zone) => zone.move === 'settings');
+assert.equal(forbiddenNavigation.kind, 'tap');
+assert.equal(forbiddenNavigation.semantic_kind, 'navigation');
+assert.equal(forbiddenNavigation.forbidden, true);
+assert.equal(breakdown.kind, 'action');
+assert.equal(breakdown.semantic_kind, 'action');
 const removal = zoneRemovalProposal({ ...breakdown, screen: 'soul_weapon' });
 assert.equal(removal.zoneId, 'policy:soul_weapon:breakdown');
-assert.equal(removal.kind, 'forbidden');
+assert.equal(removal.kind, 'action');
+assert.equal(removal.forbidden, true);
 assert.deepEqual(removal.rect, breakdown.rect);
 assert.notEqual(removal.rect, breakdown.rect, 'proposal geometry cannot mutate its original policy');
 assert.equal(zoneRemovalProposal({ id: 'menu_equipment', screen: 'battle', kind: 'tap', rect: [.1, .2, .3, .4] }).zoneId, 'policy:battle:menu_equipment');
@@ -175,7 +196,7 @@ const api = {
     throw Error(path);
   },
 };
-assert.deepEqual(ANNOTATIONS.map((action) => action.kind), ['navigation', 'forbidden', 'progression_value', 'resource_value', 'screen_identifier', 'vertical', 'horizontal', 'action', 'draggable']);
+assert.deepEqual(ANNOTATIONS.map((action) => action.kind), ['navigation', 'forbidden', 'progression_value', 'resource_value', 'screen_identifier', 'vertical', 'horizontal', 'action', 'action', 'draggable']);
 assert.deepEqual(annotationPoint(event(200, -20), root.getBoundingClientRect()), { x: 1, y: 0 });
 graph.screens.battle.moves.push(
   { id: 'ordinary_action_test', semantic_kind: 'action', area: [.1, .2, .2, .3] },
@@ -267,7 +288,7 @@ currentScreen = 'equipment_weapon'; await poll();
 assert.ok(all(root).some((item) => item.textContent === '⌃'));
 assert.ok(all(root).some((item) => item.textContent === '⌄'));
 const equipmentSlider = all(root).find((item) => item.textContent === '⌃').parent;
-assert.match(equipmentSlider.style.cssText, /#168bff/);
+assert.match(equipmentSlider.style.cssText, /#bb50ff/);
 assert.match(equipmentSlider.style.cssText, /border:/);
 assert.match(equipmentSlider.style.cssText, /background:/);
 armResponse = { ok: false, status: 409, body: { error: 'game not visible' } };
@@ -426,7 +447,7 @@ surface.onpointerdown(event(80, 160)); surface.onpointerup(event(80, 160));
 assert.equal(posts.length, beforeRectangle, 'a click cannot declare a scannable rectangle');
 const rectangleDown = event(80, 160); surface.onpointerdown(rectangleDown);
 const rectangleMove = event(20, 40); surface.onpointermove(rectangleMove);
-assert.ok(all(surface).some((item) => item.style.cssText?.includes('#7dd3fc')), 'progression value drag preview');
+assert.ok(all(surface).some((item) => item.style.cssText?.includes('#409cff')), 'progression value drag preview');
 const rectangleUp = event(20, 40); surface.onpointerup(rectangleUp);
 for (const pointer of [rectangleDown, rectangleMove, rectangleUp]) assert.ok(pointer.prevented && pointer.stopped);
 assert.deepEqual(posts.at(-1).body, { x: .8, y: .8, kind: 'swipe', end: { x: .2, y: .2 } });
@@ -442,11 +463,11 @@ const evidenceButton = (kind) => all(root).find((item) => item.attrs['data-scree
 await poll();
 const landmarkBox = all(root).find((item) => item.attrs['data-zone-kind'] === 'detection');
 assert.ok(landmarkBox.title.includes('battle_title'));
-assert.match(landmarkBox.style.cssText, /#2dd4bf/);
+assert.match(landmarkBox.style.cssText, /#4ade80/);
 assert.match(landmarkBox.style.cssText, /border:2px solid/);
 assert.match(landmarkBox.style.cssText, /pointer-events:none/);
-assert.ok(landmarkBox.children.some((child) => child.textContent.includes('battle_title')),
-  'read-only recognition evidence has a visible label');
+assert.ok(!landmarkBox.children.some((child) => child.textContent.includes('battle_title')),
+  'recognition evidence uses a rectangle without a visible label');
 const beforeSnapshot = posts.length;
 await evidenceButton('capture').onclick(event());
 assert.deepEqual(posts.slice(beforeSnapshot), [{ path: '/trace/capture', body: {} }]);
@@ -460,7 +481,7 @@ assert.match(archivedForbidden.style.cssText, /border:1px solid #ff5353/);
 assert.match(archivedForbidden.style.cssText, /left:25%;top:25%;width:50%;height:25%/);
 assert.match(archivedForbidden.style.cssText, /border-radius:0/);
 assert.match(all(viewer).find((item) => item.attrs['data-zone-kind'] === 'detection').style.cssText,
-  /border:2px solid #2dd4bf/);
+  /border:2px solid #4ade80/);
 all(viewer).find((item) => item.textContent === 'Fermer').onclick(event());
 await evidenceButton('correction').onclick(event());
 const expectedSelect = all(root).find((item) => 'data-expected-screen' in item.attrs);
@@ -538,7 +559,7 @@ assert.equal(all(userSlider).find((item) => item.tagName === 'rect').attrs['stro
 assert.equal(all(userSlider).find((item) => item.tagName === 'rect').attrs['stroke-linecap'], 'round');
 const trajectory = all(userSlider).find((item) => item.tagName === 'polyline');
 assert.equal(trajectory.attrs['stroke-dasharray'], 'none', 'user bounding marks never dash the trajectory');
-assert.equal(trajectory.attrs.stroke, '#168bff');
+assert.equal(trajectory.attrs.stroke, '#bb50ff');
 assert.equal(zoneById('other-screen'), undefined, 'another screen annotation never leaks into the current battlefield');
 const feedbackToggle = () => all(root).find((item) => item.attrs['data-screen-evidence'] === 'zone-feedback');
 await feedbackToggle().onclick(event());
@@ -580,3 +601,8 @@ for (const kind of ['progression_value', 'resource_value', 'screen_identifier'])
   assert.equal(feedbackZones('battle', [], [zone])[0].kind, kind);
 }
 console.log('Distinct value/identifier roles survive feedback and removal proposals: OK');
+
+const forbiddenActionProposal = zoneRemovalProposal({ id: 'danger', screen: 'battle', kind: 'action', forbidden: true, rect: [.1, .2, .3, .4], user: true });
+assert.equal(forbiddenActionProposal.kind, 'action');
+assert.equal(forbiddenActionProposal.forbidden, true);
+assert.ok(ANNOTATIONS.some((tool) => tool.kind === 'action' && tool.forbidden === true));

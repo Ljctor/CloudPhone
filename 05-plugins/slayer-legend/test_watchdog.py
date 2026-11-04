@@ -1019,16 +1019,23 @@ class GoldTrigger(unittest.TestCase):
 
             farming.update(park=parking, parked=lambda shot: True, soul_weapon_switch=lambda: park)
         gold = {"current": lambda: {"rate": 0, "span": 300, "last": Ports.clock.wall() - 1}}
-        def confirm(name, *, verified_setup=False):
+        def confirm(name, *, verified_setup=False, attempt=None):
             confirmed.append(name)
-            if verified_setup:
+            if verified_setup and attempt:
                 verified.append(name)
+                return dict(attempt, result="done", at=Ports.clock.wall())
+
+        def begin_verification(name):
+            accepted = target(looked[0]) if callable(target) else target or {
+                "mpw18": {"stage": 920, "preset": 1}, "mpw4": {"stage": 915, "preset": "II"}}[name]
+            return {"mode": name, "target": copy.deepcopy(accepted), "revision": "test-revision"}
 
         built = feature.watchdog(
             Ports, None, None, rules, NUMERALS.get,
             {"state": lambda: {"mode": mode(looked[0]) if callable(mode) else mode, "highest": 925, "state": "moving" if (entering(looked[0]) if callable(entering) else entering) else "failed" if (failed_setup(looked[0]) if callable(failed_setup) else failed_setup) else "farming",
                                "hold": hold, "intention": intention},
-             "confirm": confirm, "on_setup_verified": self.setup_callbacks.append},
+             "confirm": confirm, "begin_verification": begin_verification,
+             "on_setup_verified": self.setup_callbacks.append},
             {"state": lambda: {"enabled": mode == "mine"}, "reenter": reenter},
             {"running": lambda: False, "start": start, "state": lambda: {"state": "done", "message": ""}},
             lambda name: target(looked[0]) if callable(target) else target or

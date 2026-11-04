@@ -53,3 +53,9 @@ for (const prefix of ['/', '/navigation-review/']) {
 }
 assert.throws(() => servicePath('/api/../../outside', 'https://review.example/navigation-review/app.js'));
 console.log('Review service API, image and recording URLs preserve the HTTPS proxy mount: OK');
+
+const relicScroll = { ...swipe, source: 'configured', start: {x:.5,y:.84}, end:{x:.5,y:.56}, startRect:[.04,.52,.96,.94] };
+assert.equal(reviewGesture([relicScroll], {start:relicScroll.start,end:relicScroll.end,duration:800}, []).matches.length,1);
+assert.equal(reviewGesture([relicScroll], {start:{x:.41,y:.966},end:{x:.41,y:.66},duration:800}, []).matches.length,0);
+assert.equal(reviewGesture([{...relicScroll,startRect:null}], {start:relicScroll.start,end:relicScroll.end,duration:800}, []).matches.length,0);
+console.log('Declared scrolls require a measured start rectangle; the Equipment footer never scrolls a list: OK');

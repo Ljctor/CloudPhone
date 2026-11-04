@@ -455,18 +455,32 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
             return t("{name} au stage {number}, preset {preset}", name=rules.mode_name(name), number=number, preset=preset)
         return t("{name} au stage {number}", name=rules.mode_name(name), number=number)
 
-    def confirm(name, *, verified_setup=False):
-        """Only a complete setup receipt acknowledges failure or startup idle.
-        Health alone and observations from another mode cannot change state."""
-        if (verified_setup and name in ("mpw18", "mpw4", "soul")
-                and status["configured"] and status["mode"] == name
-                and status["state"] in ("idle", "failed") and loadouts["stage"](name)):
-            # A full repair also verifies a restored mode that has no entry
-            # transaction after startup. Active entry/waiting stays owned by
-            # its coordinator; a healthy frame never enters this branch.
-            setup.clear_result()
-            ports.log("normal", f"Mode {name}: complete setup verified")
-            report("farming", farming_text(name, loadouts["stage"](name), loadouts["loadout"](name).get("preset")))
+    def begin_verification(name):
+        """Snapshot an external full repair before its first awaited step."""
+        if (status["mode"] != name or status["state"] not in ("idle", "failed", "farming")
+                or setup.request(name, configured=status["configured"],
+                                 mine_enabled=mines["state"]().get("enabled")) is None):
+            return None
+        return (status["mode_epoch"], setup.begin_attempt(name, loadouts["stage"](name)))
+
+    def confirm(name, *, verified_setup=False, attempt=None):
+        """Commit external full proof before publishing farming; health is not proof."""
+        if (verified_setup is not True or attempt is None
+                or name not in ("mpw18", "mpw4", "soul") or not status["configured"]
+                or status["mode"] != name or status["state"] not in ("idle", "failed", "farming")
+                or mines["state"]().get("enabled") or attempt[0] != status["mode_epoch"]
+                or not ports.enabled() or setup.blocker(name)):
+            return None
+        message = farming_text(name, loadouts["stage"](name), loadouts["loadout"](name).get("preset"))
+        if not setup.complete_attempt(attempt[1], mode=name, completed=True,
+                                      state="farming", message=message):
+            return None
+        receipt = setup.current_result(name)
+        if not receipt or receipt["result"] != "done":
+            return None
+        ports.log("normal", f"Mode {name}: complete setup verified")
+        report("farming", message)
+        return receipt
 
     def replace_change(start):
         """One coordinator drains cancellation before starting its successor.
@@ -808,7 +822,8 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
                    ("POST", "/mode/hold", handle_hold), ("POST", "/mode/setup", handle_setup)],
         "startup": [resume],
         # For the watchdog: the mode now (it runs only in the default one).
-        "api": {"state": state, "confirm": confirm, "watched_by": watched_by,
+        "api": {"state": state, "confirm": confirm, "begin_verification": begin_verification,
+                "watched_by": watched_by,
                 "on_setup_verified": setup_listeners.append,
                 "mode_epoch": lambda: status["mode_epoch"],
                 "resource_refresh_by": resource_refresh_by},

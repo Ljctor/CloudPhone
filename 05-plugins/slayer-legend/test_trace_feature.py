@@ -328,6 +328,28 @@ class Annotations(unittest.IsolatedAsyncioTestCase):
         for body in ({}, [], {"id": "bad"}):
             self.assertEqual((await self.call("POST", "/trace/cancel", body))[1], 400)
 
+    async def test_forbidden_action_is_rectangular_persisted_feedback_not_navigation(self):
+        for invalid in ({"kind": "action", "forbidden": "true"},
+                        {"kind": "navigation", "forbidden": True},
+                        {"kind": "forbidden", "forbidden": False}):
+            self.assertEqual((await self.call("POST", "/trace/arm", invalid))[1], 400)
+        armed, status = await self.call("POST", "/trace/arm", {"kind": "action", "forbidden": True})
+        self.assertEqual(status, 200)
+        self.assertIs(armed["forbidden"], True)
+        self.assertEqual((await self.call("POST", "/trace", {"x": .2, "y": .2}))[1], 400)
+        self.release.clear()
+        self.assertEqual((await self.call("POST", "/trace", {
+            "x": .8, "y": .8, "kind": "swipe", "end": {"x": .2, "y": .2}}))[1], 202)
+        await self.advance()
+        self.release.set()
+        await self.advance()
+        self.restart()
+        records = (await self.call("GET", "/trace/manual"))[0]["clicks"]
+        item = next(item for item in records if item["id"] == armed["id"])
+        self.assertEqual((item["kind"], item["forbidden"], item["rect"]), ("action", True, [.2, .2, .8, .8]))
+        self.assertIs(item["gestureAuthority"], False)
+        self.assertEqual((await self.call("GET", "/trace/graph"))[0]["edges"], [])
+
     async def test_value_and_identifier_roles_require_rectangles_without_navigation(self):
         for kind in ("progression_value", "resource_value", "screen_identifier"):
             self.release.clear()

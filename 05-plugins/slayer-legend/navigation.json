@@ -1425,7 +1425,9 @@
       0.5,
       0.955
      ],
-     "label": "red X"
+     "label": "red X",
+     "visual_rect": [0.44583333333333336, 0.9326923076923077, 0.5541666666666667, 0.9826923076923076],
+     "visual_source": {"capture": "screenshots/soul_weapon.png", "size": [480, 1040], "rect_px": [214, 970, 266, 1022], "scope": "visible control bounds only; never gesture authority"}
     },
     {
      "id": "select",
@@ -1495,7 +1497,9 @@
       0.33,
       0.636
      ],
-     "label": "big weapon icon"
+     "label": "big weapon icon",
+     "visual_rect": [0.2520833333333333, 0.5980769230769231, 0.41875, 0.6759615384615385],
+     "visual_source": {"capture": "screenshots/soul_weapon.png", "size": [480, 1040], "rect_px": [121, 622, 201, 703], "scope": "visible control bounds only; never gesture authority"}
     },
     {
      "id": "craft",
@@ -1507,7 +1511,9 @@
      ],
      "label": "Craft (reads Harvest on a crafted weapon)",
      "forbidden": true,
-     "reason": "overwrites or re-rolls the user's equipment"
+     "reason": "overwrites or re-rolls the user's equipment",
+     "visual_rect": [0.25, 0.8125, 0.6916666666666667, 0.8682692307692308],
+     "visual_source": {"capture": "screenshots/soul_weapon.png", "size": [480, 1040], "rect_px": [120, 845, 332, 903], "scope": "visible control bounds only; never gesture authority"}
     },
     {
      "id": "breakdown",
@@ -1521,7 +1527,9 @@
      ],
      "label": "Breakdown",
      "forbidden": true,
-     "reason": "destroys items for good"
+     "reason": "destroys items for good",
+     "visual_rect": [0.7020833333333333, 0.8125, 0.9104166666666667, 0.8673076923076923],
+     "visual_source": {"capture": "screenshots/soul_weapon.png", "size": [480, 1040], "rect_px": [337, 845, 437, 902], "scope": "visible control bounds only; never gesture authority"}
     }
    ]
   },
@@ -1538,7 +1546,9 @@
       0.11,
       0.955
      ],
-     "label": "red X"
+     "label": "red X",
+     "visual_rect": [0.06666666666666667, 0.9394230769230769, 0.1625, 0.9836538461538461],
+     "visual_source": {"capture": "screenshots/soul_weapon_engraving_relax.png", "size": [480, 1040], "rect_px": [32, 977, 78, 1023], "scope": "visible control bounds only; never gesture authority"}
     },
     {
      "id": "lock",
@@ -1604,7 +1614,9 @@
      ],
      "label": "gear",
      "forbidden": true,
-     "reason": "the engraving's settings: not needed, never touched"
+     "reason": "the engraving's settings: not needed, never touched",
+     "visual_rect": [0.8395833333333333, 0.9384615384615385, 0.9083333333333333, 0.9701923076923077],
+     "visual_source": {"capture": "screenshots/soul_weapon_engraving_relax.png", "size": [480, 1040], "rect_px": [403, 976, 436, 1009], "scope": "visible control bounds only; never gesture authority"}
     },
     {
      "id": "percent",
@@ -1616,7 +1628,9 @@
      ],
      "label": "%",
      "forbidden": true,
-     "reason": "the engraving's stats: not needed, never touched"
+     "reason": "the engraving's stats: not needed, never touched",
+     "visual_rect": [0.8020833333333334, 0.7923076923076923, 0.8729166666666667, 0.8221153846153846],
+     "visual_source": {"capture": "screenshots/soul_weapon_engraving_relax.png", "size": [480, 1040], "rect_px": [385, 824, 419, 855], "scope": "visible control bounds only; never gesture authority"}
     },
     {
      "id": "change",

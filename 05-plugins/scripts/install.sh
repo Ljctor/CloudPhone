@@ -76,6 +76,10 @@ for plugin in "${plugins[@]}"; do
   [ ! -e "$dest" ] || mv -T "$dest" "$dest.old"
   mv -T "$dest.new" "$dest"
   rm -rf "$dest.old"
+  # Keep an optional existing simulator on this same reader/catalogue release.
+  if [ "$plugin" = slayer-legend ]; then
+    bash "$PART/$plugin/review_app/refresh-installed.sh"
+  fi
 done
 
 if systemctl is-active --quiet cloudphone-gateway.service; then

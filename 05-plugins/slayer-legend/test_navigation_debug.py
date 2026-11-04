@@ -19,6 +19,25 @@ def load(name, path):
 
 
 class Geometry(unittest.IsolatedAsyncioTestCase):
+    async def test_measured_visual_bounds_export_without_changing_navigation_authority(self):
+        feature = load("measured_navigation_feature", "features/navigation_debug.py")
+        navigation = load("measured_navigation_nav", "nav.py")
+        before = json.dumps(navigation.SCREENS, sort_keys=True)
+        ports = NS(respond=lambda body, status=200: body)
+        built = feature.navigation_debug(ports, navigation, HERE)
+        handler = next(handler for method, path, handler in built["routes"] if path == "/navigation-debug")
+        answer = await handler(NS(query={}))
+        for screen in ("soul_weapon", "soul_weapon_engraving"):
+            exported = {move["id"]: move for move in answer["graph"]["screens"][screen]["moves"]}
+            for move in navigation.SCREENS[screen]["moves"]:
+                if "visual_rect" in move:
+                    self.assertEqual(exported[move["id"]]["visual_rect"], move["visual_rect"])
+                    self.assertEqual(exported[move["id"]]["visual_source"], move["visual_source"])
+        self.assertEqual(before, json.dumps(navigation.SCREENS, sort_keys=True))
+        self.assertIsNone(navigation.guard("soul_weapon", "close", .5, .955))
+        self.assertIsNotNone(navigation.guard("soul_weapon", "breakdown", .81, .841))
+        self.assertIsNotNone(navigation.guard("soul_weapon_engraving", "settings", .87, .955))
+
     async def test_user_annotations_and_removal_proposals_stay_advisory(self):
         feature = load("navigation_user_feedback_test", "features/navigation_debug.py")
         screens = load("feedback_screens_test", "screens.py")
@@ -68,9 +87,9 @@ class Geometry(unittest.IsolatedAsyncioTestCase):
                            data_path=lambda name: str(Path(directory) / name))
                 built = feature.navigation_debug(ports, navigation, HERE, screens)
                 routes = {(method, path): handler for method, path, handler in built['routes']}
-                for kind in ('progression_value', 'resource_value', 'screen_identifier'):
+                for kind in ('progression_value', 'resource_value', 'screen_identifier', 'action', 'forbidden'):
                     body = {'screen': 'battle', 'nodeId': 'screen:battle', 'operation': 'add',
-                            'kind': kind, 'rect': [.1, .2, .3, .4]}
+                            'kind': kind, 'forbidden': kind in ('action', 'forbidden'), 'rect': [.1, .2, .3, .4]}
                     async def proposal():
                         return body
                     saved = await routes['POST', '/navigation/zone-feedback'](NS(json=proposal))
@@ -83,7 +102,7 @@ class Geometry(unittest.IsolatedAsyncioTestCase):
                 rebuilt = feature.navigation_debug(ports, navigation, HERE, screens)
                 read = next(handler for method, path, handler in rebuilt['routes'] if path == '/navigation/zone-feedback' and method == 'GET')
                 items = (await read(None))['body']['items']
-                self.assertEqual({item['kind'] for item in items}, {'progression_value', 'resource_value', 'screen_identifier'})
+                self.assertEqual({item['kind'] for item in items}, {'progression_value', 'resource_value', 'screen_identifier', 'action', 'forbidden'})
                 self.assertTrue(all(item['gestureAuthority'] is False for item in items))
         self.assertEqual(json.dumps(navigation.SCREENS, sort_keys=True), policy)
 

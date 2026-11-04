@@ -1,5 +1,10 @@
-export const COLOURS = { navigation: '#ffe100', tap: '#ffe100', action: '#ff9a23', forbidden: '#ff5353',
-  detection: '#2dd4bf', scannable: '#2dd4bf', progression_value: '#7dd3fc', resource_value: '#a3e635', screen_identifier: '#2dd4bf', vertical: '#168bff', horizontal: '#bb50ff', draggable: '#ff65bd' };
+// Same palette as page_zone_style.js; this standalone model also runs under Node.
+export const COLOURS = {
+  tap: '#ffe100', navigation: '#ffe100', action: '#ff9a23', forbidden: '#ff5353',
+  progression_value: '#409cff', resource_value: '#2dd4bf',
+  detection: '#4ade80', scannable: '#4ade80', screen_identifier: '#4ade80',
+  vertical: '#bb50ff', horizontal: '#bb50ff', draggable: '#ff65bd',
+};
 export const inside = (point, rect) => Array.isArray(rect) && rect.length === 4
   && point.x >= rect[0] && point.y >= rect[1] && point.x <= rect[2] && point.y <= rect[3];
 const NON_NAVIGATION = ['forbidden', 'action', 'scannable', 'detection', 'progression_value', 'resource_value', 'screen_identifier'];
@@ -24,6 +29,9 @@ export function matchGesture(edges, gesture, regions = []) {
     if (Boolean(isDrag) !== edgeDrag) continue;
     let score = distance(gesture.start, edge.start);
     if (isDrag) {
+      // Declared scroll routes are valid only inside their measured list.
+      // Proximity to a sample trajectory cannot turn the footer into a list.
+      if (edge.source === 'configured' && !inside(gesture.start, edge.startRect)) continue;
       if (!valid(edge.end) || score > .22) continue;
       const a = { x: gesture.end.x - gesture.start.x, y: gesture.end.y - gesture.start.y };
       const b = { x: edge.end.x - edge.start.x, y: edge.end.y - edge.start.y };

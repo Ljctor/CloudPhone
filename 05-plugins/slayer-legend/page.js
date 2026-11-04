@@ -83,6 +83,7 @@ const ENGLISH = {
   'Mauvais écran détecté': 'Wrong screen detected',
   'Identifier cet écran': 'Identify this screen',
   'Action interdite': 'Action forbidden',
+  'Navigation interdite': 'Navigation forbidden',
   'Marquer un bouton d’action': 'Mark an action button',
   'Marquer un élément déplaçable': 'Mark a draggable element',
   'Écran réellement affiché': 'Actual screen displayed',
@@ -90,8 +91,8 @@ const ENGLISH = {
   'Enregistrement de l’écran…': 'Recording screen…',
   'Erreur de détection enregistrée avec la capture': 'Detection error saved with screenshot',
   'Écran enregistré': 'Screen recorded',
-  'Turquoise : repère de détection · jaune : navigation · orange : action · rouge : action interdite · rose : déplaçable · chevrons bleus : vertical · chevrons violets : horizontal · pointillés : vos annotations · double trait : condition à vérifier':
-    'Turquoise: detection landmark · yellow: navigation · orange: action · red: forbidden action · pink: draggable · blue chevrons: vertical · purple chevrons: horizontal · dotted: your annotations · double outline: condition to check',
+  'Jaune : navigation · orange : action · rouge : navigation interdite · rouge hachuré : action interdite · bleu : progression · turquoise : ressource · vert : identifiant d’écran · rose : déplaçable · violet : slider, chevrons dans le sens du déplacement · pointillés : vos ajouts · tirets transparents : vos suppressions · double trait fin : bouton conditionnel':
+    'Yellow: navigation · orange: action · red: forbidden navigation · hatched red: forbidden action · blue: progression · turquoise: resource · green: screen identifier · pink: draggable · purple: slider, chevrons show direction · dotted: your additions · transparent dashed: your removals · thin double outline: conditional button',
   "Intention": "Intention",
   "Détail de l’arme": "Weapon details",
   "Vers {destination} · {purpose}": "Going to {destination} · {purpose}",

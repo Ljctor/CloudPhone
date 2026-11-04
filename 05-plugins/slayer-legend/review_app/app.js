@@ -69,6 +69,10 @@ async function load() {
 function renderOverlay() {
   const layer = $('overlay'); layer.replaceChildren(); layer.toggleAttribute('hidden', !state.overlay && !state.landmarks);
   if ((!state.overlay && !state.landmarks) || !current()) return;
+  const defs = svg('defs');
+  const hatch = svg('pattern', { id: 'forbidden-action-hatch', patternUnits: 'userSpaceOnUse', width: 8, height: 8 });
+  hatch.append(svg('path', { d: 'M-2 2 L2 -2 M0 8 L8 0 M6 10 L10 6', stroke: COLOURS.forbidden, 'stroke-width': 2, opacity: .45 }));
+  defs.append(hatch); layer.append(defs);
   const regions = [...(current().regions ?? [])];
   // Recorded points are useful even when no annotation rectangle was made.
   for (const edge of state.overlay ? outgoing() : []) {
@@ -85,9 +89,14 @@ function renderOverlay() {
       const angle = Math.atan2(y2 - y, x2 - x), arm = 10;
       layer.append(svg('path', { d: `M ${x2 - Math.cos(angle - .6) * arm} ${y2 - Math.sin(angle - .6) * arm} L ${x2} ${y2} L ${x2 - Math.cos(angle + .6) * arm} ${y2 - Math.sin(angle + .6) * arm}`, fill: 'none', stroke: colour, 'stroke-width': 3 }));
     } else {
-      const style = zoneStyle(proposal ?? { user: edge.source === 'manual', conditional: edge.conditional });
-      layer.append(svg('circle', { cx: edge.start.x * 480, cy: edge.start.y * 1040, r: 10, stroke: colour, fill: '#ffe10018', 'stroke-width': style.width, opacity: style.opacity, 'stroke-dasharray': style.dash, 'stroke-linecap': style.linecap }));
-      if (style.double) layer.append(svg('circle', { cx: edge.start.x * 480, cy: edge.start.y * 1040, r: 7, stroke: colour, fill: 'none', 'stroke-width': 1 }));
+      const style = zoneStyle(proposal ?? { kind, user: edge.source === 'manual', conditional: edge.conditional });
+      // Unmeasured recordings retain a point marker, never invented button bounds.
+      const rect = edge.rect ?? [edge.start.x - 10 / 480, edge.start.y - 10 / 1040, edge.start.x + 10 / 480, edge.start.y + 10 / 1040];
+      const [l, t, r, b] = rect, x = l * 480, y = t * 1040, width = (r-l)*480, height = (b-t)*1040;
+      const marker = svg('rect', { x, y, width, height, rx: 0, stroke: colour, fill: `${colour}18`, 'stroke-width': style.width, opacity: style.opacity, 'stroke-dasharray': style.dash, 'stroke-linecap': style.linecap });
+      marker.append(svg('title', {}, edge.rect ? edge.label : 'Point enregistré · dimensions du bouton non mesurées'));
+      layer.append(marker);
+      if (style.double && width > 6 && height > 6) layer.append(svg('rect', { x:x+3, y:y+3, width:width-6, height:height-6, rx:0, stroke:colour, fill:'none', 'stroke-width':1 }));
     }
   }
   regions.sort((a, b) => Number(Boolean(a.forbidden || a.kind === 'forbidden')) - Number(Boolean(b.forbidden || b.kind === 'forbidden')));
@@ -99,12 +108,17 @@ function renderOverlay() {
     const style = zoneStyle(region);
     const kind = forbidden ? 'forbidden' : region.kind, colour = COLOURS[kind] ?? '#94a3b8';
     const box = svg('rect', { x: l * 480, y: t * 1040, width: (r - l) * 480, height: (b - t) * 1040,
-      'data-zone-kind': kind, rx: 0, fill: `${colour}12`, stroke: colour, 'stroke-width': style.width, opacity: style.opacity,
+      'data-zone-kind': region.kind === 'action' ? 'action' : kind, 'data-zone-forbidden': String(Boolean(forbidden)), rx: 0, fill: style.hatch ? 'url(#forbidden-action-hatch)' : style.opacity < 1 ? 'none' : `${colour}12`, stroke: colour, 'stroke-width': style.width, opacity: style.opacity,
       'stroke-dasharray': style.dash, 'stroke-linecap': style.linecap });
     if (style.double && (r-l)*480 > 8 && (b-t)*1040 > 8) layer.append(svg('rect', { x:l*480+3, y:t*1040+3, width:(r-l)*480-6, height:(b-t)*1040-6, fill:'none', stroke:colour, 'stroke-width':1 }));
     box.append(svg('title', {}, `${region.label ?? region.id ?? kind}${region.source ? ` · ${region.source}` : ''}`)); layer.append(box);
-    if (['detection', 'scannable', 'screen_identifier'].includes(kind)) {
-      layer.append(svg('text', { x: Math.max(3, l * 480), y: Math.max(13, t * 1040 - 5), fill: colour, class: 'zone-label' }, region.label ?? region.id ?? 'Reconnaissance'));
+    if (!forbidden && ['vertical', 'horizontal'].includes(kind)) {
+      const x = (l + r) * 240, y = (t + b) * 520;
+      const arm = Math.min(7, (r - l) * 120, (b - t) * 260);
+      const d = kind === 'vertical'
+        ? `M${x-arm} ${t*1040+arm*2} L${x} ${t*1040+arm} L${x+arm} ${t*1040+arm*2} M${x-arm} ${b*1040-arm*2} L${x} ${b*1040-arm} L${x+arm} ${b*1040-arm*2}`
+        : `M${l*480+arm*2} ${y-arm} L${l*480+arm} ${y} L${l*480+arm*2} ${y+arm} M${r*480-arm*2} ${y-arm} L${r*480-arm} ${y} L${r*480-arm*2} ${y+arm}`;
+      layer.append(svg('path', { d, fill: 'none', stroke: colour, 'stroke-width': 2, opacity: style.opacity }));
     }
   }
 }
@@ -123,7 +137,7 @@ async function proposeZone(operation, zone, nodeId) {
   const node = state.nodes.get(nodeId); if (!node) return;
   try {
     const response = await fetch(serviceUrl('/api/zone-feedback'), { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nodeId, ...(operation === 'remove' ? { zoneId: zone.id } : {}), screen: node.screen, operation, kind: zone.kind, rect: zone.rect, label: zone.label ?? zone.kind }) });
+      body: JSON.stringify({ nodeId, ...(operation === 'remove' ? { zoneId: zone.id } : {}), screen: node.screen, operation, kind: zone.kind, forbidden: Boolean(zone.forbidden || zone.kind === 'forbidden'), rect: zone.rect, label: zone.label ?? zone.kind }) });
     if (!response.ok) throw Error('Proposition non enregistrée');
     const saved = await response.json();
     if (operation === 'remove') Object.assign(zone, { proposal: 'remove', user: true });
@@ -164,7 +178,7 @@ phone.addEventListener('pointermove', (event) => { const gesture = state.gesture
   if (gesture.annotation) { renderOverlay(); $('overlay').removeAttribute('hidden');
     $('overlay').append(svg('rect', { x:Math.min(end.x,gesture.start.x)*480, y:Math.min(end.y,gesture.start.y)*1040,
       width:Math.abs(end.x-gesture.start.x)*480, height:Math.abs(end.y-gesture.start.y)*1040,
-      fill:'none',stroke:COLOURS[gesture.annotation],'stroke-width':2,'stroke-dasharray':'1 5','stroke-linecap':'round' })); }
+      fill:gesture.annotation === 'forbidden_action' ? 'url(#forbidden-action-hatch)' : 'none',stroke:COLOURS[gesture.annotation === 'forbidden_action' ? 'forbidden' : gesture.annotation],'stroke-width':2,'stroke-dasharray':'1 5','stroke-linecap':'round' })); }
 });
 phone.addEventListener('pointerup', (event) => { const gesture=state.gesture; state.gesture=null; clearTimeout(gesture?.timer);
   if (!gesture || gesture.handled || gesture.pointerId!==event.pointerId || gesture.node!==state.current) return;
@@ -174,7 +188,7 @@ phone.addEventListener('pointerup', (event) => { const gesture=state.gesture; st
     const pad=['vertical','horizontal','draggable'].includes(gesture.annotation)?.01:0;
     const rect=[Math.max(0,Math.min(start.x,end.x)-pad),Math.max(0,Math.min(start.y,end.y)-pad),Math.min(1,Math.max(start.x,end.x)+pad),Math.min(1,Math.max(start.y,end.y)+pad)];
     if(rect[2]-rect[0]<.005||rect[3]-rect[1]<.005){notice('Tracez un rectangle couvrant toute la zone');return;}
-    proposeZone('add',{kind:gesture.annotation,rect},gesture.node); return;
+    proposeZone('add',{kind:gesture.annotation === 'forbidden_action' ? 'action' : gesture.annotation, forbidden: ['forbidden', 'forbidden_action'].includes(gesture.annotation), rect},gesture.node); return;
   }
   follow({ start:gesture.start, end:point(event), duration:performance.now()-gesture.at }); });
 phone.addEventListener('pointercancel', () => { clearTimeout(state.gesture?.timer); state.gesture=null; renderOverlay(); });
