@@ -40,6 +40,9 @@ import trace from './page_trace.js';
 import watchdog from './page_watchdog.js';
 
 const ENGLISH = {
+  'Tous': 'All',
+  'Autres': 'Other',
+  'Famille d’écrans': 'Screen group',
   'Application demandée…': 'Application requested…',
   'Application non confirmée · vérification en cours': 'Application unconfirmed · checking status',
   'Détecté : {detected} · Attendu : {expected}': 'Detected: {detected} · Expected: {expected}',

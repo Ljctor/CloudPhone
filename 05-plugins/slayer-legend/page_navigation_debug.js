@@ -190,17 +190,34 @@ export const ANNOTATIONS = [
   { kind: 'draggable', label: 'Marquer un élément déplaçable' },
 ];
 
-export function screenChoices(graph, registry) {
-  const known = { ...graph?.screens };
-  for (const [id, node] of Object.entries(registry?.tree ?? {})) known[id] = { ...known[id], ...node };
-  const path = (id, seen = new Set()) => {
-    if (seen.has(id)) return [];
-    const node = known[id];
-    if (!node) return [];
-    seen.add(id);
-    return [...(node.parent ? path(node.parent, seen) : []), node.name ?? id];
-  };
-  return Object.keys(known).map((id) => [id, path(id).join(' › ')])
+export function screenDisplayName(id, graph, registry, tr = (value) => value) {
+  return tr(graph?.screens?.[id]?.name ?? registry?.tree?.[id]?.name ?? 'Écran non identifié');
+}
+
+export const SCREEN_GROUPS = [
+  ['all', 'Tous'], ['combat', 'Combat'], ['character', 'Character'], ['equipment', 'Equipment'],
+  ['companion', 'Companion'], ['adventure', 'Adventure'], ['shop', 'Shop'], ['other', 'Autres'],
+];
+
+export function screenGroup(id, registry) {
+  const seen = new Set();
+  let current = id;
+  while (current && current !== 'battle' && !seen.has(current)) {
+    seen.add(current);
+    if (/^(equipment|soul_weapon|black_orb|weapon_detail|spirit)/.test(current)) return 'equipment';
+    if (/^(character|promotion)/.test(current)) return 'character';
+    if (/^(companion|beast)/.test(current)) return 'companion';
+    if (/^(adventure|dungeon|mine|guild)/.test(current)) return 'adventure';
+    if (/^shop/.test(current)) return 'shop';
+    current = registry?.tree?.[current]?.parent;
+  }
+  return /^(battle|stage_select|skill|familiar|scroll)/.test(id) ? 'combat' : 'other';
+}
+
+export function screenChoices(graph, registry, group = 'all', tr = (value) => value) {
+  const ids = new Set([...Object.keys(graph?.screens ?? {}), ...Object.keys(registry?.tree ?? {})]);
+  return [...ids].filter((id) => group === 'all' || screenGroup(id, registry) === group)
+    .map((id) => [id, screenDisplayName(id, graph, registry, tr)])
     .sort((a, b) => a[1].localeCompare(b[1]));
 }
 
@@ -313,6 +330,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
   let snapshotMessage = '';
   let expectedScreen = '';
   let correctionOpen = false;
+  let correctionGroup = 'all';
   let dynamic = null;
   let dynamicAt = 0;
   let userAnnotations = [];
@@ -426,7 +444,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
     if (!active() || !graph || !registry) { clear(); return; }
     floating.clamp();
     if (floating.dragging) { floating.afterDrag(render); return; }
-    const signature = JSON.stringify([screen, scan?.plain, scan?.overlays, captureState, captureId, captureKind, record, snapshotPending, snapshotMessage, correctionOpen, feedbackMode, feedbackTarget?.id, feedbackMessage]);
+    const signature = JSON.stringify([screen, scan?.plain, scan?.overlays, captureState, captureId, captureKind, record, snapshotPending, snapshotMessage, correctionOpen, correctionGroup, feedbackMode, feedbackTarget?.id, feedbackMessage]);
     renderZones();
     if (signature === rendered && layer.isConnected) return;
     rendered = signature;
@@ -434,7 +452,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
     layer.replaceChildren();
     layer.append(zoneLayer);
     const name = document.createElement('div');
-    const label = screen ? (graph.screens?.[screen]?.name ?? screen) : api.tr('Écran non identifié');
+    const label = screen ? screenDisplayName(screen, graph, registry, api.tr) : api.tr('Écran non identifié');
     name.textContent = api.tr('Écran : {screen}', { screen: label });
     name.style.cssText = 'position:absolute;left:50%;top:1%;transform:translateX(-50%);max-width:90%;padding:3px 7px;border:1px solid #ffe100;border-radius:4px;background:#000c;color:#fff;font:600 12px sans-serif;text-align:center';
     layer.append(name);
@@ -602,6 +620,25 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
         content.append(note);
       }
       if (correctionOpen) {
+        const tabs = document.createElement('div');
+        tabs.setAttribute('role', 'tablist');
+        tabs.setAttribute('aria-label', api.tr('Famille d’écrans'));
+        tabs.style.cssText = 'display:flex;gap:4px;overflow-x:auto;max-width:100%;margin-top:6px;padding-bottom:4px';
+        for (const [group, title] of SCREEN_GROUPS) {
+          if (group !== 'all' && !screenChoices(graph, registry, group).length) continue;
+          const tab = document.createElement('button');
+          tab.type = 'button'; tab.textContent = api.tr(title);
+          tab.setAttribute('role', 'tab'); tab.setAttribute('data-screen-group', group);
+          tab.setAttribute('aria-selected', String(correctionGroup === group));
+          tab.style.cssText = `flex:none;padding:4px 7px;border:1px solid ${correctionGroup === group ? '#ffe100' : '#666'};border-radius:4px;color:#fff;background:#292929`;
+          tab.onclick = (event) => {
+            stop(event); correctionGroup = group;
+            if (expectedScreen !== 'unknown' && !screenChoices(graph, registry, group).some(([id]) => id === expectedScreen)) expectedScreen = '';
+            render();
+          };
+          tabs.append(tab);
+        }
+        content.append(tabs);
         const correction = document.createElement('div');
         correction.style.cssText = 'display:flex;gap:4px;margin-top:6px';
         const select = document.createElement('select');
@@ -609,7 +646,7 @@ export default function navigationDebug(api, { enabled = () => true } = {}) {
         select.setAttribute('aria-label', api.tr('Écran réellement affiché'));
         select.style.cssText = 'min-width:0;flex:1;background:#292929;color:#fff;font:inherit';
         for (const [value, title] of [['', api.tr('Écran réellement affiché')],
-          ['unknown', api.tr('Écran non identifié')], ...screenChoices(graph, registry)]) {
+          ['unknown', api.tr('Écran non identifié')], ...screenChoices(graph, registry, correctionGroup, api.tr)]) {
           const option = document.createElement('option');
           option.value = value; option.textContent = title; select.append(option);
         }

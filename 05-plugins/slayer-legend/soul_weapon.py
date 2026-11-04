@@ -495,13 +495,14 @@ def tag(shot):
 @calibrated
 def tab(shot):
     """The Equipment panel's active tab ("weapon", "accessories", "relic",
-    "spirit"): its text at least 1.4 times brighter than every other's."""
+    "spirit"): its neutral text at least 1.4 times brighter than every
+    other's. Coloured notification badges are not selection evidence."""
     width, height, _ = shot
     bright = {}
     for name, (a, b) in TABS.items():
         left, top, right, bottom = _box(shot, (a, TAB_Y[0], b, TAB_Y[1]))
-        bright[name] = max((max(_pixel(shot, x, y)) for x in range(left, right) for y in range(top, bottom)),
-                           default=0)
+        pixels = (_pixel(shot, x, y) for x in range(left, right) for y in range(top, bottom))
+        bright[name] = max((min(pixel) for pixel in pixels if max(pixel) - min(pixel) <= 25), default=0)
     best = max(bright, key=bright.get)
     others = [v for k, v in bright.items() if k != best]
     if bright[best] < 100 or any(bright[best] < 1.4 * v for v in others):

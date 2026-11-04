@@ -15,8 +15,25 @@ separate milestones. Historical checked items below do not close a new regressio
 - [x] Classify archived screenshots, manual annotations and passive edges into
   explicit reviewed, ambiguous or rejected evidence without granting gestures.
   A passive thumbnail does not constitute a full screenshot or calibration.
-- [ ] Resolve ambiguous archived evidence through real captures and feedback;
-  a processing disposition does not mean every navigation edge is proven.
+- [ ] Resolve ambiguous archived evidence through real captures and developer
+  review. Mechanical classification, deduplication or a `processed` disposition
+  does not prove navigation or close the user's requested correction. Keep
+  received, triaged, needs-evidence, fixed and rejected-with-reason outcomes
+  distinct; a completed fix needs its change and regression/acceptance evidence.
+- [x] Remove the cumulative trace-count status from the game plugin while
+  preserving the original captures, clicks and recorded gestures for review.
+  Removing a counter does not mean its underlying evidence has been resolved.
+- [ ] Capture spoken feedback with an immutable screenshot reference and hash,
+  the exact rendered overlay snapshot/version, screen identity and capture time.
+  Include each rendered zone's ID, kind, geometry, provenance and conditional
+  state. Retain the recording, any transcript and selected zone/gesture context
+  privately. Later captures, reclassification or overlay updates must not rewrite the
+  report's original context. Verify recording, saved replay/review and developer
+  disposition end to end; feedback never replays a game input by itself.
+- [ ] Show display names only in the screen picker; keep technical IDs, paths
+  and provenance in developer details. Optional category tabs may organise the
+  choices without exposing internal paths or submitting an invisible selection.
+  Verify desktop/mobile selection and meaningful labels after the UI changes.
 - [x] Distinguish navigation, actions, forbidden rectangles and recognition-only
   landmarks in the shared live and archived debug renderer.
 - [x] Persist user zone edits separately from navigation authority and share them
@@ -25,9 +42,14 @@ separate milestones. Historical checked items below do not close a new regressio
   proposed removals. Live correction mode consumes holds without game input.
 - [ ] Review and resolve pending zone proposals as developer changes; feedback
   alone never modifies navigation permissions, readers or farming behavior.
-- [ ] Calibrate Character > Promotion and recover its open panel through the
-  existing lit-tab close action. A menu symptom currently has no executable
-  return-to-battle repair; unknown panels must still refuse blind input.
+- [ ] Complete the live acceptance of calibrated Character > Promotion recovery
+  through the lit Character tab, freshly recognised plain battle and Soul Weapon
+  parking. The guarded implementation and scripted tests do not certify the
+  first real recovery; unknown panels must still refuse blind input.
+- [ ] Reproduce and resolve the Equipment > Accessories red-badge failure during
+  resource visits. Preserve the actual blocker until its reader/route cause is
+  fixed; prove the resulting status, dated resource reads and safe return rather
+  than making an unresolved failure appear healthy.
 - [x] Separate screen identity (Combat Interface / Interface de combat) from
   battlefield size (champ de bataille), measured bounds and shading. Unmeasured
   layouts stay unknown; a menu displaying combat is not Combat Interface.
@@ -36,10 +58,18 @@ separate milestones. Historical checked items below do not close a new regressio
 - [x] Retain current-session equipment proof during periodic engraving checks
   when the selected equipped weapon's list cell is offscreen. Revalidate after
   user input or a relaunch and always verify the grid and its locks.
-- [ ] Verify the extended common resource visit in all three farming modes,
-  including cancellation and return to Soul Weapon. Calibrated readers cover
-  eight resources; thirteen remaining readers/routes must be calibrated before
-  the full-resource request can be considered complete.
+- [ ] Verify the extended common resource visit in Soul Farming, mpw18 and mpw4:
+  never-read values first, then unverified/old values, independent unread fields,
+  input/loadout/recovery cancellation and a freshly recognised Soul Weapon return.
+  Historical supervision of the original Cube/L3 tour does not certify this
+  expanded eight-resource circuit or its current hourly measurement windows.
+- [ ] Complete all 21 resources. Beyond the baseline eight, integrate the isolated
+  seven passive readers from `6ed9600` for four stones and white/green/purple
+  feathers, preserving `refresh_route: false` until their real routes are proven.
+  Keep passive reading, automatic visiting and complete coverage separate. The
+  other six balances still need reader evidence: crystals, dice, black feathers,
+  Dragon Power, Dragon Spark and Black Mana. All thirteen additional routes
+  remain an acceptance task; no balance may be guessed or a forbidden entry used.
 - [ ] Complete a fresh automatic relaunch and target-setup acceptance after
   silent process death; interruption testing must yield to recent user input.
 
@@ -55,9 +85,10 @@ separate milestones. Historical checked items below do not close a new regressio
   pixels across game starts/relaunches before any direct reader can reuse them.
 - [x] Retain frame provenance through queue waits and OCR; missing acquisition
   metadata on timestamp-aware ports must never become a wall-clock-now reading.
-- [ ] Make debug `/screen?quick=1` timestamps refer to acquisition rather than
-  classification completion, including a slow-classifier/lost-metadata check.
-  This display geometry does not authorize automatic gestures.
+- [ ] Verify debug `/screen?quick=1` acquisition timestamps under slow
+  classification and lost capture metadata. The acquisition-time implementation
+  needs this explicit regression/acceptance check; missing provenance must not
+  become a fresh wall-clock-now reading. Display geometry grants no gesture.
 - [x] Recover an already-open engraving screen under the action lease before
   stage/preset navigation. Verify identity and eight locks before closing;
   allow a bounded transition delay without treating timeout as success.
@@ -177,10 +208,15 @@ separate milestones. Historical checked items below do not close a new regressio
   Post-save Loading is separately calibrated by its centered label and dragon
   gate. Launch waits without input through this state under the existing
   three-minute deadline; unrelated unknown screens retain their shorter limit.
-- [ ] Add manual screen capture and wrong-screen reporting to navigation debug,
-  preserving detected and user-declared identity with the screenshot.
-- [ ] Show weapon/hour only on an observed weapon-drop stage and accessory/hour
-  only on an observed accessory-drop stage; never infer this from mode alone.
+- [x] Implement manual screen capture and wrong-screen-report controls/endpoints,
+  preserving detected and user-declared identity with the archived screenshot.
+- [ ] Verify a real wrong-screen report from capture through durable developer
+  triage, corrected recognition and regression evidence. Control/endpoint tests
+  and existing raw captures alone do not certify that full correction loop.
+- [ ] Verify weapon/hour and accessory/hour eligibility through both observed
+  drop-stage transitions, stale/unread stage evidence and rapid navigation.
+  Preserve the implemented observed-stage guard and historical accessory-stage
+  proof; mode selection alone must never establish either rate's eligibility.
 - [x] Restore hourly counters end to end: gold, cubes, green/blue/red souls,
   L3 weapons and L3 accessories. Read real changes, calculate per hour, show
   correct values and icons; no stone or white-soul rates. Verify farming,
@@ -216,25 +252,26 @@ separate milestones. Historical checked items below do not close a new regressio
   no held navigation lease. The sparse-gain regression also passes.
   Resource-spending resets are checked without spending game resources;
   paid/action controls remain forbidden. Installed readings, calculations
-  and browser output now agree on the verified farming path.
+  and browser output agreed on that verified farming path; this historical
+  result does not certify later restarts, unread windows or new resource routes.
 - [ ] Extend hourly-counter live coverage to rapid user-driven navigation,
   both weapon/accessory drop-stage transitions, and user-initiated spending.
   Do not spend game resources merely to exercise a reset; spending/reset
   calculation cases already pass focused regression checks.
-- [ ] Finish automatic Soul Weapon selection and engraving for each farming
-  target. Verify the actual weapon and pattern before acting; no successful
-  status until the requested setup is observed in the game.
-- [ ] Always select the highest-level eligible engraving pieces of the same
-  shape; an option bonus must not outrank level. Replace an already placed
-  lower-level piece. Unreadable levels cannot establish the best choice.
-- [ ] Relock every removed engraving piece, verify locks after placement,
-  and confirm all eight locks before closing. Preserve recovery after
-  interruption; resume only with current identity and readings verified.
+- [ ] Extend the verified engraving/recovery cases above to every farming
+  target and an actual weapon change through the new durable pre-Equip path.
+  Prove highest-level eligible same-shape selection and replacement of an
+  already placed lower-level piece; an option bonus cannot outrank level.
+  Preserve identity, relock removed pieces and verify eight locks throughout
+  interruption/restart. Existing successful repairs cover their recorded
+  weapons/shapes, not every target or still-uncalibrated shape.
 - [x] Obtain real Equip/Unequip calibration evidence: owned, unequipped
   Relax supplies Equip; equipped Ambition supplies Unequip. Read-only
   navigation produced the evidence; no Equip or engraving action was run.
-- [ ] Complete the first supervised equipment/engraving run required by
-  part 05, including actual target, highest-level choices and eight locks.
+- [ ] Complete the outstanding supervised weapon-switch acceptance required
+  by part 05: durable intent before actual Equip, immediate engraving recovery,
+  target/highest-level proof, eight locks and the full requested farming setup.
+  Earlier already-equipped and interrupted-grid runs retain their stated scope.
 
 ### Mode, interface and notifications
 
@@ -242,8 +279,17 @@ separate milestones. Historical checked items below do not close a new regressio
   intention (destination and purpose). A scan excursion is normal activity,
   followed by a planned return; it is not itself a failure of the mode.
 - [ ] Show the complete calculated path for a new redirection. Notifications
-  name the destination, reason and outcome; replace opaque "repair" wording
-  and suppress repeats of the same attempt without hiding real blocking errors.
+  name destination, reason and outcome without opaque "repair" wording. Avoid
+  per-frame/attempt spam while repeating unresolved blocking faults every
+  120 seconds; changed fault families and failed deliveries must not disappear.
+- [x] Implement the bounded 120-second reminder path, including independent
+  reminders during long operations and read-only observation during entry.
+  An isolated installed-runtime test with simulated static progress obtained
+  two retained ntfy receipts 121 seconds apart. That test proves transport and
+  timing, not real-fault sensing, phone display or mobile background delivery.
+- [ ] Verify real blocked-game/stalled-progress reminders, recovery and phone
+  receipt with the viewer closed, around a restart and after recent user input.
+  Free play retains user control and suspends automatic actions/reminders.
 - [ ] Simplify plugin options: editable target and one actionable status,
   nested game menus, separate resources/analysis/display, technical details
   folded. Avoid duplicate confirmations and implementation jargon.
@@ -317,8 +363,10 @@ separate milestones. Historical checked items below do not close a new regressio
   browser-module suites pass, exact-commit build and shell checks pass.
   Installed backend/browser files match the commit; live browser options
   show the real disabled-engraving blocker and no successful attempt.
-- [ ] Complete the supervised game execution. Mocked transactions and
-  read-only calibration do not establish the final in-game setup.
+- [ ] Complete the remaining full-setup acceptance after an actual weapon
+  change and for each requested farming target. Preserve the recorded successful
+  engraving/recovery runs; mocks and read-only calibration do not extend them
+  to untested target switches or the complete stage/preset/loadout result.
 
 ### Calibration follow-up
 
@@ -331,18 +379,27 @@ separate milestones. Historical checked items below do not close a new regressio
   release `b4dac8a`, two new acquired readings produce a positive rate;
   the browser displays five increasing estimates at the same fixed position.
   This does not certify the still-pending automatic refresh circuit.
-- [ ] Complete the first supervised resource circuit before enabling its
-  automatic cadence. Calibration flags alone do not establish this first run.
+- [ ] Complete fresh supervision of the expanded eight-resource circuit in
+  all three farming modes before certifying that coverage. Preserve the original
+  Cube/L3 circuit's recorded return evidence; its stored supervision flag alone
+  does not prove the expanded circuit, partial OCR recovery or all-resource routes.
 - [x] Complete Equip calibration on the real owned Relax capture, including
   the bright owned-cell border and rejection of a clipped top cell.
-- [ ] Complete supervised engraving and the first real Equip action when
-  needed; a calibrated reader does not itself prove a successful operation.
+- [ ] Complete the remaining first actual Equip/full-weapon-switch supervision.
+  Earlier successful already-equipped engraving/recovery runs remain valid
+  within their recorded scope; a calibrated Equip reader is not an Equip action.
 
 ### Counter presentation and release evidence
 
-- [ ] Verify cube balance: actual game font, black outline, gold-aligned number,
-  icon between the two gold-icon positions, separators, fixed position and
-  one-second estimate derived from a valid rate; freshness colour preserved.
+- [ ] Finish Cube display acceptance on full, reduced and dimmed combat:
+  actual game font and black outline, Gold-aligned fixed number anchor, icon
+  between the Gold-icon positions, full separators and correct freshness colour.
+  Preserve the recorded fixed-anchor/one-second-estimate proof; verify the
+  remaining layouts and never extrapolate from an unread or invalid rate.
+- [ ] Re-establish fresh Cube/L3 hourly windows after restart or changed-stage
+  invalidation. An unread window must stay unread until real dated observations
+  establish its baseline/rate; historical measured-rate evidence is not a fresh
+  measurement. Link this acceptance to the repaired resource visit and return.
 - [ ] Verify compact right-edge hourly rows with icons close to values, only
   on full/minimised combat, dimmed with the game. Abbreviate resources and
   hourly values; keep cube balance unabridged.
@@ -378,9 +435,10 @@ Follow-up release evidence:
   confirm a stationary number anchor and increasing one-second estimates.
 - [x] Six additional private calibration examples are persisted; the weapon
   detail and Soul Weapon variants are referenced by the screen catalogue.
-- [ ] The resource circuit's first supervised run and the engraving first run
-  remain pending. Their inactive state must not be described as completed
-  automatic gameplay; Equip was still uncalibrated in that release.
+Historical limit of `b4dac8a`: its tests did not certify the first automatic
+resource circuit or an actual Equip action. Later evidence above closes only
+its explicitly exercised paths; it does not retrospectively expand that release's
+acceptance or certify the new all-resource routine.
 
 ## CloudPhone Slayer Legend work in progress (2026-10-26)
 
@@ -392,21 +450,22 @@ Follow-up release evidence:
 - [ ] Capture and persist one reviewed example for every reachable screen in the navigation graph.
 - [x] Show archived examples and their observed details in the plugin's nested screen menus; remove empty `Données` rows.
 - [ ] Turn the historical details into live readers where a changing value matters; a dated capture is not a current value.
-- [ ] Calibrate the full-digit gold reader and restore gold/s measurement.
+- [x] Calibrate native full-digit Gold and restore the Gold/s pipeline, with
+  the historical real-reader and installed-rate evidence recorded above. Fresh
+  windows, layout variants and intermittent stream recovery remain separate checks.
 - [ ] Replace remaining placeholder resource icons with verified game icons and add readers for the unread resources.
 - [ ] Prove the expanded resource circuit on real captures in Soul Farming,
   mpw18 and mpw4: all eight calibrated resource fields plus both L3 counts,
   never-read/unverified/old priority, exact acquisition times, partial OCR,
   and a freshly recognised return to Soul Weapon. Synthetic circuit tests
   do not establish this real-game proof. Keep the first supervised gate.
-- [ ] Calibrate the thirteen remaining resource readers and their safe return
-  routes before scheduling them: crystals, dice, green/blue/red/yellow stones,
-  white/green/purple/black feathers, Dragon Power, Dragon Spark and Black Mana.
-  Each requires real counter fixtures for the exact numeric value and a
-  tested screen identity. No new visit is authorised by a catalogue entry;
-  `black_orb/obtain` remains forbidden, including for reading black feathers.
-  The refresh API exposes these as unsupported and never claims full resource
-  coverage while they remain pending.
+- [ ] Complete the thirteen-resource extension described in the active
+  acceptance checklist: integrate and live-test the seven isolated passive
+  readers, calibrate the other six balances, and separately prove safe visits
+  and returns for all thirteen. Exact feather glyphs outside the reviewed bank
+  remain unread until real captures calibrate them; no approximate number or
+  synthetic zero closes coverage. A catalogue entry grants no visit permission;
+  `black_orb/obtain` and the Shelter reward choices remain forbidden.
 - [ ] Alert in the web page and through ntfy when an expected overlay is absent.
 - [ ] Let Agent mode explore approved screens between farming checks, then return to the selected mode under the navigation guard.
 
@@ -601,12 +660,12 @@ glyph needs two occurrences.
 | 15 | The screens with no crop yet, look only, each reached by its allowed move in `navigation.json` and closed by its X: Character **Promotion** tab, a **weapon's detail** (a weapon cell in Equipment), Equipment **Accessories** and **Relic** tabs, **Black Orb** and an accessory's card in it, **Spirit**, **Beast**, Adventure's **quest** pop-up, **Dragon Valley** raid camp, **Guild**, the **Quest** panel; and whenever they show: **Loading**, the **title** screen and the **save notice** (both at a relaunch), the mine's **fight** (row 9), the **quit dialog**; **never** a Promotion bonus page (no move there) | each screen's title or tab row, full width, its y measured on the capture → `screen_<id>` (the `navigation.json` id); the title screen’s SLAYER LEGEND logo (bounds measured on an authentic capture), independently of TAP TO START → `screen_title`; the save notice's two buttons (100, 750, 280, 40) → `screen_save_notice` | `screens.look()` (`screen_registry.json`): each one registered from its crop, else pending capture and never matched |
 | 16 | Back to the battle: every panel closed, stage of mpw18, preset III, AUTO on (the gear spinning); the plugin back on **mpw18 farming** | none | the watchdog says OK within a minute |
 
-Screens pending capture: `character_growth` `skill` `skill_refinement_grounds` `skill_rave_mantra` `familiar` `equipment_relic` `spirit` `companion` `companion_advancement` `beast` `beast_mount` `beast_scouting` `beast_scouting_info` `adventure_map` `adventure_quest` `adventure_story_main` `adventure_story_easy` `adventure_story_sub` `adventure_story_ellie` `dungeon_map` `dungeon_shelter` `dungeon_rift` `dungeon_forest` `dungeon_kingdom` `dungeon_training` `raid_camp` `mine_list` `mine_area` `mine_feathers` `mine_fight` `top_menu` `scroll` `shop_summon` `shop_package` `shop_goods` `shop_golden_key` `shop_event` `guild` `guild_divine_beast` `guild_shop_normal` `guild_shop_appearance` `airfield` `airfield_recipes_appetizer` `airfield_recipes_main` `airfield_recipes_dessert` `airfield_boarding_status` `guild_request` `guild_info_basic` `guild_info_members` `promotion_bonus` `quit_dialog` `black_orb` `black_orb_accessory` `black_orb_obtain` `top_ranking` `top_settings` `top_mail` `character_growth_icon_1` `character_growth_icon_2` `character_class` `equipment_weapon_icon` `equipment_relic_icon_1` `equipment_relic_icon_2` `raid_ranking` `raid_bag` `shop_summon_equipment` `shop_summon_relic` `quest_daily` `quest_repeat` `quest_achievement` `event` `top_achievements` `top_collection` `top_events` `top_guild_entry` `event_popup` `daily_reward` `offer_popup` `maintenance` `update_required` `another_device` `save_choice`.
+Historical calibration inventory (not a current capture/readiness checklist): `character_growth` `skill` `skill_refinement_grounds` `skill_rave_mantra` `familiar` `equipment_relic` `spirit` `companion` `companion_advancement` `beast` `beast_mount` `beast_scouting` `beast_scouting_info` `adventure_map` `adventure_quest` `adventure_story_main` `adventure_story_easy` `adventure_story_sub` `adventure_story_ellie` `dungeon_map` `dungeon_shelter` `dungeon_rift` `dungeon_forest` `dungeon_kingdom` `dungeon_training` `raid_camp` `mine_list` `mine_area` `mine_feathers` `mine_fight` `top_menu` `scroll` `shop_summon` `shop_package` `shop_goods` `shop_golden_key` `shop_event` `guild` `guild_divine_beast` `guild_shop_normal` `guild_shop_appearance` `airfield` `airfield_recipes_appetizer` `airfield_recipes_main` `airfield_recipes_dessert` `airfield_boarding_status` `guild_request` `guild_info_basic` `guild_info_members` `promotion_bonus` `quit_dialog` `black_orb` `black_orb_accessory` `black_orb_obtain` `top_ranking` `top_settings` `top_mail` `character_growth_icon_1` `character_growth_icon_2` `character_class` `equipment_weapon_icon` `equipment_relic_icon_1` `equipment_relic_icon_2` `raid_ranking` `raid_bag` `shop_summon_equipment` `shop_summon_relic` `quest_daily` `quest_repeat` `quest_achievement` `event` `top_achievements` `top_collection` `top_events` `top_guild_entry` `event_popup` `daily_reward` `offer_popup` `maintenance` `update_required` `another_device` `save_choice`.
 `screen_registry.json`'s tree says how each is reached; `tour.py` visits the ones it may and the discovery mode saves the others when they show; `screens.look()` never names them until then.
 
 Character → Enhance/Growth shows EXP as current / required at x≈110–278, y≈627–639 on the 480×1040 captures. `fixtures/character_exp_{enhance,growth}.txt` retain only the counter. Its tiny, touching digits defeat the existing pixel-font reader, so EXP remains `never read` until a reader validates both exact integers. Black feathers are reportedly under Equipment → Accessories → Black Orb → Obtain, but `black_orb/obtain` is forbidden because it may spend Black Orb; no Obtain capture exists, and `feather_black` remains `never read`.
 
-Companion → Ellie, Zeke, Miho, Luna → PASSIVE, PASSIVE II, PASSIVE III holds nine passive levels per companion (36 values). No identified capture of these 12 screens exists yet; `screenshots/companion.png` is a battle view without the Companion panel. Map safe entry and return moves, capture every tab, then calibrate the level reader before exposing values.
+Companion → Ellie, Zeke, Miho, Luna → PASSIVE, PASSIVE II, PASSIVE III holds nine passive levels per companion (36 values). Retained manual captures include Companion-detail and passive content, but do not prove all 12 tab identities or all 36 readings. The old generic `screenshots/companion.png` example is not sufficient panel evidence. Identify each actual page, map safe entry/return, and calibrate its exact level readings before closing this coverage task.
 
 Quest is calibrated from privacy-reviewed title and tab-text crops of real manual annotations: `quest_title`, `quest_tabs_daily`, `quest_tabs_repeat`, `quest_tabs_achievement`. The named overlay is `quest_panel`; the scan reports its active tab as `quest_tab`. Opening animations, missing titles and ambiguous active tabs remain unidentified. Quest progress values, completed reward bars and Claim are not calibrated by these crops; no reward action was authorized or added. The separate tree entries `quest_daily`, `quest_repeat`, `quest_achievement` remain aliases beneath this panel, not standalone classifier screens.
 

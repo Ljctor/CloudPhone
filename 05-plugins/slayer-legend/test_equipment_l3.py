@@ -52,6 +52,20 @@ def scaled_720(capture):
 
 
 class EquipmentL3(unittest.TestCase):
+    def test_selected_neutral_text_ignores_another_tabs_red_notification(self):
+        for fixture, expected in (('equipment_accessories_red_badge_480', 'accessories'),
+                                  ('equipment_weapon_selected_neutral_480', 'weapon')):
+            capture = model_fixtures.screen('battle_emerald', fixture)
+            for image in (capture, scaled_720(capture)):
+                with self.subTest(fixture=fixture, size=image[:2]):
+                    self.assertEqual(weapon.tab(image), expected)
+                    overlays = screens.look(image)['overlays']
+                    self.assertIn('equipment_' + expected, overlays)
+                    self.assertNotIn('equipment_' + ('weapon' if expected == 'accessories' else 'accessories'), overlays)
+        foreign = model_fixtures.screen('battle_emerald', 'growth_at_equipment_tabs_720')
+        self.assertNotIn('equipment_weapon', screens.look(foreign)['overlays'])
+        self.assertNotIn('equipment_accessories', screens.look(foreign)['overlays'])
+
     def test_card_visibility_uses_calibrated_geometry_without_requiring_readable_numbers(self):
         for tab in ('weapon', 'accessories'):
             original = shot(tab)

@@ -30,6 +30,7 @@ GATES = [
         "character_close_tab_lit_480", "character_close_tab_unlit_480", "character_enhance_header",
         "character_growth_header"], "test_menu_recovery"),
     ("equipment_l3", "INSPECT_LEARNED", ["equipment_weapon_tabs_720", "equipment_inspect_card_720",
+                                       "equipment_accessories_red_badge_480", "equipment_weapon_selected_neutral_480",
                                        "equipment_l3_weapon_tabs", "equipment_inspect_card_480",
                                        "weapon_detail_tabs_720", "weapon_detail_close_720",
                                        "growth_at_equipment_tabs_720"], "test_equipment_l3"),

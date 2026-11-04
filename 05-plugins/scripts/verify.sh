@@ -40,6 +40,7 @@ python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_gold_
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_native_cache.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_cube_native.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_soul_native.py -q
+# Selected Equipment text remains readable beside another tab's red badge.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_equipment_l3.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_resource_refresh.py -q
 node "$(dirname "$0")/../slayer-legend/test_page_gold.mjs"

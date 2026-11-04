@@ -344,6 +344,17 @@ class ResourceRefresh(unittest.IsolatedAsyncioTestCase):
         self.assertIn("accessory_l3", result["read"])
         self.assertEqual(model["screen"], "soul_weapon")
 
+    async def test_failure_on_known_accessories_uses_only_the_guarded_return_to_park(self):
+        model, inputs, captures, observed, intents, hooks, ports, api = self.build()
+        def unavailable(screen):
+            if screen == 'equipment_accessories':
+                raise RuntimeError('counter reader unavailable')
+        hooks['scan'] = unavailable
+        result = await api['tick']()
+        self.assertEqual(result['result'], 'failed')
+        self.assertEqual(model['screen'], 'soul_weapon')
+        self.assertEqual(inputs[-2:], [('equipment_accessories', 'weapon'), ('equipment_weapon', 'soul_weapon')])
+
     async def test_changed_screen_is_not_swallowed_as_an_unread_number(self):
         model, inputs, captures, observed, intents, hooks, ports, api = self.build(unread_cube=True)
         def change(screen):
