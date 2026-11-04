@@ -433,8 +433,8 @@ class Switch(unittest.TestCase):
         self.assertRegex(game.alerts[-1], r"^Loadout mpw4 applied in \d+ s$")
         self.assertEqual(len(h.farmed), 2, "the switch's own path, farm()")
 
-    def test_a_soul_weapon_change_runs_its_step_alone(self):
-        game = SlowGame(stage=905, preset="IV")
+    def test_a_soul_weapon_change_verifies_the_full_target(self):
+        game = SlowGame(stage=905, preset="II")
         h = harness(game)
         weapon = {"id": 36, "variant": "Gold-balanced"}
 
@@ -444,9 +444,10 @@ class Switch(unittest.TestCase):
             h.change("mpw4", soul_weapon=weapon)
             await h.clock.until(lambda: any(l.startswith("loadout ") for l in self.lines), 900)
         asyncio.run(go())
-        self.assertEqual([(mode, part) for _, mode, part in h.souls], [("mpw4", weapon)])
-        self.assertEqual(len(h.farmed), 1, "no farm() for the soul weapon alone")
-        self.assertEqual(game.alerts[-1], "Loadout mpw4 applied in 5 s")
+        self.assertEqual(h.souls, [], "a partial weapon check is not a full setup receipt")
+        self.assertEqual(len(h.farmed), 2)
+        self.assertTrue(there(game, 925, "II"))
+        self.assertRegex(game.alerts[-1], r"^Loadout mpw4 applied in \d+ s$")
 
     def test_a_change_of_another_mode_or_the_same_values_does_nothing(self):
         game = SlowGame(stage=905, preset="IV")

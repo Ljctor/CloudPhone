@@ -36,8 +36,8 @@ notification says how long it took since the mode was chosen ("Farming
 mpw18 ready in 34 s"), the slowest step named when over the budget. A
 change of the running farming mode's loadout (engraving's on_change:
 stage, preset, soul weapon) runs the same path at once (loadout_changed),
-the soul weapon alone by its step alone (the stage change feature's
-ensure_soul_weapon), notified "Loadout mpw18 applied in 21 s".
+including a Soul Weapon-only edit: unchanged stage/preset targets still
+require current verification, notified "Loadout mpw18 applied in 21 s".
 Each switch is one log line with its steps' seconds. While the user
 played in the last 5 s with the game in front (the lease refused:
 rules.USER_PLAYING; an input elsewhere, the game not running, is not
@@ -252,18 +252,18 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
     def resource_refresh_by(getter):
         status["resource_refresh"] = getter
 
-    async def set_stage(number, mpw, applied=False, step=None):
+    async def set_stage(number, mpw, applied=False):
         name = "soul" if mpw == "soul" else f"mpw{mpw}"
         parked = farming.get("soul_weapon_switch", lambda: "off")() == "real"
         owner = object()
         attempt = setup.begin_attempt(name, number)
         status["intention"] = {"owner": owner, "kind": "apply_loadout",
-                               "destination": "soul_weapon" if parked or step else "battle",
-                               "destination_t": t("Soul Weapon") if parked or step else t("Combat"),
+                               "destination": "soul_weapon" if parked else "battle",
+                               "destination_t": t("Soul Weapon") if parked else t("Combat"),
                                "purpose_t": t("appliquer la configuration demandée de {mode}", mode=name),
                                "route": None, "route_known": False}
         try:
-            completed = await apply_stage(number, mpw, applied, step)
+            completed = await apply_stage(number, mpw, applied)
             setup.complete_attempt(attempt, mode=status["mode"], completed=completed,
                                    state=status["state"], message=status["message"])
             return completed
@@ -314,7 +314,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
         # this unchanged entry; farming then verifies its complete loadout.
         return None
 
-    async def apply_stage(number, mpw, applied=False, step=None):
+    async def apply_stage(number, mpw, applied=False):
         """Brings the game to farming that stage with its loadout's preset.
         True once there; else one alert naming the step. While the
         shared lease cannot be had (the user played in the last 5 s,
@@ -323,8 +323,8 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
         plays it is on hold (on_hold: one alert, POST /mode/hold's choice).
         Set up: one notification with the seconds since the mode was chosen
         (applied: since its loadout changed), naming the slowest step when
-        over rules.SWITCH_BUDGET. step: what runs in place of farm() (a
-        coroutine function: the soul weapon step alone, taking force)."""
+        over rules.SWITCH_BUDGET. A complete current setup receipt is
+        required before announcing readiness."""
         name = "soul" if mpw == "soul" else f"mpw{mpw}"
         preset = loadouts["loadout"](name).get("preset")
         moving = t("Passage au stage {number} ({name})", number=number, name=name)
@@ -346,8 +346,12 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
                     forced = {"force": True} if force else {}
                     answer = await ready_game(name)
                     if answer is None:
-                        answer = await (step(**forced) if step
-                                        else farming["farm"](number, preset, name, highest(), **forced))
+                        answer = await farming["farm"](number, preset, name, highest(), **forced)
+                    if (answer.get("result") not in ("failed", "plan")
+                            and (answer.get("result") != "done" or answer.get("verified_setup") is not True)):
+                        answer = {**answer, "result": "failed", "retryable": False,
+                                  "failure_code": "setup_unverified",
+                                  "text_t": t("Configuration demandée non vérifiée")}
                 except ports.Busy as e:
                     if not ports.enabled():
                         # The plugin off: it waits for as long, no alert.
@@ -517,7 +521,8 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
         farming mode's loadout (its stage, preset or soul weapon) is
         applied at once, by the switch's own path (rules.SWITCH_BUDGET,
         retried, one notification « Configuration mpwN appliquée en N
-        s »); the soul weapon alone by its step alone."""
+        s »). Even a weapon-only edit verifies the complete accepted target:
+        an unchanged stage/preset is not a current observation of it."""
         fields = rules.loadout_changes(before, after)
         if not status["configured"] or name != status["mode"] or name not in ("mpw18", "mpw4", "soul") or not fields:
             return
@@ -528,10 +533,7 @@ def mode(ports, rules, timer, values, mines, screens, scroll, loadouts, farming,
                 report("idle", t("Farming {name} : choisis le stage", name=name))
             replace_change(idle)
             return
-        step = None
-        if fields == {"soul_weapon"} and "ensure_soul_weapon" in farming:
-            step = lambda **forced: farming["ensure_soul_weapon"](name, after, **forced)
-        replace_change(lambda: set_stage(after["stage"], "soul" if name == "soul" else int(name[3:]), applied=True, step=step))
+        replace_change(lambda: set_stage(after["stage"], "soul" if name == "soul" else int(name[3:]), applied=True))
 
     def free_text():
         return (t("Jeu libre : rien n’est touché jusqu’à la fin du minuteur") if status["until"]

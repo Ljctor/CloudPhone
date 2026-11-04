@@ -159,7 +159,7 @@ class Ownership(unittest.IsolatedAsyncioTestCase):
                     order.append("successor began")
                     await self.tap()
                     latest_started.set()
-            return {"result": "done", "text_t": None}
+            return {"result": "done", "text_t": None, "verified_setup": True}
 
         def spawn(coro):
             task = asyncio.create_task(coro)

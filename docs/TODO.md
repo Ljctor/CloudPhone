@@ -106,10 +106,13 @@ separate milestones. Historical checked items below do not close a new regressio
   pixels across game starts/relaunches before any direct reader can reuse them.
 - [x] Retain frame provenance through queue waits and OCR; missing acquisition
   metadata on timestamp-aware ports must never become a wall-clock-now reading.
-- [ ] Verify debug `/screen?quick=1` acquisition timestamps under slow
-  classification and lost capture metadata. The acquisition-time implementation
-  needs this explicit regression/acceptance check; missing provenance must not
-  become a fresh wall-clock-now reading. Display geometry grants no gesture.
+- [x] Verify debug `/screen?quick=1` acquisition timestamps under slow
+  classification and lost capture metadata. The handler regression simulates
+  two seconds of capture and five of classification: dated metadata retains its
+  original acquisition time and increasing age on cached responses; missing
+  metadata on timestamp-aware ports stays unknown, including after caching.
+  This is automated API evidence, not a gameplay acceptance test. Display
+  geometry grants no gesture.
 - [x] Recover an already-open engraving screen under the action lease before
   stage/preset navigation. Verify identity and eight locks before closing;
   allow a bounded transition delay without treating timeout as success.
@@ -123,6 +126,15 @@ separate milestones. Historical checked items below do not close a new regressio
 
 ### Engraving completion and motion acceptance
 
+- [x] Require a complete farming receipt after every active loadout edit,
+  including Soul Weapon-only changes. Remove the partial weapon shortcut;
+  only `done` with `verified_setup: true` may announce readiness. The POST
+  loadout regression uses the stage executor to correct a stale stage and
+  preserve a preset-policy refusal after weapon verification. Partial and
+  unexpected results cannot become a successful full setup.
+- [ ] Confirm this full-receipt path after a live Soul Weapon configuration
+  edit, including current stage/preset, immediate engraving and eight locks.
+  The scripted route regression does not certify this gameplay acceptance.
 - [x] Reject setup proof if user input or relaunch crosses the final asynchronous
   equipment readback; an input during the last return also defers the attempt.
   Require fresh equipment, full-grid and lock evidence for the full farm receipt.

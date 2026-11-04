@@ -65,3 +65,55 @@ class QuickScreen(unittest.IsolatedAsyncioTestCase):
                          "an old capture cannot acquire a fresh classification timestamp")
         now[0] += .1
         self.assertAlmostEqual((await route(request))["scan"]["age"], 3.1)
+
+    async def test_slow_classification_keeps_acquisition_time_or_unknown_metadata(self):
+        for acquired in (98.0, None):
+            with self.subTest(acquired=acquired):
+                now, captures = [100.0], []
+                shot = object()
+
+                async def capture(max_age):
+                    captures.append(max_age)
+                    now[0] += 2.0
+                    await asyncio.sleep(0)
+                    return shot
+
+                async def focused():
+                    return True
+
+                def look(image):
+                    self.assertIs(image, shot)
+                    return {"screen": "battle", "overlays": [], "plain": True}
+
+                async def analyse(fn, *args):
+                    # Both queueing and OCR finish well after acquisition.
+                    now[0] += 5.0
+                    await asyncio.sleep(0)
+                    return fn(*args)
+
+                async def forbidden_scan(*args):
+                    self.fail("quick classification must not start numeric readers")
+
+                def capture_time(image):
+                    self.assertIs(image, shot)
+                    return acquired
+
+                ports = NS(clock=NS(monotonic=lambda: now[0], wall=lambda: now[0]),
+                           capture=capture, capture_time=capture_time, focused=focused,
+                           analyse=analyse, respond=lambda value: value, store=NS(saved={}),
+                           game={"scan": forbidden_scan})
+                api = feature.screen(ports, NS(look=look), None, None,
+                                     NS(number_or_none=lambda *args: None), None)
+                route = next(handler for _, path, handler in api["routes"] if path == "/screen")
+                request = NS(query={"quick": "1"})
+                result = await route(request)
+                self.assertEqual(result["scan"]["at"], acquired)
+                self.assertEqual(result["scan"]["age"], 9.0 if acquired is not None else None)
+                now[0] += .1
+                cached = await route(request)
+                self.assertEqual(cached["scan"]["at"], acquired)
+                if acquired is None:
+                    self.assertIsNone(cached["scan"]["age"])
+                else:
+                    self.assertAlmostEqual(cached["scan"]["age"], 9.1)
+                self.assertEqual(len(captures), 1)

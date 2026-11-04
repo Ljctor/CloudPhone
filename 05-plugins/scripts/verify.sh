@@ -12,6 +12,8 @@ print("Private oral developer-review queue: OK")
 # Real reviewed crops distinguish red drag ghosts from actionable controls;
 # this check stays deterministic and never gestures on the installed game.
 python3 "$(dirname "$0")/../slayer-legend/test_screen_model.py" EngravingPreview Registry
+# Quick debug scans retain acquisition provenance through slow classification and caching.
+python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_screen_quick.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_title_logo.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_menu_recovery.py -q
 # Silent process loss, bounded reopen attempts, and the original launch deadline.
@@ -68,6 +70,8 @@ node "$(dirname "$0")/../slayer-legend/test_page_engraving.mjs"
 node "$(dirname "$0")/../slayer-legend/test_page_trace.mjs"
 # Startup idle requires a complete current setup receipt, never a healthy frame.
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_mode_setup_status.py -q
+# POST /loadout requires complete stage/preset/weapon proof, including weapon-only edits.
+python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_loadout_receipt.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_mode_rules.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_transaction_ownership.py -q
 python3 -m unittest discover -s "$(dirname "$0")/../slayer-legend" -p test_game.py -q

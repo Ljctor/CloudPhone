@@ -578,7 +578,7 @@ class Mode(unittest.TestCase):
             game.state["pause_left"] = 5 if answer == "l’utilisateur joue" else 0
             if isinstance(answer, str):
                 raise busy(answer)
-            return {**{key: answer[key] for key in ("retryable", "failure_code") if key in answer},
+            return {**{key: answer[key] for key in ("retryable", "failure_code", "verified_setup") if key in answer},
                     "result": answer["result"], "text_t": answer["text"] and {"template": answer["text"], "params": {}}}
 
         ports = game.ports()
@@ -626,7 +626,7 @@ class Mode(unittest.TestCase):
         return calls, state, game.alerts
 
     def test_enter_farms_with_the_loadout(self):
-        calls, state, alerts = self.enter([done()])
+        calls, state, alerts = self.enter([{**done(), "verified_setup": True}])
         self.assertEqual(calls, [(931, "III", "mpw4")])
         self.assertEqual(state["state"], "farming", french(state["message_t"]))
         self.assertEqual(alerts, ["Farming mpw4 ready in 0 s"])
@@ -642,7 +642,7 @@ class Mode(unittest.TestCase):
 
     def test_a_failure_then_a_success_farms_without_alert(self):
         failed = {"result": "failed", "text": "écran inattendu"}
-        calls, state, alerts = self.enter([failed, done()])
+        calls, state, alerts = self.enter([failed, {**done(), "verified_setup": True}])
         self.assertEqual(len(calls), 2)
         self.assertEqual(state["state"], "farming", french(state["message_t"]))
         self.assertEqual(alerts, ["Farming mpw4 ready in 2 s"], "no failure alert, the retry's time in")
@@ -651,7 +651,7 @@ class Mode(unittest.TestCase):
         reason = "Préréglage IV demandé, II lu : changement bloqué, actions en pause"
         blocked = {"result": "failed", "text": reason, "retryable": False,
                    "failure_code": "preset_action_paused"}
-        calls, state, alerts = self.enter([blocked, done()])
+        calls, state, alerts = self.enter([blocked, {**done(), "verified_setup": True}])
         self.assertEqual(len(calls), 1)
         self.assertEqual(state["state"], "failed")
         self.assertIn(reason, french(state["message_t"]))
@@ -661,7 +661,7 @@ class Mode(unittest.TestCase):
     def test_identical_text_without_typed_refusal_still_uses_transient_retry(self):
         transient = {"result": "failed",
                      "text": "Préréglage IV demandé, II lu : changement bloqué, actions en pause"}
-        calls, state, alerts = self.enter([transient, done()])
+        calls, state, alerts = self.enter([transient, {**done(), "verified_setup": True}])
         self.assertEqual(len(calls), 2, "retry policy never infers permanent failure from translated text")
         self.assertEqual(state["state"], "farming")
         self.assertEqual(alerts, ["Farming mpw4 ready in 2 s"])
@@ -688,7 +688,7 @@ class Mode(unittest.TestCase):
         self.assertEqual(state["state"], "failed")
 
     def test_a_user_who_plays_makes_it_wait_for_the_next_look(self):
-        calls, state, alerts = self.enter(["l’utilisateur joue", done()])
+        calls, state, alerts = self.enter(["l’utilisateur joue", {**done(), "verified_setup": True}])
         self.assertEqual(len(calls), 2)
         self.assertEqual(state["state"], "farming")
         self.assertIsNone(state["hold"], "the hold is over")
@@ -698,12 +698,12 @@ class Mode(unittest.TestCase):
         self.assertEqual(len(alerts), 2)
 
     def test_another_holder_is_waited_for_without_a_hold(self):
-        calls, state, alerts = self.enter(["bail tenu par mine", done()])
+        calls, state, alerts = self.enter(["bail tenu par mine", {**done(), "verified_setup": True}])
         self.assertEqual(alerts, ["Farming mpw4 ready in 2 s"])
 
     def test_the_lease_waited_for_30_min_at_most_then_one_alert(self):
         held = 1 + mode_rules.LEASE_WAIT // mode_rules.BUSY_RETRY
-        calls, state, alerts = self.enter(["bail tenu par mine"] * held + [done()], watch_timer=True)
+        calls, state, alerts = self.enter(["bail tenu par mine"] * held + [{**done(), "verified_setup": True}], watch_timer=True)
         # mpw4 gave up after LEASE_WAIT (one alert); its timer then ended:
         # back to mpw18, which farms.
         self.assertEqual([mode for _, _, mode in calls], ["mpw4"] * held + ["mpw18"])

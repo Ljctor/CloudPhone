@@ -308,7 +308,7 @@ class SetupStatus(unittest.IsolatedAsyncioTestCase):
         self.engraving = 'real'
         reason = rules.t('Préréglage {wanted} demandé, {seen} lu : changement bloqué, actions en pause',
                          wanted='III', seen='II')
-        done = {'result': 'done', 'text_t': None, 'timings': {}}
+        done = {'result': 'done', 'text_t': None, 'timings': {}, 'verified_setup': True}
         answers = [{'result': 'failed', 'text_t': reason, 'timings': {},
                     'retryable': False, 'failure_code': 'preset_action_paused'}, done]
         calls = []
