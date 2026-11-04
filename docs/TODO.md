@@ -955,11 +955,17 @@ without an internal transverse bar; draggable regions are pink with plain lines.
 Fine double outlines apply only to conditional navigation/action buttons. User
 additions remain dotted; proposed removals remain transparent dashed advisory
 feedback. Live, capture preview and passive review must share these semantics.
-The updated corner/hatching rules and the reported Soul Weapon slider bar remain
-pending published validation. An independent screen-identification option must
-show only the screen name and green identifiers without the reporting panel.
-Voice upload with a hatched SVG context is a reproduced regression, not closed
-by the earlier direct microphone-recording acceptance.
+Acceptance of `ea82f6a` and review-only follow-up `2c8de91`: Soul Weapon and
+Repeat Quest each render one permanent violet viewport with two chevrons in
+published Firefox/Chromium. Five specific manual annotations are associated
+with these zones after source/render verification; original captures remain.
+No gesture permissions changed. Other annotations remain individually pending.
+Eight independent identification/navigation/reporting combinations passed on
+the published live page; preferences were intercepted locally, so server-side
+persistence is not certified by that QA. The review preferences persist.
+The hatched-SVG voice regression passed a native synthetic Chromium recording,
+replay and production upload, preserving screenshot/SVG hashes and initial
+context. Firefox mobile microphone acceptance remains open.
 
 Navigation geometry coverage remains partial: seven fixed Soul Weapon/Engraving controls have measured visible bounds and capture provenance, separate from conservative gesture permission envelopes. Other controls and dynamic preview states still need measurement. Passive review refresh now follows plugin upgrades only when already installed, keeping app and readers together without changing service configuration. Declared scrolls require a start inside their measured list; proven same-family visible close tabs remain available on processed scroll variants. Unknown variants still have no inferred return.
 
